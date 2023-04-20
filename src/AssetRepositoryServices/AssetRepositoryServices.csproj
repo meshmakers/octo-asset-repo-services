@@ -1,0 +1,72 @@
+﻿<Project Sdk="Microsoft.NET.Sdk.Web">
+
+    <PropertyGroup>
+        <ApplicationIcon />
+        <AssemblyName>Meshmakers.Octo.Backend.AssetRepositoryServices</AssemblyName>
+        <Description>The core services of Object Service Platform</Description>
+        <DockerDefaultTargetOS>Linux</DockerDefaultTargetOS>
+        <GeneratePackageOnBuild>false</GeneratePackageOnBuild>
+        <IsPackable>false</IsPackable>
+        <OutputType>Exe</OutputType>
+        <RootNamespace>Meshmakers.Octo.Backend.AssetRepositoryServices</RootNamespace>
+        <StartupObject />
+        <UserSecretsId>04bcde24-0d21-4346-8459-3bca58abec32</UserSecretsId>
+        <Version>1.0.0</Version>
+        <TargetFramework>net7.0</TargetFramework>
+    </PropertyGroup>
+
+    <PropertyGroup Condition=" '$(Configuration)' == 'Debug' ">
+        <OutputPath>../../bin/Debug/AssetRepositoryServices/</OutputPath>
+        <DocumentationFile>../../bin/Debug/AssetRepositoryServices/Meshmakers.Octo.Backend.AssetRepositoryServices.xml</DocumentationFile>
+        <NoWarn>1701;1702;CS8002</NoWarn>
+    </PropertyGroup>
+
+    <PropertyGroup Condition=" '$(Configuration)' == 'Release' ">
+        <OutputPath>../../bin/Release/AssetRepositoryServices/</OutputPath>
+        <DocumentationFile>../../bin/Release/AssetRepositoryServices/Meshmakers.Octo.Backend.AssetRepositoryServices.xml</DocumentationFile>
+        <NoWarn>1701;1702;CS8002</NoWarn>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <PackageReference Include="GraphQL.DataLoader" Version="7.2.2" />
+        <PackageReference Include="GraphQL.MicrosoftDI" Version="7.2.2" />
+        <PackageReference Include="GraphQL.Server.Transports.AspNetCore" Version="7.2.0" />
+        <PackageReference Include="GraphQL.Server.Ui.Playground" Version="7.2.0" />
+        <PackageReference Include="GraphQL.SystemTextJson" Version="7.2.2" />
+        <PackageReference Include="Hangfire.Mongo" Version="1.9.2" />
+        <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="7.0.2" />
+        <PackageReference Include="Microsoft.AspNetCore.Authentication.OpenIdConnect" Version="7.0.2" />
+        <PackageReference Include="Microsoft.AspNetCore.Server.IISIntegration" Version="2.2.1" />
+        <PackageReference Include="Microsoft.Extensions.PlatformAbstractions" Version="1.1.0" />
+        <PackageReference Include="NLog" Version="5.1.1" />
+        <PackageReference Include="Hangfire.AspNetCore" Version="1.7.33" />
+        <PackageReference Include="NLog.Web.AspNetCore" Version="5.2.1" />
+        <PackageReference Include="Panic.StringUtils" Version="1.0.1" />
+        <PackageReference Include="System.Reactive.Core" Version="5.0.0" />
+        <PackageReference Include="System.Reactive.Linq" Version="5.0.0" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="$(OctoCommonServicesPath)src\Common\Common.csproj" />
+        <ProjectReference Include="$(OctoCommonServicesPath)src\Swagger\Swagger.csproj" />
+        <ProjectReference Include="$(OctoCommonServicesPath)src\Jobs\Jobs.csproj" />
+        <ProjectReference Include="..\AssetRepositoryServices.Resources\AssetRepositoryServices.Resources.csproj" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <None Include="nlog.Debug.config">
+            <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+        </None>
+        <None Include="nlog.Release.config">
+            <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+        </None>
+    </ItemGroup>
+
+    <ItemGroup>
+        <Content Update="wwwroot\css\swagger.css">
+            <ExcludeFromSingleFile>true</ExcludeFromSingleFile>
+            <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+        </Content>
+    </ItemGroup>
+
+</Project>
