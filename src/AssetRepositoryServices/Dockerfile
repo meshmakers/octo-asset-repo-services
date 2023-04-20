@@ -6,7 +6,7 @@ EXPOSE 443
 FROM mcr.microsoft.com/dotnet/sdk:7.0-bullseye-slim AS build
 WORKDIR /src
 COPY . .
-WORKDIR "/src/src/Backend/AssetRepositoryServices"
+WORKDIR "/src/src/AssetRepositoryServices"
 RUN dotnet build "AssetRepositoryServices.csproj" -c Release 
 
 FROM build AS publish
