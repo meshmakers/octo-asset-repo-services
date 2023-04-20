@@ -79,5 +79,5 @@ stages:
           parameters:
             ContainerRegistry: 'dockerhub@ianitor'
             Repository: meshmakers/octo-mesh-asset-rep-services
-            Dockerfile: src/Backend/AssetRepositoryServices/Dockerfile          
+            Dockerfile: src/AssetRepositoryServices/Dockerfile          
 
