@@ -18,6 +18,7 @@ using Meshmakers.Octo.SystematizedData.Persistence;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Newtonsoft.Json;
+using ObjectExtensions = GraphQL.ObjectExtensions;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL;
 
@@ -300,7 +301,7 @@ internal static class Helpers
             if (value == null)
             {
                 var enumNames = Enum.GetNames(fieldType);
-                value = enumNames[0];
+                value = enumNames[0];f
             }
 
             if (!ObjectExtensions.IsDefinedEnumValue(fieldType, value))
