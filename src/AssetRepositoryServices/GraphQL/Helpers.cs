@@ -301,7 +301,7 @@ internal static class Helpers
             if (value == null)
             {
                 var enumNames = Enum.GetNames(fieldType);
-                value = enumNames[0];f
+                value = enumNames[0];
             }
 
             if (!ObjectExtensions.IsDefinedEnumValue(fieldType, value))
