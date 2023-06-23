@@ -235,7 +235,7 @@ public class TenantsController : ControllerBase
     /// <returns></returns>
     [HttpPut("clearCache")]
     [Authorize(AssetRepositoryServiceConstants.SystemApiReadWritePolicy)]
-    public IActionResult ClearCache([Required] string tenantId)
+    public async Task<IActionResult>  ClearCache([Required] string tenantId)
     {
         try
         {
@@ -243,10 +243,7 @@ public class TenantsController : ControllerBase
             _schemaContext.Invalidate(tenantId);
 
             // Dispose data context
-            if (_octoService.SystemContext.TryGetCkCache(tenantId, out var ckCache))
-            {
-                ckCache.Dispose();
-            }
+            await _octoService.SystemContext.ClearCacheAsync(tenantId);
 
             return Ok("Cache cleared");
         }
