@@ -5,8 +5,8 @@ using System.Threading.Tasks;
 using Hangfire;
 using IdentityModel;
 using Meshmakers.Octo.Backend.Common.ApiErrors;
-using Meshmakers.Octo.Backend.DistributedCache;
 using Meshmakers.Octo.Backend.Jobs.Jobs;
+using Meshmakers.Octo.Common.DistributedCache;
 using Meshmakers.Octo.Common.Shared.DataTransferObjects;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
@@ -123,8 +123,7 @@ public class ModelsController : ControllerBase
         {
             await file.CopyToAsync(memoryStream);
             var key = Guid.NewGuid().ToString();
-            await _distributedCache.Database.StringSetAsync(key + "contentType", file.ContentType);
-            await _distributedCache.Database.StringSetAsync(key + "value", memoryStream.ToArray());
+            await _distributedCache.CacheStreamAsync(key, memoryStream.ToArray(), file.ContentType, TimeSpan.FromHours(1));
             return key;
         }
     }

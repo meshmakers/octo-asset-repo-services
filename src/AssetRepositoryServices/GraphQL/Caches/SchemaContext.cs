@@ -7,7 +7,7 @@ using GraphQL.DataLoader;
 using GraphQL.Types;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.Configuration.DependencyInjection.Options;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.RequestHandling;
-using Meshmakers.Octo.Backend.DistributedCache;
+using Meshmakers.Octo.Common.DistributedCache;
 using Meshmakers.Octo.Common.Shared;
 using Meshmakers.Octo.SystematizedData.Persistence;
 using Microsoft.Extensions.Caching.Memory;
@@ -45,7 +45,11 @@ internal class SchemaContext : ISchemaContext
         var sub = distributedWithPubSubCache.Subscribe<string>(CacheCommon.KeyTenantUpdate);
         sub.OnMessage(message =>
         {
-            _cache.Remove(message.Message.MakeKey());
+            if (!string.IsNullOrWhiteSpace(message.Message))
+            {
+                _cache.Remove(message.Message.MakeKey());
+            }
+
             return Task.CompletedTask;
         });
     }
@@ -67,7 +71,7 @@ internal class SchemaContext : ISchemaContext
 
         Logger.Debug($"Looking up GraphQL schema for {tenantContext.TenantId}");
 
-        if (!_cache.TryGetValue(key, out OctoSchema schema))
+        if (!_cache.TryGetValue(key, out OctoSchema? schema))
         {
             try
             {
@@ -98,7 +102,7 @@ internal class SchemaContext : ISchemaContext
                     return createdSchema;
                 });
 
-                schema = _cache.GetOrCreate(key, t);
+                return _cache.GetOrCreate(key, t)!;
             }
             catch (Exception e)
             {
@@ -110,6 +114,6 @@ internal class SchemaContext : ISchemaContext
             }
         }
 
-        return schema;
+        return schema!;
     }
 }

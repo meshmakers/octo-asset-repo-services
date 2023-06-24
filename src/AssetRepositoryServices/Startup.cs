@@ -1,5 +1,5 @@
 using Meshmakers.Octo.Backend.AssetRepositoryServices.Routing;
-using Meshmakers.Octo.Backend.Common.Cors;
+using Meshmakers.Octo.Services.Common.Cors;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Cors.Infrastructure;
 using Microsoft.AspNetCore.Hosting;
