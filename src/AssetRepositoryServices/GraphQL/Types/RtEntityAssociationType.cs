@@ -86,7 +86,7 @@ public class RtEntityAssociationType : ObjectGraphType
         var graphQlContext = (GraphQLUserContext)ctx.UserContext;
 
         var loader = _dataLoaderAccessor.Context.GetOrAddBatchLoader<ObjectId, ResultSet<RtEntity>>(
-            $"Get{targetCkId}_{_roleId}", async keys =>
+            $"Get{_originCkId}_{targetCkId}_{_roleId}", async keys =>
                 await graphQlContext.TenantContext.Repository.GetRtAssociationTargetsAsync(_sessionAccessor.Session,
                     keys, _originCkId, _roleId, targetCkId, _graphDirection, keysList, dataQueryOperation, offset, ctx.First));
 
