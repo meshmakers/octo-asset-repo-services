@@ -5,7 +5,7 @@ using Meshmakers.Octo.Common.Shared.DataTransferObjects;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
 
-public class FieldFilterDtoType : InputObjectGraphType<FieldFilterDto>
+public sealed class FieldFilterDtoType : InputObjectGraphType<FieldFilterDto>
 {
     public FieldFilterDtoType()
     {
