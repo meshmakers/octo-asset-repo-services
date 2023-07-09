@@ -22,4 +22,5 @@ public class Statics
 
     internal const string LargeBinaryIdArg = "largeBinaryId";
     internal const string LargeBinaryDataArg = "binaryData";
+    internal const string GroupByArg ="groupBy";
 }

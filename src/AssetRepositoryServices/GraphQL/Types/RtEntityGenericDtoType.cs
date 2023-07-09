@@ -55,7 +55,7 @@ public sealed class RtEntityGenericDtoType : ObjectGraphType<RtEntityDto>
 
         return ConnectionUtils.ToConnection(
             resultList.Select(item => CreateRtEntityAttributeDto((RtEntity)ctx.Source.UserContext, item)),
-            ctx);
+            ctx, null);
     }
 
     private RtEntityAttributeDto CreateRtEntityAttributeDto(RtEntity rtEntity,

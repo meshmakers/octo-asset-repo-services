@@ -38,7 +38,7 @@ public class CkEntityDtoType : ObjectGraphType<CkEntityDto>
                     var graphQlContext = (GraphQLUserContext)ctx.UserContext;
 
                     var result = graphQlContext.TenantContext.CkCache.GetEntityCacheItem(ctx.Source.CkId).DerivedTypes;
-                    return ConnectionUtils.ToConnection(result.Select(CreateCkEntityDto), ctx);
+                    return ConnectionUtils.ToConnection(result.Select(CreateCkEntityDto), ctx, null);
                 }
             );
 
@@ -77,7 +77,7 @@ public class CkEntityDtoType : ObjectGraphType<CkEntityDto>
                     filterAttributeNames.Contains(a.AttributeName.ToCamelCase()));
         }
 
-        return ConnectionUtils.ToConnection(resultList.Select(CreateCkEntityAttributeDto), ctx);
+        return ConnectionUtils.ToConnection(resultList.Select(CreateCkEntityAttributeDto), ctx, null);
     }
 
     internal static CkEntityDto CreateCkEntityDto(EntityCacheItem entityCacheItem)

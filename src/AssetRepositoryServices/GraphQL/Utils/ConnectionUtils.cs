@@ -2,6 +2,8 @@ using System.Collections.Generic;
 using System.Linq;
 using GraphQL.Builders;
 using GraphQL.Types.Relay.DataObjects;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
+using Meshmakers.Octo.Common.Shared.DataTransferObjects;
 using Panic.StringUtils;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Utils;
@@ -10,21 +12,23 @@ internal static class ConnectionUtils
 {
     private const string Prefix = "arrayconnection";
 
-    public static Connection<TSource> ToConnection<TSource, TParent>(
+    public static OctoConnection<TSource> ToConnection<TSource, TParent>(
         IEnumerable<TSource> items,
         IResolveConnectionContext<TParent> context,
+        IEnumerable<GroupingDto>? groupings,
         bool strictCheck = true
     )
     {
         var list = items.ToList();
-        return ToConnection(list, context, 0, list.Count);
+        return ToConnection(list, context, 0, list.Count, groupings, strictCheck);
     }
 
-    public static Connection<TSource> ToConnection<TSource, TParent>(
+    public static OctoConnection<TSource> ToConnection<TSource, TParent>(
         IEnumerable<TSource> slice,
         IResolveConnectionContext<TParent> context,
         int sliceStartIndex,
         int totalCount,
+        IEnumerable<GroupingDto>? groupings,
         bool strictCheck = true
     )
     {
@@ -48,8 +52,9 @@ internal static class ConnectionUtils
         var firstEdge = edges.FirstOrDefault();
         var lastEdge = edges.LastOrDefault();
 
-        return new Connection<TSource>
+        return new OctoConnection<TSource>
         {
+            Groupings = groupings,
             Edges = edges,
             TotalCount = totalCount,
             PageInfo = new PageInfo

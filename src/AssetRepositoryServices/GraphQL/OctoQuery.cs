@@ -15,6 +15,7 @@ using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Utils;
 using Meshmakers.Octo.Common.Shared;
 using Meshmakers.Octo.Common.Shared.DataTransferObjects;
 using Meshmakers.Octo.SystematizedData.Persistence;
+using Meshmakers.Octo.SystematizedData.Persistence.DataAccess;
 using Microsoft.Extensions.Options;
 using MongoDB.Bson;
 using NLog;
@@ -69,6 +70,7 @@ internal sealed class OctoQuery : ObjectGraphType
             .Argument<ListGraphType<OctoObjectIdType>>(Statics.RtIdsArg,
                 "Returns entities with the given rtIds.")
             .Argument<SearchFilterDtoType>(Statics.SearchFilterArg, "Filters items based on text search")
+            .Argument<GroupByFilterDtoType>(Statics.GroupByArg, "Groups items based on attributes")
             .Argument<ListGraphType<SortDtoType>>(Statics.SortOrderArg, "Sort order for items")
             .Argument<ListGraphType<FieldFilterDtoType>>(Statics.FieldFilterArg,
                 "Filters items based on field compare")
@@ -88,6 +90,7 @@ internal sealed class OctoQuery : ObjectGraphType
                 .Argument<ListGraphType<OctoObjectIdType>>(Statics.RtIdsArg,
                     "Returns entities with the given rtIds.")
                 .Argument<SearchFilterDtoType>(Statics.SearchFilterArg, "Filters items based on text search")
+                .Argument<GroupByFilterDtoType>(Statics.GroupByArg, "Groups items based on attributes")
                 .Argument<ListGraphType<SortDtoType>>(Statics.SortOrderArg, "Sort order for items")
                 .Argument<ListGraphType<FieldFilterDtoType>>(Statics.FieldFilterArg,
                     "Filters items based on field compare")
@@ -111,7 +114,7 @@ internal sealed class OctoQuery : ObjectGraphType
         // all entities are returned.
         if (hasKeysDefined && keysList != null && !keysList.Any())
         {
-            return ConnectionUtils.ToConnection(new List<CkAttributeDto>(), arg);
+            return ConnectionUtils.ToConnection(new List<CkAttributeDto>(), arg, null);
         }
 
         if ((keysList == null || !keysList.Any()) && key != null)
@@ -125,7 +128,7 @@ internal sealed class OctoQuery : ObjectGraphType
 
         Logger.Debug("GraphQL query handling returning data for contruction kit attributes");
         return ConnectionUtils.ToConnection(resultSet.Result.Select(CkAttributeDtoType.CreateCkAttributeDto), arg,
-            resultSet.TotalCount > 0 ? offset.GetValueOrDefault(0) : 0, (int)resultSet.TotalCount);
+            resultSet.TotalCount > 0 ? offset.GetValueOrDefault(0) : 0, (int)resultSet.TotalCount, resultSet.Grouping);
     }
 
     private async Task<object?> ResolveLargeBinariesQuery(IResolveConnectionContext<object?> context)
@@ -152,8 +155,8 @@ internal sealed class OctoQuery : ObjectGraphType
                     DownloadUri = new Uri(_options.Value.PublicUrl.EnsureEndsWith(
                         $"/system/v1/largeBinaries?tenantId={tenantContext.TenantId}&largeBinaryId={downloadInfo.BinaryId}"))
                 }
-            }, context,
-            0, 1);
+            }, context, 
+            0, 1, null);
     }
 
     private async Task<object?> ResolveCkEntitiesQuery(IResolveConnectionContext<object?> arg)
@@ -172,7 +175,7 @@ internal sealed class OctoQuery : ObjectGraphType
         // all entities are returned.
         if (hasKeysDefined && keysList != null && !keysList.Any())
         {
-            return ConnectionUtils.ToConnection(new List<CkEntityDto>(), arg);
+            return ConnectionUtils.ToConnection(new List<CkEntityDto>(), arg, null);
         }
 
         if ((keysList == null || !keysList.Any()) && key != null)
@@ -186,7 +189,7 @@ internal sealed class OctoQuery : ObjectGraphType
 
         Logger.Debug("GraphQL query handling returning data for contruction kit entities");
         return ConnectionUtils.ToConnection(resultSet.Result.Select(CkEntityDtoType.CreateCkEntityDto), arg,
-            resultSet.TotalCount > 0 ? offset.GetValueOrDefault(0) : 0, (int)resultSet.TotalCount);
+            resultSet.TotalCount > 0 ? offset.GetValueOrDefault(0) : 0, (int)resultSet.TotalCount, resultSet.Grouping);
     }
 
     private async Task<object?> ResolveGenericRtEntitiesQuery(IResolveConnectionContext<object?> arg)
@@ -207,7 +210,7 @@ internal sealed class OctoQuery : ObjectGraphType
         // all entities are returned.
         if (hasKeysDefined && keysList != null && !keysList.Any())
         {
-            return ConnectionUtils.ToConnection(new List<RtEntityDto>(), arg);
+            return ConnectionUtils.ToConnection(new List<RtEntityDto>(), arg, null);
         }
 
         if (keysList != null && keysList.Any())
@@ -219,7 +222,7 @@ internal sealed class OctoQuery : ObjectGraphType
 
             Logger.Debug("GraphQL query handling returning data by keys");
             return ConnectionUtils.ToConnection(resultSetIds.Result.Select(RtEntityDtoType.CreateRtEntityDto), arg,
-                resultSetIds.TotalCount > 0 ? offset.GetValueOrDefault(0) : 0, (int)resultSetIds.TotalCount);
+                resultSetIds.TotalCount > 0 ? offset.GetValueOrDefault(0) : 0, (int)resultSetIds.TotalCount, resultSetIds.Grouping);
         }
 
         if (key.HasValue)
@@ -235,7 +238,7 @@ internal sealed class OctoQuery : ObjectGraphType
             }
 
             Logger.Debug("GraphQL query handling returning data by key");
-            return ConnectionUtils.ToConnection(resultList, arg);
+            return ConnectionUtils.ToConnection(resultList, arg, null);
         }
 
         var resultSet =
@@ -245,7 +248,7 @@ internal sealed class OctoQuery : ObjectGraphType
 
         Logger.Debug("GraphQL query handling returning data");
         return ConnectionUtils.ToConnection(resultSet.Result.Select(RtEntityDtoType.CreateRtEntityDto), arg,
-            resultSet.TotalCount > 0 ? offset.GetValueOrDefault(0) : 0, (int)resultSet.TotalCount);
+            resultSet.TotalCount > 0 ? offset.GetValueOrDefault(0) : 0, (int)resultSet.TotalCount, resultSet.Grouping);
     }
 
     private async Task<object?> ResolveRtEntitiesQuery(IResolveConnectionContext<RtEntityDto?> arg)
@@ -258,6 +261,7 @@ internal sealed class OctoQuery : ObjectGraphType
         var offset = arg.GetOffset();
         var dataQueryOperation = arg.GetDataQueryOperation();
 
+        arg.TryGetArgument(Statics.GroupByArg, out var _, out FieldGroupByDto? fieldGroupByDto);
         arg.TryGetArgument(Statics.RtIdArg, out var _, out OctoObjectId? key);
         arg.TryGetArgument(Statics.RtIdsArg, null, out var hasKeysDefined, out IEnumerable<OctoObjectId> keys);
         var keysList = keys?.Select(x => x.ToObjectId()).ToList();
@@ -266,7 +270,7 @@ internal sealed class OctoQuery : ObjectGraphType
         // all entities are returned.
         if (hasKeysDefined && keysList != null && !keysList.Any())
         {
-            return ConnectionUtils.ToConnection(new List<RtEntityDto>(), arg);
+            return ConnectionUtils.ToConnection(new List<RtEntityDto>(), arg, null);
         }
 
         if (keysList != null && keysList.Any())
@@ -278,7 +282,7 @@ internal sealed class OctoQuery : ObjectGraphType
 
             Logger.Debug("GraphQL query handling returning data by keys");
             return ConnectionUtils.ToConnection(resultSetIds.Result.Select(RtEntityDtoType.CreateRtEntityDto), arg,
-                resultSetIds.TotalCount > 0 ? offset.GetValueOrDefault(0) : 0, (int)resultSetIds.TotalCount);
+                resultSetIds.TotalCount > 0 ? offset.GetValueOrDefault(0) : 0, (int)resultSetIds.TotalCount, resultSetIds.Grouping);
         }
 
         if (key.HasValue)
@@ -292,9 +296,9 @@ internal sealed class OctoQuery : ObjectGraphType
             {
                 resultList.Add(RtEntityDtoType.CreateRtEntityDto(result));
             }
-
+            
             Logger.Debug("GraphQL query handling returning data by key");
-            return ConnectionUtils.ToConnection(resultList, arg);
+            return ConnectionUtils.ToConnection(resultList, arg, null);
         }
 
         var resultSet =
@@ -304,6 +308,6 @@ internal sealed class OctoQuery : ObjectGraphType
 
         Logger.Debug("GraphQL query handling returning data");
         return ConnectionUtils.ToConnection(resultSet.Result.Select(RtEntityDtoType.CreateRtEntityDto), arg,
-            resultSet.TotalCount > 0 ? offset.GetValueOrDefault(0) : 0, (int)resultSet.TotalCount);
+            resultSet.TotalCount > 0 ? offset.GetValueOrDefault(0) : 0, (int)resultSet.TotalCount, resultSet.Grouping);
     }
 }

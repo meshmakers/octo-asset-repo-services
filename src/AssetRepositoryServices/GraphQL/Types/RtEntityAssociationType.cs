@@ -80,7 +80,7 @@ public class RtEntityAssociationType : ObjectGraphType
         
         if (ctx.Source.RtId == null)
         {
-            return ConnectionUtils.ToConnection(new RtEntityDto[] { }, ctx, 0, 0);
+            return ConnectionUtils.ToConnection(new RtEntityDto[] { }, ctx, 0, 0, null);
         }
 
         var graphQlContext = (GraphQLUserContext)ctx.UserContext;
@@ -94,6 +94,6 @@ public class RtEntityAssociationType : ObjectGraphType
 
         return dataLoaderResult.Then(resultSet => ConnectionUtils.ToConnection(
             resultSet.Result.Select(RtEntityDtoType.CreateRtEntityDto), ctx,
-            resultSet.TotalCount > 0 ? offset.GetValueOrDefault(0) : 0, (int)resultSet.TotalCount));
+            resultSet.TotalCount > 0 ? offset.GetValueOrDefault(0) : 0, (int)resultSet.TotalCount, null));
     }
 }

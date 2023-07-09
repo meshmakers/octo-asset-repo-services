@@ -79,6 +79,15 @@ internal static class ResolveConnectionContextExtensions
             dataQueryOperation.SortOrders = sortDtos.Select(dto =>
                 new SortOrderItem(StringExtensions.ToPascalCase(dto.AttributeName), (SortOrders)dto.SortOrder));
         }
+        
+        if (ctx.TryGetArgument(Statics.GroupByArg, out _, out FieldGroupByDto? groupByDto) && groupByDto != null)
+        {
+            dataQueryOperation.FieldGroupBy = new FieldGroupBy(groupByDto.AttributeNames.Select(TransformAttributeName),
+                groupByDto.CountAttributeNames?.Select(TransformAttributeName),
+                groupByDto.MaxValueAttributeNames?.Select(TransformAttributeName),
+                groupByDto.MinValueAttributeNames?.Select(TransformAttributeName),
+                groupByDto.AvgAttributeNames?.Select(TransformAttributeName));
+        }
 
         return dataQueryOperation;
     }
