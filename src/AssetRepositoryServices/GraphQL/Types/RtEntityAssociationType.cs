@@ -56,6 +56,7 @@ public class RtEntityAssociationType : ObjectGraphType
                 .Argument<ListGraphType<SortDtoType>>(Statics.SortOrderArg, "Sort order for items")
                 .Argument<ListGraphType<FieldFilterDtoType>>(Statics.FieldFilterArg,
                     "Filters items based on field compare")
+                .Argument<GroupByFilterDtoType>(Statics.GroupByArg, "Groups items based on attributes")
                 .Resolve(ResolveRtEntitiesQuery);
         }
     }
@@ -94,6 +95,6 @@ public class RtEntityAssociationType : ObjectGraphType
 
         return dataLoaderResult.Then(resultSet => ConnectionUtils.ToConnection(
             resultSet.Result.Select(RtEntityDtoType.CreateRtEntityDto), ctx,
-            resultSet.TotalCount > 0 ? offset.GetValueOrDefault(0) : 0, (int)resultSet.TotalCount, null));
+            resultSet.TotalCount > 0 ? offset.GetValueOrDefault(0) : 0, (int)resultSet.TotalCount, resultSet.Grouping));
     }
 }

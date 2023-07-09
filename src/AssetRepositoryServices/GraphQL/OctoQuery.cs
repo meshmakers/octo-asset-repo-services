@@ -261,7 +261,6 @@ internal sealed class OctoQuery : ObjectGraphType
         var offset = arg.GetOffset();
         var dataQueryOperation = arg.GetDataQueryOperation();
 
-        arg.TryGetArgument(Statics.GroupByArg, out var _, out FieldGroupByDto? fieldGroupByDto);
         arg.TryGetArgument(Statics.RtIdArg, out var _, out OctoObjectId? key);
         arg.TryGetArgument(Statics.RtIdsArg, null, out var hasKeysDefined, out IEnumerable<OctoObjectId> keys);
         var keysList = keys?.Select(x => x.ToObjectId()).ToList();
