@@ -9,6 +9,7 @@ using Meshmakers.Octo.Backend.AssetRepositoryServices.Configuration.DependencyIn
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.RequestHandling;
 using Meshmakers.Octo.Common.DistributedCache;
 using Meshmakers.Octo.Common.Shared;
+using Meshmakers.Octo.Common.Shared.DistributedCache;
 using Meshmakers.Octo.SystematizedData.Persistence;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Options;
