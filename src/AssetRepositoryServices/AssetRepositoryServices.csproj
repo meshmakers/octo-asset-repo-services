@@ -38,7 +38,7 @@
         <PackageReference Include="Microsoft.AspNetCore.Authentication.OpenIdConnect" Version="7.0.7" />
         <PackageReference Include="Microsoft.AspNetCore.Server.IISIntegration" Version="2.2.1" />
         <PackageReference Include="Microsoft.Extensions.PlatformAbstractions" Version="1.1.0" />
-        <PackageReference Include="NLog" Version="5.2.0" />
+        <PackageReference Include="NLog" Version="5.2.2" />
         <PackageReference Include="Hangfire.AspNetCore" Version="1.8.2" />
         <PackageReference Include="NLog.Web.AspNetCore" Version="5.3.0" />
         <PackageReference Include="Panic.StringUtils" Version="1.0.1" />
@@ -49,8 +49,9 @@
     <ItemGroup>
         <ProjectReference Include="$(OctoCommonServicesPath)src\Common\Common.csproj" />
         <ProjectReference Include="$(OctoCommonServicesPath)src\Swagger\Swagger.csproj" />
-        <ProjectReference Include="$(OctoCommonServicesPath)src\Jobs\Jobs.csproj" />
         <ProjectReference Include="..\AssetRepositoryServices.Resources\AssetRepositoryServices.Resources.csproj" />
+        <ProjectReference Include="..\octo-core\src\Common\Shared\Shared.csproj" />
+        <ProjectReference Include="..\octo-core\src\SystematizedData\Persistence\Persistence.csproj" />
     </ItemGroup>
 
     <ItemGroup>

@@ -5,9 +5,9 @@ using System.Threading.Tasks;
 using Hangfire;
 using IdentityModel;
 using Meshmakers.Octo.Backend.Common.ApiErrors;
-using Meshmakers.Octo.Backend.Jobs.Jobs;
 using Meshmakers.Octo.Common.Shared.DataTransferObjects;
 using Meshmakers.Octo.Common.Shared.DistributedCache;
+using Meshmakers.Octo.Common.Shared.Jobs;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -52,8 +52,8 @@ public class ModelsController : ControllerBase
     {
         try
         {
-            var id = _backgroundJobClient.Enqueue<ExportModelJob>(job =>
-                job.ExportRtAsync(tenantId, exportModelRequestDto.QueryId.ToString(), JobCancellationToken.Null));
+            var id = _backgroundJobClient.Enqueue<IExportModelJob>(job =>
+                job.ExportRtAsync(tenantId, exportModelRequestDto.QueryId.ToString(), null));
             return Ok(new ExportModelResponseDto { JobId = id });
         }
         catch (InvalidOperationException e)
@@ -79,8 +79,8 @@ public class ModelsController : ControllerBase
         try
         {
             var cacheKey = await AddFileToCache(file);
-            var id = _backgroundJobClient.Enqueue<ImportModelJob>(job =>
-                job.ImportRtAsync(tenantId, cacheKey, JobCancellationToken.Null));
+            var id = _backgroundJobClient.Enqueue<IImportModelJob>(job =>
+                job.ImportRtAsync(tenantId, cacheKey, null));
             return Ok(id);
         }
         catch (InvalidOperationException e)
@@ -107,8 +107,8 @@ public class ModelsController : ControllerBase
         try
         {
             var cacheKey = await AddFileToCache(file);
-            var id = _backgroundJobClient.Enqueue<ImportModelJob>(job =>
-                job.ImportCkAsync(tenantId, cacheKey, scopeId, JobCancellationToken.Null));
+            var id = _backgroundJobClient.Enqueue<IImportModelJob>(job =>
+                job.ImportCkAsync(tenantId, cacheKey, scopeId, null));
             return Ok(id);
         }
         catch (InvalidOperationException e)
