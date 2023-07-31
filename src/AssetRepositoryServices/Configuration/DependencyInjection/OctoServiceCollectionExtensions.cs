@@ -56,8 +56,7 @@ public static class OctoServiceCollectionExtensions
         JwtSecurityTokenHandler.DefaultInboundClaimTypeMap.Clear();
         var builder = services.AddOctoBuilder();
 
-        builder
-            .AddRequiredPlatformServices();
+        builder.AddRequiredPlatformServices();
 
         services.AddMemoryCache();
         services.AddDistributedPubSubCache(options =>

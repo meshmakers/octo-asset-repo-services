@@ -39,10 +39,10 @@ public static class OctoApplicationBuilderExtensions
         app.UseOctoPersistence();
         app.UseOctoApiVersioningAndDocumentation();
 
-        var scopeFactory = app.ApplicationServices.GetService<IServiceScopeFactory>();
+        var scopeFactory = app.ApplicationServices.GetRequiredService<IServiceScopeFactory>();
         using (var scope = scopeFactory.CreateScope())
         {
-            var userSchemaService = scope.ServiceProvider.GetService<IUserSchemaService>();
+            var userSchemaService = scope.ServiceProvider.GetRequiredService<IUserSchemaService>();
             userSchemaService.SetupAsync().GetAwaiter().GetResult();
         }
 

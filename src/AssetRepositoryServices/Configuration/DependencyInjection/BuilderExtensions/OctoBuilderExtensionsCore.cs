@@ -3,6 +3,7 @@ using GraphQL.Types.Relay;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.Configuration.DependencyInjection.Options;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Caches;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.Services;
+using Meshmakers.Octo.Common.Shared;
 using Meshmakers.Octo.SystematizedData.Persistence;
 using Meshmakers.Octo.SystematizedData.Persistence.SystemStores;
 using Microsoft.Extensions.DependencyInjection;
@@ -46,6 +47,7 @@ public static class OctoBuilderExtensionsCore
         builder.Services.AddTransient<IOctoClientStore, ClientStore>();
         builder.Services.AddTransient<IOctoResourceStore, ResourceStore>();
         builder.Services.AddTransient<IOctoPersistentGrantStore, PersistentGrantStore>();
+        builder.Services.AddTransient<IKnownOriginsProvider>(provider => provider.GetRequiredService<IOctoClientStore>());
 
         return builder;
     }
