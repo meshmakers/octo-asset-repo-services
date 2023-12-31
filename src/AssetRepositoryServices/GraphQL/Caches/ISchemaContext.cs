@@ -1,6 +1,5 @@
 using System.Threading.Tasks;
 using GraphQL.Types;
-using Meshmakers.Octo.SystematizedData.Persistence;
 
 #pragma warning disable 1591
 
@@ -17,7 +16,7 @@ public interface ISchemaContext
     /// <summary>
     ///     Creates or gets a schema
     /// </summary>
-    /// <param name="tenantContext">The context of the recent tenant</param>
+    /// <param name="tenantId">The Id of tenant</param>
     /// <returns>The corresponding schema</returns>
-    Task<ISchema> GetOrCreateAsync(ITenantContext tenantContext);
+    Task<ISchema> GetOrCreateAsync(string tenantId);
 }

@@ -1,5 +1,6 @@
 using GraphQL.Types;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
+using Meshmakers.Octo.ConstructionKit.Contracts;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Caches;
 
@@ -13,14 +14,14 @@ public interface IGraphTypesCache
     /// </summary>
     /// <param name="ckId">The entity id key.</param>
     /// <returns>The cached RtEntityDtoType based on the given entity id key</returns>
-    RtEntityDtoType GetOrCreate(string ckId);
+    RtEntityDtoType GetOrCreate(CkId<CkTypeId> ckId);
 
     /// <summary>
     ///     Gets or creates an RtEntityDtoInputType based on an entity id key
     /// </summary>
     /// <param name="ckId">The entity id key.</param>
     /// <returns>The cached RtEntityDtoType based on the given entity id key</returns>
-    RtEntityDtoInputType GetOrCreateInput(string ckId);
+    RtEntityDtoInputType GetOrCreateInput(CkId<CkTypeId> ckId);
 
     /// <summary>
     ///     Gets or creates a Connection Type based on a given GraphQL type

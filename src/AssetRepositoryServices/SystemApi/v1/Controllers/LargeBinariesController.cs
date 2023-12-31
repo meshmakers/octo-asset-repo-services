@@ -1,7 +1,7 @@
 using System.Threading.Tasks;
 using IdentityModel;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.Services;
-using Meshmakers.Octo.Common.Shared;
+using Meshmakers.Octo.ConstructionKit.Contracts;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -37,8 +37,9 @@ public class LargeBinariesController
     [Authorize(AssetRepositoryServiceConstants.SystemApiReadOnlyPolicy)]
     public async Task<IActionResult> Get([FromQuery] string tenantId, [FromQuery] string largeBinaryId)
     {
-        var tenantContext = await _octoService.SystemContext.CreateOrGetTenantContextAsync(tenantId);
-        var streamHandler = await tenantContext.Repository.DownloadLargeBinaryAsync(OctoObjectId.Parse(largeBinaryId));
+        var tenantContext = await _octoService.SystemContext.GetChildTenantContextAsync(tenantId);
+        var repository = tenantContext.GetTenantRepository();
+        var streamHandler = await repository.DownloadLargeBinaryAsync(OctoObjectId.Parse(largeBinaryId));
 
         return new FileStreamResult(streamHandler.Stream, streamHandler.ContentType);
     }

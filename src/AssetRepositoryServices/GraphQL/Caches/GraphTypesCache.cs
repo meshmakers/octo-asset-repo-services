@@ -1,11 +1,11 @@
 using System.Collections.Concurrent;
-using System.Linq;
 using GraphQL.DataLoader;
 using GraphQL.Types;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.RequestHandling;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
-using Meshmakers.Octo.Common.Shared;
-using Meshmakers.Octo.SystematizedData.Persistence;
+using Meshmakers.Octo.Communication.Contracts;
+using Meshmakers.Octo.ConstructionKit.Contracts;
+using Meshmakers.Octo.ConstructionKit.Contracts.Services;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Caches;
 
@@ -15,30 +15,34 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Caches;
 internal class GraphTypesCache : IGraphTypesCache
 {
     private readonly ConcurrentDictionary<IGraphType, DynamicConnectionType> _connectionTypes;
+    private readonly ICkCacheService _ckCacheService;
+    private readonly string _tenantId;
     private readonly IDataLoaderContextAccessor _dataLoaderAccessor;
-    private readonly ConcurrentDictionary<string, RtEntityDtoInputType> _inputTypes;
+    private readonly ConcurrentDictionary<CkId<CkTypeId>, RtEntityDtoInputType> _inputTypes;
     private readonly IOctoSessionAccessor _octoSessionAccessor;
-    private readonly ITenantContext _tenantContext;
-    private readonly ConcurrentDictionary<string, RtEntityDtoType> _types;
+    private readonly ConcurrentDictionary<CkId<CkTypeId>, RtEntityDtoType> _types;
 
     /// <summary>
     ///     Constructor
     /// </summary>
-    /// <param name="tenantContext"></param>
+    /// <param name="tenantId"></param>
     /// <param name="dataLoaderAccessor">Data loader context accessor to solve the n+1 issue</param>
-    public GraphTypesCache(ITenantContext tenantContext, IDataLoaderContextAccessor dataLoaderAccessor,
+    /// <param name="ckCacheService"></param>
+    /// <param name="octoSessionAccessor"></param>
+    public GraphTypesCache(ICkCacheService ckCacheService, string tenantId, IDataLoaderContextAccessor dataLoaderAccessor,
         IOctoSessionAccessor octoSessionAccessor)
     {
-        _tenantContext = tenantContext;
+        _ckCacheService = ckCacheService;
+        _tenantId = tenantId;
         _dataLoaderAccessor = dataLoaderAccessor;
         _octoSessionAccessor = octoSessionAccessor;
-        _types = new ConcurrentDictionary<string, RtEntityDtoType>();
-        _inputTypes = new ConcurrentDictionary<string, RtEntityDtoInputType>();
+        _types = new ConcurrentDictionary<CkId<CkTypeId>, RtEntityDtoType>();
+        _inputTypes = new ConcurrentDictionary<CkId<CkTypeId>, RtEntityDtoInputType>();
         _connectionTypes = new ConcurrentDictionary<IGraphType, DynamicConnectionType>();
     }
 
     /// <inheritdoc />
-    public RtEntityDtoType GetOrCreate(string ckId)
+    public RtEntityDtoType GetOrCreate(CkId<CkTypeId> ckId)
     {
         return _types.GetOrAdd(ckId, s =>
         {
@@ -48,7 +52,7 @@ internal class GraphTypesCache : IGraphTypesCache
     }
 
     /// <inheritdoc />
-    public RtEntityDtoInputType GetOrCreateInput(string ckId)
+    public RtEntityDtoInputType GetOrCreateInput(CkId<CkTypeId> ckId)
     {
         return _inputTypes.GetOrAdd(ckId, s =>
         {
@@ -86,14 +90,14 @@ internal class GraphTypesCache : IGraphTypesCache
     {
         foreach (var rtEntityDtoType in _types.Values)
         {
-            var entityCacheItem = _tenantContext.CkCache.GetEntityCacheItem(rtEntityDtoType.CkId);
-            rtEntityDtoType.Populate(this, _dataLoaderAccessor, _octoSessionAccessor, entityCacheItem);
+            var entityCacheItem = _ckCacheService.GetCkType(_tenantId, rtEntityDtoType.CkTypeId);
+            rtEntityDtoType.Populate(_ckCacheService, _tenantId, this, _dataLoaderAccessor, _octoSessionAccessor, entityCacheItem);
         }
 
         foreach (var rtEntityDtoInputType in _inputTypes.Values)
         {
-            var entityCacheItem = _tenantContext.CkCache.GetEntityCacheItem(rtEntityDtoInputType.CkId);
-            rtEntityDtoInputType.Populate(entityCacheItem);
+            var entityCacheItem = _ckCacheService.GetCkType(_tenantId, rtEntityDtoInputType.CkTypeId);
+            rtEntityDtoInputType.Populate(_ckCacheService, _tenantId, entityCacheItem);
         }
     }
 }

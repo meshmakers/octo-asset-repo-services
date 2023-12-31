@@ -1,109 +1,109 @@
-using System.Collections.Generic;
-using System.Threading.Tasks;
 using AssetRepositoryServices.Resources;
-using Duende.IdentityServer.Models;
 using IdentityModel;
 using Meshmakers.Common.Shared;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.Configuration.DependencyInjection.Options;
-using Meshmakers.Octo.Common.Shared;
-using Meshmakers.Octo.SystematizedData.Persistence;
-using Meshmakers.Octo.SystematizedData.Persistence.SystemEntities;
-using Meshmakers.Octo.SystematizedData.Persistence.SystemStores;
+using Meshmakers.Octo.Common.DistributionEventHub.Services;
+using Meshmakers.Octo.Communication.Contracts;
+using Meshmakers.Octo.Runtime.Contracts.MongoDb;
+using Meshmakers.Octo.Services.Common.DistributionEventHub.Commands;
+using Meshmakers.Octo.Services.Common.DistributionEventHub.Commands.Payloads;
+using Meshmakers.Octo.Services.Infrastructure.Initialization;
+using Meshmakers.Octo.Services.Infrastructure.Services;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.Services;
 
-internal class UserSchemaService : IUserSchemaService
+internal class UserSchemaService : IAsyncInitializationService
 {
-    private readonly IOctoClientStore _clientStore;
+    private readonly ICommandClient<CreateIdentityDataCommandRequest> _commandClient;
     private readonly OctoAssetRepositoryServicesOptions _octoAssetRepositoryServicesOptions;
-    private readonly IOctoResourceStore _resourceStore;
     private readonly ISystemContext _systemContext;
+  
+    
 
-    public UserSchemaService(IOctoService octoService, IOctoResourceStore resourceStore, IOctoClientStore clientStore,
+    public UserSchemaService(IOctoService octoService, ICommandClient<CreateIdentityDataCommandRequest> commandClient,
         OctoAssetRepositoryServicesOptions octoAssetRepositoryServicesOptions)
     {
         _systemContext = octoService.SystemContext;
-        _resourceStore = resourceStore;
-        _clientStore = clientStore;
+        _commandClient = commandClient;
         _octoAssetRepositoryServicesOptions = octoAssetRepositoryServicesOptions;
     }
 
-    public async Task SetupAsync()
+    public int Order => 0;
+
+    public async Task InitializeAsync()
     {
-        using var session = await _systemContext.StartSystemSessionAsync();
+        using var session = await _systemContext.GetSystemSessionAsync();
         session.StartTransaction();
 
-        var version =
+        var assetRepConfiguration =
             await _systemContext.GetConfigurationAsync(session, AssetRepositoryServiceConstants.AssetServiceSchemaVersionKey,
-                0);
-        if (version < AssetRepositoryServiceConstants.AssetServiceSchemaVersionValue)
+                new DefaultConfigurationVersion { Version = -1 });
+        if (assetRepConfiguration == null || assetRepConfiguration.Version < AssetRepositoryServiceConstants.AssetServiceSchemaVersionValue)
         {
-            await CreateApiScopes();
-            await CreateApiResources();
-            await CreateClients();
+            CreateIdentityDataCommandRequest createIdentityDataCommandRequest = new(null);
+            CreateApiScopes(createIdentityDataCommandRequest);
+            CreateApiResources(createIdentityDataCommandRequest);
+            CreateClients(createIdentityDataCommandRequest);
 
+            await _commandClient.GetResponse<GenericCommandResponse>(createIdentityDataCommandRequest);
+            
             await _systemContext.SetConfigurationAsync(session, AssetRepositoryServiceConstants.AssetServiceSchemaVersionKey,
-                AssetRepositoryServiceConstants.AssetServiceSchemaVersionValue);
+                new DefaultConfigurationVersion { Version = AssetRepositoryServiceConstants.AssetServiceSchemaVersionValue });
         }
 
         await session.CommitTransactionAsync();
     }
 
-    private async Task CreateApiScopes()
+    private void CreateApiScopes(CreateIdentityDataCommandRequest createIdentityDataCommandRequest)
     {
-        await _resourceStore.TryCreateApiScopeAsync(new ApiScope(CommonConstants.SystemApiFullAccess,
-            CommonConstants.SystemApiFullAccessDisplayName));
-        await _resourceStore.TryCreateApiScopeAsync(new ApiScope(CommonConstants.SystemApiReadOnly,
-            CommonConstants.SystemApiReadOnlyDisplayName));
+        createIdentityDataCommandRequest.ApiScopes = new List<DistApiScopeDto>
+        {
+            new(CommonConstants.SystemApiFullAccess,
+                CommonConstants.SystemApiFullAccessDisplayName),
+            new(CommonConstants.SystemApiReadOnly,
+                CommonConstants.SystemApiReadOnlyDisplayName)
+        };
     }
 
-    private async Task CreateApiResources()
+    private void CreateApiResources(CreateIdentityDataCommandRequest createIdentityDataCommandRequest)
     {
-        await _resourceStore.GetOrCreateApiResourceAsync(
-            new ApiResource(CommonConstants.SystemApi, CommonConstants.SystemApiDisplayName)
+        createIdentityDataCommandRequest.ApiResources = new List<DistApiResourcesDto>
+        {
+            new (CommonConstants.SystemApi, CommonConstants.SystemApiDisplayName)
             {
                 Description = CommonConstants.SystemApiDescription,
-                Enabled = true,
+                IsEnabled = true,
                 Scopes = new List<string>
                 {
                     CommonConstants.SystemApiFullAccess,
                     CommonConstants.SystemApiReadOnly
                 }
-            });
+            }
+        };
     }
 
-    private async Task CreateClients()
+    private void CreateClients(CreateIdentityDataCommandRequest createIdentityDataCommandRequest)
     {
-        var octoAdminPanel = await _clientStore.FindClientByIdAsync(CommonConstants.OctoAdminPanelClientId);
-        if (octoAdminPanel == null)
+        createIdentityDataCommandRequest.Clients = new List<DistClientDto>
         {
-            var octoAdminPanelClient = new OctoClient
+            new (CommonConstants.OctoAdminPanelClientId, 
+                AssetTexts.Backend_AssetServices_UserSchema_AdminPanel_DisplayName,
+                _octoAssetRepositoryServicesOptions.PublicAdminPanelUrl)
             {
-                ClientId = CommonConstants.OctoAdminPanelClientId,
+                AllowedGrantTypes = [OidcConstants.GrantTypes.AuthorizationCode],
 
-                ClientName = AssetTexts.Backend_AssetServices_UserSchema_AdminPanel_DisplayName,
-                ClientUri = _octoAssetRepositoryServicesOptions.PublicAdminPanelUrl,
-
-                AllowedGrantTypes = new[] { OidcConstants.GrantTypes.AuthorizationCode },
-
-                RequirePkce = true,
-                RequireClientSecret = false,
-
-                AccessTokenType = AccessTokenType.Jwt,
-                AllowAccessTokensViaBrowser = true,
-                AlwaysIncludeUserClaimsInIdToken = true,
                 RequireConsent = false,
-
-                RedirectUris =
-                {
+                
+                RedirectUris = 
+                [
                     _octoAssetRepositoryServicesOptions.PublicAdminPanelUrl.EnsureEndsWith("/")
-                },
-
-                PostLogoutRedirectUris = { _octoAssetRepositoryServicesOptions.PublicAdminPanelUrl.EnsureEndsWith("/") },
-                AllowedCorsOrigins = { _octoAssetRepositoryServicesOptions.PublicAdminPanelUrl.TrimEnd('/') },
+                ],
+                
+                PostLogoutRedirectUris = [ _octoAssetRepositoryServicesOptions.PublicAdminPanelUrl.EnsureEndsWith("/") ],
+                AllowedCorsOrigins = [ _octoAssetRepositoryServicesOptions.PublicAdminPanelUrl.TrimEnd('/') ],
                 AllowOfflineAccess = true,
                 AllowedScopes =
-                {
+                [
                     CommonConstants.Scopes.OpenId,
                     CommonConstants.Scopes.Profile,
                     CommonConstants.Scopes.Email,
@@ -111,87 +111,54 @@ internal class UserSchemaService : IUserSchemaService
                     CommonConstants.SystemApiFullAccess,
                     CommonConstants.IdentityApiFullAccess,
                     CommonConstants.BotApiFullAccess
-                }
-            };
-            await _clientStore.CreateAsync(octoAdminPanelClient);
-        }
-        
-        var octoAssetRepositoryServices =
-            await _clientStore.FindClientByIdAsync(CommonConstants.AssetRepositoryServicesClientId);
-        if (octoAssetRepositoryServices == null)
-        {
-            var appClient = new OctoClient
+                ]
+            },
+            new(CommonConstants.AssetRepositoryServicesClientId, 
+                AssetTexts.Backend_AssetServices_UserSchema_AssetServices_DisplayName,
+                _octoAssetRepositoryServicesOptions.PublicUrl)
             {
-                ClientId = CommonConstants.AssetRepositoryServicesClientId,
-
-                ClientName = AssetTexts.Backend_AssetServices_UserSchema_AssetServices_DisplayName,
-                ClientUri = _octoAssetRepositoryServicesOptions.PublicUrl,
-
-                AllowedGrantTypes = new[] { OidcConstants.GrantTypes.Implicit },
-
-                RequirePkce = true,
-                RequireClientSecret = false,
-
-                AccessTokenType = AccessTokenType.Jwt,
-                AllowAccessTokensViaBrowser = true,
-                AlwaysIncludeUserClaimsInIdToken = true,
-
+                AllowedGrantTypes = [OidcConstants.GrantTypes.Implicit],
+            
                 RedirectUris =
-                {
+                [
                     _octoAssetRepositoryServicesOptions.PublicUrl.EnsureEndsWith("/signin-oidc")
-                },
-
-                PostLogoutRedirectUris = { _octoAssetRepositoryServicesOptions.PublicUrl.EnsureEndsWith("/") },
-                AllowedCorsOrigins = { _octoAssetRepositoryServicesOptions.PublicUrl.TrimEnd('/') },
+                ],
+            
+                PostLogoutRedirectUris = [ _octoAssetRepositoryServicesOptions.PublicUrl.EnsureEndsWith("/") ],
+                AllowedCorsOrigins = [ _octoAssetRepositoryServicesOptions.PublicUrl.TrimEnd('/') ],
                 AllowedScopes =
-                {
+                [
                     CommonConstants.Scopes.OpenId,
                     CommonConstants.Scopes.Profile,
                     CommonConstants.Scopes.Email,
                     JwtClaimTypes.Role
-                }
-            };
-            await _clientStore.CreateAsync(appClient);
-        }
-
-        var octoAssetRepositoryServiceSwaggerClient =
-            await _clientStore.FindClientByIdAsync(CommonConstants.AsserRepositoryServicesSwaggerClientId);
-        if (octoAssetRepositoryServiceSwaggerClient == null)
-        {
-            var appClient = new OctoClient
+                ]
+            },
+            new (CommonConstants.AsserRepositoryServicesSwaggerClientId, 
+                AssetTexts.Backend_AssetServices_UserSchema_Swagger_DisplayName, 
+                _octoAssetRepositoryServicesOptions.PublicUrl)
             {
-                ClientId = CommonConstants.AsserRepositoryServicesSwaggerClientId,
-
-                ClientName = AssetTexts.Backend_AssetServices_UserSchema_Swagger_DisplayName,
-                ClientUri = _octoAssetRepositoryServicesOptions.PublicUrl,
-
-                AllowedGrantTypes = new[] { OidcConstants.GrantTypes.AuthorizationCode },
-
-                RequirePkce = true,
-                RequireClientSecret = false,
-
-                AccessTokenType = AccessTokenType.Jwt,
-                AllowAccessTokensViaBrowser = true,
-                AlwaysIncludeUserClaimsInIdToken = true,
-
+                AllowedGrantTypes = [OidcConstants.GrantTypes.AuthorizationCode],
+            
                 RedirectUris =
-                {
+                [
                     _octoAssetRepositoryServicesOptions.PublicUrl.EnsureEndsWith("/swagger/oauth2-redirect.html")
-                },
-
-                PostLogoutRedirectUris = { _octoAssetRepositoryServicesOptions.PublicUrl.EnsureEndsWith("/") },
-                AllowedCorsOrigins = { _octoAssetRepositoryServicesOptions.PublicUrl.TrimEnd('/') },
+                ],
+            
+                PostLogoutRedirectUris = [ _octoAssetRepositoryServicesOptions.PublicUrl.EnsureEndsWith("/") ],
+                AllowedCorsOrigins = [ _octoAssetRepositoryServicesOptions.PublicUrl.TrimEnd('/') ],
                 AllowedScopes =
-                {
+                [
                     CommonConstants.Scopes.OpenId,
                     CommonConstants.Scopes.Profile,
                     CommonConstants.Scopes.Email,
                     JwtClaimTypes.Role,
                     CommonConstants.SystemApiFullAccess,
                     CommonConstants.SystemApiReadOnly
-                }
-            };
-            await _clientStore.CreateAsync(appClient);
-        }
+                ]
+            }
+        };
+       
+
     }
 }

@@ -1,12 +1,11 @@
-using System.Collections.Generic;
-using System.Linq;
 using GraphQL;
 using GraphQL.Builders;
 using GraphQL.Types;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Utils;
-using Meshmakers.Octo.Common.Shared.DataTransferObjects;
-using Meshmakers.Octo.SystematizedData.Persistence.CkRuleEngine.Cache;
-using Meshmakers.Octo.SystematizedData.Persistence.DatabaseEntities;
+using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
+using Meshmakers.Octo.ConstructionKit.Contracts.DependencyGraph;
+using Meshmakers.Octo.ConstructionKit.Contracts.Services;
+using Meshmakers.Octo.Runtime.Contracts.RepositoryEntities;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
 
@@ -27,39 +26,43 @@ public sealed class RtEntityGenericDtoType : ObjectGraphType<RtEntityDto>
         Field(x => x.RtChangedDateTime, true);
         Field(x => x.RtWellKnownName, true);
 
-        Connection<RtEntityAttributeDtoType>()
-            .Name("attributes")
+        Connection<RtEntityAttributeDtoType>("attributes")
             .Argument<ListGraphType<StringGraphType>>(Statics.AttributeNamesFilterArg, "Filter of attribute names")
             .Resolve(ResolveAttributes);
     }
 
     private object ResolveAttributes(IResolveConnectionContext<RtEntityDto> ctx)
     {
-        var graphQlContext = (GraphQLUserContext)ctx.UserContext;
+        var ckCacheService = ctx.RequestServices?.GetRequiredService<ICkCacheService>();
+        if (ckCacheService == null)
+        {
+            throw AssetRepositoryException.ServiceNotRegistered(typeof(ICkCacheService));
+        }
+        var graphQlContext = (GraphQlUserContext)ctx.UserContext;
 
         var filterAttributeNames = ctx.GetArgument<IEnumerable<string>>(Statics.AttributeNamesFilterArg);
 
-        var entityCacheItem = graphQlContext.TenantContext.CkCache.GetEntityCacheItem(ctx.Source.CkId);
+        var entityCacheItem = ckCacheService.GetCkType(graphQlContext.TenantId, ctx.Source.CkTypeId);
 
-        IEnumerable<AttributeCacheItem> resultList;
+        IEnumerable<CkTypeAttributeGraph> resultList;
         if (filterAttributeNames == null)
         {
-            resultList = entityCacheItem.Attributes.Values;
+            resultList = entityCacheItem.AllAttributes.Values;
         }
         else
         {
             resultList =
-                entityCacheItem.Attributes.Values.Where(a =>
+                entityCacheItem.AllAttributes.Values.Where(a =>
                     filterAttributeNames.Contains(a.AttributeName.ToCamelCase()));
         }
 
         return ConnectionUtils.ToConnection(
-            resultList.Select(item => CreateRtEntityAttributeDto((RtEntity)ctx.Source.UserContext, item)),
+            resultList.Select(item => CreateRtEntityAttributeDto((RtEntity)ctx.Source.UserContext!, item)),
             ctx, null);
     }
 
     private RtEntityAttributeDto CreateRtEntityAttributeDto(RtEntity rtEntity,
-        AttributeCacheItem attributeCacheItem)
+        CkTypeAttributeGraph attributeCacheItem)
     {
         var attributeDto = new RtEntityAttributeDto
         {

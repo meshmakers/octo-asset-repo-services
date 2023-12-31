@@ -26,10 +26,4 @@ public class OctoGraphQLException : Exception
     public OctoGraphQLException(string message, Exception inner) : base(message, inner)
     {
     }
-
-    protected OctoGraphQLException(
-        SerializationInfo info,
-        StreamingContext context) : base(info, context)
-    {
-    }
 }

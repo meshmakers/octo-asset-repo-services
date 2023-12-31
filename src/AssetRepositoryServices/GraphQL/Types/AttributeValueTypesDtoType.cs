@@ -1,5 +1,5 @@
 using GraphQL.Types;
-using Meshmakers.Octo.Common.Shared.DataTransferObjects;
+using Meshmakers.Octo.ConstructionKit.Contracts.DataTransferObjects;
 
 #pragma warning disable 1591
 

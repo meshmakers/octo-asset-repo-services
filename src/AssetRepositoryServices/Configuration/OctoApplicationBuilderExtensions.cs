@@ -1,12 +1,8 @@
-using System;
 using GraphQL.Server.Ui.Playground;
 using Meshmakers.Octo.Backend.AssetRepositoryServices;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Middleware;
-using Meshmakers.Octo.Backend.AssetRepositoryServices.Services;
-using Meshmakers.Octo.Backend.Swagger.Configuration;
-using Meshmakers.Octo.SystematizedData.Persistence.Configuration;
+using Meshmakers.Octo.Services.Swagger.Configuration;
 using Microsoft.AspNetCore.HttpOverrides;
-using Microsoft.Extensions.DependencyInjection;
 
 // ReSharper disable once CheckNamespace
 namespace Microsoft.AspNetCore.Builder;
@@ -22,7 +18,7 @@ public static class OctoApplicationBuilderExtensions
     /// <param name="app">The application.</param>
     /// <returns></returns>
     // ReSharper disable once UnusedMethodReturnValue.Global
-    public static IApplicationBuilder UseOcto(
+    public static IApplicationBuilder UseOctoAssetRepositoryServices(
         this IApplicationBuilder app)
     {
         if (app == null)
@@ -36,15 +32,7 @@ public static class OctoApplicationBuilderExtensions
 
     private static void ConfigureOcto(IApplicationBuilder app)
     {
-        app.UseOctoPersistence();
         app.UseOctoApiVersioningAndDocumentation();
-
-        var scopeFactory = app.ApplicationServices.GetRequiredService<IServiceScopeFactory>();
-        using (var scope = scopeFactory.CreateScope())
-        {
-            var userSchemaService = scope.ServiceProvider.GetRequiredService<IUserSchemaService>();
-            userSchemaService.SetupAsync().GetAwaiter().GetResult();
-        }
 
         app.UseForwardedHeaders(new ForwardedHeadersOptions
         {

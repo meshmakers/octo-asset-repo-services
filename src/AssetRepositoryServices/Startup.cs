@@ -24,13 +24,15 @@ public class Startup
     // This method gets called by the runtime. Use this method to add services to the container.
     public void ConfigureServices(IServiceCollection services)
     {
-        services.AddSingleton<ICorsPolicyProvider, CorsPolicyProvider>();
+        services.AddSingleton<CorsPolicyProvider>();
+        services.AddSingleton<ICorsPolicyProvider>(p=> p.GetRequiredService<CorsPolicyProvider>());
         services.AddCors();
 
         services.Configure<RouteOptions>(options =>
             options.ConstraintMap.Add("tenantId", typeof(TenantIdRouteConstraint)));
 
-        services.AddOcto(
+        services.AddRuntimeEngine()
+            .AddOctoAssetRepositoryServices(
             systemOptions => Configuration.GetSection("System").Bind(systemOptions),
             options => Configuration.GetSection("AssetRepository").Bind(options));
     }
@@ -50,7 +52,7 @@ public class Startup
 
         app.UseCors();
 
-        app.UseOcto();
+        app.UseOctoAssetRepositoryServices();
 
         app.UseHttpsRedirection();
 

@@ -1,6 +1,8 @@
+using Meshmakers.Octo.ConstructionKit.Contracts;
+
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL;
 
-public class Statics
+internal static class Statics
 {
     internal const string CkId = "CkId";
     internal const string RoleId = "RoleId";
@@ -23,4 +25,9 @@ public class Statics
     internal const string LargeBinaryIdArg = "largeBinaryId";
     internal const string LargeBinaryDataArg = "binaryData";
     internal const string GroupByArg ="groupBy";
+    
+    public static string GetGraphQlName(this CkId<CkTypeId> name)
+    {
+        return name.ToString().Replace(".", "_");
+    }
 }

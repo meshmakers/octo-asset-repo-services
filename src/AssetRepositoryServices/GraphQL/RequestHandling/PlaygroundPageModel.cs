@@ -1,4 +1,3 @@
-using System.IO;
 using System.Reflection;
 using System.Text;
 using System.Text.Json;
@@ -10,7 +9,7 @@ internal class PlaygroundPageModel
 {
     private readonly string _graphQlEndPoint;
     private readonly PlaygroundOptions _options;
-    private string _playgroundCsHtml;
+    private string? _playgroundCsHtml;
 
     public PlaygroundPageModel(string graphQlEndPoint, PlaygroundOptions options)
     {
@@ -29,6 +28,10 @@ internal class PlaygroundPageModel
         using (var manifestResourceStream =
                assembly.GetManifestResourceStream("GraphQL.Server.Ui.Playground.Internal.playground.cshtml"))
         {
+            if (manifestResourceStream == null)
+            {
+                throw new InvalidOperationException("Could not load embedded resource");
+            }
             using (var streamReader = new StreamReader(manifestResourceStream))
             {
                 var builder = new StringBuilder(streamReader.ReadToEnd())

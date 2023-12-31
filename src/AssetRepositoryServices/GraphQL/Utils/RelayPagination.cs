@@ -1,9 +1,8 @@
-using System;
 using static Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Utils.ConnectionUtils;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Utils;
 
-public static class RelayPagination
+internal static class RelayPagination
 {
     /// <summary>
     ///     Apply Facebook Relay pagination as described at
@@ -23,9 +22,9 @@ public static class RelayPagination
     /// </param>
     /// <param name="before">Only return edges coming before the edge represented by this cursor.</param>
     /// <returns>An <see cref="EdgeRange" /> that defines the range of edges to return.</returns>
-    public static EdgeRange CalculateEdgeRange(int edgeCount, int? first = null, string after = null,
+    public static EdgeRange CalculateEdgeRange(int edgeCount, int? first = null, string? after = null,
         int? last = null,
-        string before = null)
+        string? before = null)
     {
         var range = ApplyCursorToEdges(edgeCount, after, before);
         if (first != null)
@@ -51,7 +50,7 @@ public static class RelayPagination
         return range;
     }
 
-    private static EdgeRange ApplyCursorToEdges(int edgeCount, string after, string before)
+    private static EdgeRange ApplyCursorToEdges(int edgeCount, string? after, string? before)
     {
         const int outOfRange = -2;
         // only use "after" cursor if it represents an edge in [0, edgeCount-1]

@@ -1,8 +1,6 @@
-using System;
-
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Utils;
 
-public struct EdgeRange
+internal struct EdgeRange
 {
     public EdgeRange(int startOffset, int endOffset)
     {

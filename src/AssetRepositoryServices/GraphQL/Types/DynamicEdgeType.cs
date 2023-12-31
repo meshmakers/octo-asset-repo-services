@@ -7,7 +7,7 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
 ///     Implements an edge GraphQL type for dynamic creation (without using generic types - because we create types based
 ///     on data source settings!)
 /// </summary>
-public class DynamicEdgeType : ObjectGraphType<object>
+public sealed class DynamicEdgeType : ObjectGraphType<object>
 {
     /// <summary>
     ///     Constructor
@@ -22,7 +22,7 @@ public class DynamicEdgeType : ObjectGraphType<object>
 
         Name = name;
         Description = description;
-        Field<NonNullGraphType<StringGraphType>>().Name("cursor").Description("A cursor for use in pagination");
+        Field<NonNullGraphType<StringGraphType>>("cursor").Description("A cursor for use in pagination");
 
         this.Field("node", "The item at the end of the edge", nodeType);
     }

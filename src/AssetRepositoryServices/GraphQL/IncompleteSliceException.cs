@@ -3,7 +3,7 @@ using System;
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL;
 
 [Serializable]
-public class IncompleteSliceException : ArgumentException
+internal class IncompleteSliceException : ArgumentException
 {
     public IncompleteSliceException() : this("The provided data slice does not contain all expected items.")
     {

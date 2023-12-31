@@ -1,9 +1,5 @@
-using System;
 using System.Collections;
-using System.Collections.Generic;
-using System.Linq;
 using System.Reflection;
-using System.Threading.Tasks;
 using GraphQL;
 using GraphQL.Builders;
 using GraphQL.DataLoader;
@@ -13,10 +9,9 @@ using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Caches;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.RequestHandling;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Utils;
-using Meshmakers.Octo.Common.Shared;
-using Meshmakers.Octo.SystematizedData.Persistence;
-using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Routing;
+using Meshmakers.Octo.Communication.Contracts;
+using Meshmakers.Octo.ConstructionKit.Contracts;
+using Meshmakers.Octo.Runtime.Contracts.MongoDb;
 using Newtonsoft.Json;
 using ObjectExtensions = GraphQL.ObjectExtensions;
 
@@ -26,12 +21,11 @@ internal static class Helpers
 {
     internal static ITenantContext GetTenantContext(IDictionary<string, object?> context)
     {
-        ITenantContext tenantContext = null;
-        if (context is GraphQLUserContext userContext)
+        ITenantContext? tenantContext = null;
+        if (context is GraphQlUserContext userContext)
         {
             tenantContext = userContext.TenantContext;
         }
-
 
         // Client tried to use an invalid tenant
         if (tenantContext == null)
@@ -43,15 +37,15 @@ internal static class Helpers
     }
 
 
-    internal static FieldType Field<TSourceType>(this ComplexGraphType<TSourceType> _this,
+    internal static FieldType Field<TSourceType>(this ComplexGraphType<TSourceType> complexGraphType,
         string name,
-        string description = null,
-        IGraphType graphType = null,
-        QueryArguments arguments = null,
-        Func<IResolveFieldContext<TSourceType>, object> resolve = null,
-        string deprecationReason = null)
+        string? description = null,
+        IGraphType? graphType = null,
+        QueryArguments? arguments = null,
+        Func<IResolveFieldContext<TSourceType>, object?>? resolve = null,
+        string? deprecationReason = null)
     {
-        return _this.AddField(new FieldType
+        return complexGraphType.AddField(new FieldType
         {
             Name = name,
             Description = description,
@@ -62,15 +56,15 @@ internal static class Helpers
         });
     }
 
-    internal static FieldType FieldAsync<TSourceType>(this ComplexGraphType<TSourceType> _this,
+    internal static FieldType FieldAsync<TSourceType>(this ComplexGraphType<TSourceType> complexGraphType,
         string name,
-        string description = null,
-        IGraphType graphType = null,
-        QueryArguments arguments = null,
-        Func<IResolveFieldContext<TSourceType>, ValueTask<object>> resolve = null,
-        string deprecationReason = null)
+        string? description = null,
+        IGraphType? graphType = null,
+        QueryArguments? arguments = null,
+        Func<IResolveFieldContext<TSourceType>, ValueTask<object?>>? resolve = null,
+        string? deprecationReason = null)
     {
-        return _this.AddField(new FieldType
+        return complexGraphType.AddField(new FieldType
         {
             Name = name,
             Description = description,
@@ -82,7 +76,7 @@ internal static class Helpers
     }
 
     public static ConnectionBuilder<TSourceType> Connection<TNodeType, TGraphType, TSourceType>(
-        this ComplexGraphType<TNodeType> _this, IGraphTypesCache entityDtoCache, TGraphType itemType,
+        this ComplexGraphType<TNodeType> complexGraphType, IGraphTypesCache entityDtoCache, TGraphType itemType,
         string prefixName)
         where TGraphType : IGraphType
     {
@@ -92,86 +86,55 @@ internal static class Helpers
             ConnectionBuilder<TSourceType>.Create<TGraphType>(
                 $"{prefixName}{CommonConstants.GraphQlConnectionSuffix}");
         connectionBuilder.FieldType.ResolvedType = type;
-        _this.AddField(connectionBuilder.FieldType);
+        complexGraphType.AddField(connectionBuilder.FieldType);
         return connectionBuilder;
     }
 
     public static FieldType AssociationField<TSourceType>(
-        this ComplexGraphType<TSourceType> _this,
+        this ComplexGraphType<TSourceType> complexGraphType,
         IGraphTypesCache graphTypesCache, IDataLoaderContextAccessor dataLoaderAccessor,
-        IOctoSessionAccessor sessionAccessor, string name, IReadOnlyList<string> allowedTypes, string originCkId,
-        string roleId, GraphDirections graphDirection)
+        IOctoSessionAccessor sessionAccessor, string name, IReadOnlyList<CkId<CkTypeId>> allowedTypes, CkId<CkTypeId> originCkId,
+        CkId<CkAssociationRoleId>  roleId, GraphDirections graphDirection)
     {
-        var graphTypes = allowedTypes.Select(ckId => graphTypesCache.GetOrCreate(ckId));
+        var graphTypes = allowedTypes.Select(graphTypesCache.GetOrCreate);
 
         var unionType = new RtEntityAssociationType(
-            $"{_this.Name}_{name}{CommonConstants.GraphQlUnionSuffix}",
-            $"Association {roleId} ({graphDirection}) of entity type {_this.Name}", graphTypesCache, dataLoaderAccessor,
+            $"{complexGraphType.Name}_{name}{CommonConstants.GraphQlUnionSuffix}",
+            $"Association {roleId} ({graphDirection}) of entity type {complexGraphType.Name}", graphTypesCache, dataLoaderAccessor,
             sessionAccessor, graphTypes, originCkId, roleId, graphDirection);
 
-        return _this.Field(name, null, unionType, resolve: context => context.Source);
+        return complexGraphType.Field(name, null, unionType, resolve: context => context.Source);
     }
 
     public static ConnectionBuilder<TSourceType> AddMetadata<TSourceType>(
-        this ConnectionBuilder<TSourceType> _this,
+        this ConnectionBuilder<TSourceType> builder,
         string key, object value)
     {
-        _this.FieldType.Metadata.Add(key, value);
-        return _this;
+        builder.FieldType.Metadata.Add(key, value);
+        return builder;
     }
 
     public static FieldBuilder<TSourceType, TReturnType> Metadata<TSourceType, TReturnType>(
-        this FieldBuilder<TSourceType, TReturnType> _this,
+        this FieldBuilder<TSourceType, TReturnType> builder,
         string key, object value)
 
     {
-        _this.FieldType.Metadata.Add(key, value);
-        return _this;
+        builder.FieldType.Metadata.Add(key, value);
+        return builder;
     }
 
-    public static FieldType AddMetadata(this FieldType _this,
+    public static FieldType AddMetadata(this FieldType fieldType,
         string key, object value)
     {
-        _this.Metadata.Add(key, value);
-        return _this;
+        fieldType.Metadata.Add(key, value);
+        return fieldType;
     }
 
-    public static string GetTenantId(this HttpContext _this)
-    {
-        return (string)_this.GetRouteValue("tenantId");
-    }
 
-    public static List<T> ToList<T>(this object source) where T : class, new()
-    {
-        if (source == null)
-        {
-            return null;
-        }
-
-        var result = new List<T>();
-
-        if (source is IList<object> list)
-        {
-            foreach (var item in list)
-            {
-                if (item is Dictionary<string, object> dict)
-                {
-                    result.Add(dict.ToObjectWithWithUnknownProperties<T>());
-                }
-                else
-                {
-                    throw new NotSupportedException();
-                }
-            }
-        }
-
-        return result;
-    }
-
-    public static T ToObjectWithWithUnknownProperties<T>(this IDictionary<string, object> source)
+    public static T? ToObjectWithWithUnknownProperties<T>(this IDictionary<string, object?> source)
         where T : class, new()
     {
-        return (T)source.ToObjectWithWithUnknownProperties(typeof(T));
+        return (T?)source.ToObjectWithWithUnknownProperties(typeof(T));
     }
 
     /// <summary>
@@ -179,11 +142,11 @@ internal static class Helpers
     /// </summary>
     /// <param name="source">The source of values.</param>
     /// <param name="type">The type to create.</param>
-    public static object ToObjectWithWithUnknownProperties(this IDictionary<string, object> source, Type type)
+    private static object? ToObjectWithWithUnknownProperties(this IDictionary<string, object?> source, Type type)
     {
         var obj = Activator.CreateInstance(type);
 
-        Dictionary<string, object> unknownPropertyDictionary = null;
+        Dictionary<string, object?>? unknownPropertyDictionary = null;
 
         foreach (var item in source)
         {
@@ -203,7 +166,7 @@ internal static class Helpers
 
                     if (dictionaryType != null)
                     {
-                        unknownPropertyDictionary = new Dictionary<string, object>();
+                        unknownPropertyDictionary = new Dictionary<string, object?>();
                         dictionaryType.SetValue(obj, unknownPropertyDictionary, null);
                     }
                 }
@@ -221,7 +184,7 @@ internal static class Helpers
     /// <param name="propertyValue">The value to be converted.</param>
     /// <param name="fieldType">The desired type.</param>
     /// <remarks>There is special handling for strings, IEnumerable&lt;T&gt;, Nullable&lt;T&gt;, and Enum.</remarks>
-    public static object GetPropertyValue2(this object propertyValue, Type fieldType)
+    private static object? GetPropertyValue2(this object? propertyValue, Type fieldType)
     {
         // Short-circuit conversion if the property value already
         if (fieldType.IsInstanceOfType(propertyValue))
@@ -248,12 +211,25 @@ internal static class Helpers
 
             if (implementsIList && !fieldType.IsArray)
             {
-                newArray = (IList)Activator.CreateInstance(fieldType);
+                var list = Activator.CreateInstance(fieldType);
+                if (list == null || !(list is IList myList))
+                {
+                    throw new InvalidOperationException($"Could not create instance of type {fieldType.FullName}");
+                }
+                    
+                newArray = myList;
             }
             else
             {
                 var genericListType = typeof(List<>).MakeGenericType(elementType);
-                newArray = (IList)Activator.CreateInstance(genericListType);
+                var list = Activator.CreateInstance(genericListType);
+
+                if (list == null || !(list is IList myList))
+                {
+                    throw new InvalidOperationException($"Could not create instance of type {fieldType.FullName}");
+                }
+
+                newArray = myList;
             }
 
             if (!(propertyValue is IEnumerable valueList))
@@ -291,7 +267,7 @@ internal static class Helpers
             fieldType = nullableFieldType;
         }
 
-        if (propertyValue is Dictionary<string, object> objects)
+        if (propertyValue is Dictionary<string, object?> objects)
         {
             return ToObjectWithWithUnknownProperties(objects, fieldType);
         }
@@ -310,13 +286,16 @@ internal static class Helpers
             }
 
             var str = value.ToString();
-            value = Enum.Parse(fieldType, str, true);
+            if (!string.IsNullOrWhiteSpace(str))
+            {
+                value = Enum.Parse(fieldType, str, true);
+            }
         }
 
         return ConvertValue(value, fieldType);
     }
 
-    private static object ConvertValue(object value, Type targetType)
+    private static object? ConvertValue(object? value, Type targetType)
     {
         return ValueConverter.ConvertTo(value, targetType);
     }

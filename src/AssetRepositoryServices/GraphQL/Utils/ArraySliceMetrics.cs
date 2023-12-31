@@ -1,5 +1,3 @@
-using System;
-using System.Collections.Generic;
 using GraphQL.Builders;
 using Meshmakers.Common.Shared;
 
@@ -8,14 +6,14 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Utils;
 /// <summary>
 ///     Factory methods for <see cref="ArraySliceMetrics{TSource}" />
 /// </summary>
-public static class ArraySliceMetrics
+internal static class ArraySliceMetrics
 {
     public static ArraySliceMetrics<TSource> Create<TSource>(
         IList<TSource> slice,
         int? first = null,
-        string after = null,
+        string? after = null,
         int? last = null,
-        string before = null,
+        string? before = null,
         bool strictCheck = true
     )
     {
@@ -27,9 +25,9 @@ public static class ArraySliceMetrics
         int sliceStartIndex,
         int totalCount,
         int? first = null,
-        string after = null,
+        string? after = null,
         int? last = null,
-        string before = null,
+        string? before = null,
         bool strictCheck = true
     )
     {
@@ -61,16 +59,16 @@ public static class ArraySliceMetrics
     }
 }
 
-public class ArraySliceMetrics<TSource>
+internal class ArraySliceMetrics<TSource>
 {
     private readonly IList<TSource> _items;
 
     public ArraySliceMetrics(
         IList<TSource> slice,
         int? first,
-        string after,
+        string? after,
         int? last,
-        string before,
+        string? before,
         bool strictCheck = true
     ) : this(slice, first, after, last, before, 0, slice.Count, strictCheck)
     {
@@ -79,9 +77,9 @@ public class ArraySliceMetrics<TSource>
     public ArraySliceMetrics(
         IList<TSource> slice,
         int? first,
-        string after,
+        string? after,
         int? last,
-        string before,
+        string? before,
         int sliceStartIndex,
         int totalCount,
         bool strictCheck = true
@@ -159,27 +157,4 @@ public class ArraySliceMetrics<TSource>
     }
 }
 
-[Obsolete("Use ArraySliceMetrics.Create instead")]
-public class ArraySliceMetrics<TSource, TParent> : ArraySliceMetrics<TSource>
-{
-    [Obsolete("Use ArraySliceMetrics.Create instead")]
-    public ArraySliceMetrics(
-        IList<TSource> slice,
-        ResolveConnectionContext<TParent> context,
-        bool strictCheck = true
-    ) : base(slice, context.First, context.After, context.Last, context.Before, 0, slice.Count, strictCheck)
-    {
-    }
 
-    [Obsolete("Use ArraySliceMetrics.Create instead")]
-    public ArraySliceMetrics(
-        IList<TSource> slice,
-        ResolveConnectionContext<TParent> context,
-        int sliceStartIndex,
-        int totalCount,
-        bool strictCheck = true
-    ) : base(slice, context.First, context.After, context.Last, context.Before, sliceStartIndex, totalCount,
-        strictCheck)
-    {
-    }
-}

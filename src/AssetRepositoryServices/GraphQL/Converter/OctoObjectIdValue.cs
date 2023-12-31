@@ -1,7 +1,7 @@
 using System.Diagnostics;
 using GraphQLParser;
 using GraphQLParser.AST;
-using Meshmakers.Octo.Common.Shared;
+using Meshmakers.Octo.ConstructionKit.Contracts;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Converter;
 

@@ -2,7 +2,7 @@ using GraphQL;
 using GraphQL.Types;
 using GraphQLParser.AST;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Converter;
-using Meshmakers.Octo.Common.Shared;
+using Meshmakers.Octo.ConstructionKit.Contracts;
 using MongoDB.Bson;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
@@ -13,7 +13,7 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
 public class OctoObjectIdType : ScalarGraphType
 {
     /// <inheritdoc />
-    public override object ParseLiteral(GraphQLValue value)
+    public override object? ParseLiteral(GraphQLValue value)
     {
         if (value is OctoObjectIdValue octoObjectIdValue)
         {
@@ -26,13 +26,13 @@ public class OctoObjectIdType : ScalarGraphType
     }
 
     /// <inheritdoc />
-    public override object ParseValue(object value)
+    public override object? ParseValue(object? value)
     {
         return ValueConverter.ConvertTo(value, typeof(OctoObjectId));
     }
 
     /// <inheritdoc />
-    public override object Serialize(object value)
+    public override object? Serialize(object? value)
     {
         if (value is OctoObjectId octoObjectId)
         {

@@ -1,11 +1,9 @@
-using System;
 using System.Diagnostics.CodeAnalysis;
 using System.Text;
-using System.Threading.Tasks;
 using GraphQL.Server.Ui.Playground;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.RequestHandling;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.Services;
-using Microsoft.AspNetCore.Http;
+using Meshmakers.Octo.Services.Common;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Middleware;
 
@@ -17,12 +15,12 @@ public class PlaygroundTenantMiddleware
     private readonly IOctoService _octoService;
     private readonly PlaygroundOptions _options;
 
-    private string _lastTenantId;
+    private string? _lastTenantId;
 
     /// <summary>
     ///     The page model used to render Playground
     /// </summary>
-    private PlaygroundPageModel _pageModel;
+    private PlaygroundPageModel? _pageModel;
 
     /// <summary>
     ///     Create a new <see cref="PlaygroundMiddleware" />
@@ -52,11 +50,11 @@ public class PlaygroundTenantMiddleware
         }
 
         var tenantId = httpContext.GetTenantId();
-        using var systemSession = await _octoService.SystemContext.StartSystemSessionAsync();
+        using var systemSession = await _octoService.SystemContext.GetSystemSessionAsync();
         systemSession.StartTransaction();
 
-        if (string.IsNullOrWhiteSpace(tenantId) ||
-            !await _octoService.SystemContext.IsTenantExistingAsync(systemSession, tenantId))
+        if (!string.IsNullOrWhiteSpace(tenantId) &&
+            !await _octoService.SystemContext.IsChildTenantExistingAsync(systemSession, tenantId))
         {
             httpContext.Response.StatusCode = 403; //NotFound
             await httpContext.Response.WriteAsync("Invalid tenant");
@@ -68,11 +66,8 @@ public class PlaygroundTenantMiddleware
         await InvokePlayground(httpContext.Response, tenantId);
     }
 
-    private async Task InvokePlayground(HttpResponse httpResponse, string tenantId)
+    private async Task InvokePlayground(HttpResponse httpResponse, string? tenantId)
     {
-        httpResponse.ContentType = "text/html";
-        httpResponse.StatusCode = 200;
-
         if (string.Compare(tenantId, _lastTenantId, StringComparison.OrdinalIgnoreCase) != 0)
         {
             _lastTenantId = tenantId;
@@ -81,7 +76,17 @@ public class PlaygroundTenantMiddleware
                     _options);
         }
 
-        var data = Encoding.UTF8.GetBytes(_pageModel.Render());
-        await httpResponse.Body.WriteAsync(data, 0, data.Length);
+        if (_pageModel != null)
+        {
+            var data = Encoding.UTF8.GetBytes(_pageModel.Render());
+            
+            httpResponse.ContentType = "text/html";
+            httpResponse.StatusCode = 200;
+            await httpResponse.Body.WriteAsync(data, 0, data.Length);
+        }
+        else
+        {
+            httpResponse.StatusCode = 400;
+        }
     }
 }

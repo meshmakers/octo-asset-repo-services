@@ -1,4 +1,4 @@
-using Meshmakers.Octo.SystematizedData.Persistence;
+using Meshmakers.Octo.Runtime.Contracts.MongoDb;
 
 #pragma warning disable 1591
 

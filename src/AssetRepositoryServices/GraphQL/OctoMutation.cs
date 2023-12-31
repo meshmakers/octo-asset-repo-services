@@ -1,8 +1,3 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading;
-using System.Threading.Tasks;
 using GraphQL;
 using GraphQL.Resolvers;
 using GraphQL.Types;
@@ -10,14 +5,17 @@ using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Caches;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.RequestHandling;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Utils;
-using Meshmakers.Octo.Common.Shared;
-using Meshmakers.Octo.Common.Shared.DataTransferObjects;
-using Meshmakers.Octo.SystematizedData.Persistence;
-using Meshmakers.Octo.SystematizedData.Persistence.CkRuleEngine;
-using Meshmakers.Octo.SystematizedData.Persistence.CkRuleEngine.Cache;
-using Meshmakers.Octo.SystematizedData.Persistence.DataAccess;
-using Meshmakers.Octo.SystematizedData.Persistence.DatabaseEntities;
-using Microsoft.AspNetCore.Http;
+using Meshmakers.Octo.Communication.Contracts;
+using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
+using Meshmakers.Octo.ConstructionKit.Contracts;
+using Meshmakers.Octo.ConstructionKit.Contracts.DependencyGraph;
+using Meshmakers.Octo.ConstructionKit.Contracts.Messages;
+using Meshmakers.Octo.ConstructionKit.Contracts.Services;
+using Meshmakers.Octo.Runtime.Contracts;
+using Meshmakers.Octo.Runtime.Contracts.MongoDb;
+using Meshmakers.Octo.Runtime.Contracts.MongoDb.Repository;
+using Meshmakers.Octo.Runtime.Contracts.Repositories.Query;
+using Meshmakers.Octo.Runtime.Contracts.RepositoryEntities;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL;
 
@@ -26,18 +24,16 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL;
 /// </summary>
 public sealed class OctoMutation : ObjectGraphType
 {
-    private readonly ICkCache _ckCache;
     private readonly IOctoSessionAccessor _sessionAccessor;
 
-    internal OctoMutation(IEnumerable<EntityCacheItem> entityCacheItems, IGraphTypesCache graphTypesCache,
-        IOctoSessionAccessor sessionAccessor, ICkCache ckCache)
+    internal OctoMutation(IEnumerable<CkTypeGraph> entityCacheItems, IGraphTypesCache graphTypesCache,
+        IOctoSessionAccessor sessionAccessor)
     {
         _sessionAccessor = sessionAccessor;
-        _ckCache = ckCache;
         foreach (var cacheItem in entityCacheItems)
         {
-            var inputType = graphTypesCache.GetOrCreateInput(cacheItem.CkId);
-            var outputType = graphTypesCache.GetOrCreate(cacheItem.CkId);
+            var inputType = graphTypesCache.GetOrCreateInput(cacheItem.CkTypeId);
+            var outputType = graphTypesCache.GetOrCreate(cacheItem.CkTypeId);
 
             var createArgument = new QueryArgument(new NonNullGraphType(new ListGraphType(inputType)))
                 { Name = Statics.EntitiesArg };
@@ -52,17 +48,17 @@ public sealed class OctoMutation : ObjectGraphType
             this.FieldAsync($"create{outputType.Name}s", $"Creates new entities of type '{outputType.Name}'.",
                     new ListGraphType(outputType),
                     new QueryArguments(createArgument), ResolveCreate)
-                .AddMetadata(Statics.CkId, cacheItem.CkId);
+                .AddMetadata(Statics.CkId, cacheItem.CkTypeId);
 
             this.FieldAsync($"update{outputType.Name}s", $"Updates existing entity of type '{outputType.Name}'.",
                     new ListGraphType(outputType),
                     new QueryArguments(updateArgument), ResolveUpdate)
-                .AddMetadata(Statics.CkId, cacheItem.CkId);
+                .AddMetadata(Statics.CkId, cacheItem.CkTypeId);
 
             this.FieldAsync($"delete{outputType.Name}s", $"Deletes an entity of type '{outputType.Name}'.",
                     new BooleanGraphType(),
                     new QueryArguments(deleteArgument), ResolveDelete)
-                .AddMetadata(Statics.CkId, cacheItem.CkId);
+                .AddMetadata(Statics.CkId, cacheItem.CkTypeId);
         }
 
         AddField(new FieldType
@@ -81,18 +77,20 @@ public sealed class OctoMutation : ObjectGraphType
     private async ValueTask<OctoObjectId> ResolveCreateLargeBinary(IResolveFieldContext<object> context)
     {
         var tenantContext = Helpers.GetTenantContext(context.UserContext);
+        var tenantRepository = tenantContext.GetTenantRepository();
 
         var file = context.GetArgument<IFormFile>(Statics.LargeBinaryDataArg);
         var fileName = file.FileName;
         var contentType = file.ContentType;
 
-        return await tenantContext.Repository.UploadLargeBinaryAsync(fileName, contentType, file.OpenReadStream(),
+        return await tenantRepository.UploadLargeBinaryAsync(fileName, contentType, file.OpenReadStream(),
             CancellationToken.None);
     }
 
-    private async ValueTask<object> ResolveDelete(IResolveFieldContext<object> arg)
+    private async ValueTask<object?> ResolveDelete(IResolveFieldContext<object?> arg)
     {
-        var graphQlUserContext = (GraphQLUserContext)arg.UserContext;
+        var tenantContext = Helpers.GetTenantContext(arg.UserContext);
+        var tenantRepository = tenantContext.GetTenantRepository();
 
         var ckId = arg.FieldDefinition.GetMetadata<string>(Statics.CkId);
 
@@ -100,19 +98,18 @@ public sealed class OctoMutation : ObjectGraphType
 
         try
         {
-            var entityUpdateInfos = new List<EntityUpdateInfo>();
+            var entityUpdateInfos = new List<EntityUpdateInfo<RtEntity>>();
             foreach (var mutationDto in inputObjects)
             {
-                var document = new RtEntity
-                {
-                    RtId = mutationDto.RtId.ToObjectId(),
-                    CkId = ckId
-                };
-
-                entityUpdateInfos.Add(new EntityUpdateInfo(document, EntityModOptions.Delete));
+                entityUpdateInfos.Add(EntityUpdateInfo<RtEntity>.CreateDelete(new RtEntityId(ckId, mutationDto.RtId)));
             }
 
-            await graphQlUserContext.TenantContext.Repository.ApplyChanges(_sessionAccessor.Session, entityUpdateInfos);
+            OperationResult operationResult = new();
+            await tenantRepository.ApplyChangesAsync(_sessionAccessor.Session, entityUpdateInfos, operationResult);
+            if (operationResult.HasErrors || operationResult.HasFatalErrors)
+            {
+                return false;
+            }
             return true;
         }
         catch (OperationFailedException e)
@@ -128,39 +125,60 @@ public sealed class OctoMutation : ObjectGraphType
         }
     }
 
-    private async ValueTask<object> ResolveUpdate(IResolveFieldContext<object> arg)
+    private async ValueTask<object?> ResolveUpdate(IResolveFieldContext<object?> arg)
     {
-        var graphQlUserContext = (GraphQLUserContext)arg.UserContext;
-
+        var ckCacheService = arg.RequestServices?.GetRequiredService<ICkCacheService>();
+        if (ckCacheService == null)
+        {
+            throw AssetRepositoryException.ServiceNotRegistered(typeof(ICkCacheService));
+        }
+        var tenantContext = Helpers.GetTenantContext(arg.UserContext);
+        var tenantRepository = tenantContext.GetTenantRepository();
+        var graphQlUserContext = (GraphQlUserContext)arg.UserContext;
+        
         var ckId = arg.FieldDefinition.GetMetadata<string>(Statics.CkId);
 
         var inputObjects = arg.GetArgument<List<MutationDto<RtEntityDto>>>(Statics.EntitiesArg);
 
         try
         {
-            var entityUpdateInfos = new List<EntityUpdateInfo>();
+            var entityUpdateInfos = new List<EntityUpdateInfo<RtEntity>>();
             var associationUpdateInfoList = new List<AssociationUpdateInfo>();
             foreach (var mutationDto in inputObjects)
             {
+                var rtEntityId = new RtEntityId(ckId, mutationDto.RtId);
                 var document = new RtEntity
                 {
-                    RtId = mutationDto.RtId.ToObjectId(),
-                    CkId = ckId
+                    RtId = mutationDto.RtId,
+                    CkTypeId = ckId
                 };
 
-                RtEntityFromInputObject(document, mutationDto.Item, associationUpdateInfoList);
-                entityUpdateInfos.Add(new EntityUpdateInfo(document, EntityModOptions.Update));
+                RtEntityFromInputObject(ckCacheService, graphQlUserContext.TenantId, document, mutationDto.Item, associationUpdateInfoList);
+                entityUpdateInfos.Add(EntityUpdateInfo<RtEntity>.CreateUpdate(rtEntityId, document));
             }
 
-            await graphQlUserContext.TenantContext.Repository.ApplyChanges(_sessionAccessor.Session, entityUpdateInfos,
-                associationUpdateInfoList);
+            OperationResult operationResult = new();
+            await tenantRepository.ApplyChangesAsync(_sessionAccessor.Session, entityUpdateInfos,
+                associationUpdateInfoList, operationResult);
+            if (operationResult.HasErrors || operationResult.HasFatalErrors)
+            {
+                foreach (var message in operationResult.Messages)
+                {
+                    if (message.MessageLevel == MessageLevel.Error)
+                    {
+                        arg.Errors.Add(new ExecutionError(message.MessageText) 
+                            { Code = string.Format(CommonConstants.GraphQLOperationError, message.MessageNumber)  });
+                    }
+                    else if (message.MessageLevel == MessageLevel.FatalError)
+                    {
+                        arg.Errors.Add(new ExecutionError(message.MessageText) 
+                            { Code = string.Format(CommonConstants.GraphQLOperationFatalError, message.MessageNumber)  });
+                    }
+                }
+                return null;
+            }
 
-            return await GetResultSet(graphQlUserContext.TenantContext.Repository, ckId, entityUpdateInfos);
-        }
-        catch (CkModelViolationException e)
-        {
-            arg.Errors.Add(new ExecutionError(e.Message, e) { Code = CommonConstants.GraphQLCkModelViolation });
-            return null;
+            return await GetResultSet(tenantRepository, ckId, entityUpdateInfos);
         }
         catch (OperationFailedException e)
         {
@@ -175,9 +193,16 @@ public sealed class OctoMutation : ObjectGraphType
         }
     }
 
-    private async ValueTask<object> ResolveCreate(IResolveFieldContext<object> arg)
+    private async ValueTask<object?> ResolveCreate(IResolveFieldContext<object?> arg)
     {
-        var graphQlUserContext = (GraphQLUserContext)arg.UserContext;
+        var ckCacheService = arg.RequestServices?.GetRequiredService<ICkCacheService>();
+        if (ckCacheService == null)
+        {
+            throw AssetRepositoryException.ServiceNotRegistered(typeof(ICkCacheService));
+        }
+        var tenantContext = Helpers.GetTenantContext(arg.UserContext);
+        var tenantRepository = tenantContext.GetTenantRepository();
+        var graphQlUserContext = (GraphQlUserContext)arg.UserContext;
 
         var ckId = arg.FieldDefinition.GetMetadata<string>(Statics.CkId);
 
@@ -185,13 +210,13 @@ public sealed class OctoMutation : ObjectGraphType
 
         try
         {
-            var entityUpdateInfos = new List<EntityUpdateInfo>();
+            var entityUpdateInfos = new List<EntityUpdateInfo<RtEntity>>();
             var associationUpdateInfoList = new List<AssociationUpdateInfo>();
             foreach (var rtEntityDto in inputObjects)
             {
-                var rtEntity = graphQlUserContext.TenantContext.Repository.CreateTransientRtEntity(ckId);
-                RtEntityFromInputObject(rtEntity, rtEntityDto, associationUpdateInfoList);
-                entityUpdateInfos.Add(new EntityUpdateInfo(rtEntity, EntityModOptions.Create));
+                var rtEntity = await tenantRepository.CreateTransientRtEntityAsync(ckId);
+                RtEntityFromInputObject(ckCacheService, graphQlUserContext.TenantId, rtEntity, rtEntityDto, associationUpdateInfoList);
+                entityUpdateInfos.Add(EntityUpdateInfo<RtEntity>.CreateInsert(rtEntity));
             }
 
             var deleteAssociations =
@@ -203,15 +228,28 @@ public sealed class OctoMutation : ObjectGraphType
                 return null;
             }
 
-            await graphQlUserContext.TenantContext.Repository.ApplyChanges(_sessionAccessor.Session, entityUpdateInfos,
-                associationUpdateInfoList);
+            OperationResult operationResult = new();
+            await tenantRepository.ApplyChangesAsync(_sessionAccessor.Session, entityUpdateInfos,
+                associationUpdateInfoList, operationResult);
+            if (operationResult.HasErrors || operationResult.HasFatalErrors)
+            {
+                foreach (var message in operationResult.Messages)
+                {
+                    if (message.MessageLevel == MessageLevel.Error)
+                    {
+                        arg.Errors.Add(new ExecutionError(message.MessageText) 
+                            { Code = string.Format(CommonConstants.GraphQLOperationError, message.MessageNumber)  });
+                    }
+                    else if (message.MessageLevel == MessageLevel.FatalError)
+                    {
+                        arg.Errors.Add(new ExecutionError(message.MessageText) 
+                            { Code = string.Format(CommonConstants.GraphQLOperationFatalError, message.MessageNumber)  });
+                    }
+                }
+                return null;
+            }
 
-            return await GetResultSet(graphQlUserContext.TenantContext.Repository, ckId, entityUpdateInfos);
-        }
-        catch (CkModelViolationException e)
-        {
-            arg.Errors.Add(new ExecutionError(e.Message, e) { Code = CommonConstants.GraphQLCkModelViolation });
-            return null;
+            return await GetResultSet(tenantRepository, ckId, entityUpdateInfos);
         }
         catch (OperationFailedException e)
         {
@@ -227,18 +265,18 @@ public sealed class OctoMutation : ObjectGraphType
     }
 
     private async Task<IEnumerable<RtEntityDto>> GetResultSet(ITenantRepository repository, string ckId,
-        List<EntityUpdateInfo> entityUpdateInfos)
+        List<EntityUpdateInfo<RtEntity>> entityUpdateInfos)
     {
         var resultSet = await repository.GetRtEntitiesByIdAsync(_sessionAccessor.Session, ckId,
-            entityUpdateInfos.Select(x => x.RtEntity.RtId).ToList(), new DataQueryOperation());
+            entityUpdateInfos.Select(x => x.RtEntityId.RtId).ToList(), DataQueryOperation.Create());
 
-        return resultSet.Result.Select(RtEntityDtoType.CreateRtEntityDto);
+        return resultSet.Items.Select(RtEntityDtoType.CreateRtEntityDto);
     }
 
-    private void RtEntityFromInputObject(RtEntity rtEntity, RtEntityDto rtEntityDto,
+    private void RtEntityFromInputObject(ICkCacheService ckCacheService, string tenantId, RtEntity rtEntity, RtEntityDto rtEntityDto,
         List<AssociationUpdateInfo> associations)
     {
-        var metaEntityCacheItem = _ckCache.GetEntityCacheItem(rtEntity.CkId);
+        var metaEntityCacheItem = ckCacheService.GetCkType(tenantId, rtEntity.CkTypeId);
 
         rtEntity.RtWellKnownName = rtEntityDto.RtWellKnownName;
 
@@ -261,30 +299,28 @@ public sealed class OctoMutation : ObjectGraphType
         }
     }
 
-    private bool TryHandleAttribute(RtEntity rtEntity, EntityCacheItem entityCacheItem,
+    private bool TryHandleAttribute(RtEntity rtEntity, CkTypeGraph entityCacheItem,
         KeyValuePair<string, object> item)
     {
         var attributeName = item.Key;
 
-        var attributeCacheItem =
-            entityCacheItem.Attributes.Values.FirstOrDefault(a => a.AttributeName == attributeName);
-        if (attributeCacheItem == null)
+        if (entityCacheItem.AllAttributesByName.TryGetValue(attributeName, out var attributeCacheItem))
         {
-            return false;
+            rtEntity.SetAttributeValue(attributeCacheItem.AttributeName, attributeCacheItem.ValueType, item.Value);
+            return true;
         }
 
-        rtEntity.SetAttributeValue(attributeCacheItem.AttributeName, attributeCacheItem.AttributeValueType, item.Value);
-        return true;
+        return false;
     }
 
     // ReSharper disable once UnusedMethodReturnValue.Local
-    private bool TryHandleInboundAssoc(RtEntity rtEntity, EntityCacheItem entityCacheItem,
+    private bool TryHandleInboundAssoc(RtEntity rtEntity, CkTypeGraph entityCacheItem,
         KeyValuePair<string, object> item, List<AssociationUpdateInfo> associations)
     {
         var assocName = item.Key;
 
-        var associationCacheItem = entityCacheItem.InboundAssociations.Values.SelectMany(x => x)
-            .FirstOrDefault(a => a.Name == assocName);
+        var associationCacheItem = entityCacheItem.Associations.In.All
+            .FirstOrDefault(a => a.NavigationPropertyName == assocName);
         if (associationCacheItem == null)
         {
             return false;
@@ -296,7 +332,7 @@ public sealed class OctoMutation : ObjectGraphType
             var assocInfo = new AssociationUpdateInfo(
                 rtAssociationDto.Target,
                 rtEntity.ToRtEntityId(),
-                associationCacheItem.RoleId,
+                associationCacheItem.CkRoleId,
                 rtAssociationDto.ModOption ?? AssociationModOptionsDto.Create);
             associations.Add(assocInfo);
         }
@@ -305,13 +341,13 @@ public sealed class OctoMutation : ObjectGraphType
     }
 
     // ReSharper disable once UnusedMethodReturnValue.Local
-    private bool TryHandleOutboundAssoc(RtEntity rtEntity, EntityCacheItem entityCacheItem,
+    private bool TryHandleOutboundAssoc(RtEntity rtEntity, CkTypeGraph entityCacheItem,
         KeyValuePair<string, object> item, List<AssociationUpdateInfo> associations)
     {
         var assocName = item.Key;
 
-        var associationCacheItem = entityCacheItem.OutboundAssociations.Values.SelectMany(x => x)
-            .FirstOrDefault(a => a.Name == assocName);
+        var associationCacheItem = entityCacheItem.Associations.Out.All
+            .FirstOrDefault(a => a.NavigationPropertyName == assocName);
         if (associationCacheItem == null)
         {
             return false;
@@ -323,7 +359,7 @@ public sealed class OctoMutation : ObjectGraphType
             var assocInfo = new AssociationUpdateInfo(
                 rtEntity.ToRtEntityId(),
                 rtAssociationDto.Target,
-                associationCacheItem.RoleId,
+                associationCacheItem.CkRoleId,
                 rtAssociationDto.ModOption ?? AssociationModOptionsDto.Create);
             associations.Add(assocInfo);
         }

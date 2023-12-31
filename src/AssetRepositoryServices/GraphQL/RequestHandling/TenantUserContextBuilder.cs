@@ -1,9 +1,8 @@
-using System.Collections.Generic;
-using System.Threading.Tasks;
 using GraphQL.Server.Transports.AspNetCore;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Utils;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.Services;
-using Microsoft.AspNetCore.Http;
+using Meshmakers.Octo.Runtime.Contracts.MongoDb;
+using Meshmakers.Octo.Services.Common;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.RequestHandling;
 
@@ -23,24 +22,22 @@ public class TenantUserContextBuilder : IUserContextBuilder
     }
 
     /// <inheritdoc />
-    public async ValueTask<IDictionary<string, object>> BuildUserContextAsync(HttpContext httpContext, object payload)
+    public async ValueTask<IDictionary<string, object?>?> BuildUserContextAsync(HttpContext httpContext, object? payload)
     {
         var tenantId = httpContext.GetTenantId();
 
-        using var systemSession = await _octoService.SystemContext.StartSystemSessionAsync();
+        using var systemSession = await _octoService.SystemContext.GetSystemSessionAsync();
         systemSession.StartTransaction();
 
-        var userContext = new GraphQLUserContext
-        {
-            User = httpContext.User
-        };
 
-        if (!string.IsNullOrWhiteSpace(tenantId) &&
-            await _octoService.SystemContext.IsTenantExistingAsync(systemSession, tenantId))
+        ITenantContext tenantContext = _octoService.SystemContext;
+        if (tenantId != null)
         {
-            userContext.TenantContext = await _octoService.SystemContext.CreateOrGetTenantContextAsync(tenantId);
+            tenantContext =  await _octoService.SystemContext.GetChildTenantContextAsync(tenantId);
         }
-
+        var userContext = 
+            new GraphQlUserContext(httpContext.User, tenantContext);
+     
         await systemSession.CommitTransactionAsync();
         return userContext;
     }

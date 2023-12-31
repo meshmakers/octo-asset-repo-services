@@ -1,8 +1,7 @@
-using System.Linq;
 using GraphQL.Types;
-using Meshmakers.Octo.Common.Shared.DataTransferObjects;
-using Meshmakers.Octo.SystematizedData.Persistence.CkRuleEngine.Cache;
-using Meshmakers.Octo.SystematizedData.Persistence.DatabaseEntities;
+using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
+using Meshmakers.Octo.ConstructionKit.Contracts.DependencyGraph;
+using Meshmakers.Octo.Runtime.Contracts.MongoDb.Repository.Entities;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
 
@@ -10,7 +9,7 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
 ///     Construction kit attributes Graph QL type definition
 /// </summary>
 // ReSharper disable once ClassNeverInstantiated.Global
-public class CkAttributeDtoType : ObjectGraphType<CkAttributeDto>
+public sealed class CkAttributeDtoType : ObjectGraphType<CkAttributeDto>
 {
     /// <inheritdoc />
     public CkAttributeDtoType()
@@ -18,29 +17,23 @@ public class CkAttributeDtoType : ObjectGraphType<CkAttributeDto>
         Name = "CkAttribute";
         Description = "Construction kit attribute definitions";
 
-        Field(x => x.AttributeId, type: typeof(IdGraphType)).Description("Unique id of the object.");
-        Field(x => x.ScopeId, type: typeof(ScopeIdsDtoType));
+        Field(x => x.CkAttributeId, type: typeof(IdGraphType)).Description("Unique id of the object.");
         Field(x => x.AttributeValueType, type: typeof(AttributeValueTypesDtoType));
-        Field(x => x.SelectionValues, type: typeof(ListGraphType<CkSelectionValueDtoType>))
-            .Description("Selection values for the attribute.");
-
-        Field<SimpleScalarType, object>(nameof(CkAttributeDto.DefaultValue))
-            .Description("Default value of a scalar attribute.");
+        Field(x => x.ValueCkRecordId, type: typeof(IdGraphType)).Description("Optional record id of the attribute value type.");
+        Field(x => x.ValueCkEnumId, type: typeof(IdGraphType)).Description("Optional enum id of the attribute value type.");
+        Field(x=> x.Description, type: typeof(StringGraphType)).Description("Optional description of the attribute.");
+        Field(x=> x.IsDataStream, type: typeof(BooleanGraphType)).Description("Optional flag that tells if an attribute is a data stream.");
         Field<ListGraphType<SimpleScalarType>, object>(nameof(CkAttributeDto.DefaultValues))
             .Description("Default values of a compound attribute.");
     }
 
-    internal static CkAttributeDto CreateCkAttributeDto(AttributeCacheItem attributeCacheItem)
+    internal static CkAttributeDto CreateCkAttributeDto(CkTypeAttributeGraph attributeCacheItem)
     {
         var attributeDto = new CkAttributeDto
         {
-            AttributeId = attributeCacheItem.AttributeId,
-            ScopeId = (ScopeIdsDto)attributeCacheItem.ScopeId,
-            AttributeValueType = (AttributeValueTypesDto)attributeCacheItem.AttributeValueType,
-            DefaultValue = attributeCacheItem.DefaultValue,
+            CkAttributeId = attributeCacheItem.CkAttributeId,
+            AttributeValueType = attributeCacheItem.ValueType,
             DefaultValues = attributeCacheItem.DefaultValues,
-            SelectionValues = attributeCacheItem.SelectionValues
-                ?.Select(sv => new CkSelectionValueDto { Key = sv.Key, Name = sv.Name }).ToList()
         };
 
         return attributeDto;
@@ -50,13 +43,9 @@ public class CkAttributeDtoType : ObjectGraphType<CkAttributeDto>
     {
         var attributeDto = new CkAttributeDto
         {
-            AttributeId = ckAttribute.AttributeId,
-            ScopeId = (ScopeIdsDto)ckAttribute.ScopeId,
-            AttributeValueType = (AttributeValueTypesDto)ckAttribute.AttributeValueType,
-            DefaultValue = ckAttribute.DefaultValue,
+            CkAttributeId = ckAttribute.AttributeId,
+            AttributeValueType = ckAttribute.AttributeValueType,
             DefaultValues = ckAttribute.DefaultValues,
-            SelectionValues = ckAttribute.SelectionValues
-                ?.Select(sv => new CkSelectionValueDto { Key = sv.Key, Name = sv.Name }).ToList()
         };
 
         return attributeDto;

@@ -1,16 +1,10 @@
-using System;
-using System.Linq;
-using System.Threading;
-using System.Threading.Tasks;
 using GraphQL;
 using GraphQL.DataLoader;
 using GraphQL.Types;
+using Meshmakers.Common.Shared;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.Configuration.DependencyInjection.Options;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.RequestHandling;
-using Meshmakers.Octo.Common.DistributedCache;
-using Meshmakers.Octo.Common.Shared;
-using Meshmakers.Octo.Common.Shared.DistributedCache;
-using Meshmakers.Octo.SystematizedData.Persistence;
+using Meshmakers.Octo.ConstructionKit.Contracts.Services;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Options;
 using NLog;
@@ -28,13 +22,15 @@ internal class SchemaContext : ISchemaContext
     private readonly IOctoSessionAccessor _octoSessionAccessor;
 
     private readonly IOptions<OctoAssetRepositoryServicesOptions> _options;
+    private readonly ICkCacheService _ckCacheService;
     private readonly SemaphoreSlim _semaphore = new(1, 1);
 
     public SchemaContext(IOptions<OctoAssetRepositoryServicesOptions> options,
-        IDistributedWithPubSubCache distributedWithPubSubCache,
+        ICkCacheService ckCacheService,
         IDataLoaderContextAccessor dataLoaderAccessor, IOctoSessionAccessor octoSessionAccessor)
     {
         _options = options;
+        _ckCacheService = ckCacheService;
         _dataLoaderAccessor = dataLoaderAccessor;
         _octoSessionAccessor = octoSessionAccessor;
 
@@ -43,16 +39,17 @@ internal class SchemaContext : ISchemaContext
             SizeLimit = 64
         });
 
-        var sub = distributedWithPubSubCache.Subscribe<string>(CacheCommon.KeyTenantUpdate);
-        sub.OnMessage(message =>
-        {
-            if (!string.IsNullOrWhiteSpace(message.Message))
-            {
-                _cache.Remove(message.Message.MakeKey());
-            }
-
-            return Task.CompletedTask;
-        });
+        // TODO: Add again.
+        // var sub = distributedCache.SubscribeEvent<string>(CacheCommon.KeyTenantPreUpdate);
+        // sub.OnEvent(tenantId =>
+        // {
+        //     if (!string.IsNullOrWhiteSpace(tenantId))
+        //     {
+        //         _cache.Remove(tenantId.MakeKey());
+        //     }
+        //
+        //     return Task.CompletedTask;
+        // });
     }
 
     /// <summary>
@@ -61,16 +58,16 @@ internal class SchemaContext : ISchemaContext
     /// <param name="tenantId">The Id of tenant</param>
     public void Invalidate(string tenantId)
     {
-        var key = tenantId.MakeKey();
+        var key = tenantId.NormalizeString();
         _cache.Remove(key);
     }
 
     /// <inheritdoc />
-    public async Task<ISchema> GetOrCreateAsync(ITenantContext tenantContext)
+    public async Task<ISchema> GetOrCreateAsync(string tenantId)
     {
-        var key = tenantContext.TenantId.MakeKey();
+        var key = tenantId.NormalizeString();
 
-        Logger.Debug($"Looking up GraphQL schema for {tenantContext.TenantId}");
+        Logger.Debug($"Looking up GraphQL schema for {tenantId}");
 
         if (!_cache.TryGetValue(key, out OctoSchema? schema))
         {
@@ -80,18 +77,18 @@ internal class SchemaContext : ISchemaContext
 
                 var t = new Func<ICacheEntry, OctoSchema>(entry =>
                 {
-                    Logger.Debug($"Creating GraphQL schema for {tenantContext.TenantId}");
+                    Logger.Debug($"Creating GraphQL schema for {tenantId}");
                     entry.SetSize(1);
                     entry.SlidingExpiration = TimeSpan.FromDays(1);
 
-                    var graphTypesCache = new GraphTypesCache(tenantContext, _dataLoaderAccessor, _octoSessionAccessor);
-                    var ckEntities = tenantContext.CkCache.GetCkEntities().Where(x => !x.IsAbstract).ToList();
-                    var rtEntitiesTypes = ckEntities.Select(ck => graphTypesCache.GetOrCreate(ck.CkId)).ToList();
+                    var graphTypesCache = new GraphTypesCache(_ckCacheService, tenantId, _dataLoaderAccessor, _octoSessionAccessor);
+                    
+                    var ckEntities = _ckCacheService.GetCkTypes(tenantId).Where(x => !x.IsAbstract).ToList();
+                    var rtEntitiesTypes = ckEntities.Select(ck => graphTypesCache.GetOrCreate(ck.CkTypeId)).ToList();
 
                     var query = new OctoQuery(_options, graphTypesCache, _dataLoaderAccessor, _octoSessionAccessor,
                         rtEntitiesTypes);
-                    var mutation = new OctoMutation(ckEntities, graphTypesCache, _octoSessionAccessor,
-                        tenantContext.CkCache);
+                    var mutation = new OctoMutation(ckEntities, graphTypesCache, _octoSessionAccessor);
                     var subscriptions = new OctoSubscriptions(rtEntitiesTypes);
 
                     graphTypesCache.Populate();
@@ -99,7 +96,7 @@ internal class SchemaContext : ISchemaContext
                     var createdSchema = new OctoSchema(query, mutation, subscriptions);
                     createdSchema.RegisterTypes(graphTypesCache.GetTypes());
 
-                    Logger.Debug($"GraphQL schema for {tenantContext.TenantId} completed");
+                    Logger.Debug($"GraphQL schema for {tenantId} completed");
                     return createdSchema;
                 });
 

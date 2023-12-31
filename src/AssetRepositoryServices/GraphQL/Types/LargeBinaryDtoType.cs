@@ -9,7 +9,7 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
 ///     Definition of a large binary content
 /// </summary>
 // ReSharper disable once ClassNeverInstantiated.Global
-public class LargeBinaryDtoType : ScalarGraphType
+internal class LargeBinaryDtoType : ScalarGraphType
 {
     public LargeBinaryDtoType()
     {

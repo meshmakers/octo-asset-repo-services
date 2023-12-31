@@ -1,14 +1,7 @@
-using System;
-using System.Collections.Generic;
-using System.Net;
 using System.Text;
-using System.Threading.Tasks;
 using GraphQL;
 using GraphQL.Server.Transports.AspNetCore;
-using GraphQL.Transport;
-using Microsoft.AspNetCore.Http;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
+using GraphQLRequest = GraphQL.Transport.GraphQLRequest;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Middleware;
 
@@ -26,8 +19,9 @@ internal class GraphQlTenantMiddleware : GraphQLHttpMiddleware<OctoSchema>
     {
         _serializer = serializer;
     }
+    
 
-    protected override async Task<(GraphQLRequest? SingleRequest, IList<GraphQLRequest>? BatchRequest)?>
+    protected override async Task<(GraphQLRequest? SingleRequest, IList<GraphQLRequest?>? BatchRequest)?>
         ReadPostContentAsync(
             HttpContext context, RequestDelegate next, string? mediaType, Encoding? sourceEncoding)
     {
@@ -52,18 +46,6 @@ internal class GraphQlTenantMiddleware : GraphQLHttpMiddleware<OctoSchema>
         return await base.ReadPostContentAsync(context, next, mediaType, sourceEncoding);
     }
 
-
-    protected override Task WriteErrorResponseAsync(HttpContext context, HttpStatusCode httpStatusCode,
-        ExecutionError executionError)
-    {
-        return base.WriteErrorResponseAsync(context, httpStatusCode, executionError);
-    }
-
-    protected override Task WriteErrorResponseAsync(HttpContext context, HttpStatusCode httpStatusCode,
-        string errorMessage)
-    {
-        return base.WriteErrorResponseAsync(context, httpStatusCode, errorMessage);
-    }
 
     private GraphQLRequest DeserializeFromFormBody(IFormCollection formCollection)
     {

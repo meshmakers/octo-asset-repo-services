@@ -1,15 +1,10 @@
-﻿using System;
-using System.ComponentModel.DataAnnotations;
-using System.IO;
-using System.Threading.Tasks;
-using Hangfire;
+﻿using System.ComponentModel.DataAnnotations;
 using IdentityModel;
-using Meshmakers.Octo.Backend.Common.ApiErrors;
-using Meshmakers.Octo.Common.Shared.DataTransferObjects;
-using Meshmakers.Octo.Common.Shared.DistributedCache;
-using Meshmakers.Octo.Common.Shared.Jobs;
+using Meshmakers.Octo.Common.DistributionEventHub.Services;
+using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
+using Meshmakers.Octo.Services.Common.ApiErrors;
+using Meshmakers.Octo.Services.Common.DistributionEventHub.Commands;
 using Microsoft.AspNetCore.Authorization;
-using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.SystemApi.v1.Controllers;
@@ -23,18 +18,27 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.SystemApi.v1.Controlle
 [ApiVersion("1.0")]
 public class ModelsController : ControllerBase
 {
-    private readonly IBackgroundJobClient _backgroundJobClient;
-    private readonly IDistributedWithPubSubCache _distributedCache;
+    private readonly IDistributedCacheService _distributedCache;
+    private readonly ICommandClient<ExportRtCommandRequest> _exportRtCommandClient;
+    private readonly ICommandClient<ImportRtCommandRequest> _importRtCommandClient;
+    private readonly ICommandClient<ImportCkCommandRequest> _importCkCommandClient;
 
     /// <summary>
     ///     Constructor
     /// </summary>
     /// <param name="distributedCache">Instance of distributed cache</param>
-    /// <param name="backgroundJobClient">The hangfire job client</param>
-    public ModelsController(IDistributedWithPubSubCache distributedCache, IBackgroundJobClient backgroundJobClient)
+    /// <param name="exportRtCommandClient"></param>
+    /// <param name="importRtCommandClient"></param>
+    /// <param name="importCkCommandClient"></param>
+    public ModelsController(IDistributedCacheService distributedCache, 
+        ICommandClient<ExportRtCommandRequest> exportRtCommandClient,
+        ICommandClient<ImportRtCommandRequest> importRtCommandClient,
+        ICommandClient<ImportCkCommandRequest> importCkCommandClient)
     {
         _distributedCache = distributedCache;
-        _backgroundJobClient = backgroundJobClient;
+        _exportRtCommandClient = exportRtCommandClient;
+        _importRtCommandClient = importRtCommandClient;
+        _importCkCommandClient = importCkCommandClient;
     }
 
     // POST: system/Models/ExportRt
@@ -47,22 +51,22 @@ public class ModelsController : ControllerBase
     [HttpPost]
     [Route("ExportRt")]
     [Authorize(AssetRepositoryServiceConstants.SystemApiReadOnlyPolicy)]
-    public IActionResult ExportRt([Required] string tenantId,
+    public async Task<IActionResult> ExportRt([Required] string tenantId,
         [FromBody] ExportModelRequestDto exportModelRequestDto)
     {
         try
         {
-            var id = _backgroundJobClient.Enqueue<IExportModelJob>(job =>
-                job.ExportRtAsync(tenantId, exportModelRequestDto.QueryId.ToString(), null));
-            return Ok(new ExportModelResponseDto { JobId = id });
+            var args = new ExportRtCommandRequest(tenantId, exportModelRequestDto.QueryId);
+            var r = 
+                await _exportRtCommandClient.GetResponse<JobCreatedResponse>(args);
+            return Ok(new ExportModelResponseDto { JobId = r.JobId });
         }
         catch (InvalidOperationException e)
         {
             return BadRequest(new InternalServerError(e.Message));
         }
     }
-
-
+    
     // POST: system/Models/ImportRt
     /// <summary>
     ///     Imports a runtime model
@@ -79,9 +83,10 @@ public class ModelsController : ControllerBase
         try
         {
             var cacheKey = await AddFileToCache(file);
-            var id = _backgroundJobClient.Enqueue<IImportModelJob>(job =>
-                job.ImportRtAsync(tenantId, cacheKey, null));
-            return Ok(id);
+            var args = new ImportRtCommandRequest(tenantId, cacheKey);
+            var r = 
+                await _importRtCommandClient.GetResponse<JobCreatedResponse>(args);
+            return Ok(r.JobId);
         }
         catch (InvalidOperationException e)
         {
@@ -107,9 +112,10 @@ public class ModelsController : ControllerBase
         try
         {
             var cacheKey = await AddFileToCache(file);
-            var id = _backgroundJobClient.Enqueue<IImportModelJob>(job =>
-                job.ImportCkAsync(tenantId, cacheKey, scopeId, null));
-            return Ok(id);
+            var args = new ImportCkCommandRequest(tenantId, cacheKey);
+            var r = 
+                await _importCkCommandClient.GetResponse<JobCreatedResponse>(args);
+            return Ok(r.JobId);
         }
         catch (InvalidOperationException e)
         {
@@ -123,7 +129,7 @@ public class ModelsController : ControllerBase
         {
             await file.CopyToAsync(memoryStream);
             var key = Guid.NewGuid().ToString();
-            await _distributedCache.CacheStreamAsync(key, memoryStream.ToArray(), file.ContentType, TimeSpan.FromHours(1));
+            await _distributedCache.CacheStreamAsync(key, memoryStream, file.ContentType, file.FileName, TimeSpan.FromHours(1));
             return key;
         }
     }

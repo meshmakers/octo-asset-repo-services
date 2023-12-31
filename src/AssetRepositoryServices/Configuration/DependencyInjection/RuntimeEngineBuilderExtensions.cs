@@ -1,31 +1,26 @@
-﻿using System;
-using System.Collections.Generic;
-using System.IdentityModel.Tokens.Jwt;
-using System.Linq;
-using System.Threading.Tasks;
+﻿using System.IdentityModel.Tokens.Jwt;
 using AssetRepositoryServices.Resources;
 using GraphQL;
-using Hangfire;
-using Hangfire.Mongo;
-using Hangfire.Mongo.Migration.Strategies;
-using Hangfire.Mongo.Migration.Strategies.Backup;
+using GraphQL.Server.Transports.AspNetCore;
+using GraphQL.Types.Relay;
 using IdentityModel;
 using Meshmakers.Octo.Backend.AssetRepositoryServices;
-using Meshmakers.Octo.Backend.AssetRepositoryServices.Configuration.DependencyInjection;
-using Meshmakers.Octo.Backend.AssetRepositoryServices.Configuration.DependencyInjection.BuilderExtensions;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.Configuration;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.Configuration.DependencyInjection.Options;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Caches;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.RequestHandling;
-using Meshmakers.Octo.Backend.Common;
-using Meshmakers.Octo.Backend.DistributedCache;
-using Meshmakers.Octo.Common.Shared;
-using Meshmakers.Octo.Common.Shared.DataTransferObjects;
-using Meshmakers.Octo.SystematizedData.Persistence;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.Services;
+using Meshmakers.Octo.Communication.Contracts;
+using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
+using Meshmakers.Octo.Runtime.Contracts.MongoDb.Configuration;
+using Meshmakers.Octo.Runtime.Engine.Configuration.DependencyInjection;
+using Meshmakers.Octo.Services.Common;
+using Meshmakers.Octo.Services.Common.DistributionEventHub.Commands;
 using Microsoft.AspNetCore.Authentication.Cookies;
-using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
-using MongoDB.Driver;
 
 // ReSharper disable once CheckNamespace
 namespace Microsoft.Extensions.DependencyInjection;
@@ -34,40 +29,21 @@ namespace Microsoft.Extensions.DependencyInjection;
 ///     DI extension methods for adding IdentityServer
 /// </summary>
 // ReSharper disable once UnusedMember.Global
-public static class OctoServiceCollectionExtensions
+public static class RuntimeEngineBuilderExtensions
 {
     /// <summary>
     ///     Creates a builder.
     /// </summary>
-    /// <param name="services">The services.</param>
+    /// <param name="builder">The services.</param>
     /// <returns></returns>
-    private static IOctoBuilder AddOctoBuilder(this IServiceCollection services)
-    {
-        return new OctoBuilder(services);
-    }
-
-    /// <summary>
-    ///     Adds Octo.
-    /// </summary>
-    /// <param name="services">The services.</param>
-    /// <returns></returns>
-    private static IOctoBuilder AddOcto(this IServiceCollection services)
+    private static IRuntimeEngineBuilder AddOctoAssetRepositoryServices(this IRuntimeEngineBuilder builder)
     {
         JwtSecurityTokenHandler.DefaultInboundClaimTypeMap.Clear();
-        var builder = services.AddOctoBuilder();
 
-        builder.AddRequiredPlatformServices();
+        AddServices(builder);
 
-        services.AddMemoryCache();
-        services.AddDistributedPubSubCache(options =>
-        {
-            var octoOptions = services.BuildServiceProvider().GetRequiredService<OctoAssetRepositoryServicesOptions>();
-
-            options.Host = octoOptions.RedisCacheHost;
-            options.Password = octoOptions.RedisCachePassword;
-        });
-
-        services.AddAuthentication(authenticationOptions =>
+        builder.Services.AddMemoryCache();
+        builder.Services.AddAuthentication(authenticationOptions =>
             {
                 authenticationOptions.DefaultScheme = CookieAuthenticationDefaults.AuthenticationScheme;
                 authenticationOptions.DefaultChallengeScheme = BackendCommon.OidcAuthenticationScheme;
@@ -79,7 +55,7 @@ public static class OctoServiceCollectionExtensions
             })
             .AddOpenIdConnect(BackendCommon.OidcAuthenticationScheme, options =>
             {
-                var octoOptions = services.BuildServiceProvider()
+                var octoOptions = builder.Services.BuildServiceProvider()
                     .GetRequiredService<OctoAssetRepositoryServicesOptions>();
 
                 options.Authority = octoOptions.Authority;
@@ -104,7 +80,7 @@ public static class OctoServiceCollectionExtensions
             })
             .AddJwtBearer(options =>
             {
-                var octoOptions = services.BuildServiceProvider()
+                var octoOptions = builder.Services.BuildServiceProvider()
                     .GetRequiredService<OctoAssetRepositoryServicesOptions>();
                 // base-address of your identity server
                 options.Authority = octoOptions.Authority;
@@ -113,7 +89,7 @@ public static class OctoServiceCollectionExtensions
             });
 
 
-        services.AddAuthorization(options =>
+        builder.Services.AddAuthorization(options =>
         {
             options.AddPolicy(AssetRepositoryServiceConstants.AuthenticatedUserPolicy,
                 policyBuilder => policyBuilder.RequireAuthenticatedUser());
@@ -140,9 +116,9 @@ public static class OctoServiceCollectionExtensions
             });
         });
 
-        services.AddMvcCore().AddAuthorization();
+        builder.Services.AddMvcCore().AddAuthorization();
 
-        services.AddOctoApiVersioningAndDocumentation(options =>
+        builder.Services.AddOctoApiVersioningAndDocumentation(options =>
         {
             options.AddXmlDocAssembly<Startup>();
             options.AddXmlDocAssembly<ClientDto>();
@@ -165,48 +141,8 @@ public static class OctoServiceCollectionExtensions
             options.AppName = AssetTexts.Backend_AssetServices_UserSchema_Swagger_DisplayName;
         });
 
-
-        // Hangfire is used to handle background jobs and scheduled jobs
-        services.AddHangfire(config =>
-        {
-            var octoOptions = services.BuildServiceProvider()
-                .GetRequiredService<IOptions<OctoAssetRepositoryServicesOptions>>();
-            var systemOptions = services.BuildServiceProvider()
-                .GetRequiredService<IOptions<OctoSystemConfiguration>>();
-
-            var storageOptions = new MongoStorageOptions
-            {
-                MigrationOptions = new MongoMigrationOptions
-                {
-                    MigrationStrategy = new DropMongoMigrationStrategy(),
-                    BackupStrategy = new NoneMongoBackupStrategy()
-                }
-            };
-            var mongoUrlBuilder = new MongoUrlBuilder
-            {
-                DatabaseName = octoOptions.Value.JobDatabaseName,
-                Username = systemOptions.Value.AdminUser,
-                Password = systemOptions.Value.AdminUserPassword,
-                AuthenticationSource = systemOptions.Value.AuthenticationDatabaseName,
-                UseTls = systemOptions.Value.UseTls,
-                AllowInsecureTls = systemOptions.Value.AllowInsecureTls
-            };
-
-            if (systemOptions.Value.DatabaseHost.Contains(","))
-            {
-                mongoUrlBuilder.Servers =
-                    systemOptions.Value.DatabaseHost.Split(",").Select(x => new MongoServerAddress(x));
-            }
-            else
-            {
-                mongoUrlBuilder.Server = new MongoServerAddress(systemOptions.Value.DatabaseHost);
-            }
-
-            config.UseMongoStorage(mongoUrlBuilder.ToString(), storageOptions);
-        });
-
         // Add GraphQL services and configure options
-        services.AddGraphQL(graphQlBuilder => graphQlBuilder
+        builder.Services.AddGraphQL(graphQlBuilder => graphQlBuilder
             .AddSchema<OctoSchema>()
             .ConfigureExecutionOptions(options =>
             {
@@ -231,8 +167,8 @@ public static class OctoServiceCollectionExtensions
                 .Assembly)); // Add all IGraphType implementors in assembly which ChatSchema exists 
 
         // GraphQL
-        services.AddSingleton<IOctoSessionAccessor, OctoSessionAccessor>();
-        services.AddSingleton<IDocumentExecuter<OctoSchema>, TenantDocumentExecutor>();
+        builder.Services.AddSingleton<IOctoSessionAccessor, OctoSessionAccessor>();
+        builder.Services.AddSingleton<IDocumentExecuter<OctoSchema>, TenantDocumentExecutor>();
 
         return builder;
     }
@@ -240,18 +176,52 @@ public static class OctoServiceCollectionExtensions
     /// <summary>
     ///     Adds Octo.
     /// </summary>
-    /// <param name="services">The services.</param>
+    /// <param name="builder">The services.</param>
     /// <param name="systemOptionsSetupAction">Setup action for Octo system persistence</param>
     /// <param name="setupAction">The setup action of core services options</param>
     /// <returns></returns>
     // ReSharper disable once UnusedMember.Global
     // ReSharper disable once UnusedMethodReturnValue.Global
-    public static IOctoBuilder AddOcto(this IServiceCollection services,
+    public static IRuntimeEngineBuilder AddOctoAssetRepositoryServices(this IRuntimeEngineBuilder builder,
         Action<OctoSystemConfiguration> systemOptionsSetupAction,
         Action<OctoAssetRepositoryServicesOptions> setupAction)
     {
-        services.Configure(systemOptionsSetupAction);
-        services.Configure(setupAction);
-        return services.AddOcto();
+        builder.Services.Configure(systemOptionsSetupAction);
+        builder.Services.Configure(setupAction);
+        return builder.AddOctoAssetRepositoryServices();
+    }
+
+    private static void AddServices(IRuntimeEngineBuilder builder)
+    {
+        builder.Services.AddOptions();
+        builder.Services.AddSingleton(
+            resolver => resolver.GetRequiredService<IOptions<OctoAssetRepositoryServicesOptions>>().Value);
+        builder.Services.AddSingleton(
+            resolver => resolver.GetRequiredService<IOptions<OctoSystemConfiguration>>().Value);
+        builder.Services.AddSingleton<GraphQLHttpMiddlewareOptions>();
+        builder.Services.ConfigureOptions<ConfigureOctoSwaggerOptions>();
+        builder.Services.ConfigureOptions<ConfigureDistributionEventHubOptions>();
+
+        // Add GraphQL types (GraphQL.Relay)
+        builder.Services.AddTransient(typeof(ConnectionType<>));
+        builder.Services.AddTransient(typeof(EdgeType<>));
+        builder.Services.AddTransient<PageInfoType>();
+
+        // GraphQL custom services
+        builder.Services.AddSingleton<ISchemaContext, SchemaContext>();
+
+        builder.Services.AddOctoServiceInfrastructure("AssetRepositoryService", configureDistributionEventHub: c =>
+        {
+            c.AddCommandClient<CreateIdentityDataCommandRequest>("identity::create-identity-data");
+            c.AddCommandClient<ExportRtCommandRequest>("bot::export-rt");
+            c.AddCommandClient<ImportRtCommandRequest>("bot::import-rt");
+            c.AddCommandClient<ImportCkCommandRequest>("bot::import-ck");
+        });
+
+        // Add the basic services of Octo
+        builder.Services.AddRuntimeEngine()
+            .AddMongoDbRuntimeRepository();
+        builder.Services.AddSingleton<IOctoService, OctoService>();
+        builder.Services.AddInitializationService<UserSchemaService>();
     }
 }

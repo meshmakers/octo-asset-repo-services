@@ -1,15 +1,15 @@
 using GraphQL;
 using GraphQL.Types;
-using Meshmakers.Octo.Common.Shared;
-using Meshmakers.Octo.Common.Shared.DataTransferObjects;
-using Meshmakers.Octo.SystematizedData.Persistence.DatabaseEntities;
+using Meshmakers.Octo.Communication.Contracts;
+using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
+using Meshmakers.Octo.Runtime.Contracts.RepositoryEntities;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
 
 /// <summary>
 ///     Implements an update item for RtEntities
 /// </summary>
-public class RtEntityUpdateItemDtoType : ObjectGraphType<RtEntityUpdateItemDto>
+public sealed class RtEntityUpdateItemDtoType : ObjectGraphType<RtEntityUpdateItemDto>
 {
     /// <summary>
     ///     Constructor
@@ -24,7 +24,8 @@ public class RtEntityUpdateItemDtoType : ObjectGraphType<RtEntityUpdateItemDto>
 
     private object ResolveItem(IResolveFieldContext<RtEntityUpdateItemDto> arg)
     {
-        var rtEntity = (RtEntity)arg.Source.UserContext;
+        // TODO: Check if this is correct
+        var rtEntity = (RtEntity)arg.Source.UserContext!;
 
         return RtEntityDtoType.CreateRtEntityDto(rtEntity);
     }

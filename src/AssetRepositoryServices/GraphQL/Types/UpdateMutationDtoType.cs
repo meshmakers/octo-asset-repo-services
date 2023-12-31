@@ -1,12 +1,13 @@
 using GraphQL.Types;
-using Meshmakers.Octo.Common.Shared;
-using Meshmakers.Octo.Common.Shared.DataTransferObjects;
+using Meshmakers.Octo.Communication.Contracts;
+using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
 
 #pragma warning disable 1591
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
 
-public class UpdateMutationDtoType<TItemType> : InputObjectGraphType<MutationDto<TItemType>>
+public sealed class UpdateMutationDtoType<TItemType> : InputObjectGraphType<MutationDto<TItemType>>
+    where TItemType : class
 {
     public UpdateMutationDtoType(IGraphType itemType)
     {

@@ -1,14 +1,13 @@
-﻿using System;
-using System.ComponentModel.DataAnnotations;
-using System.Linq;
-using System.Threading.Tasks;
+﻿using System.ComponentModel.DataAnnotations;
 using IdentityModel;
-using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Caches;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.Services;
-using Meshmakers.Octo.Common.Shared.DataTransferObjects;
-using Meshmakers.Octo.SystematizedData.Persistence;
+using Meshmakers.Octo.Common.DistributionEventHub.Services;
+using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
+using Meshmakers.Octo.Runtime.Contracts.MongoDb;
+using Meshmakers.Octo.Services.Common.DistributionEventHub.Messages;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using MongoDB.Bson;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.SystemApi.v1.Controllers;
 
@@ -22,17 +21,17 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.SystemApi.v1.Controlle
 public class TenantsController : ControllerBase
 {
     private readonly IOctoService _octoService;
-    private readonly ISchemaContext _schemaContext;
+    private readonly IDistributionEventHubService _distributionEventHubService;
 
     /// <summary>
     ///     Constructor
     /// </summary>
     /// <param name="octoService">Octo service for tenant management</param>
-    /// <param name="schemaContext">The Schema service of graph ql</param>
-    public TenantsController(IOctoService octoService, ISchemaContext schemaContext)
+    /// <param name="distributionEventHubService"></param>
+    public TenantsController(IOctoService octoService, IDistributionEventHubService distributionEventHubService)
     {
         _octoService = octoService;
-        _schemaContext = schemaContext;
+        _distributionEventHubService = distributionEventHubService;
     }
 
     // GET system/v1/tenants
@@ -42,26 +41,26 @@ public class TenantsController : ControllerBase
     /// <returns></returns>
     [HttpGet]
     [Authorize(AssetRepositoryServiceConstants.SystemApiReadOnlyPolicy)]
-    public async Task<IActionResult> Get([FromQuery] PagingParams pagingParams)
+    public async Task<IActionResult> Get([FromQuery] PagingParams? pagingParams)
     {
-        using var session = await _octoService.SystemContext.StartSystemSessionAsync();
+        using var session = await _octoService.SystemContext.GetSystemSessionAsync();
         session.StartTransaction();
 
-        var result = await _octoService.SystemContext.GetTenantsAsync(session, pagingParams?.Skip, pagingParams?.Take);
+        var result = await _octoService.SystemContext.GetChildTenantsAsync(session, pagingParams?.Skip, pagingParams?.Take);
 
         if (pagingParams != null)
         {
-            var pagedResult = new PagedResult<TenantDto>(result.List.Select(CreateTenantDto),
+            var pagedResult = new PagedResult<TenantDto>(result.Items.Select(CreateTenantDto),
                 pagingParams.Skip, pagingParams.Take, result.TotalCount);
 
-            Response.Headers.Add("X-Pagination", pagedResult.GetHeader().ToJson());
+            Response.Headers.Append("X-Pagination", pagedResult.GetHeader().ToJson());
 
             return Ok(pagedResult);
         }
 
         await session.CommitTransactionAsync();
 
-        return Ok(result.List.Select(CreateTenantDto));
+        return Ok(result.Items.Select(CreateTenantDto));
     }
 
     // GET system/v1/tenants/{id}
@@ -74,17 +73,16 @@ public class TenantsController : ControllerBase
     [Authorize(AssetRepositoryServiceConstants.SystemApiReadOnlyPolicy)]
     public async Task<IActionResult> Get([Required] string id)
     {
-        using var session = await _octoService.SystemContext.StartSystemSessionAsync();
+        using var session = await _octoService.SystemContext.GetSystemSessionAsync();
         session.StartTransaction();
 
-        var octoTenant = await _octoService.SystemContext.GetTenantAsync(session, id);
-        if (octoTenant == null)
+        if (!await _octoService.SystemContext.IsChildTenantExistingAsync(session, id))
         {
             return NotFound();
         }
-
+        
+        var octoTenant = await _octoService.SystemContext.GetChildTenantAsync(session, id);
         await session.CommitTransactionAsync();
-
         return Ok(CreateTenantDto(octoTenant));
     }
 
@@ -99,16 +97,16 @@ public class TenantsController : ControllerBase
     [Authorize(AssetRepositoryServiceConstants.SystemApiReadWritePolicy)]
     public async Task<IActionResult> Post([Required] string tenantId, [Required] string databaseName)
     {
-        using var session = await _octoService.SystemContext.StartSystemSessionAsync();
+        using var session = await _octoService.SystemContext.GetSystemSessionAsync();
         session.StartTransaction();
 
         try
         {
-            await _octoService.SystemContext.CreateTenantAsync(session, databaseName, tenantId);
+            await _octoService.SystemContext.CreateChildTenantAsync(session, databaseName, tenantId);
             await session.CommitTransactionAsync();
             return NoContent();
         }
-        catch (DatabaseException e)
+        catch (PersistenceException e)
         {
             return Conflict(e.Message);
         }
@@ -129,16 +127,16 @@ public class TenantsController : ControllerBase
     [Authorize(AssetRepositoryServiceConstants.SystemApiReadWritePolicy)]
     public async Task<IActionResult> Attach([Required] string tenantId, [Required] string databaseName)
     {
-        using var session = await _octoService.SystemContext.StartSystemSessionAsync();
+        using var session = await _octoService.SystemContext.GetSystemSessionAsync();
         session.StartTransaction();
 
         try
         {
-            await _octoService.SystemContext.AttachTenantAsync(session, databaseName, tenantId);
+            await _octoService.SystemContext.AttachChildTenantAsync(session, databaseName, tenantId);
             await session.CommitTransactionAsync();
             return NoContent();
         }
-        catch (DatabaseException e)
+        catch (PersistenceException e)
         {
             return Conflict(e.Message);
         }
@@ -158,16 +156,16 @@ public class TenantsController : ControllerBase
     [Authorize(AssetRepositoryServiceConstants.SystemApiReadWritePolicy)]
     public async Task<IActionResult> Detach([Required] string tenantId)
     {
-        using var session = await _octoService.SystemContext.StartSystemSessionAsync();
+        using var session = await _octoService.SystemContext.GetSystemSessionAsync();
         session.StartTransaction();
 
         try
         {
-            await _octoService.SystemContext.DetachTenantAsync(session, tenantId);
+            await _octoService.SystemContext.DetachChildTenantAsync(session, tenantId);
             await session.CommitTransactionAsync();
             return NoContent();
         }
-        catch (DatabaseException e)
+        catch (PersistenceException e)
         {
             return Conflict(e.Message);
         }
@@ -187,12 +185,12 @@ public class TenantsController : ControllerBase
     [Authorize(AssetRepositoryServiceConstants.SystemApiReadWritePolicy)]
     public async Task<IActionResult> Clear([Required] string tenantId)
     {
-        using var session = await _octoService.SystemContext.StartSystemSessionAsync();
+        using var session = await _octoService.SystemContext.GetSystemSessionAsync();
         session.StartTransaction();
 
         try
         {
-            await _octoService.SystemContext.ClearTenantAsync(session, tenantId);
+            await _octoService.SystemContext.ClearChildTenantAsync(session, tenantId);
             await session.CommitTransactionAsync();
             return Ok();
         }
@@ -212,12 +210,13 @@ public class TenantsController : ControllerBase
     [Authorize(AssetRepositoryServiceConstants.SystemApiReadWritePolicy)]
     public async Task<IActionResult> Update([Required] string tenantId)
     {
-        using var session = await _octoService.SystemContext.StartSystemSessionAsync();
+        using var session = await _octoService.SystemContext.GetSystemSessionAsync();
         session.StartTransaction();
 
         try
         {
-            await _octoService.SystemContext.UpdateTenantSystemCkModelAsync(session, tenantId);
+            // TODO: Implement dispose
+            // await _octoService.SystemContext.UpdateTenantSystemCkModelAsync(session, tenantId);
             await session.CommitTransactionAsync();
             return Ok();
         }
@@ -239,11 +238,8 @@ public class TenantsController : ControllerBase
     {
         try
         {
-            // Clear GraphQL cache
-            _schemaContext.Invalidate(tenantId);
-
-            // Dispose data context
-            await _octoService.SystemContext.ClearCacheAsync(tenantId);
+            await _distributionEventHubService.PublishAsync(new PreUpdateTenant(tenantId));
+            await _distributionEventHubService.PublishAsync(new PosUpdateTenant(tenantId));
 
             return Ok("Cache cleared");
         }
@@ -263,12 +259,12 @@ public class TenantsController : ControllerBase
     [Authorize(AssetRepositoryServiceConstants.SystemApiReadWritePolicy)]
     public async Task<IActionResult> Delete([Required] string tenantId)
     {
-        using var session = await _octoService.SystemContext.StartSystemSessionAsync();
+        using var session = await _octoService.SystemContext.GetSystemSessionAsync();
         session.StartTransaction();
 
         try
         {
-            await _octoService.SystemContext.DropTenantAsync(session, tenantId);
+            await _octoService.SystemContext.DropChildTenantAsync(session, tenantId);
             await session.CommitTransactionAsync();
             return Ok();
         }

@@ -26,7 +26,7 @@ internal class TenantDocumentExecutor : IDocumentExecuter<OctoSchema>
 
         var tenantContext = Helpers.GetTenantContext(options.UserContext);
 
-        options.Schema = await _schemaContext.GetOrCreateAsync(tenantContext);
+        options.Schema = await _schemaContext.GetOrCreateAsync(tenantContext.TenantId);
         return await _documentExecutor.ExecuteAsync(options);
     }
 }

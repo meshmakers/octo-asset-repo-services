@@ -1,28 +1,27 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
 using System.Linq.Expressions;
 using GraphQL.Types;
-using Meshmakers.Octo.Common.Shared;
-using Meshmakers.Octo.Common.Shared.DataTransferObjects;
-using Meshmakers.Octo.SystematizedData.Persistence.CkRuleEngine.Cache;
-using Meshmakers.Octo.SystematizedData.Persistence.DatabaseEntities;
+using Meshmakers.Octo.Communication.Contracts;
+using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
+using Meshmakers.Octo.ConstructionKit.Contracts;
+using Meshmakers.Octo.ConstructionKit.Contracts.DataTransferObjects;
+using Meshmakers.Octo.ConstructionKit.Contracts.DependencyGraph;
+using Meshmakers.Octo.ConstructionKit.Contracts.Services;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
 
 /// <summary>
 ///     Implements a GraphQL runtime entity type
 /// </summary>
-public class RtEntityDtoInputType : InputObjectGraphType<RtEntityDto>
+public sealed class RtEntityDtoInputType : InputObjectGraphType<RtEntityDto>
 {
     /// <summary>
     ///     Constructor
     /// </summary>
-    /// <param name="ckId">Corresponding construction kit id</param>
-    public RtEntityDtoInputType(string ckId)
+    /// <param name="ckTypeId">Corresponding construction kit id</param>
+    public RtEntityDtoInputType(CkId<CkTypeId> ckTypeId)
     {
-        CkId = ckId;
-        Name = $"{ckId.GetGraphQlName()}{CommonConstants.GraphQlInputSuffix}";
+        CkTypeId = ckTypeId;
+        Name = $"{ckTypeId.GetGraphQlName()}{CommonConstants.GraphQlInputSuffix}";
 
         Field(x => x.RtWellKnownName, true);
     }
@@ -30,87 +29,87 @@ public class RtEntityDtoInputType : InputObjectGraphType<RtEntityDto>
     /// <summary>
     ///     Returns the construction kit id
     /// </summary>
-    public string CkId { get; }
+    public CkId<CkTypeId> CkTypeId { get; }
 
     /// <inheritdoc />
     /// <remarks>We need an overload, to deserialize all properties to the dictionary of <see cref="RtEntityDto" /></remarks>
-    public override object ParseDictionary(IDictionary<string, object> value)
+    public override object ParseDictionary(IDictionary<string, object?> value)
     {
-        return value.ToObjectWithWithUnknownProperties<RtEntityDto>();
+        return value.ToObjectWithWithUnknownProperties<RtEntityDto>() ?? throw new InvalidOperationException();
     }
 
     /// <summary>
     ///     Populates the type with ck related attributes and associations
     /// </summary>
+    /// <param name="tenantId"></param>
     /// <param name="entityCacheItem">The cache item</param>
-    public void Populate(EntityCacheItem entityCacheItem)
+    /// <param name="ckCacheService"></param>
+    public void Populate(ICkCacheService ckCacheService, string tenantId, CkTypeGraph entityCacheItem)
     {
-        foreach (var attribute in entityCacheItem.Attributes.Values)
+        foreach (var attribute in entityCacheItem.AllAttributes.Values)
         {
             AddAttribute(attribute);
         }
 
-        foreach (var cacheItems in entityCacheItem.OutboundAssociations)
+        foreach (var ckTypeAssociationGraph in entityCacheItem.Associations.Out.All)
         {
-            var allowedTypes = cacheItems.Value.SelectMany(x => x.AllowedTypes).ToList();
-            var name = cacheItems.Key;
+            var allowedTypes = ckCacheService.GetCkType(tenantId, ckTypeAssociationGraph.TargetCkTypeId).DerivedTypes;
             if (!allowedTypes.Any())
             {
                 continue; // All Ck entities are abstract for that assocs
             }
 
-            AddAssociation(name);
+            AddAssociation(ckTypeAssociationGraph.NavigationPropertyName);
         }
 
-        foreach (var cacheItems in entityCacheItem.InboundAssociations)
+        foreach (var ckTypeAssociationGraph in entityCacheItem.Associations.In.All)
         {
-            var allowedTypes = cacheItems.Value.SelectMany(x => x.AllowedTypes).ToList();
-            var name = cacheItems.Key;
+            var allowedTypes = ckCacheService.GetCkType(tenantId, ckTypeAssociationGraph.TargetCkTypeId).DerivedTypes;
             if (!allowedTypes.Any())
             {
                 continue; // All Ck entities are abstract for that assocs
             }
 
-            AddAssociation(name);
+            AddAssociation(ckTypeAssociationGraph.NavigationPropertyName);
         }
     }
 
-    private void AddAttribute(AttributeCacheItem attributeCacheItem)
+    private void AddAttribute(CkTypeAttributeGraph attributeCacheItem)
     {
         var attributeName = attributeCacheItem.AttributeName;
 
-        Expression<Func<RtEntityDto, object>> scalarValueExpression = dto => dto.Properties[attributeName];
+        Expression<Func<RtEntityDto, object>> scalarValueExpression = dto => dto.Properties![attributeName];
 
         Expression<Func<RtEntityDto, ICollection<object>>> compoundValueExpression =
-            dto => (ICollection<object>)dto.Properties[attributeName];
+            dto => (ICollection<object>)dto.Properties![attributeName];
 
-        switch (attributeCacheItem.AttributeValueType)
+        switch (attributeCacheItem.ValueType)
         {
-            case AttributeValueTypes.String:
+            case AttributeValueTypesDto.String:
                 Field(attributeName, type: typeof(StringGraphType), expression: scalarValueExpression);
                 break;
-            case AttributeValueTypes.StringArray:
+            case AttributeValueTypesDto.StringArray:
                 Field(attributeName, type: typeof(ListGraphType<StringGraphType>), expression: compoundValueExpression);
                 break;
-            case AttributeValueTypes.Int:
+            case AttributeValueTypesDto.Int:
                 Field(attributeName, type: typeof(IntGraphType), expression: scalarValueExpression);
                 break;
-            case AttributeValueTypes.IntArray:
+            case AttributeValueTypesDto.IntArray:
                 Field(attributeName, type: typeof(ListGraphType<IntGraphType>), expression: compoundValueExpression);
                 break;
-            case AttributeValueTypes.Boolean:
+            case AttributeValueTypesDto.Boolean:
                 Field(attributeName, type: typeof(BooleanGraphType), expression: scalarValueExpression);
                 break;
-            case AttributeValueTypes.Double:
+            case AttributeValueTypesDto.Double:
                 Field(attributeName, type: typeof(DecimalGraphType), expression: scalarValueExpression);
                 break;
-            case AttributeValueTypes.DateTime:
+            case AttributeValueTypesDto.DateTime:
                 Field(attributeName, type: typeof(DateTimeGraphType), expression: scalarValueExpression);
                 break;
             // case AttributeValueTypes.BinaryEmbedded:
             //     Field(attributeName, type: typeof(StringGraphType), expression: scalarValueExpression);
             //     break;     
-            case AttributeValueTypes.BinaryLinked:
+            case AttributeValueTypesDto.BinaryLinked:
                 Field(attributeName, type: typeof(OctoObjectIdType), expression: scalarValueExpression);
                 break;
             default:
@@ -120,7 +119,7 @@ public class RtEntityDtoInputType : InputObjectGraphType<RtEntityDto>
 
     private void AddAssociation(string name)
     {
-        Expression<Func<RtEntityDto, object>> scalarValueExpression = dto => dto.Properties[name];
+        Expression<Func<RtEntityDto, object>> scalarValueExpression = dto => dto.Properties![name];
 
         Field(name, type: typeof(ListGraphType<RtAssociationInputDtoType>), expression: scalarValueExpression);
     }

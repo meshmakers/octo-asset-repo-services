@@ -18,18 +18,23 @@ public class OctoAssetRepositoryServicesOptions
         Authority = "https://localhost:5003";
         PublicUrl = "https://localhost:5001";
         PublicAdminPanelUrl = "https://localhost:5005";
-        RedisCacheHost = "localhost";
+        BrokerHost = "localhost";
     }
 
     /// <summary>
-    ///     Gets or sets the redis cache host name
+    ///     Gets or sets the RabbitMq host name
     /// </summary>
-    public string RedisCacheHost { get; set; }
+    public string BrokerHost { get; set; }
+    
+    /// <summary>
+    ///     Gets or sets the RabbitMq user
+    /// </summary>
+    public string? BrokerUser { get; set; }
 
     /// <summary>
-    ///     Gets or sets the redis cache password
+    ///     Gets or sets the RabbitMq password
     /// </summary>
-    public string RedisCachePassword { get; set; }
+    public string? BrokerPassword { get; set; }
 
     /// <summary>
     ///     URL of arango db

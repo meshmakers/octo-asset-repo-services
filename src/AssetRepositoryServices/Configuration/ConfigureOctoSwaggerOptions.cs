@@ -1,6 +1,6 @@
 using Meshmakers.Common.Shared;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.Configuration.DependencyInjection.Options;
-using Meshmakers.Octo.Backend.Swagger;
+using Meshmakers.Octo.Services.Swagger;
 using Microsoft.Extensions.Options;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.Configuration;
@@ -20,7 +20,7 @@ internal class ConfigureOctoSwaggerOptions : IConfigureNamedOptions<OctoSwaggerO
         Configure(Options.DefaultName, options);
     }
 
-    public void Configure(string name, OctoSwaggerOptions options)
+    public void Configure(string? name, OctoSwaggerOptions options)
     {
         options.AuthorityUrl = _octoOptions.Value.Authority.EnsureEndsWith("/");
     }

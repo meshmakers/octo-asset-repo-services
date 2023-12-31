@@ -1,12 +1,18 @@
-using System.Collections.Generic;
 using System.Security.Claims;
-using Meshmakers.Octo.SystematizedData.Persistence;
+using Meshmakers.Octo.Runtime.Contracts.MongoDb;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Utils;
 
-public class GraphQLUserContext : Dictionary<string, object>
+internal class GraphQlUserContext : Dictionary<string, object?>
 {
-    public ClaimsPrincipal User { get; set; }
+    public GraphQlUserContext(ClaimsPrincipal? user, ITenantContext tenantContext)
+    {
+        User = user;
+        TenantContext = tenantContext;
+    }
 
-    public ITenantContext TenantContext { get; set; }
+    public ClaimsPrincipal? User { get;}
+
+    public string TenantId => TenantContext.TenantId;
+    public ITenantContext TenantContext { get; }
 }

@@ -1,12 +1,12 @@
 using GraphQL.Types;
-using Meshmakers.Octo.Common.Shared.DataTransferObjects;
+using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
 
 /// <summary>
 ///     Represents a runtime entity attribute type
 /// </summary>
-public class RtEntityAttributeDtoType : ObjectGraphType<RtEntityAttributeDto>
+public sealed class RtEntityAttributeDtoType : ObjectGraphType<RtEntityAttributeDto>
 {
     /// <summary>
     ///     C

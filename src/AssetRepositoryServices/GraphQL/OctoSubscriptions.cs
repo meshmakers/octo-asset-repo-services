@@ -1,13 +1,11 @@
-using System;
-using System.Collections.Generic;
 using System.Reactive.Linq;
 using GraphQL;
 using GraphQL.Resolvers;
 using GraphQL.Types;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
-using Meshmakers.Octo.Common.Shared;
-using Meshmakers.Octo.Common.Shared.DataTransferObjects;
-using Meshmakers.Octo.SystematizedData.Persistence.DataAccess;
+using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
+using Meshmakers.Octo.ConstructionKit.Contracts;
+using Meshmakers.Octo.Runtime.Contracts.MongoDb.Repository;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL;
 
@@ -38,7 +36,7 @@ public class OctoSubscriptions : ObjectGraphType<object>
                         new RtEntityUpdateItemDtoType(rtEntityDtoType)),
                 Resolver = new FuncFieldResolver<DynamicUpdateMessageDto<RtEntityUpdateItemDto>>(ResolveMessage),
                 StreamResolver = new SourceStreamResolver<DynamicUpdateMessageDto<RtEntityUpdateItemDto>>(Subscribe)
-            }).AddMetadata(Statics.CkId, rtEntityDtoType.CkId);
+            }).AddMetadata(Statics.CkId, rtEntityDtoType.CkTypeId);
         }
     }
 
@@ -62,8 +60,8 @@ public class OctoSubscriptions : ObjectGraphType<object>
             RtId = rtId
         };
 
-        var messages =
-            tenantContext.Repository.SubscribeToRtEntities(ckId, updateStreamFilter, context.CancellationToken);
+        var tenantRepository = tenantContext.GetTenantRepository();
+        var messages = tenantRepository.SubscribeToRtEntities(ckId, updateStreamFilter, context.CancellationToken);
 
         var observable = messages.GetUpdates().Select(x => new DynamicUpdateMessageDto<RtEntityUpdateItemDto>
         {
@@ -76,7 +74,7 @@ public class OctoSubscriptions : ObjectGraphType<object>
         return observable;
     }
 
-    private DynamicUpdateMessageDto<RtEntityUpdateItemDto> ResolveMessage(IResolveFieldContext context)
+    private DynamicUpdateMessageDto<RtEntityUpdateItemDto>? ResolveMessage(IResolveFieldContext context)
     {
         var message = context.Source as DynamicUpdateMessageDto<RtEntityUpdateItemDto>;
 

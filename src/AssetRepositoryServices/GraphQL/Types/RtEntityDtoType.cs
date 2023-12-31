@@ -1,17 +1,15 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Linq.Expressions;
+﻿using System.Linq.Expressions;
 using GraphQL;
 using GraphQL.DataLoader;
 using GraphQL.Types;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Caches;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.RequestHandling;
-using Meshmakers.Octo.Common.Shared;
-using Meshmakers.Octo.Common.Shared.DataTransferObjects;
-using Meshmakers.Octo.SystematizedData.Persistence;
-using Meshmakers.Octo.SystematizedData.Persistence.CkRuleEngine.Cache;
-using Meshmakers.Octo.SystematizedData.Persistence.DatabaseEntities;
+using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
+using Meshmakers.Octo.ConstructionKit.Contracts;
+using Meshmakers.Octo.ConstructionKit.Contracts.DataTransferObjects;
+using Meshmakers.Octo.ConstructionKit.Contracts.DependencyGraph;
+using Meshmakers.Octo.ConstructionKit.Contracts.Services;
+using Meshmakers.Octo.Runtime.Contracts.RepositoryEntities;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
 
@@ -21,17 +19,17 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
 public sealed class RtEntityDtoType : ObjectGraphType<RtEntityDto>
 {
     /// <inheritdoc />
-    public RtEntityDtoType(string ckId)
+    public RtEntityDtoType(CkId<CkTypeId> ckTypeId)
     {
-        CkId = ckId;
+        CkTypeId = ckTypeId;
 
-        Name = ckId.GetGraphQlName();
-        Description = $"Runtime entities of construction kit type '{ckId}'";
+        Name = ckTypeId.GetGraphQlName();
+        Description = $"Runtime entities of construction kit type '{ckTypeId}'";
         IsTypeOf = o =>
         {
             if (o is RtEntityDto rtEntityDto)
             {
-                return rtEntityDto.CkId == ckId;
+                return rtEntityDto.CkTypeId == ckTypeId;
             }
 
             return false;
@@ -46,87 +44,86 @@ public sealed class RtEntityDtoType : ObjectGraphType<RtEntityDto>
     /// <summary>
     ///     Returns the Construction Kid Id of the object type
     /// </summary>
-    public string CkId { get; }
+    public CkId<CkTypeId> CkTypeId { get; }
 
 
-    internal void Populate(IGraphTypesCache entityDtoCache, IDataLoaderContextAccessor dataLoaderAccessor,
-        IOctoSessionAccessor sessionAccessor, EntityCacheItem entityCacheItem)
+    internal void Populate(ICkCacheService ckCacheService, string tenantId, IGraphTypesCache entityDtoCache, IDataLoaderContextAccessor dataLoaderAccessor,
+        IOctoSessionAccessor sessionAccessor, CkTypeGraph entityCacheItem)
     {
         AddConstructionKit(entityCacheItem);
 
-        foreach (var attribute in entityCacheItem.Attributes.Values)
+        foreach (var attribute in entityCacheItem.AllAttributes.Values)
         {
             AddAttribute(attribute);
         }
 
-        foreach (var cacheItems in entityCacheItem.OutboundAssociations)
+        foreach (var ckTypeAssociationGraph in entityCacheItem.Associations.Out.All)
         {
-            var allowedTypes = cacheItems.Value.SelectMany(x => x.AllowedTypes).ToList();
-            var name = cacheItems.Key;
+            var allowedTypes = ckCacheService.GetCkType(tenantId, ckTypeAssociationGraph.TargetCkTypeId).DerivedTypes;
             if (!allowedTypes.Any())
             {
                 continue; // All Ck entities are abstract for that associations
             }
 
-            this.AssociationField(entityDtoCache, dataLoaderAccessor, sessionAccessor, name,
-                allowedTypes.Select(x => x.CkId).Distinct().ToList(), entityCacheItem.CkId,
-                cacheItems.Value.First().RoleId, GraphDirections.Outbound);
+            this.AssociationField(entityDtoCache, dataLoaderAccessor, sessionAccessor, ckTypeAssociationGraph.NavigationPropertyName,
+                allowedTypes.Select(x => x.InheritorCkTypeId).Distinct().ToList(), entityCacheItem.CkTypeId,
+                ckTypeAssociationGraph.CkRoleId, GraphDirections.Outbound);
         }
 
-        foreach (var cacheItems in entityCacheItem.InboundAssociations)
+        foreach (var ckTypeAssociationGraph in entityCacheItem.Associations.In.All)
         {
-            var allowedTypes = cacheItems.Value.SelectMany(x => x.AllowedTypes).ToList();
-            var name = cacheItems.Key;
+            var allowedTypes = ckCacheService.GetCkType(tenantId, ckTypeAssociationGraph.TargetCkTypeId).DerivedTypes;
             if (!allowedTypes.Any())
             {
                 continue; // All Ck entities are abstract for that associations
             }
 
-            this.AssociationField(entityDtoCache, dataLoaderAccessor, sessionAccessor, name,
-                allowedTypes.Select(x => x.CkId).Distinct().ToList(), entityCacheItem.CkId,
-                cacheItems.Value.First().RoleId, GraphDirections.Inbound);
+            this.AssociationField(entityDtoCache, dataLoaderAccessor, sessionAccessor, ckTypeAssociationGraph.NavigationPropertyName,
+                allowedTypes.Select(x => x.InheritorCkTypeId).Distinct().ToList(), entityCacheItem.CkTypeId,
+                ckTypeAssociationGraph.CkRoleId, GraphDirections.Inbound);
         }
     }
 
-    private void AddAttribute(AttributeCacheItem attributeCacheItem)
+    private void AddAttribute(CkTypeAttributeGraph attributeCacheItem)
     {
-        Expression<Func<RtEntityDto, object>> scalarValueExpression = dto =>
-            ((RtEntity)dto.UserContext).GetAttributeValueOrDefault(attributeCacheItem.AttributeName, null);
+        // TODO: make better. is UserContext really needed? Maybe we can use Resolve method instead?
+        Expression<Func<RtEntityDto, object?>> scalarValueExpression = dto =>
+            ((RtEntity)dto.UserContext!).GetAttributeValueOrDefault(attributeCacheItem.AttributeName, null);
 
-        Expression<Func<RtEntityDto, ICollection<object>>> compoundValueExpression = dto =>
-            (ICollection<object>)((RtEntity)dto.UserContext).GetAttributeValueOrDefault(
-                attributeCacheItem.AttributeName, null);
+        Expression<Func<RtEntityDto, ICollection<object>?>> compoundValueExpression = dto =>
+            ((RtEntity)dto.UserContext!).GetAttributeValueOrDefault(
+                attributeCacheItem.AttributeName, null) as ICollection<object> ?? null;
 
         var attributeName = attributeCacheItem.AttributeName;
-        switch (attributeCacheItem.AttributeValueType)
+        switch (attributeCacheItem.ValueType)
         {
-            case AttributeValueTypes.String:
+            case AttributeValueTypesDto.String:
                 Field(attributeName, type: typeof(StringGraphType), expression: scalarValueExpression);
                 break;
-            case AttributeValueTypes.StringArray:
+            case AttributeValueTypesDto.StringArray:
                 Field(attributeName, type: typeof(ListGraphType<StringGraphType>),
                     expression: compoundValueExpression);
                 break;
-            case AttributeValueTypes.Int:
+            case AttributeValueTypesDto.Int:
                 Field(attributeName, type: typeof(IntGraphType), expression: scalarValueExpression);
                 break;
-            case AttributeValueTypes.IntArray:
+            case AttributeValueTypesDto.IntArray:
                 Field(attributeName, type: typeof(ListGraphType<IntGraphType>),
                     expression: compoundValueExpression);
                 break;
-            case AttributeValueTypes.Boolean:
+            case AttributeValueTypesDto.Boolean:
                 Field(attributeName, type: typeof(BooleanGraphType), expression: scalarValueExpression);
                 break;
-            case AttributeValueTypes.Double:
+            case AttributeValueTypesDto.Double:
                 Field(attributeName, type: typeof(DecimalGraphType), expression: scalarValueExpression);
                 break;
-            case AttributeValueTypes.DateTime:
+            case AttributeValueTypesDto.DateTime:
                 Field(attributeName, type: typeof(DateTimeGraphType), expression: scalarValueExpression);
                 break;
             // case AttributeValueTypes.BinaryEmbedded:
             //     Field(attributeName, type: typeof(StringGraphType), expression: scalarValueExpression);
             //     break;
-            case AttributeValueTypes.BinaryLinked:
+            case AttributeValueTypesDto.BinaryLinked:
                 Field(attributeName, type: typeof(OctoObjectIdType), expression: scalarValueExpression);
                 break;
             default:
@@ -134,25 +131,26 @@ public sealed class RtEntityDtoType : ObjectGraphType<RtEntityDto>
         }
     }
 
-    private void AddConstructionKit(EntityCacheItem entityCacheItem)
+    private void AddConstructionKit(CkTypeGraph ckTypeGraph)
     {
-        Field<CkEntityDtoType>("ConstructionKitType")
-            .Metadata(Statics.EntityCacheItem, entityCacheItem)
+        Field<CkTypeDtoType>("ConstructionKitType")
+            .Metadata(Statics.EntityCacheItem, ckTypeGraph)
             .Resolve(ResolveCkEntity);
     }
 
     private object ResolveCkEntity(IResolveFieldContext<RtEntityDto> arg)
     {
-        var entityCacheItem = (EntityCacheItem)arg.FieldDefinition.Metadata[Statics.EntityCacheItem];
-        return CkEntityDtoType.CreateCkEntityDto(entityCacheItem);
+        // TODO: Fix save cast to CkTypeGraph
+        var entityCacheItem = (CkTypeGraph)arg.FieldDefinition.Metadata[Statics.EntityCacheItem]!;
+        return CkTypeDtoType.CreateCkTypeDto(entityCacheItem);
     }
 
     internal static RtEntityDto CreateRtEntityDto(RtEntity rtEntity)
     {
         var rtEntityDto = new RtEntityDto
         {
-            RtId = rtEntity.RtId.ToOctoObjectId(),
-            CkId = rtEntity.CkId,
+            RtId = rtEntity.RtId,
+            CkTypeId = rtEntity.CkTypeId,
             RtCreationDateTime = rtEntity.RtCreationDateTime,
             RtChangedDateTime = rtEntity.RtChangedDateTime,
             RtWellKnownName = rtEntity.RtWellKnownName,

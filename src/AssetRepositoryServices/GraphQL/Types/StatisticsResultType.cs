@@ -1,17 +1,17 @@
 using GraphQL.Types;
-using Meshmakers.Octo.Common.Shared.DataTransferObjects;
+using Meshmakers.Octo.Runtime.Contracts.Repositories.Query;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
 
 /// <summary>
 /// Defines the statistics type for results
 /// </summary>
-public sealed class StatisticsType: ObjectGraphType<StatisticsDto>
+public sealed class StatisticsResultType: ObjectGraphType<StatisticsResult>
 {
     /// <summary>
     ///     Constructor
     /// </summary>
-    public StatisticsType()
+    public StatisticsResultType()
     {
         Name = "statistics";
         Description = "Statistics of items result";
