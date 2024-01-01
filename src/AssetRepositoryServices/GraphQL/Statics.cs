@@ -1,4 +1,11 @@
+using System.Linq.Expressions;
+using GraphQL.Types;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
+using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
 using Meshmakers.Octo.ConstructionKit.Contracts;
+using Meshmakers.Octo.ConstructionKit.Contracts.DataTransferObjects;
+using Meshmakers.Octo.ConstructionKit.Contracts.DependencyGraph;
+using Meshmakers.Octo.Runtime.Contracts.RepositoryEntities;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL;
 
@@ -24,10 +31,12 @@ internal static class Statics
 
     internal const string LargeBinaryIdArg = "largeBinaryId";
     internal const string LargeBinaryDataArg = "binaryData";
-    internal const string GroupByArg ="groupBy";
-    
-    public static string GetGraphQlName(this CkId<CkTypeId> name)
+    internal const string GroupByArg = "groupBy";
+
+    public static string GetGraphQlName<TKey>(this CkId<TKey> ckKey) where TKey : struct, IComparable<TKey>, ICkKey
     {
-        return name.ToString().Replace(".", "_");
+        return ckKey.SemanticVersionedFullName.ToLower()
+            .Replace(".", "_")
+            .Replace("/", "_");
     }
 }

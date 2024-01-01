@@ -13,24 +13,22 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
 /// <summary>
 ///     Implements a GraphQL runtime entity type
 /// </summary>
-public sealed class RtEntityDtoInputType : InputObjectGraphType<RtEntityDto>
+public sealed class RtRecordDtoInputType : InputObjectGraphType<RtRecordDto>
 {
     /// <summary>
     ///     Constructor
     /// </summary>
-    /// <param name="ckTypeId">Corresponding construction kit id</param>
-    public RtEntityDtoInputType(CkId<CkTypeId> ckTypeId)
+    /// <param name="ckRecordId">Corresponding construction kit id</param>
+    public RtRecordDtoInputType(CkId<CkRecordId> ckRecordId)
     {
-        CkTypeId = ckTypeId;
-        Name = $"{ckTypeId.GetGraphQlName()}{CommonConstants.GraphQlInputSuffix}";
-
-        Field(x => x.RtWellKnownName, true);
+        CkRecordId = ckRecordId;
+        Name = $"{ckRecordId.GetGraphQlName()}{CommonConstants.GraphQlInputSuffix}";
     }
 
     /// <summary>
     ///     Returns the construction kit id
     /// </summary>
-    public CkId<CkTypeId> CkTypeId { get; }
+    public CkId<CkRecordId> CkRecordId { get; }
 
     /// <inheritdoc />
     /// <remarks>We need an overload, to deserialize all properties to the dictionary of <see cref="RtEntityDto" /></remarks>
@@ -44,35 +42,13 @@ public sealed class RtEntityDtoInputType : InputObjectGraphType<RtEntityDto>
     /// </summary>
     /// <param name="tenantId"></param>
     /// <param name="graphTypesCache"></param>
-    /// <param name="typeGraph">The cache item</param>
+    /// <param name="recordGraph">The cache item</param>
     /// <param name="ckCacheService"></param>
-    public void Populate(ICkCacheService ckCacheService, string tenantId, IGraphTypesCache graphTypesCache, CkTypeGraph typeGraph)
+    public void Populate(ICkCacheService ckCacheService, string tenantId, IGraphTypesCache graphTypesCache, CkRecordGraph recordGraph)
     {
-        foreach (var attribute in typeGraph.AllAttributes.Values)
+        foreach (var attribute in recordGraph.AllAttributes.Values)
         {
             AddAttribute(graphTypesCache, attribute);
-        }
-
-        foreach (var ckTypeAssociationGraph in typeGraph.Associations.Out.All)
-        {
-            var allowedTypes = ckCacheService.GetCkType(tenantId, ckTypeAssociationGraph.TargetCkTypeId).DerivedTypes;
-            if (!allowedTypes.Any())
-            {
-                continue; // All Ck entities are abstract for that assocs
-            }
-
-            AddAssociation(ckTypeAssociationGraph.NavigationPropertyName);
-        }
-
-        foreach (var ckTypeAssociationGraph in typeGraph.Associations.In.All)
-        {
-            var allowedTypes = ckCacheService.GetCkType(tenantId, ckTypeAssociationGraph.TargetCkTypeId).DerivedTypes;
-            if (!allowedTypes.Any())
-            {
-                continue; // All Ck entities are abstract for that assocs
-            }
-
-            AddAssociation(ckTypeAssociationGraph.NavigationPropertyName);
         }
     }
 
@@ -80,9 +56,9 @@ public sealed class RtEntityDtoInputType : InputObjectGraphType<RtEntityDto>
     {
         var attributeName = attributeCacheItem.AttributeName;
 
-        Expression<Func<RtEntityDto, object>> scalarValueExpression = dto => dto.Properties![attributeName];
+        Expression<Func<RtRecordDto, object>> scalarValueExpression = dto => dto.Properties![attributeName];
 
-        Expression<Func<RtEntityDto, ICollection<object>>> compoundValueExpression =
+        Expression<Func<RtRecordDto, ICollection<object>>> compoundValueExpression =
             dto => (ICollection<object>)dto.Properties![attributeName];
 
         switch (attributeCacheItem.ValueType)
@@ -143,12 +119,5 @@ public sealed class RtEntityDtoInputType : InputObjectGraphType<RtEntityDto>
             default:
                 throw OctoGraphQLException.AttributeValueTypeNotSupported(attributeCacheItem.ValueType);
         }
-    }
-
-    private void AddAssociation(string name)
-    {
-        Expression<Func<RtEntityDto, object>> scalarValueExpression = dto => dto.Properties![name];
-
-        Field(name, type: typeof(ListGraphType<RtAssociationInputDtoType>), expression: scalarValueExpression);
     }
 }

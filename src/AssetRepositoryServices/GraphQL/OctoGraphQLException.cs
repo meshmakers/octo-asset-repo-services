@@ -1,5 +1,4 @@
-using System;
-using System.Runtime.Serialization;
+using Meshmakers.Octo.ConstructionKit.Contracts.DataTransferObjects;
 
 #pragma warning disable 1591
 
@@ -25,5 +24,15 @@ public class OctoGraphQLException : Exception
 
     public OctoGraphQLException(string message, Exception inner) : base(message, inner)
     {
+    }
+
+    internal static Exception AttributeValueTypeNotSupported(AttributeValueTypesDto valueType)
+    {
+        return new OctoGraphQLException($"Attribute value type {valueType} is not supported.");
+    }
+
+    public static Exception RecordAttributeHasNoCkRecordId(string attributeName)
+    {
+        return new OctoGraphQLException($"Record attribute {attributeName} has no CkRecordId.");
     }
 }

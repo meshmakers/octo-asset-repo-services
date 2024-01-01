@@ -4,12 +4,12 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.RequestHandlin
 
 internal class OctoSessionAccessor : IOctoSessionAccessor
 {
-    private static readonly AsyncLocal<IOctoSession?> Current = new();
+    private IOctoSession? _session;
 
     /// <inheritdoc />
     public IOctoSession Session
     {
-        get => Current.Value ?? throw new InvalidOperationException("Octo session is not available");
-        set => Current.Value = value;
+        get => _session ?? throw new InvalidOperationException("Octo session is not available");
+        set => _session = value;
     }
 }

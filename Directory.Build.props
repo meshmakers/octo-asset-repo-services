@@ -5,7 +5,8 @@
     <Import Condition="Exists($(BaseDirectoryBuildPath))" Project="$(BaseDirectoryBuildPath)" />
     <PropertyGroup>
         <OctoCommonServicesPath Condition=" '$(OctoCommonServicesPath)' == '' ">$(MSBuildThisFileDirectory)src/octo-common-services/</OctoCommonServicesPath>
-        <OctoCorePath Condition=" '$(OctoCorePath)' == '' ">$(OctoCommonServicesPath)src/octo-core/</OctoCorePath>        <Authors>meshmakers GmbH and Contributors</Authors>
+        <OctoConstructionKitPath Condition=" '$(OctoConstructionKitPath)' == '' ">$(OctoCommonServicesPath)src/octo-construction-kit-engine-mongodb/</OctoConstructionKitPath>  
+        <Authors>meshmakers GmbH and Contributors</Authors>
         <Company>meshmakers GmbH and Contributors</Company>
         <Copyright>(c) 2022-2024 meshmakers GmbH</Copyright>
         <LangVersion>latestmajor</LangVersion>
@@ -18,6 +19,6 @@
         <PackageTags>Octo data mesh iot</PackageTags>
         <TargetFramework>net8.0</TargetFramework>
         <PackageVersion Condition="'$(Configuration)'=='DebugL'">999.0.0</PackageVersion>
-        <RestoreSources Condition="'$(Configuration)'=='DebugL'">$(MSBuildThisFileDirectory)../nuget</RestoreSources>
+        <RestoreSources Condition="'$(Configuration)'=='DebugL'">$(SolutionDir)../nuget</RestoreSources>
     </PropertyGroup>
 </Project>

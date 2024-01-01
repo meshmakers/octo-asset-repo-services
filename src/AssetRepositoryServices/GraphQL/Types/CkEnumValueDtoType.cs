@@ -9,7 +9,7 @@ public sealed class CkEnumValueDtoType : ObjectGraphType<CkEnumValueDto>
 {
     public CkEnumValueDtoType()
     {
-        Name = "CkEnumValueDto";
+        Name = "CkEnumValue";
         Description = "A construction kit enum value";
 
         Field(x => x.Key, type: typeof(IntGraphType)).Description("Key of the enum");

@@ -8,6 +8,7 @@ using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Caches;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.RequestHandling;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Utils;
+using Meshmakers.Octo.Communication.Contracts;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
 using Meshmakers.Octo.ConstructionKit.Contracts;
 using Microsoft.Extensions.Options;
@@ -26,9 +27,9 @@ internal sealed class OctoQuery : ObjectGraphType
     private readonly IOptions<OctoAssetRepositoryServicesOptions> _options;
 
 
-    internal OctoQuery(IOptions<OctoAssetRepositoryServicesOptions> options, IGraphTypesCache entityDtoCache,
+    internal OctoQuery(IOptions<OctoAssetRepositoryServicesOptions> options, IGraphTypesCache graphTypesCache,
         IDataLoaderContextAccessor dataLoaderContextAccessor,
-        IOctoSessionAccessor octoSessionAccessor, IEnumerable<RtEntityDtoType> rtEntityDtoTypes)
+        IOctoSessionAccessor octoSessionAccessor)
     {
         _options = options;
         _dataLoaderContextAccessor = dataLoaderContextAccessor;
@@ -71,9 +72,9 @@ internal sealed class OctoQuery : ObjectGraphType
             .Argument<OctoObjectIdType>(Statics.LargeBinaryIdArg, "ID of large binary that is requested.")
             .ResolveAsync(ResolveLargeBinariesQuery);
 
-        foreach (var rtEntityDtoType in rtEntityDtoTypes)
+        foreach (var rtEntityDtoType in graphTypesCache.GetTypes())
         {
-            this.Connection<object?, IGraphType, RtEntityDto>(entityDtoCache, rtEntityDtoType, rtEntityDtoType.Name)
+            this.Connection<object?, IGraphType, RtEntityDto>(graphTypesCache, rtEntityDtoType, rtEntityDtoType.Name)
                 .AddMetadata(Statics.CkId, rtEntityDtoType.CkTypeId)
                 .Argument<OctoObjectIdType>(Statics.RtIdArg, "Returns the entity with the given rtId.")
                 .Argument<ListGraphType<OctoObjectIdType>>(Statics.RtIdsArg,
@@ -244,9 +245,18 @@ internal sealed class OctoQuery : ObjectGraphType
 
         var graphQlUserContext = (GraphQlUserContext)arg.UserContext;
 
-        if (!arg.FieldDefinition.Metadata.TryGetValue(Statics.CkId, out var ckIdObj) || !(ckIdObj is string ckId))
+        if (!arg.FieldDefinition.Metadata.TryGetValue(Statics.CkId, out var ckIdObj))
         {
-            return "Invalid query. Missing construction kit id.";
+            arg.Errors.Add(new ExecutionError("Invalid query. Missing construction kit id.")
+                { Code = CommonConstants.GraphQLErrorCommon });
+            return null;
+        }
+        
+        if (ckIdObj is not CkId<CkTypeId> ckTypeId)
+        {
+            arg.Errors.Add(new ExecutionError("Invalid query. Invalid construction kit id.")
+                { Code = CommonConstants.GraphQLErrorCommon });
+            return null;
         }
 
         var offset = arg.GetOffset();
@@ -274,7 +284,7 @@ internal sealed class OctoQuery : ObjectGraphType
         {
             var resultSetIds =
                 await tenantRepository.GetRtEntitiesByIdAsync(
-                    _octoSessionAccessor.Session, ckId, keysList, dataQueryOperation,
+                    _octoSessionAccessor.Session, ckTypeId, keysList, dataQueryOperation,
                     offset, arg.First);
 
             Logger.Debug("GraphQL query handling returning data by keys");
@@ -284,7 +294,7 @@ internal sealed class OctoQuery : ObjectGraphType
 
         var resultSet =
             await tenantRepository.GetRtEntitiesByTypeAsync(_octoSessionAccessor.Session,
-                ckId, dataQueryOperation, offset,
+                ckTypeId, dataQueryOperation, offset,
                 arg.First);
 
         Logger.Debug("GraphQL query handling returning data");

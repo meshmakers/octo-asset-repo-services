@@ -82,19 +82,25 @@ internal class SchemaContext : ISchemaContext
                     entry.SlidingExpiration = TimeSpan.FromDays(1);
 
                     var graphTypesCache = new GraphTypesCache(_ckCacheService, tenantId, _dataLoaderAccessor, _octoSessionAccessor);
-                    
-                    var ckEntities = _ckCacheService.GetCkTypes(tenantId).Where(x => !x.IsAbstract).ToList();
-                    var rtEntitiesTypes = ckEntities.Select(ck => graphTypesCache.GetOrCreate(ck.CkTypeId)).ToList();
 
-                    var query = new OctoQuery(_options, graphTypesCache, _dataLoaderAccessor, _octoSessionAccessor,
-                        rtEntitiesTypes);
-                    var mutation = new OctoMutation(ckEntities, graphTypesCache, _octoSessionAccessor);
-                    var subscriptions = new OctoSubscriptions(rtEntitiesTypes);
+                    foreach (var ckTypeGraph in _ckCacheService.GetCkTypes(tenantId).Where(x => !x.IsAbstract))
+                    {
+                        graphTypesCache.GetOrCreate(ckTypeGraph.CkTypeId);
+                    }
+                    
+                    foreach (var ckRecordGraph in _ckCacheService.GetCkRecords(tenantId).Where(x => !x.IsAbstract))
+                    {
+                        graphTypesCache.GetOrCreate(ckRecordGraph.CkRecordId);
+                    }
+
+                    var query = new OctoQuery(_options, graphTypesCache, _dataLoaderAccessor, _octoSessionAccessor);
+                    var mutation = new OctoMutation(graphTypesCache, _octoSessionAccessor);
+                    var subscriptions = new OctoSubscriptions(graphTypesCache);
 
                     graphTypesCache.Populate();
 
                     var createdSchema = new OctoSchema(query, mutation, subscriptions);
-                    createdSchema.RegisterTypes(graphTypesCache.GetTypes());
+                    createdSchema.RegisterTypes(graphTypesCache.GetKnownGraphTypes());
 
                     Logger.Debug($"GraphQL schema for {tenantId} completed");
                     return createdSchema;

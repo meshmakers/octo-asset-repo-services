@@ -2,6 +2,7 @@ using System.Reactive.Linq;
 using GraphQL;
 using GraphQL.Resolvers;
 using GraphQL.Types;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Caches;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
 using Meshmakers.Octo.ConstructionKit.Contracts;
@@ -17,10 +18,10 @@ public class OctoSubscriptions : ObjectGraphType<object>
     /// <summary>
     ///     Constructor
     /// </summary>
-    /// <param name="rtEntityDtoTypes">RT Entity types subscriptions are created.</param>
-    public OctoSubscriptions(IEnumerable<RtEntityDtoType> rtEntityDtoTypes)
+    /// <param name="graphTypesCache">The graph type cache</param>
+    public OctoSubscriptions(IGraphTypesCache graphTypesCache)
     {
-        foreach (var rtEntityDtoType in rtEntityDtoTypes)
+        foreach (var rtEntityDtoType in graphTypesCache.GetTypes())
             // ReSharper disable once VirtualMemberCallInConstructor
         {
             AddField(new FieldType

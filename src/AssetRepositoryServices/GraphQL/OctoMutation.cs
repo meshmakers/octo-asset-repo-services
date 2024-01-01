@@ -26,11 +26,11 @@ public sealed class OctoMutation : ObjectGraphType
 {
     private readonly IOctoSessionAccessor _sessionAccessor;
 
-    internal OctoMutation(IEnumerable<CkTypeGraph> entityCacheItems, IGraphTypesCache graphTypesCache,
+    internal OctoMutation(IGraphTypesCache graphTypesCache,
         IOctoSessionAccessor sessionAccessor)
     {
         _sessionAccessor = sessionAccessor;
-        foreach (var cacheItem in entityCacheItems)
+        foreach (var cacheItem in graphTypesCache.GetTypes())
         {
             var inputType = graphTypesCache.GetOrCreateInput(cacheItem.CkTypeId);
             var outputType = graphTypesCache.GetOrCreate(cacheItem.CkTypeId);

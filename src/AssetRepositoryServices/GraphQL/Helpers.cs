@@ -84,7 +84,7 @@ internal static class Helpers
 
         var connectionBuilder =
             ConnectionBuilder<TSourceType>.Create<TGraphType>(
-                $"{prefixName}{CommonConstants.GraphQlConnectionSuffix}");
+                $"{prefixName}");
         connectionBuilder.FieldType.ResolvedType = type;
         complexGraphType.AddField(connectionBuilder.FieldType);
         return connectionBuilder;

@@ -1,6 +1,7 @@
 using System.Diagnostics.CodeAnalysis;
 using System.Text;
 using GraphQL.Server.Ui.Playground;
+using Meshmakers.Common.Shared;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.RequestHandling;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.Services;
 using Meshmakers.Octo.Services.Common;
@@ -53,7 +54,7 @@ public class PlaygroundTenantMiddleware
         using var systemSession = await _octoService.SystemContext.GetSystemSessionAsync();
         systemSession.StartTransaction();
 
-        if (!string.IsNullOrWhiteSpace(tenantId) &&
+        if (!string.IsNullOrWhiteSpace(tenantId) && tenantId.NormalizeString() != AssetRepositoryServiceConstants.SystemTenantUriPattern &&
             !await _octoService.SystemContext.IsChildTenantExistingAsync(systemSession, tenantId))
         {
             httpContext.Response.StatusCode = 403; //NotFound

@@ -1,4 +1,5 @@
 using GraphQL.Server.Transports.AspNetCore;
+using Meshmakers.Common.Shared;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Utils;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.Services;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb;
@@ -31,12 +32,11 @@ public class TenantUserContextBuilder : IUserContextBuilder
 
 
         ITenantContext tenantContext = _octoService.SystemContext;
-        if (tenantId != null)
+        if (tenantId != null && tenantId.NormalizeString() != AssetRepositoryServiceConstants.SystemTenantUriPattern)
         {
             tenantContext =  await _octoService.SystemContext.GetChildTenantContextAsync(tenantId);
         }
-        var userContext = 
-            new GraphQlUserContext(httpContext.User, tenantContext);
+        var userContext = new GraphQlUserContext(httpContext.User, tenantContext);
      
         await systemSession.CommitTransactionAsync();
         return userContext;

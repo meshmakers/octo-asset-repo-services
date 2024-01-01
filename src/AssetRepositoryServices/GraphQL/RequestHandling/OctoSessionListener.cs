@@ -30,8 +30,8 @@ internal class OctoSessionListener : IDocumentExecutionListener
     {
         var tenantContext = Helpers.GetTenantContext(context.UserContext);
         var tenantRepository = tenantContext.GetTenantRepository();
-        var session = await tenantRepository.GetSessionAsync();
-        session.StartTransaction();
+        _accessor.Session = await tenantRepository.GetSessionAsync();
+        _accessor.Session.StartTransaction();
     }
 
     /// <inheritdoc />

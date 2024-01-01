@@ -1,7 +1,4 @@
-using System;
 using GraphQL.Server.Ui.Playground;
-using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.Routing;
 
 #pragma warning disable 1591
 
@@ -18,8 +15,8 @@ internal static class GraphQlTenantBuilder
         }
 
         var requestDelegate = endpoints.CreateApplicationBuilder()
-            .UseMiddleware<PlaygroundTenantMiddleware>(options ?? new PlaygroundOptions()).Build();
-        return new PlaygroundTenantEndpointConventionBuilder(endpoints.Map(pattern, requestDelegate)
+            .UseMiddleware<PlaygroundTenantMiddleware>(options).Build();
+        return new PlaygroundTenantEndpointConventionBuilder(endpoints.Map(pattern,  requestDelegate)
             .WithDisplayName("GraphQL Playground"));
     }
 

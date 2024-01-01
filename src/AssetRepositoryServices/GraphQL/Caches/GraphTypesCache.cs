@@ -18,9 +18,12 @@ internal class GraphTypesCache : IGraphTypesCache
     private readonly ICkCacheService _ckCacheService;
     private readonly string _tenantId;
     private readonly IDataLoaderContextAccessor _dataLoaderAccessor;
-    private readonly ConcurrentDictionary<CkId<CkTypeId>, RtEntityDtoInputType> _inputTypes;
     private readonly IOctoSessionAccessor _octoSessionAccessor;
     private readonly ConcurrentDictionary<CkId<CkTypeId>, RtEntityDtoType> _types;
+    private readonly ConcurrentDictionary<CkId<CkTypeId>, RtEntityDtoInputType> _inputTypes;
+
+    private readonly ConcurrentDictionary<CkId<CkRecordId>, RtRecordDtoType> _recordTypes;
+    private readonly ConcurrentDictionary<CkId<CkRecordId>, RtRecordDtoInputType> _inputRecordTypes;
 
     /// <summary>
     ///     Constructor
@@ -38,13 +41,15 @@ internal class GraphTypesCache : IGraphTypesCache
         _octoSessionAccessor = octoSessionAccessor;
         _types = new ConcurrentDictionary<CkId<CkTypeId>, RtEntityDtoType>();
         _inputTypes = new ConcurrentDictionary<CkId<CkTypeId>, RtEntityDtoInputType>();
+        _recordTypes = new ConcurrentDictionary<CkId<CkRecordId>, RtRecordDtoType>();
+        _inputRecordTypes = new ConcurrentDictionary<CkId<CkRecordId>, RtRecordDtoInputType>();
         _connectionTypes = new ConcurrentDictionary<IGraphType, DynamicConnectionType>();
     }
 
     /// <inheritdoc />
     public RtEntityDtoType GetOrCreate(CkId<CkTypeId> ckId)
     {
-        return _types.GetOrAdd(ckId, s =>
+        return _types.GetOrAdd(ckId, _ =>
         {
             var rtEntityType = new RtEntityDtoType(ckId);
             return rtEntityType;
@@ -54,17 +59,37 @@ internal class GraphTypesCache : IGraphTypesCache
     /// <inheritdoc />
     public RtEntityDtoInputType GetOrCreateInput(CkId<CkTypeId> ckId)
     {
-        return _inputTypes.GetOrAdd(ckId, s =>
+        return _inputTypes.GetOrAdd(ckId, _ =>
         {
             var rtEntityDtoInputType = new RtEntityDtoInputType(ckId);
             return rtEntityDtoInputType;
+        });
+    }
+    
+    /// <inheritdoc />
+    public RtRecordDtoType GetOrCreate(CkId<CkRecordId> ckId)
+    {
+        return _recordTypes.GetOrAdd(ckId, _ =>
+        {
+            var rtRecordDtoType = new RtRecordDtoType(ckId);
+            return rtRecordDtoType;
+        });
+    }
+
+    /// <inheritdoc />
+    public RtRecordDtoInputType GetOrCreateInput(CkId<CkRecordId> ckId)
+    {
+        return _inputRecordTypes.GetOrAdd(ckId, _ =>
+        {
+            var rtRecordDtoInputType = new RtRecordDtoInputType(ckId);
+            return rtRecordDtoInputType;
         });
     }
 
     /// <inheritdoc />
     public DynamicConnectionType GetOrCreateConnection(IGraphType graphType, string prefixName)
     {
-        return _connectionTypes.GetOrAdd(graphType, s =>
+        return _connectionTypes.GetOrAdd(graphType, _ =>
         {
             var edgeType = new DynamicEdgeType(
                 $"{prefixName}{CommonConstants.GraphQlEdgeSuffix}",
@@ -80,24 +105,54 @@ internal class GraphTypesCache : IGraphTypesCache
     }
 
     /// <inheritdoc />
-    public IGraphType[] GetTypes()
+    public RtEntityDtoType[] GetTypes()
     {
         // ReSharper disable once CoVariantArrayConversion
         return _types.Values.ToArray();
+    }
+    
+    /// <inheritdoc />
+    public RtRecordDtoType[] GetRecords()
+    {
+        // ReSharper disable once CoVariantArrayConversion
+        return _recordTypes.Values.ToArray();
+    }
+    
+    /// <inheritdoc />
+    public IGraphType[] GetKnownGraphTypes()
+    {
+        var inputTypes = new List<IGraphType>();
+        inputTypes.AddRange(_types.Values);
+        inputTypes.AddRange(_inputTypes.Values);
+        inputTypes.AddRange(_recordTypes.Values);
+        inputTypes.AddRange(_inputRecordTypes.Values);
+        return inputTypes.ToArray();
     }
 
     public void Populate()
     {
         foreach (var rtEntityDtoType in _types.Values)
         {
-            var entityCacheItem = _ckCacheService.GetCkType(_tenantId, rtEntityDtoType.CkTypeId);
-            rtEntityDtoType.Populate(_ckCacheService, _tenantId, this, _dataLoaderAccessor, _octoSessionAccessor, entityCacheItem);
+            var ckTypeGraph = _ckCacheService.GetCkType(_tenantId, rtEntityDtoType.CkTypeId);
+            rtEntityDtoType.Populate(_ckCacheService, _tenantId, this, _dataLoaderAccessor, _octoSessionAccessor, ckTypeGraph);
+        }
+        
+        foreach (var rtRecordDtoType in _recordTypes.Values)
+        {
+            var ckRecordGraph = _ckCacheService.GetCkRecord(_tenantId, rtRecordDtoType.CkRecordId);
+            rtRecordDtoType.Populate(_ckCacheService, _tenantId, this, _dataLoaderAccessor, _octoSessionAccessor, ckRecordGraph);
         }
 
         foreach (var rtEntityDtoInputType in _inputTypes.Values)
         {
-            var entityCacheItem = _ckCacheService.GetCkType(_tenantId, rtEntityDtoInputType.CkTypeId);
-            rtEntityDtoInputType.Populate(_ckCacheService, _tenantId, entityCacheItem);
+            var ckTypeGraph = _ckCacheService.GetCkType(_tenantId, rtEntityDtoInputType.CkTypeId);
+            rtEntityDtoInputType.Populate(_ckCacheService, _tenantId, this, ckTypeGraph);
+        }
+        
+        foreach (var rtRecordDtoInputType in _inputRecordTypes.Values)
+        {
+            var ckRecordGraph = _ckCacheService.GetCkRecord(_tenantId, rtRecordDtoInputType.CkRecordId);
+            rtRecordDtoInputType.Populate(_ckCacheService, _tenantId, this, ckRecordGraph);
         }
     }
 }

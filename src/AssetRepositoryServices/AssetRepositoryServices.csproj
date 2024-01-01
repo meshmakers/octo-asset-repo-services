@@ -16,6 +16,7 @@
         <OutputPath>..\..\bin\$(Configuration)\</OutputPath>
         <DocumentationFile>..\..\bin\$(Configuration)\$(AssemblyName).xml</DocumentationFile>
         <NoWarn>1701;1702;CS8002</NoWarn>
+        <CopyDocumentationFilesFromPackages>true</CopyDocumentationFilesFromPackages>
     </PropertyGroup>
 
     <ItemGroup>
@@ -37,7 +38,7 @@
         <ProjectReference Include="$(OctoCommonServicesPath)src\Common\Common.csproj" />
         <ProjectReference Include="$(OctoCommonServicesPath)src\Swagger\Swagger.csproj" />
         <ProjectReference Include="..\AssetRepositoryServices.Resources\AssetRepositoryServices.Resources.csproj" />
-        <ProjectReference Include="$(OctoCorePath)src\MongoDb\Runtime.Engine.MongoDb\Runtime.Engine.MongoDb.csproj" />
+        <ProjectReference Include="$(OctoConstructionKitPath)src\MongoDb\Runtime.Engine.MongoDb\Runtime.Engine.MongoDb.csproj" />
         <ProjectReference Include="$(OctoCommonServicesPath)src\Infrastructure\Infrastructure.csproj" />
     </ItemGroup>
 

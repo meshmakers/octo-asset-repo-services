@@ -14,41 +14,37 @@ using Meshmakers.Octo.Runtime.Contracts.RepositoryEntities;
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
 
 /// <summary>
-///     Implements the GraphQL Runtime Entity Type
+///     Implements the GraphQL runtime record type
 /// </summary>
-public sealed class RtEntityDtoType : ObjectGraphType<RtEntityDto>
+public sealed class RtRecordDtoType : ObjectGraphType<RtRecordDto>
 {
     /// <inheritdoc />
-    public RtEntityDtoType(CkId<CkTypeId> ckTypeId)
+    public RtRecordDtoType(CkId<CkRecordId> ckRecordId)
     {
-        CkTypeId = ckTypeId;
+        CkRecordId = ckRecordId;
 
-        Name = ckTypeId.GetGraphQlName();
-        Description = $"Runtime entities of construction kit type '{ckTypeId}'";
+        Name = ckRecordId.GetGraphQlName();
+        Description = $"Runtime entities of construction kit record '{ckRecordId}'";
         IsTypeOf = o =>
         {
-            if (o is RtEntityDto rtEntityDto)
+            if (o is RtRecordDto rtRecordDto)
             {
-                return rtEntityDto.CkTypeId == ckTypeId;
+                return rtRecordDto.CkRecordId == ckRecordId;
             }
 
             return false;
         };
 
-        Field(d => d.RtId, type: typeof(OctoObjectIdType));
-        Field(d => d.RtCreationDateTime, type: typeof(DateTimeGraphType));
-        Field(d => d.RtChangedDateTime, type: typeof(DateTimeGraphType));
-        Field(x => x.RtWellKnownName, true);
     }
 
     /// <summary>
     ///     Returns the Construction Kid Id of the object type
     /// </summary>
-    public CkId<CkTypeId> CkTypeId { get; }
+    public CkId<CkRecordId> CkRecordId { get; }
 
 
     internal void Populate(ICkCacheService ckCacheService, string tenantId, IGraphTypesCache graphTypesCache, IDataLoaderContextAccessor dataLoaderAccessor,
-        IOctoSessionAccessor sessionAccessor, CkTypeGraph entityCacheItem)
+        IOctoSessionAccessor sessionAccessor, CkRecordGraph entityCacheItem)
     {
         AddConstructionKit(entityCacheItem);
 
@@ -56,42 +52,16 @@ public sealed class RtEntityDtoType : ObjectGraphType<RtEntityDto>
         {
             AddAttribute(graphTypesCache, attribute);
         }
-
-        foreach (var ckTypeAssociationGraph in entityCacheItem.Associations.Out.All)
-        {
-            var allowedTypes = ckCacheService.GetCkType(tenantId, ckTypeAssociationGraph.TargetCkTypeId).DerivedTypes;
-            if (!allowedTypes.Any())
-            {
-                continue; // All Ck entities are abstract for that associations
-            }
-
-            this.AssociationField(graphTypesCache, dataLoaderAccessor, sessionAccessor, ckTypeAssociationGraph.NavigationPropertyName,
-                allowedTypes.Select(x => x.InheritorCkTypeId).Distinct().ToList(), entityCacheItem.CkTypeId,
-                ckTypeAssociationGraph.CkRoleId, GraphDirections.Outbound);
-        }
-
-        foreach (var ckTypeAssociationGraph in entityCacheItem.Associations.In.All)
-        {
-            var allowedTypes = ckCacheService.GetCkType(tenantId, ckTypeAssociationGraph.TargetCkTypeId).DerivedTypes;
-            if (!allowedTypes.Any())
-            {
-                continue; // All Ck entities are abstract for that associations
-            }
-
-            this.AssociationField(graphTypesCache, dataLoaderAccessor, sessionAccessor, ckTypeAssociationGraph.NavigationPropertyName,
-                allowedTypes.Select(x => x.InheritorCkTypeId).Distinct().ToList(), entityCacheItem.CkTypeId,
-                ckTypeAssociationGraph.CkRoleId, GraphDirections.Inbound);
-        }
     }
 
-    private void AddAttribute(IGraphTypesCache graphTypesCache, CkTypeAttributeGraph attributeCacheItem)
+    private void AddAttribute(IGraphTypesCache graphTypesCache,CkTypeAttributeGraph attributeCacheItem)
     {
         // TODO: make better. is UserContext really needed? Maybe we can use Resolve method instead?
-        Expression<Func<RtEntityDto, object?>> scalarValueExpression = dto =>
-            ((RtEntity)dto.UserContext!).GetAttributeValueOrDefault(attributeCacheItem.AttributeName, null);
+        Expression<Func<RtRecordDto, object?>> scalarValueExpression = dto =>
+            ((RtRecord)dto.UserContext!).GetAttributeValueOrDefault(attributeCacheItem.AttributeName, null);
 
-        Expression<Func<RtEntityDto, ICollection<object>?>> compoundValueExpression = dto =>
-            ((RtEntity)dto.UserContext!).GetAttributeValueOrDefault(
+        Expression<Func<RtRecordDto, ICollection<object>?>> compoundValueExpression = dto =>
+            ((RtRecord)dto.UserContext!).GetAttributeValueOrDefault(
                 attributeCacheItem.AttributeName, null) as ICollection<object> ?? null;
 
         var attributeName = attributeCacheItem.AttributeName;
@@ -157,31 +127,27 @@ public sealed class RtEntityDtoType : ObjectGraphType<RtEntityDto>
         }
     }
 
-    private void AddConstructionKit(CkTypeGraph ckTypeGraph)
+    private void AddConstructionKit(CkRecordGraph ckTypeGraph)
     {
         Field<CkTypeDtoType>("ConstructionKitType")
             .Metadata(Statics.EntityCacheItem, ckTypeGraph)
             .Resolve(ResolveCkEntity);
     }
 
-    private object ResolveCkEntity(IResolveFieldContext<RtEntityDto> arg)
+    private object ResolveCkEntity(IResolveFieldContext<RtRecordDto> arg)
     {
         // TODO: Fix save cast to CkTypeGraph
         var entityCacheItem = (CkTypeGraph)arg.FieldDefinition.Metadata[Statics.EntityCacheItem]!;
         return CkTypeDtoType.CreateCkTypeDto(entityCacheItem);
     }
 
-    internal static RtEntityDto CreateRtEntityDto(RtEntity rtEntity)
+    internal static RtRecordDto CreateRtRecordDto(RtRecord rtEntity)
     {
-        var rtEntityDto = new RtEntityDto
+        var rtRecordDto = new RtRecordDto
         {
-            RtId = rtEntity.RtId,
-            CkTypeId = rtEntity.CkTypeId,
-            RtCreationDateTime = rtEntity.RtCreationDateTime,
-            RtChangedDateTime = rtEntity.RtChangedDateTime,
-            RtWellKnownName = rtEntity.RtWellKnownName,
+            CkRecordId = rtEntity.CkRecordId,
             UserContext = rtEntity
         };
-        return rtEntityDto;
+        return rtRecordDto;
     }
 }
