@@ -35,4 +35,14 @@ public class OctoGraphQLException : Exception
     {
         return new OctoGraphQLException($"Record attribute {attributeName} has no CkRecordId.");
     }
+
+    public static Exception AttributeNameMetadataNotFound(string fieldDefinitionName)
+    {
+        return new OctoGraphQLException($"Attribute name metadata not found for field definition {fieldDefinitionName}.");
+    }
+
+    public static Exception EnumAttributeHasNoCkEnumId(string attributeName)
+    {
+        return new OctoGraphQLException($"Enum attribute {attributeName} has no CkEnumId.");
+    }
 }

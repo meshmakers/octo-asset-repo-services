@@ -22,6 +22,8 @@ internal class GraphTypesCache : IGraphTypesCache
     private readonly ConcurrentDictionary<CkId<CkTypeId>, RtEntityDtoType> _types;
     private readonly ConcurrentDictionary<CkId<CkTypeId>, RtEntityDtoInputType> _inputTypes;
 
+    private readonly ConcurrentDictionary<CkId<CkEnumId>, RtEnumScalarType> _enumTypes;
+    
     private readonly ConcurrentDictionary<CkId<CkRecordId>, RtRecordDtoType> _recordTypes;
     private readonly ConcurrentDictionary<CkId<CkRecordId>, RtRecordDtoInputType> _inputRecordTypes;
 
@@ -39,6 +41,7 @@ internal class GraphTypesCache : IGraphTypesCache
         _tenantId = tenantId;
         _dataLoaderAccessor = dataLoaderAccessor;
         _octoSessionAccessor = octoSessionAccessor;
+        _enumTypes = new ConcurrentDictionary<CkId<CkEnumId>, RtEnumScalarType>();
         _types = new ConcurrentDictionary<CkId<CkTypeId>, RtEntityDtoType>();
         _inputTypes = new ConcurrentDictionary<CkId<CkTypeId>, RtEntityDtoInputType>();
         _recordTypes = new ConcurrentDictionary<CkId<CkRecordId>, RtRecordDtoType>();
@@ -87,6 +90,17 @@ internal class GraphTypesCache : IGraphTypesCache
     }
 
     /// <inheritdoc />
+    public RtEnumScalarType GetOrCreate(CkId<CkEnumId> ckId)
+    {
+        return _enumTypes.GetOrAdd(ckId, _ =>
+        {
+            var rtEnumType = new RtEnumScalarType(ckId);
+            return rtEnumType;
+        });
+    }
+
+
+    /// <inheritdoc />
     public DynamicConnectionType GetOrCreateConnection(IGraphType graphType, string prefixName)
     {
         return _connectionTypes.GetOrAdd(graphType, _ =>
@@ -124,6 +138,7 @@ internal class GraphTypesCache : IGraphTypesCache
         var inputTypes = new List<IGraphType>();
         inputTypes.AddRange(_types.Values);
         inputTypes.AddRange(_inputTypes.Values);
+        inputTypes.AddRange(_enumTypes.Values);
         inputTypes.AddRange(_recordTypes.Values);
         inputTypes.AddRange(_inputRecordTypes.Values);
         return inputTypes.ToArray();
@@ -141,6 +156,12 @@ internal class GraphTypesCache : IGraphTypesCache
         {
             var ckRecordGraph = _ckCacheService.GetCkRecord(_tenantId, rtRecordDtoType.CkRecordId);
             rtRecordDtoType.Populate(_ckCacheService, _tenantId, this, _dataLoaderAccessor, _octoSessionAccessor, ckRecordGraph);
+        }
+        
+        foreach (var rtEnumType in _enumTypes.Values)
+        {
+            var ckEnumGraph = _ckCacheService.GetCkEnum(_tenantId, rtEnumType.CkEnumId);
+            rtEnumType.Populate(_ckCacheService, _tenantId, this, _dataLoaderAccessor, _octoSessionAccessor, ckEnumGraph);
         }
 
         foreach (var rtEntityDtoInputType in _inputTypes.Values)

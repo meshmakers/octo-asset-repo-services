@@ -11,11 +11,11 @@ using Meshmakers.Octo.ConstructionKit.Contracts.Services;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
 
-public class RtEnumType : EnumerationGraphType
+public class RtEnumScalarType : EnumerationGraphType
 {
     public CkId<CkEnumId> CkEnumId { get; }
 
-    public RtEnumType(CkId<CkEnumId> ckEnumId)
+    public RtEnumScalarType(CkId<CkEnumId> ckEnumId)
     {
         CkEnumId = ckEnumId;
         Name = ckEnumId.GetGraphQlName();

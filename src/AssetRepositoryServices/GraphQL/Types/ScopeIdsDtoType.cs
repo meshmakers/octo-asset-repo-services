@@ -1,5 +1,11 @@
+using GraphQL;
+using GraphQL.DataLoader;
 using GraphQL.Types;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Caches;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.RequestHandling;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
+using Meshmakers.Octo.ConstructionKit.Contracts.DependencyGraph;
+using Meshmakers.Octo.ConstructionKit.Contracts.Services;
 
 #pragma warning disable 1591
 
@@ -12,4 +18,6 @@ public class ScopeIdsDtoType : EnumerationGraphType<ScopeIdsDto>
         Name = "Scopes";
         Description = "The scope of the construction kit model";
     }
+
+   
 }

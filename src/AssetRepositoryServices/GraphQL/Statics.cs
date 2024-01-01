@@ -1,5 +1,6 @@
 using System.Linq.Expressions;
 using GraphQL.Types;
+using Meshmakers.Common.Shared;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
 using Meshmakers.Octo.ConstructionKit.Contracts;
@@ -12,6 +13,7 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL;
 internal static class Statics
 {
     internal const string CkId = "CkId";
+    internal const string AttributeGraphType = "AttributeGraphType";
     internal const string RoleId = "RoleId";
     internal const string GraphDirection = "GraphDirection";
     internal const string EntitiesArg = "entities";
@@ -35,8 +37,9 @@ internal static class Statics
 
     public static string GetGraphQlName<TKey>(this CkId<TKey> ckKey) where TKey : struct, IComparable<TKey>, ICkKey
     {
-        return ckKey.SemanticVersionedFullName.ToLower()
-            .Replace(".", "_")
-            .Replace("/", "_");
+        return ckKey.SemanticVersionedFullName
+            .Replace(".", "")
+            .Replace("/", "")
+            .ToCamelCase();
     }
 }

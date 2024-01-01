@@ -10,8 +10,12 @@ using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.RequestHandling;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Utils;
 using Meshmakers.Octo.Communication.Contracts;
+using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
 using Meshmakers.Octo.ConstructionKit.Contracts;
+using Meshmakers.Octo.ConstructionKit.Contracts.DataTransferObjects;
+using Meshmakers.Octo.ConstructionKit.Contracts.DependencyGraph;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb;
+using Meshmakers.Octo.Runtime.Contracts.RepositoryEntities;
 using Newtonsoft.Json;
 using ObjectExtensions = GraphQL.ObjectExtensions;
 
@@ -76,11 +80,11 @@ internal static class Helpers
     }
 
     public static ConnectionBuilder<TSourceType> Connection<TNodeType, TGraphType, TSourceType>(
-        this ComplexGraphType<TNodeType> complexGraphType, IGraphTypesCache entityDtoCache, TGraphType itemType,
+        this ComplexGraphType<TNodeType> complexGraphType, IGraphTypesCache graphTypesCache, TGraphType itemType,
         string prefixName)
         where TGraphType : IGraphType
     {
-        var type = entityDtoCache.GetOrCreateConnection(itemType, prefixName);
+        var type = graphTypesCache.GetOrCreateConnection(itemType, prefixName);
 
         var connectionBuilder =
             ConnectionBuilder<TSourceType>.Create<TGraphType>(
@@ -299,4 +303,128 @@ internal static class Helpers
     {
         return ValueConverter.ConvertTo(value, targetType);
     }
+    
+    internal static void AddAttribute<TSourceType>(ComplexGraphType<TSourceType> complexGraphType, IGraphTypesCache graphTypesCache,
+        CkTypeAttributeGraph typeAttributeGraph, bool isInputType) where TSourceType : GraphQlDto
+    {
+        var attributeName = typeAttributeGraph.AttributeName;
+        IGraphType? graphType;
+        FieldBuilder<TSourceType, object>? builder;
+
+        switch (typeAttributeGraph.ValueType)
+        {
+#pragma warning disable GQL005
+            
+            case AttributeValueTypesDto.String:
+                builder = complexGraphType.Field(attributeName, type: typeof(StringGraphType));
+                break;
+            case AttributeValueTypesDto.StringArray:
+                builder = complexGraphType.Field(attributeName, type: typeof(ListGraphType<StringGraphType>));
+                break;
+            case AttributeValueTypesDto.Int:
+                builder = complexGraphType.Field(attributeName, type: typeof(IntGraphType));
+                break;
+            case AttributeValueTypesDto.IntArray:
+                builder = complexGraphType.Field(attributeName, type: typeof(ListGraphType<IntGraphType>));
+                break;
+            case AttributeValueTypesDto.Boolean:
+                builder = complexGraphType.Field(attributeName, type: typeof(BooleanGraphType));
+                break;
+            case AttributeValueTypesDto.Double:
+                builder = complexGraphType.Field(attributeName, type: typeof(DecimalGraphType));
+                break;
+            case AttributeValueTypesDto.DateTime:
+                builder = complexGraphType.Field(attributeName, type: typeof(DateTimeGraphType));
+                break;
+            case AttributeValueTypesDto.DateTimeOffset:
+                builder = complexGraphType.Field(attributeName, type: typeof(DateTimeOffsetGraphType));
+                break;
+            case AttributeValueTypesDto.TimeSpan:
+                builder = complexGraphType.Field(attributeName, type: typeof(TimeSpanSecondsGraphType));
+                break;
+            case AttributeValueTypesDto.Int64:
+                builder = complexGraphType.Field(attributeName, type: typeof(LongGraphType));
+                break;
+            case AttributeValueTypesDto.BinaryLinked:
+                builder = complexGraphType.Field(attributeName, type: typeof(OctoObjectIdType));
+                break;
+            case AttributeValueTypesDto.Enum:
+                if (typeAttributeGraph.ValueCkEnumId == null)
+                {
+                    throw OctoGraphQLException.EnumAttributeHasNoCkEnumId(typeAttributeGraph.AttributeName);
+                }
+                builder = complexGraphType.Field(attributeName, 
+                    graphTypesCache.GetOrCreate(typeAttributeGraph.ValueCkEnumId.Value));
+                break;
+            case AttributeValueTypesDto.Record:
+                if (typeAttributeGraph.ValueCkRecordId == null)
+                {
+                    throw OctoGraphQLException.RecordAttributeHasNoCkRecordId(typeAttributeGraph.AttributeName);
+                }
+                graphType = isInputType switch
+                {
+                    true => graphTypesCache.GetOrCreateInput(typeAttributeGraph.ValueCkRecordId.Value),
+                    _ => graphTypesCache.GetOrCreate(typeAttributeGraph.ValueCkRecordId.Value)
+                };
+
+                builder = complexGraphType.Field(attributeName, graphType);
+                break;
+            case AttributeValueTypesDto.RecordArray:
+                if (typeAttributeGraph.ValueCkRecordId == null)
+                {
+                    throw OctoGraphQLException.RecordAttributeHasNoCkRecordId(typeAttributeGraph.AttributeName);
+                }
+
+                graphType = isInputType switch
+                {
+                    true => graphTypesCache.GetOrCreateInput(typeAttributeGraph.ValueCkRecordId.Value),
+                    _ => graphTypesCache.GetOrCreate(typeAttributeGraph.ValueCkRecordId.Value)
+                };
+
+                builder = complexGraphType.Field(attributeName, new ListGraphType(graphType));
+                break;
+            default:
+                throw OctoGraphQLException.AttributeValueTypeNotSupported(typeAttributeGraph.ValueType);
+#pragma warning restore GQL005
+        }
+
+        builder = builder.Metadata(Statics.AttributeGraphType, typeAttributeGraph);
+        if (!isInputType)
+        {
+            builder.Resolve(ResolveAttributeValue);
+        }
+    }
+    
+    private static object? ResolveAttributeValue<TSourceType>(IResolveFieldContext<TSourceType> context) where TSourceType : GraphQlDto
+    {
+        var rtTypeWithAttributes = context.Source.UserContext as RtTypeWithAttributes;
+        var typeAttributeGraph = context.FieldDefinition.GetMetadata<CkTypeAttributeGraph>(Statics.AttributeGraphType);
+        
+        var r = rtTypeWithAttributes?.GetAttributeValueOrDefault(typeAttributeGraph.AttributeName);
+        switch (typeAttributeGraph.ValueType)
+        {
+            case AttributeValueTypesDto.Record:
+                if (r is RtRecord rtRecord)
+                {
+                    return RtRecordDtoType.CreateRtRecordDto(rtRecord);
+                }
+                break;
+            case AttributeValueTypesDto.RecordArray:
+                if (r is IEnumerable items)
+                {
+                    return items.Cast<RtRecord>().Select(RtRecordDtoType.CreateRtRecordDto).ToList();
+                }
+                break;
+            case AttributeValueTypesDto.TimeSpan:
+                if (r is string timeSpanString)
+                {
+                    return TimeSpan.Parse(timeSpanString);
+                }
+                break;
+        }
+
+        return r;
+    }
+
+
 }

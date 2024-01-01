@@ -1,10 +1,8 @@
-using System.Linq.Expressions;
 using GraphQL.Types;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Caches;
 using Meshmakers.Octo.Communication.Contracts;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
 using Meshmakers.Octo.ConstructionKit.Contracts;
-using Meshmakers.Octo.ConstructionKit.Contracts.DataTransferObjects;
 using Meshmakers.Octo.ConstructionKit.Contracts.DependencyGraph;
 using Meshmakers.Octo.ConstructionKit.Contracts.Services;
 
@@ -48,76 +46,7 @@ public sealed class RtRecordDtoInputType : InputObjectGraphType<RtRecordDto>
     {
         foreach (var attribute in recordGraph.AllAttributes.Values)
         {
-            AddAttribute(graphTypesCache, attribute);
-        }
-    }
-
-    private void AddAttribute(IGraphTypesCache graphTypesCache, CkTypeAttributeGraph attributeCacheItem)
-    {
-        var attributeName = attributeCacheItem.AttributeName;
-
-        Expression<Func<RtRecordDto, object>> scalarValueExpression = dto => dto.Properties![attributeName];
-
-        Expression<Func<RtRecordDto, ICollection<object>>> compoundValueExpression =
-            dto => (ICollection<object>)dto.Properties![attributeName];
-
-        switch (attributeCacheItem.ValueType)
-        {
-            case AttributeValueTypesDto.String:
-                Field(attributeName, type: typeof(StringGraphType), expression: scalarValueExpression);
-                break;
-            case AttributeValueTypesDto.StringArray:
-                Field(attributeName, type: typeof(ListGraphType<StringGraphType>), expression: compoundValueExpression);
-                break;
-            case AttributeValueTypesDto.Int:
-                Field(attributeName, type: typeof(IntGraphType), expression: scalarValueExpression);
-                break;
-            case AttributeValueTypesDto.IntArray:
-                Field(attributeName, type: typeof(ListGraphType<IntGraphType>), expression: compoundValueExpression);
-                break;
-            case AttributeValueTypesDto.Boolean:
-                Field(attributeName, type: typeof(BooleanGraphType), expression: scalarValueExpression);
-                break;
-            case AttributeValueTypesDto.Double:
-                Field(attributeName, type: typeof(DecimalGraphType), expression: scalarValueExpression);
-                break;
-            case AttributeValueTypesDto.DateTime:
-                Field(attributeName, type: typeof(DateTimeGraphType), expression: scalarValueExpression);
-                break;
-            case AttributeValueTypesDto.DateTimeOffset:
-                Field(attributeName, type: typeof(DateTimeOffsetGraphType), expression: scalarValueExpression);
-                break;
-            case AttributeValueTypesDto.TimeSpan:
-                Field(attributeName, type: typeof(TimeSpanSecondsGraphType), expression: scalarValueExpression);
-                break;
-            case AttributeValueTypesDto.Int64:
-                Field(attributeName, type: typeof(LongGraphType), expression: scalarValueExpression);
-                break;
-            // case AttributeValueTypes.BinaryEmbedded:
-            //     Field(attributeName, type: typeof(StringGraphType), expression: scalarValueExpression);
-            //     break;     
-            case AttributeValueTypesDto.BinaryLinked:
-                Field(attributeName, type: typeof(OctoObjectIdType), expression: scalarValueExpression);
-                break;
-            case AttributeValueTypesDto.Enum:
-                Field(attributeName, type: typeof(IntGraphType), expression: scalarValueExpression);
-                break;
-            case AttributeValueTypesDto.Record:
-                if (attributeCacheItem.ValueCkRecordId == null)
-                {
-                    throw OctoGraphQLException.RecordAttributeHasNoCkRecordId(attributeCacheItem.AttributeName);
-                }
-                Field(attributeName, graphTypesCache.GetOrCreateInput(attributeCacheItem.ValueCkRecordId.Value));
-                break;
-            case AttributeValueTypesDto.RecordArray:
-                if (attributeCacheItem.ValueCkRecordId == null)
-                {
-                    throw OctoGraphQLException.RecordAttributeHasNoCkRecordId(attributeCacheItem.AttributeName);
-                }
-                Field(attributeName, new ListGraphType(graphTypesCache.GetOrCreateInput(attributeCacheItem.ValueCkRecordId.Value)));
-                break;            
-            default:
-                throw OctoGraphQLException.AttributeValueTypeNotSupported(attributeCacheItem.ValueType);
+            Helpers.AddAttribute(this, graphTypesCache, attribute, true);
         }
     }
 }
