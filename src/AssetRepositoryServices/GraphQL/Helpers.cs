@@ -8,6 +8,7 @@ using GraphQL.Types;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Caches;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.RequestHandling;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Scalars;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Utils;
 using Meshmakers.Octo.Communication.Contracts;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
@@ -100,7 +101,7 @@ internal static class Helpers
         IOctoSessionAccessor sessionAccessor, string name, IReadOnlyList<CkId<CkTypeId>> allowedTypes, CkId<CkTypeId> originCkId,
         CkId<CkAssociationRoleId> roleId, GraphDirections graphDirection)
     {
-        var graphTypes = allowedTypes.Select(graphTypesCache.GetOrCreate);
+        var graphTypes = allowedTypes.Select(graphTypesCache.GetType);
 
         var unionType = new RtEntityAssociationType(
             $"{complexGraphType.Name}_{name}{CommonConstants.GraphQlUnionSuffix}",
@@ -355,7 +356,7 @@ internal static class Helpers
                 }
 
                 builder = complexGraphType.Field(attributeName,
-                    graphTypesCache.GetOrCreate(typeAttributeGraph.ValueCkEnumId.Value));
+                    graphTypesCache.GetEnum(typeAttributeGraph.ValueCkEnumId.Value));
                 break;
             case AttributeValueTypesDto.Record:
                 if (typeAttributeGraph.ValueCkRecordId == null)
@@ -365,8 +366,8 @@ internal static class Helpers
 
                 graphType = isInputType switch
                 {
-                    true => graphTypesCache.GetOrCreateInput(typeAttributeGraph.ValueCkRecordId.Value),
-                    _ => graphTypesCache.GetOrCreate(typeAttributeGraph.ValueCkRecordId.Value)
+                    true => graphTypesCache.GetRecordInput(typeAttributeGraph.ValueCkRecordId.Value),
+                    _ => graphTypesCache.GetRecord(typeAttributeGraph.ValueCkRecordId.Value)
                 };
 
                 builder = complexGraphType.Field(attributeName, graphType);
@@ -379,8 +380,8 @@ internal static class Helpers
 
                 graphType = isInputType switch
                 {
-                    true => graphTypesCache.GetOrCreateInput(typeAttributeGraph.ValueCkRecordId.Value),
-                    _ => graphTypesCache.GetOrCreate(typeAttributeGraph.ValueCkRecordId.Value)
+                    true => graphTypesCache.GetRecordInput(typeAttributeGraph.ValueCkRecordId.Value),
+                    _ => graphTypesCache.GetRecord(typeAttributeGraph.ValueCkRecordId.Value)
                 };
 
                 builder = complexGraphType.Field(attributeName, new ListGraphType(graphType));

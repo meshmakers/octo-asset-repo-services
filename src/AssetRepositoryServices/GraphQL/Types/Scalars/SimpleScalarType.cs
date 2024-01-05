@@ -3,7 +3,7 @@ using GraphQLParser.AST;
 
 #pragma warning disable 1591
 
-namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
+namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Scalars;
 
 public class SimpleScalarType : ScalarGraphType
 {

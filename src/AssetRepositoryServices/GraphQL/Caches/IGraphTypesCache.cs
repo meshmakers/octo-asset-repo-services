@@ -1,5 +1,7 @@
 using GraphQL.Types;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Enums;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Inputs;
 using Meshmakers.Octo.ConstructionKit.Contracts;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Caches;
@@ -9,41 +11,6 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Caches;
 /// </summary>
 public interface IGraphTypesCache
 {
-    /// <summary>
-    ///     Gets or creates an RtEntityDtoType based on construction kit type id
-    /// </summary>
-    /// <param name="ckId">The construction kit type id.</param>
-    /// <returns>The cached RtEntityDtoType based on the given construction kit type id.</returns>
-    RtEntityDtoType GetOrCreate(CkId<CkTypeId> ckId);
-
-    /// <summary>
-    ///     Gets or creates an RtEntityDtoInputType based on construction kit type id
-    /// </summary>
-    /// <param name="ckId">The construction kit type id.</param>
-    /// <returns>The cached RtEntityDtoType based on the given construction kit type id.</returns>
-    RtEntityDtoInputType GetOrCreateInput(CkId<CkTypeId> ckId);
-
-    /// <summary>
-    ///     Gets or creates an RtRecordDtoType based on construction kit record id
-    /// </summary>
-    /// <param name="ckId">The construction kit record id.</param>
-    /// <returns>The cached RtRecordDtoType based on the given construction kit type id.</returns>
-    RtRecordDtoType GetOrCreate(CkId<CkRecordId> ckId);
-
-    /// <summary>
-    ///     Gets or creates an RtEnumScalarType based on construction kit enum id
-    /// </summary>
-    /// <param name="ckId">The construction kit enum id.</param>
-    /// <returns>The cached RtEnumScalarType based on the given construction kit enum id.</returns>
-    RtEnumScalarType GetOrCreate(CkId<CkEnumId> ckId);
-
-    /// <summary>
-    ///     Gets or creates an RtRecordDtoInputType based on construction kit record id
-    /// </summary>
-    /// <param name="ckId">The construction kit record id.</param>
-    /// <returns>The cached RtRecordDtoInputType based on the given construction kit type id.</returns>
-    RtRecordDtoInputType GetOrCreateInput(CkId<CkRecordId> ckId);
-
     /// <summary>
     ///     Gets or creates a Connection Type based on the given GraphQL type
     /// </summary>
@@ -57,12 +24,42 @@ public interface IGraphTypesCache
     /// </summary>
     /// <returns></returns>
     RtEntityDtoType[] GetTypes();
+    
+    /// <summary>
+    ///     Returns the construction kit type graph type for the given construction kit type id
+    /// </summary>
+    /// <returns></returns>
+    RtEntityDtoType GetType(CkId<CkTypeId> ckTypeId);
+    
+    /// <summary>
+    ///     Returns the construction kit type input graph type for the given construction kit type id
+    /// </summary>
+    /// <returns></returns>
+    RtEntityDtoInputType GetInputType(CkId<CkTypeId> ckTypeId);
 
     /// <summary>
     ///     Returns an array of known construction kit record graph types
     /// </summary>
     /// <returns></returns>
     RtRecordDtoType[] GetRecords();
+
+    /// <summary>
+    ///     Returns the construction kit record graph type for the given construction kit record id
+    /// </summary>
+    /// <returns></returns>
+    RtRecordDtoType GetRecord(CkId<CkRecordId> ckRecordId);
+    
+    /// <summary>
+    ///     Returns the construction kit record graph type for the given construction kit record id
+    /// </summary>
+    /// <returns></returns>
+    RtRecordDtoInputType GetRecordInput(CkId<CkRecordId> ckRecordId);
+
+    /// <summary>
+    ///     Returns the construction kit enum graph type for the given construction kit enum id
+    /// </summary>
+    /// <returns></returns>
+    RtEnumScalarType GetEnum(CkId<CkEnumId> ckEnumId);
 
     /// <summary>
     ///     Returns an array of known graph types

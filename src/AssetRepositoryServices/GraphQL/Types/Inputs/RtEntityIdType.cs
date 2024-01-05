@@ -1,7 +1,8 @@
 using GraphQL.Types;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Scalars;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
 
-namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
+namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Inputs;
 
 /// <summary>
 ///     GraphQL type representing the RtEntityId type (struct with CkId and rtId)

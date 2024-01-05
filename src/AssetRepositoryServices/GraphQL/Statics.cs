@@ -6,7 +6,6 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL;
 internal static class Statics
 {
     internal const string CkId = "CkId";
-    internal const string AttributeGraphType = "AttributeGraphType";
     internal const string RoleId = "RoleId";
     internal const string GraphDirection = "GraphDirection";
     internal const string EntitiesArg = "entities";
@@ -22,7 +21,8 @@ internal static class Statics
     internal const string FieldFilterArg = "fieldFilter";
     internal const string SortOrderArg = "sortOrder";
     internal const string TenantContext = "tenantContext";
-    internal const string EntityCacheItem = "entityCacheItem";
+    internal const string AttributeGraphType = "AttributeGraphType";
+    internal const string TypeGraphType = "TypeGraphType";
 
     internal const string LargeBinaryIdArg = "largeBinaryId";
     internal const string LargeBinaryDataArg = "binaryData";

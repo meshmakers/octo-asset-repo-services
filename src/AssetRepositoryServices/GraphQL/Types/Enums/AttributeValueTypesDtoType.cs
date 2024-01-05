@@ -3,7 +3,7 @@ using Meshmakers.Octo.ConstructionKit.Contracts.DataTransferObjects;
 
 #pragma warning disable 1591
 
-namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
+namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Enums;
 
 public class AttributeValueTypesDtoType : EnumerationGraphType<AttributeValueTypesDto>
 {

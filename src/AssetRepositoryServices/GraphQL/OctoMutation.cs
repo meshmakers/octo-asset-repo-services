@@ -4,6 +4,8 @@ using GraphQL.Types;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Caches;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.RequestHandling;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Inputs;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Scalars;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Utils;
 using Meshmakers.Octo.Communication.Contracts;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
@@ -30,10 +32,14 @@ public sealed class OctoMutation : ObjectGraphType
         IOctoSessionAccessor sessionAccessor)
     {
         _sessionAccessor = sessionAccessor;
-        foreach (var cacheItem in graphTypesCache.GetTypes())
+        foreach (var rtEntityDtoType in graphTypesCache.GetTypes())
         {
-            var inputType = graphTypesCache.GetOrCreateInput(cacheItem.CkTypeId);
-            var outputType = graphTypesCache.GetOrCreate(cacheItem.CkTypeId);
+            if (rtEntityDtoType.IsAbstract)
+            {
+                continue;
+            }
+            var inputType = graphTypesCache.GetInputType(rtEntityDtoType.CkTypeId);
+            var outputType = graphTypesCache.GetType(rtEntityDtoType.CkTypeId);
 
             var createArgument = new QueryArgument(new NonNullGraphType(new ListGraphType(inputType)))
                 { Name = Statics.EntitiesArg };
@@ -48,17 +54,17 @@ public sealed class OctoMutation : ObjectGraphType
             this.FieldAsync($"create{outputType.Name}s", $"Creates new entities of type '{outputType.Name}'.",
                     new ListGraphType(outputType),
                     new QueryArguments(createArgument), ResolveCreate)
-                .AddMetadata(Statics.CkId, cacheItem.CkTypeId);
+                .AddMetadata(Statics.CkId, rtEntityDtoType.CkTypeId);
 
             this.FieldAsync($"update{outputType.Name}s", $"Updates existing entity of type '{outputType.Name}'.",
                     new ListGraphType(outputType),
                     new QueryArguments(updateArgument), ResolveUpdate)
-                .AddMetadata(Statics.CkId, cacheItem.CkTypeId);
+                .AddMetadata(Statics.CkId, rtEntityDtoType.CkTypeId);
 
             this.FieldAsync($"delete{outputType.Name}s", $"Deletes an entity of type '{outputType.Name}'.",
                     new BooleanGraphType(),
                     new QueryArguments(deleteArgument), ResolveDelete)
-                .AddMetadata(Statics.CkId, cacheItem.CkTypeId);
+                .AddMetadata(Statics.CkId, rtEntityDtoType.CkTypeId);
         }
 
         AddField(new FieldType

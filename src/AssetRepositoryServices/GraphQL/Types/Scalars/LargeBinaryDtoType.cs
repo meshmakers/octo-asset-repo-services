@@ -1,7 +1,7 @@
 using GraphQL.Types;
 using GraphQLParser.AST;
 
-namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
+namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Scalars;
 
 /// <summary>
 ///     Definition of a large binary content

@@ -55,14 +55,14 @@ public sealed class RtRecordDtoType : ObjectGraphType<RtRecordDto>
     private void AddConstructionKit(CkRecordGraph ckTypeGraph)
     {
         Field<CkTypeDtoType>("ConstructionKitType")
-            .Metadata(Statics.EntityCacheItem, ckTypeGraph)
+            .Metadata(Statics.TypeGraphType, ckTypeGraph)
             .Resolve(ResolveCkEntity);
     }
 
     private object ResolveCkEntity(IResolveFieldContext<RtRecordDto> arg)
     {
         // TODO: Fix save cast to CkTypeGraph
-        var entityCacheItem = (CkTypeGraph)arg.FieldDefinition.Metadata[Statics.EntityCacheItem]!;
+        var entityCacheItem = (CkTypeGraph)arg.FieldDefinition.Metadata[Statics.TypeGraphType]!;
         return CkTypeDtoType.CreateCkTypeDto(entityCacheItem);
     }
 

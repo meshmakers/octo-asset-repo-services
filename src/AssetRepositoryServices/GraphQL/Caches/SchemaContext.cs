@@ -82,22 +82,12 @@ internal class SchemaContext : ISchemaContext
                     entry.SlidingExpiration = TimeSpan.FromDays(1);
 
                     var graphTypesCache = new GraphTypesCache(_ckCacheService, tenantId, _dataLoaderAccessor, _octoSessionAccessor);
-
-                    foreach (var ckTypeGraph in _ckCacheService.GetCkTypes(tenantId).Where(x => !x.IsAbstract))
-                    {
-                        graphTypesCache.GetOrCreate(ckTypeGraph.CkTypeId);
-                    }
-
-                    foreach (var ckRecordGraph in _ckCacheService.GetCkRecords(tenantId).Where(x => !x.IsAbstract))
-                    {
-                        graphTypesCache.GetOrCreate(ckRecordGraph.CkRecordId);
-                    }
+                    graphTypesCache.Populate();
 
                     var query = new OctoQuery(_options, graphTypesCache, _dataLoaderAccessor, _octoSessionAccessor);
                     var mutation = new OctoMutation(graphTypesCache, _octoSessionAccessor);
                     var subscriptions = new OctoSubscriptions(graphTypesCache);
 
-                    graphTypesCache.Populate();
 
                     var createdSchema = new OctoSchema(query, mutation, subscriptions);
                     createdSchema.RegisterTypes(graphTypesCache.GetKnownGraphTypes());

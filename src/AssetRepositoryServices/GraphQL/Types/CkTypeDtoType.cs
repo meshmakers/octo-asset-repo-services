@@ -1,8 +1,10 @@
 ﻿using GraphQL.Builders;
 using GraphQL.Types;
 using Meshmakers.Common.Shared;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Scalars;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Utils;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
+using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.ConstructionKit.Contracts.DependencyGraph;
 using Meshmakers.Octo.ConstructionKit.Contracts.Services;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb.Repository.Entities;
@@ -19,7 +21,7 @@ public sealed class CkTypeDtoType : ObjectGraphType<CkTypeDto>
         Name = "CkType";
         Description = "A construction kit type";
 
-        Field(x => x.CkTypeId, type: typeof(IdGraphType)).Description("Unique id of the object.");
+        Field(x => x.CkTypeId, type: typeof(NonNullGraphType<CkIdType<CkTypeId>>)).Description("Unique id of the object.");
         Field(x => x.IsAbstract);
         Field(x => x.IsFinal);
 

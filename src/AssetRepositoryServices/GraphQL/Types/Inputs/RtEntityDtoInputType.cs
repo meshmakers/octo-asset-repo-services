@@ -7,7 +7,7 @@ using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.ConstructionKit.Contracts.DependencyGraph;
 using Meshmakers.Octo.ConstructionKit.Contracts.Services;
 
-namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
+namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Inputs;
 
 /// <summary>
 ///     Implements a GraphQL runtime entity type

@@ -3,6 +3,8 @@ using GraphQL.DataLoader;
 using GraphQL.Types;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.RequestHandling;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Enums;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Inputs;
 using Meshmakers.Octo.Communication.Contracts;
 using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.ConstructionKit.Contracts.Services;
@@ -49,56 +51,6 @@ internal class GraphTypesCache : IGraphTypesCache
         _connectionTypes = new ConcurrentDictionary<IGraphType, DynamicConnectionType>();
     }
 
-    /// <inheritdoc />
-    public RtEntityDtoType GetOrCreate(CkId<CkTypeId> ckId)
-    {
-        return _types.GetOrAdd(ckId, _ =>
-        {
-            var rtEntityType = new RtEntityDtoType(ckId);
-            return rtEntityType;
-        });
-    }
-
-    /// <inheritdoc />
-    public RtEntityDtoInputType GetOrCreateInput(CkId<CkTypeId> ckId)
-    {
-        return _inputTypes.GetOrAdd(ckId, _ =>
-        {
-            var rtEntityDtoInputType = new RtEntityDtoInputType(ckId);
-            return rtEntityDtoInputType;
-        });
-    }
-
-    /// <inheritdoc />
-    public RtRecordDtoType GetOrCreate(CkId<CkRecordId> ckId)
-    {
-        return _recordTypes.GetOrAdd(ckId, _ =>
-        {
-            var rtRecordDtoType = new RtRecordDtoType(ckId);
-            return rtRecordDtoType;
-        });
-    }
-
-    /// <inheritdoc />
-    public RtRecordDtoInputType GetOrCreateInput(CkId<CkRecordId> ckId)
-    {
-        return _inputRecordTypes.GetOrAdd(ckId, _ =>
-        {
-            var rtRecordDtoInputType = new RtRecordDtoInputType(ckId);
-            return rtRecordDtoInputType;
-        });
-    }
-
-    /// <inheritdoc />
-    public RtEnumScalarType GetOrCreate(CkId<CkEnumId> ckId)
-    {
-        return _enumTypes.GetOrAdd(ckId, _ =>
-        {
-            var rtEnumType = new RtEnumScalarType(ckId);
-            return rtEnumType;
-        });
-    }
-
 
     /// <inheritdoc />
     public DynamicConnectionType GetOrCreateConnection(IGraphType graphType, string prefixName)
@@ -125,11 +77,36 @@ internal class GraphTypesCache : IGraphTypesCache
         return _types.Values.ToArray();
     }
 
+    public RtEntityDtoType GetType(CkId<CkTypeId> ckTypeId)
+    {
+        return _types[ckTypeId];
+    }
+
+    public RtEntityDtoInputType GetInputType(CkId<CkTypeId> ckTypeId)
+    {
+        return _inputTypes[ckTypeId];
+    }
+
     /// <inheritdoc />
     public RtRecordDtoType[] GetRecords()
     {
         // ReSharper disable once CoVariantArrayConversion
         return _recordTypes.Values.ToArray();
+    }
+
+    public RtRecordDtoType GetRecord(CkId<CkRecordId> ckRecordId)
+    {
+        return _recordTypes[ckRecordId];
+    }
+
+    public RtRecordDtoInputType GetRecordInput(CkId<CkRecordId> ckRecordId)
+    {
+        return _inputRecordTypes[ckRecordId];
+    }
+
+    public RtEnumScalarType GetEnum(CkId<CkEnumId> ckEnumId)
+    {
+        return _enumTypes[ckEnumId];
     }
 
     /// <inheritdoc />
@@ -146,34 +123,56 @@ internal class GraphTypesCache : IGraphTypesCache
 
     public void Populate()
     {
-        foreach (var rtEntityDtoType in _types.Values)
+        // Create enum types first, because other elements depend on it.     
+        foreach (var ckEnumGraph in _ckCacheService.GetCkEnums(_tenantId))
         {
-            var ckTypeGraph = _ckCacheService.GetCkType(_tenantId, rtEntityDtoType.CkTypeId);
-            rtEntityDtoType.Populate(_ckCacheService, _tenantId, this, _dataLoaderAccessor, _octoSessionAccessor, ckTypeGraph);
-        }
-
-        foreach (var rtRecordDtoType in _recordTypes.Values)
-        {
-            var ckRecordGraph = _ckCacheService.GetCkRecord(_tenantId, rtRecordDtoType.CkRecordId);
-            rtRecordDtoType.Populate(_ckCacheService, _tenantId, this, _dataLoaderAccessor, _octoSessionAccessor, ckRecordGraph);
-        }
-
-        foreach (var rtEnumType in _enumTypes.Values)
-        {
-            var ckEnumGraph = _ckCacheService.GetCkEnum(_tenantId, rtEnumType.CkEnumId);
+            var rtEnumType = _enumTypes.GetOrAdd(ckEnumGraph.CkEnumId, _ =>
+            {
+                var rtEnumType = new RtEnumScalarType(ckEnumGraph.CkEnumId);
+                return rtEnumType;
+            });
             rtEnumType.Populate(_ckCacheService, _tenantId, this, _dataLoaderAccessor, _octoSessionAccessor, ckEnumGraph);
         }
-
-        foreach (var rtEntityDtoInputType in _inputTypes.Values)
+        
+        // Make records second, because types depend on it.
+        foreach (var ckRecordGraph in _ckCacheService.GetCkRecords(_tenantId))
         {
-            var ckTypeGraph = _ckCacheService.GetCkType(_tenantId, rtEntityDtoInputType.CkTypeId);
-            rtEntityDtoInputType.Populate(_ckCacheService, _tenantId, this, ckTypeGraph);
+            var rtRecordDtoType = _recordTypes.GetOrAdd(ckRecordGraph.CkRecordId, _ =>
+            {
+                var rtRecordDtoType = new RtRecordDtoType(ckRecordGraph.CkRecordId);
+                return rtRecordDtoType;
+            });
+            rtRecordDtoType.Populate(_ckCacheService, _tenantId, this, _dataLoaderAccessor, _octoSessionAccessor, ckRecordGraph);
+
+            if (!ckRecordGraph.IsAbstract)
+            {
+                var rtRecordDtoInputType = _inputRecordTypes.GetOrAdd(ckRecordGraph.CkRecordId, _ =>
+                {
+                    var rtRecordDtoInputType = new RtRecordDtoInputType(ckRecordGraph.CkRecordId);
+                    return rtRecordDtoInputType;
+                });
+                rtRecordDtoInputType.Populate(_ckCacheService, _tenantId, this, ckRecordGraph);
+            }
         }
-
-        foreach (var rtRecordDtoInputType in _inputRecordTypes.Values)
+        
+        foreach (var ckTypeGraph in _ckCacheService.GetCkTypes(_tenantId))
         {
-            var ckRecordGraph = _ckCacheService.GetCkRecord(_tenantId, rtRecordDtoInputType.CkRecordId);
-            rtRecordDtoInputType.Populate(_ckCacheService, _tenantId, this, ckRecordGraph);
+            var rtEntityDtoType = _types.GetOrAdd(ckTypeGraph.CkTypeId, _ =>
+            {
+                var rtEntityType = new RtEntityDtoType(ckTypeGraph);
+                return rtEntityType;
+            });
+            rtEntityDtoType.Populate(_ckCacheService, _tenantId, this, _dataLoaderAccessor, _octoSessionAccessor);
+
+            if (!ckTypeGraph.IsAbstract)
+            {
+                var rtEntityDtoInputType = _inputTypes.GetOrAdd(ckTypeGraph.CkTypeId, _ =>
+                {
+                    var rtEntityDtoInputType = new RtEntityDtoInputType(ckTypeGraph.CkTypeId);
+                    return rtEntityDtoInputType;
+                });
+                rtEntityDtoInputType.Populate(_ckCacheService, _tenantId, this, ckTypeGraph);
+            }
         }
     }
 }

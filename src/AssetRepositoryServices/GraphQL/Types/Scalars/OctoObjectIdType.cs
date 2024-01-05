@@ -5,7 +5,7 @@ using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Converter;
 using Meshmakers.Octo.ConstructionKit.Contracts;
 using MongoDB.Bson;
 
-namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
+namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Scalars;
 
 /// <summary>
 ///     GraphQL type for Object Ids

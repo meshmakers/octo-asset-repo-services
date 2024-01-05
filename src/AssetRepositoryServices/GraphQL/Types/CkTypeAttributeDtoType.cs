@@ -1,5 +1,8 @@
 using GraphQL.Types;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Enums;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Scalars;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
+using Meshmakers.Octo.ConstructionKit.Contracts;
 
 #pragma warning disable 1591
 
@@ -12,7 +15,7 @@ public sealed class CkTypeAttributeDtoType : ObjectGraphType<CkTypeAttributeDto>
         Name = "CkTypeAttribute";
         Description = "Attributes of a construction kit type";
 
-        Field(x => x.CkAttributeId, type: typeof(IdGraphType)).Description("Octo Identifier of the attribute.");
+        Field(x => x.CkAttributeId, type: typeof(NonNullGraphType<CkIdType<CkAttributeId>>)).Description("Octo Identifier of the attribute.");
         Field(x => x.AttributeName, type: typeof(StringGraphType)).Description("Attribute name within the entity.");
         Field(x => x.AttributeValueType, type: typeof(AttributeValueTypesDtoType))
             .Description("Attribute name within the type.");

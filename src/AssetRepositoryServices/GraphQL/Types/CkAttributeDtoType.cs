@@ -1,5 +1,8 @@
 using GraphQL.Types;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Enums;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Scalars;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
+using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.ConstructionKit.Contracts.DependencyGraph;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb.Repository.Entities;
 
@@ -17,10 +20,10 @@ public sealed class CkAttributeDtoType : ObjectGraphType<CkAttributeDto>
         Name = "CkAttribute";
         Description = "Construction kit attribute definitions";
 
-        Field(x => x.CkAttributeId, type: typeof(IdGraphType)).Description("Unique id of the object.");
-        Field(x => x.AttributeValueType, type: typeof(AttributeValueTypesDtoType));
-        Field(x => x.ValueCkRecordId, type: typeof(IdGraphType)).Description("Optional record id of the attribute value type.");
-        Field(x => x.ValueCkEnumId, type: typeof(IdGraphType)).Description("Optional enum id of the attribute value type.");
+        Field(x => x.CkAttributeId, type: typeof(NonNullGraphType<CkIdType<CkAttributeId>>)).Description("Unique id of the object.");
+        Field(x => x.AttributeValueType, type: typeof(NonNullGraphType<AttributeValueTypesDtoType>));
+        Field(x => x.ValueCkRecordId, type: typeof(CkIdType<CkRecordId>)).Description("Optional record id of the attribute value type.");
+        Field(x => x.ValueCkEnumId, type: typeof(CkIdType<CkEnumId>)).Description("Optional enum id of the attribute value type.");
         Field(x => x.Description, type: typeof(StringGraphType)).Description("Optional description of the attribute.");
         Field(x => x.IsDataStream, type: typeof(BooleanGraphType))
             .Description("Optional flag that tells if an attribute is a data stream.");
