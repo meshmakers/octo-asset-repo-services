@@ -21,7 +21,7 @@ public sealed class CkTypeDtoType : ObjectGraphType<CkTypeDto>
         Name = "CkType";
         Description = "A construction kit type";
 
-        Field(x => x.CkTypeId, type: typeof(NonNullGraphType<CkIdType<CkTypeId>>)).Description("Unique id of the object.");
+        Field(x => x.CkTypeId, type: typeof(NonNullGraphType<CkIdTypeGraph<CkTypeId>>)).Description("Unique id of the object.");
         Field(x => x.IsAbstract);
         Field(x => x.IsFinal);
 
@@ -96,13 +96,13 @@ public sealed class CkTypeDtoType : ObjectGraphType<CkTypeDto>
         return ConnectionUtils.ToConnection(resultList.Select(CreateCkTypeAttributeDto), ctx, null);
     }
 
-    internal static CkTypeDto CreateCkTypeDto(CkTypeGraph entityCacheItem)
+    internal static CkTypeDto CreateCkTypeDto(CkTypeGraph ckTypeGraph)
     {
         var ckEntityDto = new CkTypeDto
         {
-            CkTypeId = entityCacheItem.CkTypeId,
-            IsFinal = entityCacheItem.IsFinal,
-            IsAbstract = entityCacheItem.IsAbstract
+            CkTypeId = ckTypeGraph.CkTypeId,
+            IsFinal = ckTypeGraph.IsFinal,
+            IsAbstract = ckTypeGraph.IsAbstract
         };
         return ckEntityDto;
     }

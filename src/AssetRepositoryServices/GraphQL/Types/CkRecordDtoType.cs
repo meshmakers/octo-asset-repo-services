@@ -21,7 +21,7 @@ public sealed class CkRecordDtoType : ObjectGraphType<CkRecordDto>
         Name = "CkRecord";
         Description = "A construction kit record";
 
-        Field(x => x.CkRecordId, type: typeof(NonNullGraphType<CkIdType<CkRecordId>>)).Description("Unique id of the object.");
+        Field(x => x.CkRecordId, type: typeof(NonNullGraphType<CkIdTypeGraph<CkRecordId>>)).Description("Unique id of the object.");
         Field(x => x.IsAbstract);
         Field(x => x.IsFinal);
 

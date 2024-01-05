@@ -42,20 +42,21 @@ public sealed class RtEntityGenericDtoType : ObjectGraphType<RtEntityDto>
 
         var graphQlContext = (GraphQlUserContext)ctx.UserContext;
 
-        var filterAttributeNames = ctx.GetArgument<IEnumerable<string>>(Statics.AttributeNamesFilterArg);
 
-        var entityCacheItem = ckCacheService.GetCkType(graphQlContext.TenantId, ctx.Source.CkTypeId);
+        var ckTypeGraph = ckCacheService.GetCkType(graphQlContext.TenantId, ctx.Source.CkTypeId);
 
         IEnumerable<CkTypeAttributeGraph> resultList;
-        if (filterAttributeNames == null)
+        if (ctx.HasArgument(Statics.AttributeNamesFilterArg))
         {
-            resultList = entityCacheItem.AllAttributes.Values;
+            var filterAttributeNames = ctx.GetArgument<IEnumerable<string>>(Statics.AttributeNamesFilterArg);
+            
+            resultList =
+                ckTypeGraph.AllAttributes.Values.Where(a =>
+                    filterAttributeNames.Contains(a.AttributeName.ToCamelCase()));
         }
         else
         {
-            resultList =
-                entityCacheItem.AllAttributes.Values.Where(a =>
-                    filterAttributeNames.Contains(a.AttributeName.ToCamelCase()));
+            resultList = ckTypeGraph.AllAttributes.Values;
         }
 
         return ConnectionUtils.ToConnection(

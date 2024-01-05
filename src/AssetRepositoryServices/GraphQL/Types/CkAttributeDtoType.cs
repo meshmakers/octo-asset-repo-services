@@ -1,9 +1,12 @@
+using GraphQL;
 using GraphQL.Types;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Enums;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Scalars;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Utils;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
 using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.ConstructionKit.Contracts.DependencyGraph;
+using Meshmakers.Octo.ConstructionKit.Contracts.Services;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb.Repository.Entities;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
@@ -12,7 +15,7 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
 ///     Construction kit attributes Graph QL type definition
 /// </summary>
 // ReSharper disable once ClassNeverInstantiated.Global
-public sealed class CkAttributeDtoType : ObjectGraphType<CkAttributeDto>
+internal sealed class CkAttributeDtoType : ObjectGraphType<CkAttributeDto>
 {
     /// <inheritdoc />
     public CkAttributeDtoType()
@@ -20,24 +23,74 @@ public sealed class CkAttributeDtoType : ObjectGraphType<CkAttributeDto>
         Name = "CkAttribute";
         Description = "Construction kit attribute definitions";
 
-        Field(x => x.CkAttributeId, type: typeof(NonNullGraphType<CkIdType<CkAttributeId>>)).Description("Unique id of the object.");
-        Field(x => x.AttributeValueType, type: typeof(NonNullGraphType<AttributeValueTypesDtoType>));
-        Field(x => x.ValueCkRecordId, type: typeof(CkIdType<CkRecordId>)).Description("Optional record id of the attribute value type.");
-        Field(x => x.ValueCkEnumId, type: typeof(CkIdType<CkEnumId>)).Description("Optional enum id of the attribute value type.");
-        Field(x => x.Description, type: typeof(StringGraphType)).Description("Optional description of the attribute.");
+        Field(x => x.CkAttributeId, type: typeof(NonNullGraphType<CkIdTypeGraph<CkAttributeId>>))
+            .Description("Construction kit attribute id.");
+        Field(x => x.AttributeValueType, type: typeof(NonNullGraphType<AttributeValueTypesDtoType>))
+            .Description("Value type of the attribute.");
+        Field<CkRecordDtoType>("CkRecord")
+            .Description("Optional record id of the attribute value type.")
+            .Resolve(ResolveCkRecord);
+        Field<CkEnumDtoType>("CkEnum")
+            .Description("Optional enum id of the attribute value type.")
+            .Resolve(ResolveCkEnum);
+        Field(x => x.Description, type: typeof(StringGraphType))
+            .Description("Optional description of the attribute.");
+        Field(x => x.MetaData, type: typeof(ListGraphType<CkAttributeMetaDataDtoType>))
+            .Description("Optional meta data of the attribute.");
         Field(x => x.IsDataStream, type: typeof(BooleanGraphType))
             .Description("Optional flag that tells if an attribute is a data stream.");
         Field<ListGraphType<SimpleScalarType>, object>(nameof(CkAttributeDto.DefaultValues))
-            .Description("Default values of a compound attribute.");
+            .Description("Default values of the attribute.");
     }
 
-    internal static CkAttributeDto CreateCkAttributeDto(CkTypeAttributeGraph attributeCacheItem)
+    private object? ResolveCkEnum(IResolveFieldContext<CkAttributeDto> arg)
+    {
+        var ckCacheService = arg.RequestServices?.GetRequiredService<ICkCacheService>();
+        if (ckCacheService == null)
+        {
+            throw AssetRepositoryException.ServiceNotRegistered(typeof(ICkCacheService));
+        }
+        var graphQlUserContext = (GraphQlUserContext)arg.UserContext;
+        
+        if (arg.Source.ValueCkEnumId == null)
+        {
+            return null;
+        }
+        
+        var ckEnumGraph = ckCacheService.GetCkEnum(graphQlUserContext.TenantId, arg.Source.ValueCkEnumId.Value);
+        return CkEnumDtoType.CreateCkEnumDto(ckEnumGraph);
+    }
+
+    private object? ResolveCkRecord(IResolveFieldContext<CkAttributeDto> arg)
+    {
+        var ckCacheService = arg.RequestServices?.GetRequiredService<ICkCacheService>();
+        if (ckCacheService == null)
+        {
+            throw AssetRepositoryException.ServiceNotRegistered(typeof(ICkCacheService));
+        }
+        var graphQlUserContext = (GraphQlUserContext)arg.UserContext;
+        
+        if (arg.Source.ValueCkRecordId == null)
+        {
+            return null;
+        }
+        
+        var ckRecordGraph = ckCacheService.GetCkRecord(graphQlUserContext.TenantId, arg.Source.ValueCkRecordId.Value);
+        return CkRecordDtoType.CreateCkRecordDto(ckRecordGraph);
+    }
+
+
+    internal static CkAttributeDto CreateCkAttributeDto(CkTypeAttributeGraph ckTypeAttributeGraph)
     {
         var attributeDto = new CkAttributeDto
         {
-            CkAttributeId = attributeCacheItem.CkAttributeId,
-            AttributeValueType = attributeCacheItem.ValueType,
-            DefaultValues = attributeCacheItem.DefaultValues
+            CkAttributeId = ckTypeAttributeGraph.CkAttributeId,
+            AttributeValueType = ckTypeAttributeGraph.ValueType,
+            ValueCkRecordId = ckTypeAttributeGraph.ValueCkRecordId,
+            ValueCkEnumId = ckTypeAttributeGraph.ValueCkEnumId,
+            Description = ckTypeAttributeGraph.Description,
+            IsDataStream = ckTypeAttributeGraph.IsDataStream,
+            DefaultValues = ckTypeAttributeGraph.DefaultValues
         };
 
         return attributeDto;
@@ -47,8 +100,11 @@ public sealed class CkAttributeDtoType : ObjectGraphType<CkAttributeDto>
     {
         var attributeDto = new CkAttributeDto
         {
-            CkAttributeId = ckAttribute.AttributeId,
+            CkAttributeId = ckAttribute.CkAttributeId,
             AttributeValueType = ckAttribute.AttributeValueType,
+            ValueCkRecordId = ckAttribute.ValueCkRecordId,
+            ValueCkEnumId = ckAttribute.ValueCkEnumId,
+            Description = ckAttribute.Description,
             DefaultValues = ckAttribute.DefaultValues
         };
 

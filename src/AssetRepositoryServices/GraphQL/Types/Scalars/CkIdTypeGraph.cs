@@ -3,9 +3,9 @@ using Meshmakers.Octo.ConstructionKit.Contracts;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Scalars;
 
-internal class CkIdType<TCkKey> : ScalarGraphType where TCkKey: struct, IComparable<TCkKey>, ICkKey
+internal class CkIdTypeGraph<TCkKey> : ScalarGraphType where TCkKey: struct, IComparable<TCkKey>, ICkKey
 {
-    public CkIdType()
+    public CkIdTypeGraph()
     {
         Name = "Ck" + typeof(TCkKey).Name;
         Description = "A construction kit id of type " + typeof(TCkKey).Name + ".";

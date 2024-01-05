@@ -13,8 +13,6 @@ internal static class Statics
     internal const string RtIdsArg = "rtIds";
     internal const string CkIdArg = "ckId";
     internal const string CkIdsArg = "ckIds";
-    internal const string AttributeIdArg = "attributeId";
-    internal const string AttributeIdsArg = "attributeIds";
     internal const string UpdateTypesArg = "updateTypes";
     internal const string SearchFilterArg = "searchFilter";
     internal const string AttributeNamesFilterArg = "attributeNames";

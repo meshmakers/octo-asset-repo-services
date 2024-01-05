@@ -84,7 +84,7 @@ internal class SchemaContext : ISchemaContext
                     var graphTypesCache = new GraphTypesCache(_ckCacheService, tenantId, _dataLoaderAccessor, _octoSessionAccessor);
                     graphTypesCache.Populate();
 
-                    var query = new OctoQuery(_options, graphTypesCache, _dataLoaderAccessor, _octoSessionAccessor);
+                    var query = new OctoQuery(_options, graphTypesCache, _dataLoaderAccessor);
                     var mutation = new OctoMutation(graphTypesCache, _octoSessionAccessor);
                     var subscriptions = new OctoSubscriptions(graphTypesCache);
 
