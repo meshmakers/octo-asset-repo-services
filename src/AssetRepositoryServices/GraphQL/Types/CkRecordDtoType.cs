@@ -35,6 +35,7 @@ public sealed class CkRecordDtoType : ObjectGraphType<CkRecordDto>
                     {
                         throw AssetRepositoryException.ServiceNotRegistered(typeof(ICkCacheService));
                     }
+
                     var graphQlContext = (GraphQlUserContext)ctx.UserContext;
 
                     var result = ckCacheService.GetCkRecord(graphQlContext.TenantId, ctx.Source.CkRecordId).DerivedRecords
@@ -50,6 +51,7 @@ public sealed class CkRecordDtoType : ObjectGraphType<CkRecordDto>
             {
                 throw AssetRepositoryException.ServiceNotRegistered(typeof(ICkCacheService));
             }
+
             var graphQlContext = (GraphQlUserContext)ctx.UserContext;
 
             var result = ckCacheService.GetCkRecord(graphQlContext.TenantId, ctx.Source.CkRecordId).DerivedFromCkRecordId;
@@ -69,10 +71,10 @@ public sealed class CkRecordDtoType : ObjectGraphType<CkRecordDto>
         {
             throw AssetRepositoryException.ServiceNotRegistered(typeof(ICkCacheService));
         }
-        
+
         var graphQlContext = (GraphQlUserContext)ctx.UserContext;
 
-        ctx.TryGetArgument(Statics.AttributeNamesFilterArg, 
+        ctx.TryGetArgument(Statics.AttributeNamesFilterArg,
             out IEnumerable<string>? filterAttributeNames);
 
         var entityCacheItem = ckCacheService.GetCkRecord(graphQlContext.TenantId, ctx.Source.CkRecordId);
@@ -98,7 +100,7 @@ public sealed class CkRecordDtoType : ObjectGraphType<CkRecordDto>
         {
             CkRecordId = ckRecord.CkRecordId,
             IsFinal = ckRecord.IsFinal,
-            IsAbstract = ckRecord.IsAbstract,
+            IsAbstract = ckRecord.IsAbstract
         };
         return ckRecordDto;
     }
@@ -109,7 +111,7 @@ public sealed class CkRecordDtoType : ObjectGraphType<CkRecordDto>
         {
             CkRecordId = ckEntity.CkRecordId,
             IsFinal = ckEntity.IsFinal,
-            IsAbstract = ckEntity.IsAbstract,
+            IsAbstract = ckEntity.IsAbstract
         };
         return ckRecordDto;
     }

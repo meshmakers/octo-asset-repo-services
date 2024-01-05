@@ -11,7 +11,7 @@ internal class GraphQlUserContext : Dictionary<string, object?>
         TenantContext = tenantContext;
     }
 
-    public ClaimsPrincipal? User { get;}
+    public ClaimsPrincipal? User { get; }
 
     public string TenantId => TenantContext.TenantId;
     public ITenantContext TenantContext { get; }

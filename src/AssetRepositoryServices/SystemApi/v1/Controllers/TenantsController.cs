@@ -3,6 +3,7 @@ using IdentityModel;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.Services;
 using Meshmakers.Octo.Common.DistributionEventHub.Services;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
+using Meshmakers.Octo.Runtime.Contracts;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb;
 using Meshmakers.Octo.Services.Common.DistributionEventHub.Messages;
 using Microsoft.AspNetCore.Authorization;
@@ -20,8 +21,8 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.SystemApi.v1.Controlle
 [ApiVersion("1.0")]
 public class TenantsController : ControllerBase
 {
-    private readonly IOctoService _octoService;
     private readonly IDistributionEventHubService _distributionEventHubService;
+    private readonly IOctoService _octoService;
 
     /// <summary>
     ///     Constructor
@@ -80,7 +81,7 @@ public class TenantsController : ControllerBase
         {
             return NotFound();
         }
-        
+
         var octoTenant = await _octoService.SystemContext.GetChildTenantAsync(session, id);
         await session.CommitTransactionAsync();
         return Ok(CreateTenantDto(octoTenant));
@@ -110,10 +111,6 @@ public class TenantsController : ControllerBase
         {
             return Conflict(e.Message);
         }
-        catch (TenantException e)
-        {
-            return Conflict(e.Message);
-        }
     }
 
     // POST: system/v1/tenants/attach?tenantId=abc&databaseName=xyz
@@ -140,10 +137,6 @@ public class TenantsController : ControllerBase
         {
             return Conflict(e.Message);
         }
-        catch (TenantException e)
-        {
-            return Conflict(e.Message);
-        }
     }
 
     // POST: system/v1/tenants/detach?tenantId=abc&databaseName=xyz
@@ -166,10 +159,6 @@ public class TenantsController : ControllerBase
             return NoContent();
         }
         catch (PersistenceException e)
-        {
-            return Conflict(e.Message);
-        }
-        catch (TenantException e)
         {
             return Conflict(e.Message);
         }
@@ -234,7 +223,7 @@ public class TenantsController : ControllerBase
     /// <returns></returns>
     [HttpPut("clearCache")]
     [Authorize(AssetRepositoryServiceConstants.SystemApiReadWritePolicy)]
-    public async Task<IActionResult>  ClearCache([Required] string tenantId)
+    public async Task<IActionResult> ClearCache([Required] string tenantId)
     {
         try
         {

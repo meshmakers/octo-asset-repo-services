@@ -19,13 +19,13 @@ public class RtEntityAssociationType : ObjectGraphType
     private readonly IDataLoaderContextAccessor _dataLoaderAccessor;
     private readonly GraphDirections _graphDirection;
     private readonly CkId<CkTypeId> _originCkId;
-    private readonly CkId<CkAssociationRoleId>  _roleId;
+    private readonly CkId<CkAssociationRoleId> _roleId;
     private readonly IOctoSessionAccessor _sessionAccessor;
 
     public RtEntityAssociationType(string name, string description, IGraphTypesCache entityDtoCache,
         IDataLoaderContextAccessor dataLoaderAccessor,
         IOctoSessionAccessor sessionAccessor,
-        IEnumerable<RtEntityDtoType> rtEntityDtoTypes, CkId<CkTypeId> originCkId, CkId<CkAssociationRoleId>  roleId,
+        IEnumerable<RtEntityDtoType> rtEntityDtoTypes, CkId<CkTypeId> originCkId, CkId<CkAssociationRoleId> roleId,
         GraphDirections graphDirection)
     {
         _dataLoaderAccessor = dataLoaderAccessor;
@@ -76,7 +76,7 @@ public class RtEntityAssociationType : ObjectGraphType
             keysList ??= new List<OctoObjectId>();
             keysList.Add(key.Value);
         }
-        
+
         if (keys == null || _dataLoaderAccessor.Context == null)
         {
             return ConnectionUtils.ToConnection(new RtEntityDto[] { }, ctx, 0, 0, null);

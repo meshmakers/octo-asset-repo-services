@@ -14,11 +14,9 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Swagger", "src\octo-common-
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Infrastructure", "src\octo-common-services\src\Infrastructure\Infrastructure.csproj", "{01A3266D-A1F5-418D-8A0E-8B13B5065A63}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SystemCkModel", "src\octo-common-services\src\octo-construction-kit-engine-mongodb\src\Common\SystemCkModel\SystemCkModel.csproj", "{BEB206B6-C49D-4E10-B8AA-6AEEAE8AE56A}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Runtime.Contracts.MongoDb", "src\octo-common-services\src\octo-construction-kit-engine-mongodb\src\Runtime.Contracts.MongoDb\Runtime.Contracts.MongoDb.csproj", "{5C84022B-5B6B-4CFD-B7C1-338892656443}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Runtime.Contracts.MongoDb", "src\octo-common-services\src\octo-construction-kit-engine-mongodb\src\MongoDb\Runtime.Contracts.MongoDb\Runtime.Contracts.MongoDb.csproj", "{5C84022B-5B6B-4CFD-B7C1-338892656443}"
-EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Runtime.Engine.MongoDb", "src\octo-common-services\src\octo-construction-kit-engine-mongodb\src\MongoDb\Runtime.Engine.MongoDb\Runtime.Engine.MongoDb.csproj", "{E7E33CAA-2D58-4F48-8378-B8DE6BF1C5A0}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Runtime.Engine.MongoDb", "src\octo-common-services\src\octo-construction-kit-engine-mongodb\src\Runtime.Engine.MongoDb\Runtime.Engine.MongoDb.csproj", "{E7E33CAA-2D58-4F48-8378-B8DE6BF1C5A0}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -57,12 +55,6 @@ Global
 		{01A3266D-A1F5-418D-8A0E-8B13B5065A63}.Release|Any CPU.Build.0 = Release|Any CPU
 		{01A3266D-A1F5-418D-8A0E-8B13B5065A63}.DebugL|Any CPU.ActiveCfg = DebugL|Any CPU
 		{01A3266D-A1F5-418D-8A0E-8B13B5065A63}.DebugL|Any CPU.Build.0 = DebugL|Any CPU
-		{BEB206B6-C49D-4E10-B8AA-6AEEAE8AE56A}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{BEB206B6-C49D-4E10-B8AA-6AEEAE8AE56A}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{BEB206B6-C49D-4E10-B8AA-6AEEAE8AE56A}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{BEB206B6-C49D-4E10-B8AA-6AEEAE8AE56A}.Release|Any CPU.Build.0 = Release|Any CPU
-		{BEB206B6-C49D-4E10-B8AA-6AEEAE8AE56A}.DebugL|Any CPU.ActiveCfg = DebugL|Any CPU
-		{BEB206B6-C49D-4E10-B8AA-6AEEAE8AE56A}.DebugL|Any CPU.Build.0 = DebugL|Any CPU
 		{5C84022B-5B6B-4CFD-B7C1-338892656443}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{5C84022B-5B6B-4CFD-B7C1-338892656443}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{5C84022B-5B6B-4CFD-B7C1-338892656443}.Release|Any CPU.ActiveCfg = Release|Any CPU
@@ -80,7 +72,6 @@ Global
 		{C352C2FA-C3AF-4D34-A3E5-26F9957BB074} = {AE8CA7B3-B14B-4471-BFE3-996852BDC41D}
 		{0CF25E18-D2B3-4F03-8492-F6E2BC20190B} = {AE8CA7B3-B14B-4471-BFE3-996852BDC41D}
 		{01A3266D-A1F5-418D-8A0E-8B13B5065A63} = {AE8CA7B3-B14B-4471-BFE3-996852BDC41D}
-		{BEB206B6-C49D-4E10-B8AA-6AEEAE8AE56A} = {C6F3AAA6-EB60-412A-BD74-F1EE2CA1E07E}
 		{5C84022B-5B6B-4CFD-B7C1-338892656443} = {C6F3AAA6-EB60-412A-BD74-F1EE2CA1E07E}
 		{E7E33CAA-2D58-4F48-8378-B8DE6BF1C5A0} = {C6F3AAA6-EB60-412A-BD74-F1EE2CA1E07E}
 	EndGlobalSection

@@ -16,7 +16,7 @@ internal static class GraphQlTenantBuilder
 
         var requestDelegate = endpoints.CreateApplicationBuilder()
             .UseMiddleware<PlaygroundTenantMiddleware>(options).Build();
-        return new PlaygroundTenantEndpointConventionBuilder(endpoints.Map(pattern,  requestDelegate)
+        return new PlaygroundTenantEndpointConventionBuilder(endpoints.Map(pattern, requestDelegate)
             .WithDisplayName("GraphQL Playground"));
     }
 

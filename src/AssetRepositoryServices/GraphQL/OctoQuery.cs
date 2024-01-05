@@ -96,15 +96,16 @@ internal sealed class OctoQuery : ObjectGraphType
 
         var offset = arg.GetOffset();
         var dataQueryOperation = arg.GetDataQueryOperation();
-        
+
         var keysList = new List<CkId<CkAttributeId>>();
         if (arg.TryGetArgument(Statics.AttributeIdArg, out string? key))
         {
             keysList.Add(new CkId<CkAttributeId>(key));
         }
+
         if (arg.TryGetArgument(Statics.AttributeIdsArg, null, out IEnumerable<string>? keys))
         {
-            keysList.AddRange(keys.Select(k=> new CkId<CkAttributeId>(k)));
+            keysList.AddRange(keys.Select(k => new CkId<CkAttributeId>(k)));
         }
 
         // if argument defined, but empty array, do not return any data. That mus be a mistake by client (otherwise
@@ -149,7 +150,7 @@ internal sealed class OctoQuery : ObjectGraphType
                     DownloadUri = new Uri(_options.Value.PublicUrl.EnsureEndsWith(
                         $"/system/v1/largeBinaries?tenantId={tenantContext.TenantId}&largeBinaryId={downloadInfo.BinaryId}"))
                 }
-            }, context, 
+            }, context,
             0, 1, null);
     }
 
@@ -167,11 +168,12 @@ internal sealed class OctoQuery : ObjectGraphType
         {
             keysList.Add(key);
         }
+
         if (arg.TryGetArgument(Statics.CkIdsArg, null, out IEnumerable<string>? keys))
         {
-            keysList.AddRange(keys.Select(k=> new CkId<CkTypeId>(k)));
+            keysList.AddRange(keys.Select(k => new CkId<CkTypeId>(k)));
         }
-        
+
         // if argument defined, but empty array, do not return any data. That mus be a mistake by client (otherwise
         // all entities are returned.
         if (!keysList.Any() && (arg.HasArgument(Statics.CkIdArg) || arg.HasArgument(Statics.CkIdsArg)))
@@ -204,9 +206,10 @@ internal sealed class OctoQuery : ObjectGraphType
         {
             keysList.Add(new OctoObjectId(key));
         }
+
         if (arg.TryGetArgument(Statics.RtIdsArg, null, out IEnumerable<string>? keys))
         {
-            keysList.AddRange(keys.Select(k=> new OctoObjectId(k)));
+            keysList.AddRange(keys.Select(k => new OctoObjectId(k)));
         }
 
         // if argument defined, but empty array, do not return any data. That mus be a mistake by client (otherwise
@@ -251,7 +254,7 @@ internal sealed class OctoQuery : ObjectGraphType
                 { Code = CommonConstants.GraphQLErrorCommon });
             return null;
         }
-        
+
         if (ckIdObj is not CkId<CkTypeId> ckTypeId)
         {
             arg.Errors.Add(new ExecutionError("Invalid query. Invalid construction kit id.")
@@ -267,9 +270,10 @@ internal sealed class OctoQuery : ObjectGraphType
         {
             keysList.Add(new OctoObjectId(key));
         }
+
         if (arg.TryGetArgument(Statics.RtIdsArg, null, out IEnumerable<string>? keys))
         {
-            keysList.AddRange(keys.Select(k=> new OctoObjectId(k)));
+            keysList.AddRange(keys.Select(k => new OctoObjectId(k)));
         }
 
         // if argument defined, but empty array, do not return any data. That mus be a mistake by client (otherwise

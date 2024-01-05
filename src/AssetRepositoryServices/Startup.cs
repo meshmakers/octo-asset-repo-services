@@ -1,12 +1,6 @@
 using Meshmakers.Octo.Backend.AssetRepositoryServices.Routing;
 using Meshmakers.Octo.Services.Common.Cors;
-using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Cors.Infrastructure;
-using Microsoft.AspNetCore.Hosting;
-using Microsoft.AspNetCore.Routing;
-using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
 
 #pragma warning disable 1591
 
@@ -25,7 +19,7 @@ public class Startup
     public void ConfigureServices(IServiceCollection services)
     {
         services.AddSingleton<CorsPolicyProvider>();
-        services.AddSingleton<ICorsPolicyProvider>(p=> p.GetRequiredService<CorsPolicyProvider>());
+        services.AddSingleton<ICorsPolicyProvider>(p => p.GetRequiredService<CorsPolicyProvider>());
         services.AddCors();
 
         services.Configure<RouteOptions>(options =>
@@ -33,8 +27,8 @@ public class Startup
 
         services.AddRuntimeEngine()
             .AddOctoAssetRepositoryServices(
-            systemOptions => Configuration.GetSection("System").Bind(systemOptions),
-            options => Configuration.GetSection("AssetRepository").Bind(options));
+                systemOptions => Configuration.GetSection("System").Bind(systemOptions),
+                options => Configuration.GetSection("AssetRepository").Bind(options));
     }
 
     // This method gets called by the runtime. Use this method to configure the HTTP request pipeline.

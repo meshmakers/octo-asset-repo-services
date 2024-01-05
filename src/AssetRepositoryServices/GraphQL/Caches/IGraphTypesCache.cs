@@ -17,28 +17,28 @@ public interface IGraphTypesCache
     RtEntityDtoType GetOrCreate(CkId<CkTypeId> ckId);
 
     /// <summary>
-    ///     Gets or creates an RtEntityDtoInputType based on construction kit type id 
+    ///     Gets or creates an RtEntityDtoInputType based on construction kit type id
     /// </summary>
     /// <param name="ckId">The construction kit type id.</param>
     /// <returns>The cached RtEntityDtoType based on the given construction kit type id.</returns>
     RtEntityDtoInputType GetOrCreateInput(CkId<CkTypeId> ckId);
 
     /// <summary>
-    /// Gets or creates an RtRecordDtoType based on construction kit record id
+    ///     Gets or creates an RtRecordDtoType based on construction kit record id
     /// </summary>
     /// <param name="ckId">The construction kit record id.</param>
     /// <returns>The cached RtRecordDtoType based on the given construction kit type id.</returns>
     RtRecordDtoType GetOrCreate(CkId<CkRecordId> ckId);
-    
+
     /// <summary>
-    /// Gets or creates an RtEnumScalarType based on construction kit enum id
+    ///     Gets or creates an RtEnumScalarType based on construction kit enum id
     /// </summary>
     /// <param name="ckId">The construction kit enum id.</param>
     /// <returns>The cached RtEnumScalarType based on the given construction kit enum id.</returns>
     RtEnumScalarType GetOrCreate(CkId<CkEnumId> ckId);
 
     /// <summary>
-    ///    Gets or creates an RtRecordDtoInputType based on construction kit record id
+    ///     Gets or creates an RtRecordDtoInputType based on construction kit record id
     /// </summary>
     /// <param name="ckId">The construction kit record id.</param>
     /// <returns>The cached RtRecordDtoInputType based on the given construction kit type id.</returns>
@@ -59,13 +59,13 @@ public interface IGraphTypesCache
     RtEntityDtoType[] GetTypes();
 
     /// <summary>
-    /// Returns an array of known construction kit record graph types
+    ///     Returns an array of known construction kit record graph types
     /// </summary>
     /// <returns></returns>
     RtRecordDtoType[] GetRecords();
 
     /// <summary>
-    /// Returns an array of known graph types
+    ///     Returns an array of known graph types
     /// </summary>
     /// <returns></returns>
     IGraphType[] GetKnownGraphTypes();

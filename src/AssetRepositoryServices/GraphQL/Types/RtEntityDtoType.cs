@@ -44,12 +44,13 @@ public sealed class RtEntityDtoType : ObjectGraphType<RtEntityDto>
     /// </summary>
     public CkId<CkTypeId> CkTypeId { get; }
 
-    
-    internal void Populate(ICkCacheService ckCacheService, string tenantId, IGraphTypesCache graphTypesCache, IDataLoaderContextAccessor dataLoaderAccessor,
+
+    internal void Populate(ICkCacheService ckCacheService, string tenantId, IGraphTypesCache graphTypesCache,
+        IDataLoaderContextAccessor dataLoaderAccessor,
         IOctoSessionAccessor sessionAccessor, CkTypeGraph entityCacheItem)
     {
         AddConstructionKit(entityCacheItem);
-        
+
         foreach (var attribute in entityCacheItem.AllAttributes.Values)
         {
             Helpers.AddAttribute(this, graphTypesCache, attribute, false);

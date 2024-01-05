@@ -110,6 +110,7 @@ public sealed class OctoMutation : ObjectGraphType
             {
                 return false;
             }
+
             return true;
         }
         catch (OperationFailedException e)
@@ -132,10 +133,11 @@ public sealed class OctoMutation : ObjectGraphType
         {
             throw AssetRepositoryException.ServiceNotRegistered(typeof(ICkCacheService));
         }
+
         var tenantContext = Helpers.GetTenantContext(arg.UserContext);
         var tenantRepository = tenantContext.GetTenantRepository();
         var graphQlUserContext = (GraphQlUserContext)arg.UserContext;
-        
+
         var ckId = arg.FieldDefinition.GetMetadata<string>(Statics.CkId);
 
         var inputObjects = arg.GetArgument<List<MutationDto<RtEntityDto>>>(Statics.EntitiesArg);
@@ -166,15 +168,16 @@ public sealed class OctoMutation : ObjectGraphType
                 {
                     if (message.MessageLevel == MessageLevel.Error)
                     {
-                        arg.Errors.Add(new ExecutionError(message.MessageText) 
-                            { Code = string.Format(CommonConstants.GraphQLOperationError, message.MessageNumber)  });
+                        arg.Errors.Add(new ExecutionError(message.MessageText)
+                            { Code = string.Format(CommonConstants.GraphQLOperationError, message.MessageNumber) });
                     }
                     else if (message.MessageLevel == MessageLevel.FatalError)
                     {
-                        arg.Errors.Add(new ExecutionError(message.MessageText) 
-                            { Code = string.Format(CommonConstants.GraphQLOperationFatalError, message.MessageNumber)  });
+                        arg.Errors.Add(new ExecutionError(message.MessageText)
+                            { Code = string.Format(CommonConstants.GraphQLOperationFatalError, message.MessageNumber) });
                     }
                 }
+
                 return null;
             }
 
@@ -200,6 +203,7 @@ public sealed class OctoMutation : ObjectGraphType
         {
             throw AssetRepositoryException.ServiceNotRegistered(typeof(ICkCacheService));
         }
+
         var tenantContext = Helpers.GetTenantContext(arg.UserContext);
         var tenantRepository = tenantContext.GetTenantRepository();
         var graphQlUserContext = (GraphQlUserContext)arg.UserContext;
@@ -237,15 +241,16 @@ public sealed class OctoMutation : ObjectGraphType
                 {
                     if (message.MessageLevel == MessageLevel.Error)
                     {
-                        arg.Errors.Add(new ExecutionError(message.MessageText) 
-                            { Code = string.Format(CommonConstants.GraphQLOperationError, message.MessageNumber)  });
+                        arg.Errors.Add(new ExecutionError(message.MessageText)
+                            { Code = string.Format(CommonConstants.GraphQLOperationError, message.MessageNumber) });
                     }
                     else if (message.MessageLevel == MessageLevel.FatalError)
                     {
-                        arg.Errors.Add(new ExecutionError(message.MessageText) 
-                            { Code = string.Format(CommonConstants.GraphQLOperationFatalError, message.MessageNumber)  });
+                        arg.Errors.Add(new ExecutionError(message.MessageText)
+                            { Code = string.Format(CommonConstants.GraphQLOperationFatalError, message.MessageNumber) });
                     }
                 }
+
                 return null;
             }
 

@@ -1,12 +1,5 @@
-using System.Linq.Expressions;
-using GraphQL.Types;
 using Meshmakers.Common.Shared;
-using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
-using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
 using Meshmakers.Octo.ConstructionKit.Contracts;
-using Meshmakers.Octo.ConstructionKit.Contracts.DataTransferObjects;
-using Meshmakers.Octo.ConstructionKit.Contracts.DependencyGraph;
-using Meshmakers.Octo.Runtime.Contracts.RepositoryEntities;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL;
 

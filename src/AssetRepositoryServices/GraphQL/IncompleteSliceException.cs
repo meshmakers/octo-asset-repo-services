@@ -1,5 +1,3 @@
-using System;
-
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL;
 
 [Serializable]

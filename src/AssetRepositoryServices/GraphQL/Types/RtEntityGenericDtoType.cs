@@ -38,6 +38,7 @@ public sealed class RtEntityGenericDtoType : ObjectGraphType<RtEntityDto>
         {
             throw AssetRepositoryException.ServiceNotRegistered(typeof(ICkCacheService));
         }
+
         var graphQlContext = (GraphQlUserContext)ctx.UserContext;
 
         var filterAttributeNames = ctx.GetArgument<IEnumerable<string>>(Statics.AttributeNamesFilterArg);

@@ -1,7 +1,5 @@
-using System;
 using GraphQL.Types;
 using GraphQLParser.AST;
-using Microsoft.AspNetCore.Http;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
 

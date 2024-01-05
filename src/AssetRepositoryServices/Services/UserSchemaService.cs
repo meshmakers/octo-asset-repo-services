@@ -17,8 +17,7 @@ internal class UserSchemaService : IAsyncInitializationService
     private readonly ICommandClient<CreateIdentityDataCommandRequest> _commandClient;
     private readonly OctoAssetRepositoryServicesOptions _octoAssetRepositoryServicesOptions;
     private readonly ISystemContext _systemContext;
-  
-    
+
 
     public UserSchemaService(IOctoService octoService, ICommandClient<CreateIdentityDataCommandRequest> commandClient,
         OctoAssetRepositoryServicesOptions octoAssetRepositoryServicesOptions)
@@ -46,7 +45,7 @@ internal class UserSchemaService : IAsyncInitializationService
             CreateClients(createIdentityDataCommandRequest);
 
             await _commandClient.GetResponse<GenericCommandResponse>(createIdentityDataCommandRequest);
-            
+
             await _systemContext.SetConfigurationAsync(session, AssetRepositoryServiceConstants.AssetServiceSchemaVersionKey,
                 new DefaultConfigurationVersion { Version = AssetRepositoryServiceConstants.AssetServiceSchemaVersionValue });
         }
@@ -69,7 +68,7 @@ internal class UserSchemaService : IAsyncInitializationService
     {
         createIdentityDataCommandRequest.ApiResources = new List<DistApiResourcesDto>
         {
-            new (CommonConstants.SystemApi, CommonConstants.SystemApiDisplayName)
+            new(CommonConstants.SystemApi, CommonConstants.SystemApiDisplayName)
             {
                 Description = CommonConstants.SystemApiDescription,
                 IsEnabled = true,
@@ -86,21 +85,21 @@ internal class UserSchemaService : IAsyncInitializationService
     {
         createIdentityDataCommandRequest.Clients = new List<DistClientDto>
         {
-            new (CommonConstants.OctoAdminPanelClientId, 
+            new(CommonConstants.OctoAdminPanelClientId,
                 AssetTexts.Backend_AssetServices_UserSchema_AdminPanel_DisplayName,
                 _octoAssetRepositoryServicesOptions.PublicAdminPanelUrl)
             {
                 AllowedGrantTypes = [OidcConstants.GrantTypes.AuthorizationCode],
 
                 RequireConsent = false,
-                
-                RedirectUris = 
+
+                RedirectUris =
                 [
                     _octoAssetRepositoryServicesOptions.PublicAdminPanelUrl.EnsureEndsWith("/")
                 ],
-                
-                PostLogoutRedirectUris = [ _octoAssetRepositoryServicesOptions.PublicAdminPanelUrl.EnsureEndsWith("/") ],
-                AllowedCorsOrigins = [ _octoAssetRepositoryServicesOptions.PublicAdminPanelUrl.TrimEnd('/') ],
+
+                PostLogoutRedirectUris = [_octoAssetRepositoryServicesOptions.PublicAdminPanelUrl.EnsureEndsWith("/")],
+                AllowedCorsOrigins = [_octoAssetRepositoryServicesOptions.PublicAdminPanelUrl.TrimEnd('/')],
                 AllowOfflineAccess = true,
                 AllowedScopes =
                 [
@@ -113,19 +112,19 @@ internal class UserSchemaService : IAsyncInitializationService
                     CommonConstants.BotApiFullAccess
                 ]
             },
-            new(CommonConstants.AssetRepositoryServicesClientId, 
+            new(CommonConstants.AssetRepositoryServicesClientId,
                 AssetTexts.Backend_AssetServices_UserSchema_AssetServices_DisplayName,
                 _octoAssetRepositoryServicesOptions.PublicUrl)
             {
                 AllowedGrantTypes = [OidcConstants.GrantTypes.Implicit],
-            
+
                 RedirectUris =
                 [
                     _octoAssetRepositoryServicesOptions.PublicUrl.EnsureEndsWith("/signin-oidc")
                 ],
-            
-                PostLogoutRedirectUris = [ _octoAssetRepositoryServicesOptions.PublicUrl.EnsureEndsWith("/") ],
-                AllowedCorsOrigins = [ _octoAssetRepositoryServicesOptions.PublicUrl.TrimEnd('/') ],
+
+                PostLogoutRedirectUris = [_octoAssetRepositoryServicesOptions.PublicUrl.EnsureEndsWith("/")],
+                AllowedCorsOrigins = [_octoAssetRepositoryServicesOptions.PublicUrl.TrimEnd('/')],
                 AllowedScopes =
                 [
                     CommonConstants.Scopes.OpenId,
@@ -134,19 +133,19 @@ internal class UserSchemaService : IAsyncInitializationService
                     JwtClaimTypes.Role
                 ]
             },
-            new (CommonConstants.AsserRepositoryServicesSwaggerClientId, 
-                AssetTexts.Backend_AssetServices_UserSchema_Swagger_DisplayName, 
+            new(CommonConstants.AsserRepositoryServicesSwaggerClientId,
+                AssetTexts.Backend_AssetServices_UserSchema_Swagger_DisplayName,
                 _octoAssetRepositoryServicesOptions.PublicUrl)
             {
                 AllowedGrantTypes = [OidcConstants.GrantTypes.AuthorizationCode],
-            
+
                 RedirectUris =
                 [
                     _octoAssetRepositoryServicesOptions.PublicUrl.EnsureEndsWith("/swagger/oauth2-redirect.html")
                 ],
-            
-                PostLogoutRedirectUris = [ _octoAssetRepositoryServicesOptions.PublicUrl.EnsureEndsWith("/") ],
-                AllowedCorsOrigins = [ _octoAssetRepositoryServicesOptions.PublicUrl.TrimEnd('/') ],
+
+                PostLogoutRedirectUris = [_octoAssetRepositoryServicesOptions.PublicUrl.EnsureEndsWith("/")],
+                AllowedCorsOrigins = [_octoAssetRepositoryServicesOptions.PublicUrl.TrimEnd('/')],
                 AllowedScopes =
                 [
                     CommonConstants.Scopes.OpenId,
@@ -158,7 +157,5 @@ internal class UserSchemaService : IAsyncInitializationService
                 ]
             }
         };
-       
-
     }
 }

@@ -1,4 +1,3 @@
-using System.Threading.Tasks;
 using IdentityModel;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.Services;
 using Meshmakers.Octo.ConstructionKit.Contracts;

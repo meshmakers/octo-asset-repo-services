@@ -14,18 +14,18 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Caches;
 /// </summary>
 internal class GraphTypesCache : IGraphTypesCache
 {
-    private readonly ConcurrentDictionary<IGraphType, DynamicConnectionType> _connectionTypes;
     private readonly ICkCacheService _ckCacheService;
-    private readonly string _tenantId;
+    private readonly ConcurrentDictionary<IGraphType, DynamicConnectionType> _connectionTypes;
     private readonly IDataLoaderContextAccessor _dataLoaderAccessor;
-    private readonly IOctoSessionAccessor _octoSessionAccessor;
-    private readonly ConcurrentDictionary<CkId<CkTypeId>, RtEntityDtoType> _types;
-    private readonly ConcurrentDictionary<CkId<CkTypeId>, RtEntityDtoInputType> _inputTypes;
 
     private readonly ConcurrentDictionary<CkId<CkEnumId>, RtEnumScalarType> _enumTypes;
-    
-    private readonly ConcurrentDictionary<CkId<CkRecordId>, RtRecordDtoType> _recordTypes;
     private readonly ConcurrentDictionary<CkId<CkRecordId>, RtRecordDtoInputType> _inputRecordTypes;
+    private readonly ConcurrentDictionary<CkId<CkTypeId>, RtEntityDtoInputType> _inputTypes;
+    private readonly IOctoSessionAccessor _octoSessionAccessor;
+
+    private readonly ConcurrentDictionary<CkId<CkRecordId>, RtRecordDtoType> _recordTypes;
+    private readonly string _tenantId;
+    private readonly ConcurrentDictionary<CkId<CkTypeId>, RtEntityDtoType> _types;
 
     /// <summary>
     ///     Constructor
@@ -68,7 +68,7 @@ internal class GraphTypesCache : IGraphTypesCache
             return rtEntityDtoInputType;
         });
     }
-    
+
     /// <inheritdoc />
     public RtRecordDtoType GetOrCreate(CkId<CkRecordId> ckId)
     {
@@ -124,14 +124,14 @@ internal class GraphTypesCache : IGraphTypesCache
         // ReSharper disable once CoVariantArrayConversion
         return _types.Values.ToArray();
     }
-    
+
     /// <inheritdoc />
     public RtRecordDtoType[] GetRecords()
     {
         // ReSharper disable once CoVariantArrayConversion
         return _recordTypes.Values.ToArray();
     }
-    
+
     /// <inheritdoc />
     public IGraphType[] GetKnownGraphTypes()
     {
@@ -151,13 +151,13 @@ internal class GraphTypesCache : IGraphTypesCache
             var ckTypeGraph = _ckCacheService.GetCkType(_tenantId, rtEntityDtoType.CkTypeId);
             rtEntityDtoType.Populate(_ckCacheService, _tenantId, this, _dataLoaderAccessor, _octoSessionAccessor, ckTypeGraph);
         }
-        
+
         foreach (var rtRecordDtoType in _recordTypes.Values)
         {
             var ckRecordGraph = _ckCacheService.GetCkRecord(_tenantId, rtRecordDtoType.CkRecordId);
             rtRecordDtoType.Populate(_ckCacheService, _tenantId, this, _dataLoaderAccessor, _octoSessionAccessor, ckRecordGraph);
         }
-        
+
         foreach (var rtEnumType in _enumTypes.Values)
         {
             var ckEnumGraph = _ckCacheService.GetCkEnum(_tenantId, rtEnumType.CkEnumId);
@@ -169,7 +169,7 @@ internal class GraphTypesCache : IGraphTypesCache
             var ckTypeGraph = _ckCacheService.GetCkType(_tenantId, rtEntityDtoInputType.CkTypeId);
             rtEntityDtoInputType.Populate(_ckCacheService, _tenantId, this, ckTypeGraph);
         }
-        
+
         foreach (var rtRecordDtoInputType in _inputRecordTypes.Values)
         {
             var ckRecordGraph = _ckCacheService.GetCkRecord(_tenantId, rtRecordDtoInputType.CkRecordId);

@@ -20,8 +20,8 @@ public class ModelsController : ControllerBase
 {
     private readonly IDistributedCacheService _distributedCache;
     private readonly ICommandClient<ExportRtCommandRequest> _exportRtCommandClient;
-    private readonly ICommandClient<ImportRtCommandRequest> _importRtCommandClient;
     private readonly ICommandClient<ImportCkCommandRequest> _importCkCommandClient;
+    private readonly ICommandClient<ImportRtCommandRequest> _importRtCommandClient;
 
     /// <summary>
     ///     Constructor
@@ -30,7 +30,7 @@ public class ModelsController : ControllerBase
     /// <param name="exportRtCommandClient"></param>
     /// <param name="importRtCommandClient"></param>
     /// <param name="importCkCommandClient"></param>
-    public ModelsController(IDistributedCacheService distributedCache, 
+    public ModelsController(IDistributedCacheService distributedCache,
         ICommandClient<ExportRtCommandRequest> exportRtCommandClient,
         ICommandClient<ImportRtCommandRequest> importRtCommandClient,
         ICommandClient<ImportCkCommandRequest> importCkCommandClient)
@@ -57,7 +57,7 @@ public class ModelsController : ControllerBase
         try
         {
             var args = new ExportRtCommandRequest(tenantId, exportModelRequestDto.QueryId);
-            var r = 
+            var r =
                 await _exportRtCommandClient.GetResponse<JobCreatedResponse>(args);
             return Ok(new ExportModelResponseDto { JobId = r.JobId });
         }
@@ -66,7 +66,7 @@ public class ModelsController : ControllerBase
             return BadRequest(new InternalServerError(e.Message));
         }
     }
-    
+
     // POST: system/Models/ImportRt
     /// <summary>
     ///     Imports a runtime model
@@ -84,7 +84,7 @@ public class ModelsController : ControllerBase
         {
             var cacheKey = await AddFileToCache(file);
             var args = new ImportRtCommandRequest(tenantId, cacheKey);
-            var r = 
+            var r =
                 await _importRtCommandClient.GetResponse<JobCreatedResponse>(args);
             return Ok(r.JobId);
         }
@@ -113,7 +113,7 @@ public class ModelsController : ControllerBase
         {
             var cacheKey = await AddFileToCache(file);
             var args = new ImportCkCommandRequest(tenantId, cacheKey);
-            var r = 
+            var r =
                 await _importCkCommandClient.GetResponse<JobCreatedResponse>(args);
             return Ok(r.JobId);
         }

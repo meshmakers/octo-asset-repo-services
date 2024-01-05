@@ -82,7 +82,7 @@ internal static class ResolveConnectionContextExtensions
                     (SortOrders)sortDto.SortOrder);
             }
         }
-        
+
         if (ctx.TryGetArgument(Statics.GroupByArg, out FieldGroupBy? groupByDto))
         {
             var groupBy = dataQueryOperation.GroupBy(groupByDto.GroupByAttributeNameList.Select(TransformAttributeName).ToArray());

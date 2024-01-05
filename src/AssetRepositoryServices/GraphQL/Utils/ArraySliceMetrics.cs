@@ -156,5 +156,3 @@ internal class ArraySliceMetrics<TSource>
         return sliceStartIndex <= range.StartOffset && sliceEndIndex >= range.EndOffset;
     }
 }
-
-

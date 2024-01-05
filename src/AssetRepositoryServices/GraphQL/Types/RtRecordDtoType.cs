@@ -32,7 +32,6 @@ public sealed class RtRecordDtoType : ObjectGraphType<RtRecordDto>
 
             return false;
         };
-
     }
 
     /// <summary>
@@ -41,7 +40,8 @@ public sealed class RtRecordDtoType : ObjectGraphType<RtRecordDto>
     public CkId<CkRecordId> CkRecordId { get; }
 
 
-    internal void Populate(ICkCacheService ckCacheService, string tenantId, IGraphTypesCache graphTypesCache, IDataLoaderContextAccessor dataLoaderAccessor,
+    internal void Populate(ICkCacheService ckCacheService, string tenantId, IGraphTypesCache graphTypesCache,
+        IDataLoaderContextAccessor dataLoaderAccessor,
         IOctoSessionAccessor sessionAccessor, CkRecordGraph entityCacheItem)
     {
         AddConstructionKit(entityCacheItem);

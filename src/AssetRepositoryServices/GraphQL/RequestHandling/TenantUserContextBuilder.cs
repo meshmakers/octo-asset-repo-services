@@ -34,10 +34,11 @@ public class TenantUserContextBuilder : IUserContextBuilder
         ITenantContext tenantContext = _octoService.SystemContext;
         if (tenantId != null && tenantId.NormalizeString() != AssetRepositoryServiceConstants.SystemTenantUriPattern)
         {
-            tenantContext =  await _octoService.SystemContext.GetChildTenantContextAsync(tenantId);
+            tenantContext = await _octoService.SystemContext.GetChildTenantContextAsync(tenantId);
         }
+
         var userContext = new GraphQlUserContext(httpContext.User, tenantContext);
-     
+
         await systemSession.CommitTransactionAsync();
         return userContext;
     }

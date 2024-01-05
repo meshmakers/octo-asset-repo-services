@@ -210,7 +210,7 @@ public static class RuntimeEngineBuilderExtensions
         // GraphQL custom services
         builder.Services.AddSingleton<ISchemaContext, SchemaContext>();
 
-        builder.Services.AddOctoServiceInfrastructure("AssetRepositoryService", configureDistributionEventHub: c =>
+        builder.Services.AddOctoServiceInfrastructure("AssetRepositoryService", c =>
         {
             c.AddCommandClient<CreateIdentityDataCommandRequest>("identity::create-identity-data");
             c.AddCommandClient<ExportRtCommandRequest>("bot::export-rt");

@@ -80,7 +80,7 @@ public class PlaygroundTenantMiddleware
         if (_pageModel != null)
         {
             var data = Encoding.UTF8.GetBytes(_pageModel.Render());
-            
+
             httpResponse.ContentType = "text/html";
             httpResponse.StatusCode = 200;
             await httpResponse.Body.WriteAsync(data, 0, data.Length);

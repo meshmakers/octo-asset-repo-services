@@ -35,6 +35,7 @@ public sealed class CkTypeDtoType : ObjectGraphType<CkTypeDto>
                     {
                         throw AssetRepositoryException.ServiceNotRegistered(typeof(ICkCacheService));
                     }
+
                     var graphQlContext = (GraphQlUserContext)ctx.UserContext;
 
                     var result = ckCacheService.GetCkType(graphQlContext.TenantId, ctx.Source.CkTypeId).DerivedTypes
@@ -50,6 +51,7 @@ public sealed class CkTypeDtoType : ObjectGraphType<CkTypeDto>
             {
                 throw AssetRepositoryException.ServiceNotRegistered(typeof(ICkCacheService));
             }
+
             var graphQlContext = (GraphQlUserContext)ctx.UserContext;
 
             var result = ckCacheService.GetCkType(graphQlContext.TenantId, ctx.Source.CkTypeId).DerivedFromCkTypeId;
@@ -69,10 +71,10 @@ public sealed class CkTypeDtoType : ObjectGraphType<CkTypeDto>
         {
             throw AssetRepositoryException.ServiceNotRegistered(typeof(ICkCacheService));
         }
-        
+
         var graphQlContext = (GraphQlUserContext)ctx.UserContext;
 
-        ctx.TryGetArgument(Statics.AttributeNamesFilterArg, 
+        ctx.TryGetArgument(Statics.AttributeNamesFilterArg,
             out IEnumerable<string>? filterAttributeNames);
 
         var entityCacheItem = ckCacheService.GetCkType(graphQlContext.TenantId, ctx.Source.CkTypeId);
@@ -98,7 +100,7 @@ public sealed class CkTypeDtoType : ObjectGraphType<CkTypeDto>
         {
             CkTypeId = entityCacheItem.CkTypeId,
             IsFinal = entityCacheItem.IsFinal,
-            IsAbstract = entityCacheItem.IsAbstract,
+            IsAbstract = entityCacheItem.IsAbstract
         };
         return ckEntityDto;
     }
@@ -109,7 +111,7 @@ public sealed class CkTypeDtoType : ObjectGraphType<CkTypeDto>
         {
             CkTypeId = ckEntity.CkTypeId,
             IsFinal = ckEntity.IsFinal,
-            IsAbstract = ckEntity.IsAbstract,
+            IsAbstract = ckEntity.IsAbstract
         };
         return ckEntityDto;
     }

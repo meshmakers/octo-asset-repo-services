@@ -98,7 +98,7 @@ internal static class Helpers
         this ComplexGraphType<TSourceType> complexGraphType,
         IGraphTypesCache graphTypesCache, IDataLoaderContextAccessor dataLoaderAccessor,
         IOctoSessionAccessor sessionAccessor, string name, IReadOnlyList<CkId<CkTypeId>> allowedTypes, CkId<CkTypeId> originCkId,
-        CkId<CkAssociationRoleId>  roleId, GraphDirections graphDirection)
+        CkId<CkAssociationRoleId> roleId, GraphDirections graphDirection)
     {
         var graphTypes = allowedTypes.Select(graphTypesCache.GetOrCreate);
 
@@ -220,7 +220,7 @@ internal static class Helpers
                 {
                     throw new InvalidOperationException($"Could not create instance of type {fieldType.FullName}");
                 }
-                    
+
                 newArray = myList;
             }
             else
@@ -303,7 +303,7 @@ internal static class Helpers
     {
         return ValueConverter.ConvertTo(value, targetType);
     }
-    
+
     internal static void AddAttribute<TSourceType>(ComplexGraphType<TSourceType> complexGraphType, IGraphTypesCache graphTypesCache,
         CkTypeAttributeGraph typeAttributeGraph, bool isInputType) where TSourceType : GraphQlDto
     {
@@ -314,46 +314,47 @@ internal static class Helpers
         switch (typeAttributeGraph.ValueType)
         {
 #pragma warning disable GQL005
-            
+
             case AttributeValueTypesDto.String:
-                builder = complexGraphType.Field(attributeName, type: typeof(StringGraphType));
+                builder = complexGraphType.Field(attributeName, typeof(StringGraphType));
                 break;
             case AttributeValueTypesDto.StringArray:
-                builder = complexGraphType.Field(attributeName, type: typeof(ListGraphType<StringGraphType>));
+                builder = complexGraphType.Field(attributeName, typeof(ListGraphType<StringGraphType>));
                 break;
             case AttributeValueTypesDto.Int:
-                builder = complexGraphType.Field(attributeName, type: typeof(IntGraphType));
+                builder = complexGraphType.Field(attributeName, typeof(IntGraphType));
                 break;
             case AttributeValueTypesDto.IntArray:
-                builder = complexGraphType.Field(attributeName, type: typeof(ListGraphType<IntGraphType>));
+                builder = complexGraphType.Field(attributeName, typeof(ListGraphType<IntGraphType>));
                 break;
             case AttributeValueTypesDto.Boolean:
-                builder = complexGraphType.Field(attributeName, type: typeof(BooleanGraphType));
+                builder = complexGraphType.Field(attributeName, typeof(BooleanGraphType));
                 break;
             case AttributeValueTypesDto.Double:
-                builder = complexGraphType.Field(attributeName, type: typeof(DecimalGraphType));
+                builder = complexGraphType.Field(attributeName, typeof(DecimalGraphType));
                 break;
             case AttributeValueTypesDto.DateTime:
-                builder = complexGraphType.Field(attributeName, type: typeof(DateTimeGraphType));
+                builder = complexGraphType.Field(attributeName, typeof(DateTimeGraphType));
                 break;
             case AttributeValueTypesDto.DateTimeOffset:
-                builder = complexGraphType.Field(attributeName, type: typeof(DateTimeOffsetGraphType));
+                builder = complexGraphType.Field(attributeName, typeof(DateTimeOffsetGraphType));
                 break;
             case AttributeValueTypesDto.TimeSpan:
-                builder = complexGraphType.Field(attributeName, type: typeof(TimeSpanSecondsGraphType));
+                builder = complexGraphType.Field(attributeName, typeof(TimeSpanSecondsGraphType));
                 break;
             case AttributeValueTypesDto.Int64:
-                builder = complexGraphType.Field(attributeName, type: typeof(LongGraphType));
+                builder = complexGraphType.Field(attributeName, typeof(LongGraphType));
                 break;
             case AttributeValueTypesDto.BinaryLinked:
-                builder = complexGraphType.Field(attributeName, type: typeof(OctoObjectIdType));
+                builder = complexGraphType.Field(attributeName, typeof(OctoObjectIdType));
                 break;
             case AttributeValueTypesDto.Enum:
                 if (typeAttributeGraph.ValueCkEnumId == null)
                 {
                     throw OctoGraphQLException.EnumAttributeHasNoCkEnumId(typeAttributeGraph.AttributeName);
                 }
-                builder = complexGraphType.Field(attributeName, 
+
+                builder = complexGraphType.Field(attributeName,
                     graphTypesCache.GetOrCreate(typeAttributeGraph.ValueCkEnumId.Value));
                 break;
             case AttributeValueTypesDto.Record:
@@ -361,6 +362,7 @@ internal static class Helpers
                 {
                     throw OctoGraphQLException.RecordAttributeHasNoCkRecordId(typeAttributeGraph.AttributeName);
                 }
+
                 graphType = isInputType switch
                 {
                     true => graphTypesCache.GetOrCreateInput(typeAttributeGraph.ValueCkRecordId.Value),
@@ -394,12 +396,12 @@ internal static class Helpers
             builder.Resolve(ResolveAttributeValue);
         }
     }
-    
+
     private static object? ResolveAttributeValue<TSourceType>(IResolveFieldContext<TSourceType> context) where TSourceType : GraphQlDto
     {
         var rtTypeWithAttributes = context.Source.UserContext as RtTypeWithAttributes;
         var typeAttributeGraph = context.FieldDefinition.GetMetadata<CkTypeAttributeGraph>(Statics.AttributeGraphType);
-        
+
         var r = rtTypeWithAttributes?.GetAttributeValueOrDefault(typeAttributeGraph.AttributeName);
         switch (typeAttributeGraph.ValueType)
         {
@@ -408,23 +410,24 @@ internal static class Helpers
                 {
                     return RtRecordDtoType.CreateRtRecordDto(rtRecord);
                 }
+
                 break;
             case AttributeValueTypesDto.RecordArray:
                 if (r is IEnumerable items)
                 {
                     return items.Cast<RtRecord>().Select(RtRecordDtoType.CreateRtRecordDto).ToList();
                 }
+
                 break;
             case AttributeValueTypesDto.TimeSpan:
                 if (r is string timeSpanString)
                 {
                     return TimeSpan.Parse(timeSpanString);
                 }
+
                 break;
         }
 
         return r;
     }
-
-
 }

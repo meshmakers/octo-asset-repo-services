@@ -19,7 +19,7 @@ internal class GraphQlTenantMiddleware : GraphQLHttpMiddleware<OctoSchema>
     {
         _serializer = serializer;
     }
-    
+
 
     protected override async Task<(GraphQLRequest? SingleRequest, IList<GraphQLRequest?>? BatchRequest)?>
         ReadPostContentAsync(

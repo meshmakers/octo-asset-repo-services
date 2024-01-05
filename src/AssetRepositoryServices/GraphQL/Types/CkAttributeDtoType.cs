@@ -21,8 +21,9 @@ public sealed class CkAttributeDtoType : ObjectGraphType<CkAttributeDto>
         Field(x => x.AttributeValueType, type: typeof(AttributeValueTypesDtoType));
         Field(x => x.ValueCkRecordId, type: typeof(IdGraphType)).Description("Optional record id of the attribute value type.");
         Field(x => x.ValueCkEnumId, type: typeof(IdGraphType)).Description("Optional enum id of the attribute value type.");
-        Field(x=> x.Description, type: typeof(StringGraphType)).Description("Optional description of the attribute.");
-        Field(x=> x.IsDataStream, type: typeof(BooleanGraphType)).Description("Optional flag that tells if an attribute is a data stream.");
+        Field(x => x.Description, type: typeof(StringGraphType)).Description("Optional description of the attribute.");
+        Field(x => x.IsDataStream, type: typeof(BooleanGraphType))
+            .Description("Optional flag that tells if an attribute is a data stream.");
         Field<ListGraphType<SimpleScalarType>, object>(nameof(CkAttributeDto.DefaultValues))
             .Description("Default values of a compound attribute.");
     }
@@ -33,7 +34,7 @@ public sealed class CkAttributeDtoType : ObjectGraphType<CkAttributeDto>
         {
             CkAttributeId = attributeCacheItem.CkAttributeId,
             AttributeValueType = attributeCacheItem.ValueType,
-            DefaultValues = attributeCacheItem.DefaultValues,
+            DefaultValues = attributeCacheItem.DefaultValues
         };
 
         return attributeDto;
@@ -45,7 +46,7 @@ public sealed class CkAttributeDtoType : ObjectGraphType<CkAttributeDto>
         {
             CkAttributeId = ckAttribute.AttributeId,
             AttributeValueType = ckAttribute.AttributeValueType,
-            DefaultValues = ckAttribute.DefaultValues,
+            DefaultValues = ckAttribute.DefaultValues
         };
 
         return attributeDto;

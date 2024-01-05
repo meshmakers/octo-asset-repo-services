@@ -13,15 +13,15 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
 
 public class RtEnumScalarType : EnumerationGraphType
 {
-    public CkId<CkEnumId> CkEnumId { get; }
-
     public RtEnumScalarType(CkId<CkEnumId> ckEnumId)
     {
         CkEnumId = ckEnumId;
         Name = ckEnumId.GetGraphQlName();
         Description = $"Runtime entities of construction kit enum '{ckEnumId}'";
     }
-    
+
+    public CkId<CkEnumId> CkEnumId { get; }
+
     internal void Populate(ICkCacheService ckCacheService, string tenantId, IGraphTypesCache graphTypesCache,
         IDataLoaderContextAccessor dataLoaderAccessor,
         IOctoSessionAccessor sessionAccessor, CkEnumGraph ckEnumGraph)
@@ -31,16 +31,15 @@ public class RtEnumScalarType : EnumerationGraphType
             value: e.Key,
             description: e.Description
         ));
-        
+
         foreach (var (name, value, description) in enumGraphData)
         {
             var enumValue = new EnumValueDefinition(name, value)
             {
                 Description = description
             };
-            
+
             Add(enumValue);
         }
-    } 
-    
+    }
 }

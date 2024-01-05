@@ -18,11 +18,11 @@ internal class SchemaContext : ISchemaContext
 {
     private static readonly Logger Logger = LogManager.GetCurrentClassLogger();
     private readonly MemoryCache _cache;
+    private readonly ICkCacheService _ckCacheService;
     private readonly IDataLoaderContextAccessor _dataLoaderAccessor;
     private readonly IOctoSessionAccessor _octoSessionAccessor;
 
     private readonly IOptions<OctoAssetRepositoryServicesOptions> _options;
-    private readonly ICkCacheService _ckCacheService;
     private readonly SemaphoreSlim _semaphore = new(1, 1);
 
     public SchemaContext(IOptions<OctoAssetRepositoryServicesOptions> options,
@@ -87,7 +87,7 @@ internal class SchemaContext : ISchemaContext
                     {
                         graphTypesCache.GetOrCreate(ckTypeGraph.CkTypeId);
                     }
-                    
+
                     foreach (var ckRecordGraph in _ckCacheService.GetCkRecords(tenantId).Where(x => !x.IsAbstract))
                     {
                         graphTypesCache.GetOrCreate(ckRecordGraph.CkRecordId);

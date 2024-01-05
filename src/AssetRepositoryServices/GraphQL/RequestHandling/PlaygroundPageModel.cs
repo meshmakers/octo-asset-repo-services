@@ -32,6 +32,7 @@ internal class PlaygroundPageModel
             {
                 throw new InvalidOperationException("Could not load embedded resource");
             }
+
             using (var streamReader = new StreamReader(manifestResourceStream))
             {
                 var builder = new StringBuilder(streamReader.ReadToEnd())
