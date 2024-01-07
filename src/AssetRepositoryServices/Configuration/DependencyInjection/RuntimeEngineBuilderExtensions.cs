@@ -222,6 +222,5 @@ public static class RuntimeEngineBuilderExtensions
         builder.Services.AddRuntimeEngine()
             .AddMongoDbRuntimeRepository();
         builder.Services.AddSingleton<IOctoService, OctoService>();
-        builder.Services.AddInitializationService<UserSchemaService>();
     }
 }

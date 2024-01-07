@@ -1,5 +1,7 @@
 using Meshmakers.Octo.Backend.AssetRepositoryServices.Routing;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.Services;
 using Meshmakers.Octo.Services.Common.Cors;
+using Meshmakers.Octo.Services.Infrastructure.Services;
 using Microsoft.AspNetCore.Cors.Infrastructure;
 
 #pragma warning disable 1591
@@ -18,6 +20,7 @@ public class Startup
     // This method gets called by the runtime. Use this method to add services to the container.
     public void ConfigureServices(IServiceCollection services)
     {
+        services.AddTransient<IDefaultConfigurationCreatorService, DefaultConfigurationCreatorService>();
         services.AddSingleton<CorsPolicyProvider>();
         services.AddSingleton<ICorsPolicyProvider>(p => p.GetRequiredService<CorsPolicyProvider>());
         services.AddCors();

@@ -7,19 +7,18 @@ using Meshmakers.Octo.Communication.Contracts;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb;
 using Meshmakers.Octo.Services.Common.DistributionEventHub.Commands;
 using Meshmakers.Octo.Services.Common.DistributionEventHub.Commands.Payloads;
-using Meshmakers.Octo.Services.Infrastructure.Initialization;
 using Meshmakers.Octo.Services.Infrastructure.Services;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.Services;
 
-internal class UserSchemaService : IAsyncInitializationService
+internal class DefaultConfigurationCreatorService : IDefaultConfigurationCreatorService
 {
     private readonly ICommandClient<CreateIdentityDataCommandRequest> _commandClient;
     private readonly OctoAssetRepositoryServicesOptions _octoAssetRepositoryServicesOptions;
     private readonly ISystemContext _systemContext;
 
 
-    public UserSchemaService(IOctoService octoService, ICommandClient<CreateIdentityDataCommandRequest> commandClient,
+    public DefaultConfigurationCreatorService(IOctoService octoService, ICommandClient<CreateIdentityDataCommandRequest> commandClient,
         OctoAssetRepositoryServicesOptions octoAssetRepositoryServicesOptions)
     {
         _systemContext = octoService.SystemContext;
@@ -27,10 +26,14 @@ internal class UserSchemaService : IAsyncInitializationService
         _octoAssetRepositoryServicesOptions = octoAssetRepositoryServicesOptions;
     }
 
-    public int Order => 0;
-
-    public async Task InitializeAsync()
+    public async Task SetupAsync(string tenantId)
     {
+        if (tenantId != _systemContext.TenantId)
+        {
+            // Currently we only support the system tenant.
+            return;
+        }
+        
         using var session = await _systemContext.GetSystemSessionAsync();
         session.StartTransaction();
 
@@ -39,7 +42,7 @@ internal class UserSchemaService : IAsyncInitializationService
                 new DefaultConfigurationVersion { Version = -1 });
         if (assetRepConfiguration == null || assetRepConfiguration.Version < AssetRepositoryServiceConstants.AssetServiceSchemaVersionValue)
         {
-            CreateIdentityDataCommandRequest createIdentityDataCommandRequest = new(null);
+            CreateIdentityDataCommandRequest createIdentityDataCommandRequest = new(tenantId);
             CreateApiScopes(createIdentityDataCommandRequest);
             CreateApiResources(createIdentityDataCommandRequest);
             CreateClients(createIdentityDataCommandRequest);

@@ -99,14 +99,13 @@ public class ModelsController : ControllerBase
     ///     Imports a construction kit model
     /// </summary>
     /// <param name="tenantId">Id of tenant the request relies to</param>
-    /// <param name="scopeId">The scope id of the model to import</param>
     /// <param name="file">The file with the CK model definition</param>
     /// <returns></returns>
     [HttpPost]
     //[Consumes("application/zip", "application/zip")]
     [Route("ImportCk")]
     [Authorize(AssetRepositoryServiceConstants.SystemApiReadWritePolicy)]
-    public async Task<IActionResult> ImportCk([Required] string tenantId, ScopeIdsDto scopeId,
+    public async Task<IActionResult> ImportCk([Required] string tenantId,
         [FromForm] IFormFile file)
     {
         try
