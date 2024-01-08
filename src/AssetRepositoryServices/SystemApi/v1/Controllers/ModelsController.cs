@@ -82,7 +82,7 @@ public class ModelsController : ControllerBase
     {
         try
         {
-            var cacheKey = await AddFileToCache(file);
+            var cacheKey = await AddFileToCache(tenantId, file);
             var args = new ImportRtCommandRequest(tenantId, cacheKey);
             var r =
                 await _importRtCommandClient.GetResponse<JobCreatedResponse>(args);
@@ -110,7 +110,7 @@ public class ModelsController : ControllerBase
     {
         try
         {
-            var cacheKey = await AddFileToCache(file);
+            var cacheKey = await AddFileToCache(tenantId, file);
             var args = new ImportCkCommandRequest(tenantId, cacheKey);
             var r =
                 await _importCkCommandClient.GetResponse<JobCreatedResponse>(args);
@@ -122,13 +122,13 @@ public class ModelsController : ControllerBase
         }
     }
 
-    private async Task<string> AddFileToCache(IFormFile file)
+    private async Task<string> AddFileToCache(string tenantId, IFormFile file)
     {
         await using (var memoryStream = new MemoryStream())
         {
             await file.CopyToAsync(memoryStream);
-            var key = Guid.NewGuid().ToString();
-            await _distributedCache.CacheStreamAsync(key, memoryStream, file.ContentType, file.FileName, TimeSpan.FromHours(1));
+            memoryStream.Position = 0;
+            var key = await _distributedCache.CacheStreamAsync(tenantId, memoryStream, file.ContentType, file.FileName, TimeSpan.FromHours(1));
             return key;
         }
     }
