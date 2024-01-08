@@ -51,10 +51,17 @@ public class PlaygroundTenantMiddleware
         }
 
         var tenantId = httpContext.GetTenantId();
+        if (string.IsNullOrWhiteSpace(tenantId))
+        {
+            httpContext.Response.StatusCode = 400; //BadRequest
+            await httpContext.Response.WriteAsync("Missing tenant");
+            return;
+        }
+        
         using var systemSession = await _octoService.SystemContext.GetSystemSessionAsync();
         systemSession.StartTransaction();
 
-        if (!string.IsNullOrWhiteSpace(tenantId) && tenantId.NormalizeString() != AssetRepositoryServiceConstants.SystemTenantUriPattern &&
+        if (tenantId.NormalizeString() != _octoService.SystemContext.TenantId &&
             !await _octoService.SystemContext.IsChildTenantExistingAsync(systemSession, tenantId))
         {
             httpContext.Response.StatusCode = 403; //NotFound

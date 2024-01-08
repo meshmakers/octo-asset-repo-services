@@ -4,6 +4,7 @@ using GraphQL.Types;
 using Meshmakers.Common.Shared;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.Configuration.DependencyInjection.Options;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.RequestHandling;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.Services;
 using Meshmakers.Octo.ConstructionKit.Contracts.Services;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Options;
@@ -19,6 +20,7 @@ internal class SchemaContext : ISchemaContext
     private static readonly Logger Logger = LogManager.GetCurrentClassLogger();
     private readonly MemoryCache _cache;
     private readonly ICkCacheService _ckCacheService;
+    private readonly IOctoService _octoService;
     private readonly IDataLoaderContextAccessor _dataLoaderAccessor;
     private readonly IOctoSessionAccessor _octoSessionAccessor;
 
@@ -26,11 +28,12 @@ internal class SchemaContext : ISchemaContext
     private readonly SemaphoreSlim _semaphore = new(1, 1);
 
     public SchemaContext(IOptions<OctoAssetRepositoryServicesOptions> options,
-        ICkCacheService ckCacheService,
+        ICkCacheService ckCacheService, IOctoService octoService,
         IDataLoaderContextAccessor dataLoaderAccessor, IOctoSessionAccessor octoSessionAccessor)
     {
         _options = options;
         _ckCacheService = ckCacheService;
+        _octoService = octoService;
         _dataLoaderAccessor = dataLoaderAccessor;
         _octoSessionAccessor = octoSessionAccessor;
 
@@ -38,18 +41,6 @@ internal class SchemaContext : ISchemaContext
         {
             SizeLimit = 64
         });
-
-        // TODO: Add again.
-        // var sub = distributedCache.SubscribeEvent<string>(CacheCommon.KeyTenantPreUpdate);
-        // sub.OnEvent(tenantId =>
-        // {
-        //     if (!string.IsNullOrWhiteSpace(tenantId))
-        //     {
-        //         _cache.Remove(tenantId.MakeKey());
-        //     }
-        //
-        //     return Task.CompletedTask;
-        // });
     }
 
     /// <summary>
@@ -69,45 +60,51 @@ internal class SchemaContext : ISchemaContext
 
         Logger.Debug($"Looking up GraphQL schema for {tenantId}");
 
-        if (!_cache.TryGetValue(key, out OctoSchema? schema))
+        if (_cache.TryGetValue(key, out OctoSchema? schema) && schema != null)
         {
-            try
-            {
-                await _semaphore.WaitAsync();
-
-                var t = new Func<ICacheEntry, OctoSchema>(entry =>
-                {
-                    Logger.Debug($"Creating GraphQL schema for {tenantId}");
-                    entry.SetSize(1);
-                    entry.SlidingExpiration = TimeSpan.FromDays(1);
-
-                    var graphTypesCache = new GraphTypesCache(_ckCacheService, tenantId, _dataLoaderAccessor, _octoSessionAccessor);
-                    graphTypesCache.Populate();
-
-                    var query = new OctoQuery(_options, graphTypesCache, _dataLoaderAccessor);
-                    var mutation = new OctoMutation(graphTypesCache, _octoSessionAccessor);
-                    var subscriptions = new OctoSubscriptions(graphTypesCache);
-
-
-                    var createdSchema = new OctoSchema(query, mutation, subscriptions);
-                    createdSchema.RegisterTypes(graphTypesCache.GetKnownGraphTypes());
-
-                    Logger.Debug($"GraphQL schema for {tenantId} completed");
-                    return createdSchema;
-                });
-
-                return _cache.GetOrCreate(key, t)!;
-            }
-            catch (Exception e)
-            {
-                Logger.Error(e);
-            }
-            finally
-            {
-                _semaphore.Release();
-            }
+            return schema;
         }
 
-        return schema!;
+        try
+        {
+            await _semaphore.WaitAsync();
+
+            var t = new Func<ICacheEntry, Task<ISchema?>>(async entry =>
+            {
+                Logger.Debug($"Creating GraphQL schema for {tenantId}");
+                entry.SetSize(1);
+                entry.SlidingExpiration = TimeSpan.FromDays(1);
+
+                var graphTypesCache = new GraphTypesCache(_ckCacheService, _octoService, tenantId, _dataLoaderAccessor, _octoSessionAccessor);
+                await graphTypesCache.PopulateAsync();
+
+                var query = new OctoQuery(_options, graphTypesCache, _dataLoaderAccessor);
+                var mutation = new OctoMutation(graphTypesCache, _octoSessionAccessor);
+                var subscriptions = new OctoSubscriptions(graphTypesCache);
+
+                var createdSchema = new OctoSchema(query, mutation, subscriptions);
+                createdSchema.RegisterTypes(graphTypesCache.GetKnownGraphTypes());
+
+                Logger.Debug($"GraphQL schema for {tenantId} completed");
+                return createdSchema;
+            });
+
+            var returnSchema = await _cache.GetOrCreateAsync(key, t);
+            if (returnSchema == null)
+            {
+                throw OctoGraphQLException.SchemaCreationFailed(tenantId);
+            }
+
+            return returnSchema;
+        }
+        catch (Exception e)
+        {
+            Logger.Error(e);
+            throw OctoGraphQLException.SchemaCreationFailed(tenantId, e);
+        }
+        finally
+        {
+            _semaphore.Release();
+        }
     }
 }

@@ -7,6 +7,7 @@ using IdentityModel;
 using Meshmakers.Octo.Backend.AssetRepositoryServices;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.Configuration;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.Configuration.DependencyInjection.Options;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.Consumers;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Caches;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.RequestHandling;
@@ -17,6 +18,7 @@ using Meshmakers.Octo.Runtime.Contracts.MongoDb.Configuration;
 using Meshmakers.Octo.Runtime.Engine.Configuration.DependencyInjection;
 using Meshmakers.Octo.Services.Common;
 using Meshmakers.Octo.Services.Common.DistributionEventHub.Commands;
+using Meshmakers.Octo.Services.Common.DistributionEventHub.Messages;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
@@ -216,6 +218,8 @@ public static class RuntimeEngineBuilderExtensions
             c.AddCommandClient<ExportRtCommandRequest>("bot::export-rt");
             c.AddCommandClient<ImportRtCommandRequest>("bot::import-rt");
             c.AddCommandClient<ImportCkCommandRequest>("bot::import-ck");
+            c.AddBroadcastEventConsumer<TenantManagementConsumer, PosUpdateTenant>();
+            c.AddBroadcastEventConsumer<TenantManagementConsumer, PreDeleteTenant>();
         });
 
         // Add the basic services of Octo

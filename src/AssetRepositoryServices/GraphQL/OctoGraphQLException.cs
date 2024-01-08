@@ -45,4 +45,14 @@ public class OctoGraphQLException : Exception
     {
         return new OctoGraphQLException($"Enum attribute {attributeName} has no CkEnumId.");
     }
+
+    public static Exception SchemaCreationFailed(string tenantId, Exception exception)
+    {
+        return new OctoGraphQLException($"Schema creation failed for tenant {tenantId}.", exception);
+    }
+    
+    public static Exception SchemaCreationFailed(string tenantId)
+    {
+        return new OctoGraphQLException($"Schema creation failed for tenant {tenantId}.");
+    }
 }

@@ -30,9 +30,8 @@ public class TenantUserContextBuilder : IUserContextBuilder
         using var systemSession = await _octoService.SystemContext.GetSystemSessionAsync();
         systemSession.StartTransaction();
 
-
         ITenantContext tenantContext = _octoService.SystemContext;
-        if (tenantId != null && tenantId.NormalizeString() != AssetRepositoryServiceConstants.SystemTenantUriPattern)
+        if (tenantId != null && tenantId.NormalizeString() != _octoService.SystemContext.TenantId)
         {
             tenantContext = await _octoService.SystemContext.GetChildTenantContextAsync(tenantId);
         }

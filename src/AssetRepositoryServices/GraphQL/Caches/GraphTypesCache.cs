@@ -5,9 +5,11 @@ using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.RequestHandling;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Enums;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Inputs;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.Services;
 using Meshmakers.Octo.Communication.Contracts;
 using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.ConstructionKit.Contracts.Services;
+using Meshmakers.Octo.Runtime.Contracts.MongoDb;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Caches;
 
@@ -17,6 +19,7 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Caches;
 internal class GraphTypesCache : IGraphTypesCache
 {
     private readonly ICkCacheService _ckCacheService;
+    private readonly IOctoService _octoService;
     private readonly ConcurrentDictionary<IGraphType, DynamicConnectionType> _connectionTypes;
     private readonly IDataLoaderContextAccessor _dataLoaderAccessor;
 
@@ -32,14 +35,16 @@ internal class GraphTypesCache : IGraphTypesCache
     /// <summary>
     ///     Constructor
     /// </summary>
+    /// <param name="octoService"></param>
     /// <param name="tenantId"></param>
     /// <param name="dataLoaderAccessor">Data loader context accessor to solve the n+1 issue</param>
     /// <param name="ckCacheService"></param>
     /// <param name="octoSessionAccessor"></param>
-    public GraphTypesCache(ICkCacheService ckCacheService, string tenantId, IDataLoaderContextAccessor dataLoaderAccessor,
+    public GraphTypesCache(ICkCacheService ckCacheService, IOctoService octoService, string tenantId, IDataLoaderContextAccessor dataLoaderAccessor,
         IOctoSessionAccessor octoSessionAccessor)
     {
         _ckCacheService = ckCacheService;
+        _octoService = octoService;
         _tenantId = tenantId;
         _dataLoaderAccessor = dataLoaderAccessor;
         _octoSessionAccessor = octoSessionAccessor;
@@ -121,8 +126,18 @@ internal class GraphTypesCache : IGraphTypesCache
         return inputTypes.ToArray();
     }
 
-    public void Populate()
+    public async Task PopulateAsync()
     {
+        ITenantContext tenantContext =_octoService.SystemContext;
+        if (_tenantId != _octoService.SystemContext.TenantId)
+        {
+            tenantContext = await _octoService.SystemContext.GetChildTenantContextAsync(_tenantId);
+        }
+
+        // The cache is normally created when a tenant repository is access first time. This will not work because
+        // we need the schema now. So we have to load the cache manually.
+        await tenantContext.LoadCacheForTenantAsync();
+        
         // Create enum types first, because other elements depend on it.     
         foreach (var ckEnumGraph in _ckCacheService.GetCkEnums(_tenantId))
         {
@@ -157,12 +172,11 @@ internal class GraphTypesCache : IGraphTypesCache
         
         foreach (var ckTypeGraph in _ckCacheService.GetCkTypes(_tenantId))
         {
-            var rtEntityDtoType = _types.GetOrAdd(ckTypeGraph.CkTypeId, _ =>
+            _types.GetOrAdd(ckTypeGraph.CkTypeId, _ =>
             {
                 var rtEntityType = new RtEntityDtoType(ckTypeGraph);
                 return rtEntityType;
             });
-            rtEntityDtoType.Populate(_ckCacheService, _tenantId, this, _dataLoaderAccessor, _octoSessionAccessor);
 
             if (!ckTypeGraph.IsAbstract)
             {
@@ -173,6 +187,11 @@ internal class GraphTypesCache : IGraphTypesCache
                 });
                 rtEntityDtoInputType.Populate(_ckCacheService, _tenantId, this, ckTypeGraph);
             }
+        }
+        
+        foreach (var rtEntityDtoType in _types.Values)
+        {
+            rtEntityDtoType.Populate(_ckCacheService, _tenantId, this, _dataLoaderAccessor, _octoSessionAccessor);
         }
     }
 }

@@ -5,8 +5,6 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices;
 /// </summary>
 public static class AssetRepositoryServiceConstants
 {
-    internal const string SystemTenantUriPattern = "system";
-
     internal const string SystemApiReadOnlyPolicy = "SystemApiReadOnlyPolicy";
     internal const string SystemApiReadWritePolicy = "SystemApiReadWritePolicy";
     internal const string AuthenticatedUserPolicy = "AuthenticatedUserPolicy";
