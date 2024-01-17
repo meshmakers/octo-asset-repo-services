@@ -34,6 +34,13 @@ internal class DefaultConfigurationCreatorService : IDefaultConfigurationCreator
             return;
         }
         
+        // Do nothing if the system tenant is not existing.
+        // Identity Service is creating the system tenant currently.
+        if (!await _systemContext.IsSystemTenantExistingAsync())
+        {
+            return;
+        }
+        
         using var session = await _systemContext.GetSystemSessionAsync();
         session.StartTransaction();
 
