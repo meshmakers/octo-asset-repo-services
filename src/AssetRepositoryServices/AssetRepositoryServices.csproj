@@ -3,7 +3,7 @@
     <PropertyGroup>
         <ApplicationIcon />
         <AssemblyName>Meshmakers.Octo.Backend.AssetRepositoryServices</AssemblyName>
-        <Description>The core services of Object Service Platform</Description>
+        <Description>Asset Repository Service of Octo Mesh, provides access to data products.</Description>
         <DockerDefaultTargetOS>Linux</DockerDefaultTargetOS>
         <GeneratePackageOnBuild>false</GeneratePackageOnBuild>
         <IsPackable>false</IsPackable>

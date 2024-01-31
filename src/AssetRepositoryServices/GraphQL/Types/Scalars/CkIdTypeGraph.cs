@@ -3,7 +3,7 @@ using Meshmakers.Octo.ConstructionKit.Contracts;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Scalars;
 
-internal class CkIdTypeGraph<TCkKey> : ScalarGraphType where TCkKey: struct, IComparable<TCkKey>, ICkKey
+internal class CkIdTypeGraph<TCkKey> : ScalarGraphType where TCkKey: IComparable<TCkKey>, ICkKey
 {
     public CkIdTypeGraph()
     {

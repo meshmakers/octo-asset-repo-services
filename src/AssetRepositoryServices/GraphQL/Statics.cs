@@ -23,7 +23,7 @@ internal static class Statics
     internal const string LargeBinaryDataArg = "binaryData";
     internal const string GroupByArg = "groupBy";
 
-    public static string GetGraphQlName<TKey>(this CkId<TKey> ckKey) where TKey : struct, IComparable<TKey>, ICkKey
+    public static string GetGraphQlName<TKey>(this CkId<TKey> ckKey) where TKey : IComparable<TKey>, ICkKey
     {
         return ckKey.SemanticVersionedFullName
             .Replace(".", "")

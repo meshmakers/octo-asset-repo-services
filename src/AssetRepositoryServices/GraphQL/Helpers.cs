@@ -356,7 +356,7 @@ internal static class Helpers
                 }
 
                 builder = complexGraphType.Field(attributeName,
-                    graphTypesCache.GetEnum(typeAttributeGraph.ValueCkEnumId.Value));
+                    graphTypesCache.GetEnum(typeAttributeGraph.ValueCkEnumId));
                 break;
             case AttributeValueTypesDto.Record:
                 if (typeAttributeGraph.ValueCkRecordId == null)
@@ -366,8 +366,8 @@ internal static class Helpers
 
                 graphType = isInputType switch
                 {
-                    true => graphTypesCache.GetRecordInput(typeAttributeGraph.ValueCkRecordId.Value),
-                    _ => graphTypesCache.GetRecord(typeAttributeGraph.ValueCkRecordId.Value)
+                    true => graphTypesCache.GetRecordInput(typeAttributeGraph.ValueCkRecordId),
+                    _ => graphTypesCache.GetRecord(typeAttributeGraph.ValueCkRecordId)
                 };
 
                 builder = complexGraphType.Field(attributeName, graphType);
@@ -380,8 +380,8 @@ internal static class Helpers
 
                 graphType = isInputType switch
                 {
-                    true => graphTypesCache.GetRecordInput(typeAttributeGraph.ValueCkRecordId.Value),
-                    _ => graphTypesCache.GetRecord(typeAttributeGraph.ValueCkRecordId.Value)
+                    true => graphTypesCache.GetRecordInput(typeAttributeGraph.ValueCkRecordId),
+                    _ => graphTypesCache.GetRecord(typeAttributeGraph.ValueCkRecordId)
                 };
 
                 builder = complexGraphType.Field(attributeName, new ListGraphType(graphType));

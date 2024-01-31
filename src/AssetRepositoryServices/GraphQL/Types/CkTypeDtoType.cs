@@ -62,7 +62,7 @@ public sealed class CkTypeDtoType : ObjectGraphType<CkTypeDto>
                 return null;
             }
 
-            return CreateCkTypeDto(ckCacheService.GetCkType(graphQlContext.TenantId, result.Value));
+            return CreateCkTypeDto(ckCacheService.GetCkType(graphQlContext.TenantId, result));
         });
     }
 

@@ -62,7 +62,7 @@ public sealed class CkRecordDtoType : ObjectGraphType<CkRecordDto>
                 return null;
             }
 
-            return CreateCkRecordDto(ckCacheService.GetCkRecord(graphQlContext.TenantId, result.Value));
+            return CreateCkRecordDto(ckCacheService.GetCkRecord(graphQlContext.TenantId, result));
         });
     }
 

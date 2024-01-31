@@ -57,7 +57,7 @@ internal sealed class CkAttributeDtoType : ObjectGraphType<CkAttributeDto>
             return null;
         }
         
-        var ckEnumGraph = ckCacheService.GetCkEnum(graphQlUserContext.TenantId, arg.Source.ValueCkEnumId.Value);
+        var ckEnumGraph = ckCacheService.GetCkEnum(graphQlUserContext.TenantId, arg.Source.ValueCkEnumId);
         return CkEnumDtoType.CreateCkEnumDto(ckEnumGraph);
     }
 
@@ -75,7 +75,7 @@ internal sealed class CkAttributeDtoType : ObjectGraphType<CkAttributeDto>
             return null;
         }
         
-        var ckRecordGraph = ckCacheService.GetCkRecord(graphQlUserContext.TenantId, arg.Source.ValueCkRecordId.Value);
+        var ckRecordGraph = ckCacheService.GetCkRecord(graphQlUserContext.TenantId, arg.Source.ValueCkRecordId);
         return CkRecordDtoType.CreateCkRecordDto(ckRecordGraph);
     }
 
