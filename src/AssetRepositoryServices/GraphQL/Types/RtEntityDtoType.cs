@@ -5,7 +5,6 @@ using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Caches;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.RequestHandling;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Scalars;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Utils;
-using Meshmakers.Octo.Common.DistributionEventHub.Sagas;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
 using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.ConstructionKit.Contracts.DependencyGraph;
@@ -118,7 +117,7 @@ public sealed class RtEntityDtoType : ObjectGraphType<RtEntityDto>
         var rtEntityDto = new RtEntityDto
         {
             RtId = rtEntity.RtId,
-            CkTypeId = rtEntity.CkTypeId,
+            CkTypeId = rtEntity.CkTypeId ?? throw OctoGraphQLException.CkTypeIdUndefined(),
             RtCreationDateTime = rtEntity.RtCreationDateTime,
             RtChangedDateTime = rtEntity.RtChangedDateTime,
             RtWellKnownName = rtEntity.RtWellKnownName,

@@ -55,4 +55,9 @@ public class OctoGraphQLException : Exception
     {
         return new OctoGraphQLException($"Schema creation failed for tenant {tenantId}.");
     }
+
+    public static Exception CkTypeIdUndefined()
+    {
+        return new OctoGraphQLException("CkTypeId is undefined.");
+    }
 }

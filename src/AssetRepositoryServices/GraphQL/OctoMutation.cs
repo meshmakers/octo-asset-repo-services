@@ -287,7 +287,7 @@ public sealed class OctoMutation : ObjectGraphType
     private void RtEntityFromInputObject(ICkCacheService ckCacheService, string tenantId, RtEntity rtEntity, RtEntityDto rtEntityDto,
         List<AssociationUpdateInfo> associations)
     {
-        var metaEntityCacheItem = ckCacheService.GetCkType(tenantId, rtEntity.CkTypeId);
+        var metaEntityCacheItem = ckCacheService.GetCkType(tenantId, rtEntity.CkTypeId ?? throw OctoGraphQLException.CkTypeIdUndefined());
 
         rtEntity.RtWellKnownName = rtEntityDto.RtWellKnownName;
 
