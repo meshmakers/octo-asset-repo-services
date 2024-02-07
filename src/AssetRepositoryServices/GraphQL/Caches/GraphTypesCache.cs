@@ -40,7 +40,8 @@ internal class GraphTypesCache : IGraphTypesCache
     /// <param name="dataLoaderAccessor">Data loader context accessor to solve the n+1 issue</param>
     /// <param name="ckCacheService"></param>
     /// <param name="octoSessionAccessor"></param>
-    public GraphTypesCache(ICkCacheService ckCacheService, IOctoService octoService, string tenantId, IDataLoaderContextAccessor dataLoaderAccessor,
+    public GraphTypesCache(ICkCacheService ckCacheService, IOctoService octoService, string tenantId,
+        IDataLoaderContextAccessor dataLoaderAccessor,
         IOctoSessionAccessor octoSessionAccessor)
     {
         _ckCacheService = ckCacheService;
@@ -128,7 +129,7 @@ internal class GraphTypesCache : IGraphTypesCache
 
     public async Task PopulateAsync()
     {
-        ITenantContext tenantContext =_octoService.SystemContext;
+        ITenantContext tenantContext = _octoService.SystemContext;
         if (_tenantId != _octoService.SystemContext.TenantId)
         {
             tenantContext = await _octoService.SystemContext.GetChildTenantContextAsync(_tenantId);
@@ -137,7 +138,7 @@ internal class GraphTypesCache : IGraphTypesCache
         // The cache is normally created when a tenant repository is access first time. This will not work because
         // we need the schema now. So we have to load the cache manually.
         await tenantContext.LoadCacheForTenantAsync();
-        
+
         // Create enum types first, because other elements depend on it.     
         foreach (var ckEnumGraph in _ckCacheService.GetCkEnums(_tenantId))
         {
@@ -148,28 +149,37 @@ internal class GraphTypesCache : IGraphTypesCache
             });
             rtEnumType.Populate(_ckCacheService, _tenantId, this, _dataLoaderAccessor, _octoSessionAccessor, ckEnumGraph);
         }
-        
+
         // Make records second, because types depend on it.
         foreach (var ckRecordGraph in _ckCacheService.GetCkRecords(_tenantId))
         {
-            var rtRecordDtoType = _recordTypes.GetOrAdd(ckRecordGraph.CkRecordId, _ =>
+            _recordTypes.GetOrAdd(ckRecordGraph.CkRecordId, _ =>
             {
                 var rtRecordDtoType = new RtRecordDtoType(ckRecordGraph.CkRecordId);
                 return rtRecordDtoType;
             });
-            rtRecordDtoType.Populate(_ckCacheService, _tenantId, this, _dataLoaderAccessor, _octoSessionAccessor, ckRecordGraph);
-
+            
             if (!ckRecordGraph.IsAbstract)
             {
-                var rtRecordDtoInputType = _inputRecordTypes.GetOrAdd(ckRecordGraph.CkRecordId, _ =>
+                 _inputRecordTypes.GetOrAdd(ckRecordGraph.CkRecordId, _ =>
                 {
                     var rtRecordDtoInputType = new RtRecordDtoInputType(ckRecordGraph.CkRecordId);
                     return rtRecordDtoInputType;
                 });
-                rtRecordDtoInputType.Populate(_ckCacheService, _tenantId, this, ckRecordGraph);
             }
         }
-        
+
+        foreach (var rtRecordDtoType in _recordTypes.Values)
+        {
+            var ckRecordGraph = _ckCacheService.GetCkRecord(_tenantId, rtRecordDtoType.CkRecordId);
+            rtRecordDtoType.Populate(_ckCacheService, _tenantId, this, _dataLoaderAccessor, _octoSessionAccessor, ckRecordGraph);
+        }
+        foreach (var rtRecordDtoInputType in _inputRecordTypes.Values)
+        {
+            var ckRecordGraph = _ckCacheService.GetCkRecord(_tenantId, rtRecordDtoInputType.CkRecordId);
+            rtRecordDtoInputType.Populate(_ckCacheService, _tenantId, this, ckRecordGraph);
+        }
+
         foreach (var ckTypeGraph in _ckCacheService.GetCkTypes(_tenantId))
         {
             _types.GetOrAdd(ckTypeGraph.CkTypeId, _ =>
@@ -188,7 +198,7 @@ internal class GraphTypesCache : IGraphTypesCache
                 rtEntityDtoInputType.Populate(_ckCacheService, _tenantId, this, ckTypeGraph);
             }
         }
-        
+
         foreach (var rtEntityDtoType in _types.Values)
         {
             rtEntityDtoType.Populate(_ckCacheService, _tenantId, this, _dataLoaderAccessor, _octoSessionAccessor);
