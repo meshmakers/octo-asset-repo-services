@@ -4,8 +4,6 @@ using GraphQL.Types;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Caches;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.RequestHandling;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
-using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Inputs;
-using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Scalars;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Utils;
 using Meshmakers.Octo.Communication.Contracts;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
@@ -14,39 +12,24 @@ using NLog;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL;
 
-internal sealed class RtQuery : ObjectGraphType
+internal sealed class RtMutation : ObjectGraphType
 {
     private static readonly Logger Logger = LogManager.GetCurrentClassLogger();
 
-    public RtQuery(IGraphTypesCache graphTypesCache)
+    public RtMutation(IGraphTypesCache graphTypesCache)
     {
-        Name = "RuntimeModelQuery";
-        
-        Connection<RtEntityGenericDtoType>("RuntimeEntities")
-            .Argument<StringGraphType>(Statics.CkIdArg, "The construction kit type with the given id.")
-            .Argument<OctoObjectIdType>(Statics.RtIdArg, "Returns the entity with the given rtId.")
-            .Argument<ListGraphType<OctoObjectIdType>>(Statics.RtIdsArg,
-                "Returns entities with the given rtIds.")
-            .Argument<SearchFilterDtoType>(Statics.SearchFilterArg, "Filters items based on text search")
-            .Argument<FieldGroupByType>(Statics.GroupByArg, "Groups items based on attributes")
-            .Argument<ListGraphType<SortDtoType>>(Statics.SortOrderArg, "Sort order for items")
-            .Argument<ListGraphType<FieldFilterDtoType>>(Statics.FieldFilterArg,
-                "Filters items based on field compare")
-            .ResolveAsync(ResolveGenericRtEntitiesQuery);
+        Name = "Runtime";
         
         foreach (var rtEntityDtoType in graphTypesCache.GetTypes())
         {
-            this.Connection<object?, IGraphType, RtEntityDto>(graphTypesCache, rtEntityDtoType, rtEntityDtoType.Name)
-                .AddMetadata(Statics.CkId, rtEntityDtoType.CkTypeId)
-                .Argument<OctoObjectIdType>(Statics.RtIdArg, "Returns the entity with the given rtId.")
-                .Argument<ListGraphType<OctoObjectIdType>>(Statics.RtIdsArg,
-                    "Returns entities with the given rtIds.")
-                .Argument<SearchFilterDtoType>(Statics.SearchFilterArg, "Filters items based on text search")
-                .Argument<FieldGroupByType>(Statics.GroupByArg, "Groups items based on attributes")
-                .Argument<ListGraphType<SortDtoType>>(Statics.SortOrderArg, "Sort order for items")
-                .Argument<ListGraphType<FieldFilterDtoType>>(Statics.FieldFilterArg,
-                    "Filters items based on field compare")
-               .ResolveAsync(ResolveRtEntitiesQuery);
+            if (rtEntityDtoType.IsAbstract)
+            {
+                continue;
+            }
+
+            Field($"{rtEntityDtoType.CkTypeId.GetGraphQlName()}s", new RtEntityMutation(graphTypesCache, rtEntityDtoType))
+                .Description($"Mutation for entities of type '{rtEntityDtoType.CkTypeId.GetGraphQlName()}'.")
+                .Resolve(_ => new RtEntityDto());
         }
     }
 

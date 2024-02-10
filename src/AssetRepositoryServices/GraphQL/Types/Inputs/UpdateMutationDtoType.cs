@@ -12,7 +12,7 @@ public sealed class UpdateMutationDtoType<TItemType> : InputObjectGraphType<Muta
 {
     public UpdateMutationDtoType(IGraphType itemType)
     {
-        Name = $"{CommonConstants.GraphQlUpdatePrefix}{itemType.Name}";
+        Name = $"{itemType.Name}{CommonConstants.GraphQlUpdatePrefix}";
         Field(x => x.RtId, type: typeof(OctoObjectIdType));
         this.Field("item",
             "Item to update",

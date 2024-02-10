@@ -79,7 +79,7 @@ internal class SchemaContext : ISchemaContext
                 await graphTypesCache.PopulateAsync();
 
                 var query = new OctoQuery(_options, graphTypesCache, _dataLoaderAccessor);
-                var mutation = new OctoMutation(graphTypesCache, _octoSessionAccessor);
+                var mutation = new OctoMutation(graphTypesCache);
                 var subscriptions = new OctoSubscriptions(graphTypesCache);
 
                 var createdSchema = new OctoSchema(query, mutation, subscriptions);
