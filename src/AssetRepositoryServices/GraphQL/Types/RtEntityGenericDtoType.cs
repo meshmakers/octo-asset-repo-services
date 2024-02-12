@@ -13,7 +13,7 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
 /// <summary>
 ///     Implements a generic runtime entities type that can be used for generic access to entities
 /// </summary>
-public sealed class RtEntityGenericDtoType : ObjectGraphType<RtEntityDto>
+internal sealed class RtEntityGenericDtoType : ObjectGraphType<RtEntityDto>
 {
     /// <summary>
     ///     Constructor

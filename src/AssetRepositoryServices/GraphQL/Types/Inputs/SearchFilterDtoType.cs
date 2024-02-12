@@ -2,11 +2,9 @@ using GraphQL.Types;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Enums;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
 
-#pragma warning disable 1591
-
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Inputs;
 
-public sealed class SearchFilterDtoType : InputObjectGraphType<SearchFilterDto>
+internal sealed class SearchFilterDtoType : InputObjectGraphType<SearchFilterDto>
 {
     public SearchFilterDtoType()
     {

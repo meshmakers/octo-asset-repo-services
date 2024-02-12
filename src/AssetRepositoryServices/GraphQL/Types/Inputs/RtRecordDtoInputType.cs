@@ -1,6 +1,5 @@
 using GraphQL.Types;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Caches;
-using Meshmakers.Octo.Communication.Contracts;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
 using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.ConstructionKit.Contracts.DependencyGraph;
@@ -11,7 +10,7 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Inputs;
 /// <summary>
 ///     Implements a GraphQL runtime entity type
 /// </summary>
-public sealed class RtRecordDtoInputType : InputObjectGraphType<RtRecordDto>
+internal sealed class RtRecordDtoInputType : InputObjectGraphType<RtRecordDto>
 {
     /// <summary>
     ///     Constructor
@@ -20,7 +19,7 @@ public sealed class RtRecordDtoInputType : InputObjectGraphType<RtRecordDto>
     public RtRecordDtoInputType(CkId<CkRecordId> ckRecordId)
     {
         CkRecordId = ckRecordId;
-        Name = $"{ckRecordId.GetGraphQlName()}{CommonConstants.GraphQlInputSuffix}";
+        Name = $"{ckRecordId.GetGraphQlName()}{Statics.GraphQlInputSuffix}";
     }
 
     /// <summary>

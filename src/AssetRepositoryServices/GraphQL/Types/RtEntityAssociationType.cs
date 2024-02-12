@@ -16,7 +16,7 @@ using Meshmakers.Octo.Runtime.Contracts.RepositoryEntities;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
 
-public class RtEntityAssociationType : ObjectGraphType
+internal class RtEntityAssociationType : ObjectGraphType
 {
     private readonly IDataLoaderContextAccessor _dataLoaderAccessor;
     private readonly GraphDirections _graphDirection;

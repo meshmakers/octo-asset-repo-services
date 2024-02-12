@@ -14,7 +14,7 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
 /// <summary>
 ///     Implements the GraphQL runtime record type
 /// </summary>
-public sealed class RtRecordDtoType : ObjectGraphType<RtRecordDto>
+internal sealed class RtRecordDtoType : ObjectGraphType<RtRecordDto>
 {
     /// <inheritdoc />
     public RtRecordDtoType(CkId<CkRecordId> ckRecordId)

@@ -9,7 +9,7 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Caches;
 /// <summary>
 ///     Interface of the graph type cache
 /// </summary>
-public interface IGraphTypesCache
+internal interface IGraphTypesCache
 {
     /// <summary>
     ///     Gets or creates a Connection Type based on the given GraphQL type

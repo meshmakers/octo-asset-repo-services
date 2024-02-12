@@ -1,5 +1,4 @@
 using GraphQL.Types;
-using Meshmakers.Octo.Communication.Contracts;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
@@ -16,7 +15,7 @@ public class DynamicUpdateMessageDtoType<TItemType> : ObjectGraphType<DynamicUpd
     /// <param name="itemType">The GraphQL type used as item type.</param>
     public DynamicUpdateMessageDtoType(IGraphType itemType)
     {
-        Name = $"{itemType.Name}{CommonConstants.GraphQlUpdateMessageSuffix}";
+        Name = $"{itemType.Name}{Statics.GraphQlUpdateMessageSuffix}";
         this.Field("Items", "The corresponding items", new ListGraphType(itemType));
     }
 }

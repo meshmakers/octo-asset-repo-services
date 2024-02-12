@@ -7,7 +7,6 @@ using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Inputs;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Scalars;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Utils;
-using Meshmakers.Octo.Communication.Contracts;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
 using Meshmakers.Octo.ConstructionKit.Contracts;
 using NLog;
@@ -122,14 +121,14 @@ internal sealed class RtQuery : ObjectGraphType
         if (!arg.FieldDefinition.Metadata.TryGetValue(Statics.CkId, out var ckIdObj))
         {
             arg.Errors.Add(new ExecutionError("Invalid query. Missing construction kit id.")
-                { Code = CommonConstants.GraphQLErrorCommon });
+                { Code = Statics.GraphQLErrorCommon });
             return null;
         }
 
         if (ckIdObj is not CkId<CkTypeId> ckTypeId)
         {
             arg.Errors.Add(new ExecutionError("Invalid query. Invalid construction kit id.")
-                { Code = CommonConstants.GraphQLErrorCommon });
+                { Code = Statics.GraphQLErrorCommon });
             return null;
         }
 

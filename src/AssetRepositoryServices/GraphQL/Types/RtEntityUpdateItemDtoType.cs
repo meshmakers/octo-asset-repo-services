@@ -1,7 +1,6 @@
 using GraphQL;
 using GraphQL.Types;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Enums;
-using Meshmakers.Octo.Communication.Contracts;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
 using Meshmakers.Octo.Runtime.Contracts.RepositoryEntities;
 
@@ -10,7 +9,7 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
 /// <summary>
 ///     Implements an update item for RtEntities
 /// </summary>
-public sealed class RtEntityUpdateItemDtoType : ObjectGraphType<RtEntityUpdateItemDto>
+internal sealed class RtEntityUpdateItemDtoType : ObjectGraphType<RtEntityUpdateItemDto>
 {
     /// <summary>
     ///     Constructor
@@ -18,7 +17,7 @@ public sealed class RtEntityUpdateItemDtoType : ObjectGraphType<RtEntityUpdateIt
     /// <param name="rtEntityDtoType">GraphQL type the corresponding RtEntity type</param>
     public RtEntityUpdateItemDtoType(RtEntityDtoType rtEntityDtoType)
     {
-        Name = $"{rtEntityDtoType.Name}{CommonConstants.GraphQlUpdateSuffix}";
+        Name = $"{rtEntityDtoType.Name}{Statics.GraphQlUpdateSuffix}";
         this.Field("Item", "The corresponding item", rtEntityDtoType, resolve: ResolveItem);
         Field(o => o.UpdateState, type: typeof(UpdateTypesDtoType));
     }

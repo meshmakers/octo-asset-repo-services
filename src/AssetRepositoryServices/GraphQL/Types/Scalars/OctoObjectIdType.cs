@@ -10,8 +10,17 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Scalars;
 /// <summary>
 ///     GraphQL type for Object Ids
 /// </summary>
-public class OctoObjectIdType : ScalarGraphType
+internal class OctoObjectIdType : ScalarGraphType
 {
+    /// <summary>
+    /// Constructor
+    /// </summary>
+    public OctoObjectIdType()
+    {
+        Name = "OctoObjectId";
+        Description = "A unique identifier for an runtime object.";
+    }
+    
     /// <inheritdoc />
     public override object? ParseLiteral(GraphQLValue value)
     {

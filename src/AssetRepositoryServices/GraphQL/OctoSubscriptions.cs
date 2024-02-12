@@ -15,7 +15,7 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL;
 /// <summary>
 ///     Implements GraphQL subscriptions
 /// </summary>
-public class OctoSubscriptions : ObjectGraphType<object>
+internal class OctoSubscriptions : ObjectGraphType<object>
 {
     /// <summary>
     ///     Constructor

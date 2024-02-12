@@ -6,7 +6,6 @@ using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Inputs;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Scalars;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Utils;
-using Meshmakers.Octo.Communication.Contracts;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
 using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.ConstructionKit.Contracts.Messages;
@@ -90,7 +89,7 @@ internal class RtEntityMutation : RtMutationBase
             if (deleteAssociations.Any())
             {
                 arg.Errors.Add(new ExecutionError("Delete operations during creation are supported")
-                    { Code = CommonConstants.GraphQLDeleteOperationsNotSupported });
+                    { Code = Statics.GraphQLDeleteOperationsNotSupported });
                 return null;
             }
 
@@ -104,12 +103,12 @@ internal class RtEntityMutation : RtMutationBase
                     if (message.MessageLevel == MessageLevel.Error)
                     {
                         arg.Errors.Add(new ExecutionError(message.MessageText)
-                            { Code = string.Format(CommonConstants.GraphQLOperationError, message.MessageNumber) });
+                            { Code = string.Format(Statics.GraphQLOperationError, message.MessageNumber) });
                     }
                     else if (message.MessageLevel == MessageLevel.FatalError)
                     {
                         arg.Errors.Add(new ExecutionError(message.MessageText)
-                            { Code = string.Format(CommonConstants.GraphQLOperationFatalError, message.MessageNumber) });
+                            { Code = string.Format(Statics.GraphQLOperationFatalError, message.MessageNumber) });
                     }
                 }
 
@@ -120,13 +119,13 @@ internal class RtEntityMutation : RtMutationBase
         }
         catch (OperationFailedException e)
         {
-            arg.Errors.Add(new ExecutionError(e.Message, e) { Code = CommonConstants.GraphQLErrorDataStore });
+            arg.Errors.Add(new ExecutionError(e.Message, e) { Code = Statics.GraphQLErrorDataStore });
             return null;
         }
         catch (Exception e)
         {
             arg.Errors.Add(new ExecutionError("A general error occurred", e)
-                { Code = CommonConstants.GraphQLErrorCommon });
+                { Code = Statics.GraphQLErrorCommon });
             return null;
         }
     }
@@ -166,13 +165,13 @@ internal class RtEntityMutation : RtMutationBase
         }
         catch (OperationFailedException e)
         {
-            arg.Errors.Add(new ExecutionError(e.Message, e) { Code = CommonConstants.GraphQLErrorDataStore });
+            arg.Errors.Add(new ExecutionError(e.Message, e) { Code = Statics.GraphQLErrorDataStore });
             return false;
         }
         catch (Exception e)
         {
             arg.Errors.Add(new ExecutionError("A general error occurred", e)
-                { Code = CommonConstants.GraphQLErrorCommon });
+                { Code = Statics.GraphQLErrorCommon });
             return false;
         }
     }
@@ -226,12 +225,12 @@ internal class RtEntityMutation : RtMutationBase
                     if (message.MessageLevel == MessageLevel.Error)
                     {
                         arg.Errors.Add(new ExecutionError(message.MessageText)
-                            { Code = string.Format(CommonConstants.GraphQLOperationError, message.MessageNumber) });
+                            { Code = string.Format(Statics.GraphQLOperationError, message.MessageNumber) });
                     }
                     else if (message.MessageLevel == MessageLevel.FatalError)
                     {
                         arg.Errors.Add(new ExecutionError(message.MessageText)
-                            { Code = string.Format(CommonConstants.GraphQLOperationFatalError, message.MessageNumber) });
+                            { Code = string.Format(Statics.GraphQLOperationFatalError, message.MessageNumber) });
                     }
                 }
 
@@ -242,13 +241,13 @@ internal class RtEntityMutation : RtMutationBase
         }
         catch (OperationFailedException e)
         {
-            arg.Errors.Add(new ExecutionError(e.Message, e) { Code = CommonConstants.GraphQLErrorDataStore });
+            arg.Errors.Add(new ExecutionError(e.Message, e) { Code = Statics.GraphQLErrorDataStore });
             return null;
         }
         catch (Exception e)
         {
             arg.Errors.Add(new ExecutionError("A general error occurred", e)
-                { Code = CommonConstants.GraphQLErrorCommon });
+                { Code = Statics.GraphQLErrorCommon });
             return null;
         }
     }

@@ -4,7 +4,7 @@ using Meshmakers.Octo.Runtime.Contracts.Repositories.Query;
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
 
 /// <inheritdoc />
-public class OctoConnection<TNode, TEdge> : Connection<TNode, TEdge> where TEdge : Edge<TNode>
+internal class OctoConnection<TNode, TEdge> : Connection<TNode, TEdge> where TEdge : Edge<TNode>
 {
     /// <summary>
     ///     The result when a grouping is requested.
@@ -13,6 +13,6 @@ public class OctoConnection<TNode, TEdge> : Connection<TNode, TEdge> where TEdge
 }
 
 /// <inheritdoc />
-public class OctoConnection<TNode> : OctoConnection<TNode, Edge<TNode>>
+internal class OctoConnection<TNode> : OctoConnection<TNode, Edge<TNode>>
 {
 }

@@ -16,7 +16,7 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
 /// <summary>
 ///     Implements the GraphQL Runtime Entity Type
 /// </summary>
-public sealed class RtEntityDtoType : ObjectGraphType<RtEntityDto>
+internal sealed class RtEntityDtoType : ObjectGraphType<RtEntityDto>
 {
     private readonly CkTypeGraph _ckTypeGraph;
 

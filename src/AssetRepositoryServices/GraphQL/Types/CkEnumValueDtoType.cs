@@ -2,11 +2,9 @@ using GraphQL.Types;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb.Repository.Entities;
 
-#pragma warning disable 1591
-
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
 
-public sealed class CkEnumValueDtoType : ObjectGraphType<CkEnumValueDto>
+internal sealed class CkEnumValueDtoType : ObjectGraphType<CkEnumValueDto>
 {
     public CkEnumValueDtoType()
     {

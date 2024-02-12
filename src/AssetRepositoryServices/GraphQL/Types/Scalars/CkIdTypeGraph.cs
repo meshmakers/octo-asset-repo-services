@@ -7,7 +7,7 @@ internal class CkIdTypeGraph<TCkKey> : ScalarGraphType where TCkKey: IComparable
 {
     public CkIdTypeGraph()
     {
-        Name = "Ck" + typeof(TCkKey).Name;
+        Name = typeof(TCkKey).Name;
         Description = "A construction kit id of type " + typeof(TCkKey).Name + ".";
     }
 

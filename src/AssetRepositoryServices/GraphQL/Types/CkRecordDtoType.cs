@@ -9,12 +9,10 @@ using Meshmakers.Octo.ConstructionKit.Contracts.DependencyGraph;
 using Meshmakers.Octo.ConstructionKit.Contracts.Services;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb.Repository.Entities;
 
-#pragma warning disable 1591
-
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
 
 // ReSharper disable once ClassNeverInstantiated.Global
-public sealed class CkRecordDtoType : ObjectGraphType<CkRecordDto>
+internal sealed class CkRecordDtoType : ObjectGraphType<CkRecordDto>
 {
     public CkRecordDtoType()
     {

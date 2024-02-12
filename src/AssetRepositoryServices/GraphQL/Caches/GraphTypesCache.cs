@@ -6,7 +6,6 @@ using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Enums;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Inputs;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.Services;
-using Meshmakers.Octo.Communication.Contracts;
 using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.ConstructionKit.Contracts.Services;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb;
@@ -64,12 +63,12 @@ internal class GraphTypesCache : IGraphTypesCache
         return _connectionTypes.GetOrAdd(graphType, _ =>
         {
             var edgeType = new DynamicEdgeType(
-                $"{prefixName}{CommonConstants.GraphQlEdgeSuffix}",
+                $"{prefixName}{Statics.GraphQlEdgeSuffix}",
                 $"An edge in a connection from an object to another object of type `{graphType.Name}`.", graphType);
 
             return new DynamicConnectionType
             (
-                $"{prefixName}{CommonConstants.GraphQlConnectionSuffix}",
+                $"{prefixName}{Statics.GraphQlConnectionSuffix}",
                 $"A connection to `{prefixName}`.",
                 graphType, edgeType
             );

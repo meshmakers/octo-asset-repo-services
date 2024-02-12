@@ -7,7 +7,7 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Inputs;
 /// <summary>
 ///     GraphQL type representing the RtEntityId type (struct with CkId and rtId)
 /// </summary>
-public sealed class RtEntityIdType : InputObjectGraphType<RtEntityIdDto>
+internal sealed class RtEntityIdType : InputObjectGraphType<RtEntityIdDto>
 {
     /// <summary>
     ///     Constructor

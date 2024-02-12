@@ -10,7 +10,6 @@ using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.RequestHandling;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Scalars;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Utils;
-using Meshmakers.Octo.Communication.Contracts;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
 using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.ConstructionKit.Contracts.DataTransferObjects;
@@ -104,7 +103,7 @@ internal static class Helpers
         var graphTypes = allowedTypes.Select(graphTypesCache.GetType);
 
         var unionType = new RtEntityAssociationType(
-            $"{complexGraphType.Name}_{name}{CommonConstants.GraphQlUnionSuffix}",
+            $"{complexGraphType.Name}_{name}{Statics.GraphQlUnionSuffix}",
             $"Association {roleId} ({graphDirection}) of entity type {complexGraphType.Name}", graphTypesCache, dataLoaderAccessor,
             sessionAccessor, graphTypes, originCkId, roleId, graphDirection);
 

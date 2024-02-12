@@ -7,7 +7,7 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
 /// <summary>
 ///     Defines the statistics type for results
 /// </summary>
-public sealed class StatisticsResultType : ObjectGraphType<StatisticsResult>
+internal sealed class StatisticsResultType : ObjectGraphType<StatisticsResult>
 {
     /// <summary>
     ///     Constructor
