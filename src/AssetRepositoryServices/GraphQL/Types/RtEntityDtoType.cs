@@ -25,7 +25,7 @@ internal sealed class RtEntityDtoType : ObjectGraphType<RtEntityDto>
     {
         _ckTypeGraph = ckTypeGraph;
 
-        Name = _ckTypeGraph.CkTypeId.GetGraphQlName();
+        Name = _ckTypeGraph.CkTypeId.GetGraphQlPascalCaseName();
         Description = $"Runtime entities of construction kit type '{_ckTypeGraph.CkTypeId}'";
         IsTypeOf = o =>
         {

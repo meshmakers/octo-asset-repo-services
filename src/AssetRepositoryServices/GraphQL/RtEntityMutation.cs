@@ -20,7 +20,7 @@ internal class RtEntityMutation : RtMutationBase
 {
     public RtEntityMutation(IGraphTypesCache graphTypesCache, RtEntityDtoType rtEntityDtoType)
     {
-        Name = rtEntityDtoType.CkTypeId.GetGraphQlName() + "Mutations";
+        Name = rtEntityDtoType.CkTypeId.GetGraphQlPascalCaseName() + "Mutations";
 
         var inputType = graphTypesCache.GetInputType(rtEntityDtoType.CkTypeId);
         var outputType = graphTypesCache.GetType(rtEntityDtoType.CkTypeId);

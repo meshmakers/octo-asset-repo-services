@@ -19,7 +19,7 @@ internal sealed class RtRecordDtoInputType : InputObjectGraphType<RtRecordDto>
     public RtRecordDtoInputType(CkId<CkRecordId> ckRecordId)
     {
         CkRecordId = ckRecordId;
-        Name = $"{ckRecordId.GetGraphQlName()}{Statics.GraphQlInputSuffix}";
+        Name = $"{ckRecordId.GetGraphQlPascalCaseName()}{Statics.GraphQlInputSuffix}";
     }
 
     /// <summary>

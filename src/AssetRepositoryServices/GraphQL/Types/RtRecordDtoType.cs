@@ -21,7 +21,7 @@ internal sealed class RtRecordDtoType : ObjectGraphType<RtRecordDto>
     {
         CkRecordId = ckRecordId;
 
-        Name = ckRecordId.GetGraphQlName();
+        Name = ckRecordId.GetGraphQlPascalCaseName();
         Description = $"Runtime entities of construction kit record '{ckRecordId}'";
         IsTypeOf = o =>
         {

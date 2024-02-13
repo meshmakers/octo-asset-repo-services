@@ -1,11 +1,9 @@
 using GraphQL.Types;
 using Meshmakers.Octo.Runtime.Contracts;
 
-#pragma warning disable 1591
-
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Enums;
 
-public class AssociationModOptionsDtoType : EnumerationGraphType<AssociationModOptionsDto>
+internal class AssociationModOptionsDtoType : EnumerationGraphType<AssociationModOptionsDto>
 {
     public AssociationModOptionsDtoType()
     {

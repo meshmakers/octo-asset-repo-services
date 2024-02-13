@@ -17,8 +17,8 @@ internal sealed class RtMutation : ObjectGraphType
                 continue;
             }
 
-            Field($"{rtEntityDtoType.CkTypeId.GetGraphQlName()}s", new RtEntityMutation(graphTypesCache, rtEntityDtoType))
-                .Description($"Mutation for entities of type '{rtEntityDtoType.CkTypeId.GetGraphQlName()}'.")
+            Field($"{rtEntityDtoType.CkTypeId.GetGraphQlCamelCaseName()}s", new RtEntityMutation(graphTypesCache, rtEntityDtoType))
+                .Description($"Mutation for entities of type '{rtEntityDtoType.CkTypeId.GetGraphQlPascalCaseName()}'.")
                 .Resolve(_ => new RtEntityDto());
         }
     }

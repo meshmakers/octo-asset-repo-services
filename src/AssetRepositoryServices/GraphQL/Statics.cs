@@ -42,7 +42,15 @@ internal static class Statics
     public const string GraphQLOperationError = "OCTO1006_{0}";
     public const string GraphQLOperationFatalError = "OCTO1007_{0}";
 
-    public static string GetGraphQlName<TKey>(this CkId<TKey> ckKey) where TKey : IComparable<TKey>, ICkKey
+    public static string GetGraphQlPascalCaseName<TKey>(this CkId<TKey> ckKey) where TKey : IComparable<TKey>, ICkKey
+    {
+        return ckKey.SemanticVersionedFullName
+            .Replace(".", "")
+            .Replace("/", "")
+            .ToPascalCase();
+    }
+    
+    public static string GetGraphQlCamelCaseName<TKey>(this CkId<TKey> ckKey) where TKey : IComparable<TKey>, ICkKey
     {
         return ckKey.SemanticVersionedFullName
             .Replace(".", "")

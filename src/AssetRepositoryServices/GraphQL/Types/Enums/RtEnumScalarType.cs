@@ -7,16 +7,14 @@ using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.ConstructionKit.Contracts.DependencyGraph;
 using Meshmakers.Octo.ConstructionKit.Contracts.Services;
 
-#pragma warning disable 1591
-
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Enums;
 
-public class RtEnumScalarType : EnumerationGraphType
+internal class RtEnumScalarType : EnumerationGraphType
 {
     public RtEnumScalarType(CkId<CkEnumId> ckEnumId)
     {
         CkEnumId = ckEnumId;
-        Name = ckEnumId.GetGraphQlName();
+        Name = ckEnumId.GetGraphQlPascalCaseName();
         Description = $"Runtime entities of construction kit enum '{ckEnumId}'";
     }
 

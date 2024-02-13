@@ -20,7 +20,7 @@ internal sealed class RtEntityDtoInputType : InputObjectGraphType<RtEntityDto>
     public RtEntityDtoInputType(CkId<CkTypeId> ckTypeId)
     {
         CkTypeId = ckTypeId;
-        Name = $"{ckTypeId.GetGraphQlName()}{Statics.GraphQlInputSuffix}";
+        Name = $"{ckTypeId.GetGraphQlPascalCaseName()}{Statics.GraphQlInputSuffix}";
 
         Field(x => x.RtWellKnownName, true);
     }
