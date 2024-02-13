@@ -1,5 +1,6 @@
 using System.Collections;
 using System.Reflection;
+using System.Text.Json.Serialization;
 using GraphQL;
 using GraphQL.Builders;
 using GraphQL.DataLoader;
@@ -16,7 +17,6 @@ using Meshmakers.Octo.ConstructionKit.Contracts.DataTransferObjects;
 using Meshmakers.Octo.ConstructionKit.Contracts.DependencyGraph;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb;
 using Meshmakers.Octo.Runtime.Contracts.RepositoryEntities;
-using Newtonsoft.Json;
 using ObjectExtensions = GraphQL.ObjectExtensions;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL;
