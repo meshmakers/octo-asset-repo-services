@@ -69,7 +69,19 @@ internal class RtEntityMutation : RtMutationBase
         var tenantRepository = tenantContext.GetTenantRepository();
         var graphQlUserContext = (GraphQlUserContext)arg.UserContext;
 
-        var ckId = arg.FieldDefinition.GetMetadata<string>(Statics.CkId);
+        if (!arg.FieldDefinition.Metadata.TryGetValue(Statics.CkId, out var ckIdObj))
+        {
+            arg.Errors.Add(new ExecutionError("Invalid query. Missing construction kit id.")
+                { Code = Statics.GraphQLErrorCommon });
+            return null;
+        }
+
+        if (ckIdObj is not CkId<CkTypeId> ckTypeId)
+        {
+            arg.Errors.Add(new ExecutionError("Invalid query. Invalid construction kit id.")
+                { Code = Statics.GraphQLErrorCommon });
+            return null;
+        }
 
         var inputObjects = arg.GetArgument<List<RtEntityDto>>(Statics.EntitiesArg);
 
@@ -79,7 +91,7 @@ internal class RtEntityMutation : RtMutationBase
             var associationUpdateInfoList = new List<AssociationUpdateInfo>();
             foreach (var rtEntityDto in inputObjects)
             {
-                var rtEntity = await tenantRepository.CreateTransientRtEntityAsync(ckId);
+                var rtEntity = await tenantRepository.CreateTransientRtEntityAsync(ckTypeId);
                 RtEntityFromInputObject(ckCacheService, graphQlUserContext.TenantId, rtEntity, rtEntityDto, associationUpdateInfoList);
                 entityUpdateInfos.Add(EntityUpdateInfo<RtEntity>.CreateInsert(rtEntity));
             }
@@ -115,7 +127,7 @@ internal class RtEntityMutation : RtMutationBase
                 return null;
             }
 
-            return await GetResultSet(sessionAccessor.Session, tenantRepository, ckId, entityUpdateInfos);
+            return await GetResultSet(sessionAccessor.Session, tenantRepository, ckTypeId, entityUpdateInfos);
         }
         catch (OperationFailedException e)
         {
@@ -142,7 +154,19 @@ internal class RtEntityMutation : RtMutationBase
             throw AssetRepositoryException.ServiceNotRegistered(typeof(IOctoSessionAccessor));
         }
 
-        var ckId = arg.FieldDefinition.GetMetadata<string>(Statics.CkId);
+        if (!arg.FieldDefinition.Metadata.TryGetValue(Statics.CkId, out var ckIdObj))
+        {
+            arg.Errors.Add(new ExecutionError("Invalid query. Missing construction kit id.")
+                { Code = Statics.GraphQLErrorCommon });
+            return null;
+        }
+
+        if (ckIdObj is not CkId<CkTypeId> ckTypeId)
+        {
+            arg.Errors.Add(new ExecutionError("Invalid query. Invalid construction kit id.")
+                { Code = Statics.GraphQLErrorCommon });
+            return null;
+        }
 
         var inputObjects = arg.GetArgument<List<OctoObjectId>>(Statics.EntitiesArg);
 
@@ -151,7 +175,7 @@ internal class RtEntityMutation : RtMutationBase
             var entityUpdateInfos = new List<EntityUpdateInfo<RtEntity>>();
             foreach (var rtId in inputObjects)
             {
-                entityUpdateInfos.Add(EntityUpdateInfo<RtEntity>.CreateDelete(new RtEntityId(ckId, rtId)));
+                entityUpdateInfos.Add(EntityUpdateInfo<RtEntity>.CreateDelete(new RtEntityId(ckTypeId, rtId)));
             }
 
             OperationResult operationResult = new();
@@ -194,7 +218,19 @@ internal class RtEntityMutation : RtMutationBase
         var tenantRepository = tenantContext.GetTenantRepository();
         var graphQlUserContext = (GraphQlUserContext)arg.UserContext;
 
-        var ckTypeId = arg.FieldDefinition.GetMetadata<string>(Statics.CkId);
+        if (!arg.FieldDefinition.Metadata.TryGetValue(Statics.CkId, out var ckIdObj))
+        {
+            arg.Errors.Add(new ExecutionError("Invalid query. Missing construction kit id.")
+                { Code = Statics.GraphQLErrorCommon });
+            return null;
+        }
+
+        if (ckIdObj is not CkId<CkTypeId> ckTypeId)
+        {
+            arg.Errors.Add(new ExecutionError("Invalid query. Invalid construction kit id.")
+                { Code = Statics.GraphQLErrorCommon });
+            return null;
+        }
 
         var inputObjects = arg.GetArgument<List<MutationDto<RtEntityDto>>>(Statics.EntitiesArg);
 

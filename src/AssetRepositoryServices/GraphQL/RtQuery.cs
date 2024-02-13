@@ -20,7 +20,7 @@ internal sealed class RtQuery : ObjectGraphType
     public RtQuery(IGraphTypesCache graphTypesCache)
     {
         Name = "RuntimeModelQuery";
-        
+
         Connection<RtEntityGenericDtoType>("RuntimeEntities")
             .Argument<StringGraphType>(Statics.CkIdArg, "The construction kit type with the given id.")
             .Argument<OctoObjectIdType>(Statics.RtIdArg, "Returns the entity with the given rtId.")
@@ -32,7 +32,7 @@ internal sealed class RtQuery : ObjectGraphType
             .Argument<ListGraphType<FieldFilterDtoType>>(Statics.FieldFilterArg,
                 "Filters items based on field compare")
             .ResolveAsync(ResolveGenericRtEntitiesQuery);
-        
+
         foreach (var rtEntityDtoType in graphTypesCache.GetTypes())
         {
             this.Connection<object?, IGraphType, RtEntityDto>(graphTypesCache, rtEntityDtoType, rtEntityDtoType.Name)
@@ -45,14 +45,14 @@ internal sealed class RtQuery : ObjectGraphType
                 .Argument<ListGraphType<SortDtoType>>(Statics.SortOrderArg, "Sort order for items")
                 .Argument<ListGraphType<FieldFilterDtoType>>(Statics.FieldFilterArg,
                     "Filters items based on field compare")
-               .ResolveAsync(ResolveRtEntitiesQuery);
+                .ResolveAsync(ResolveRtEntitiesQuery);
         }
     }
 
     private async Task<object?> ResolveGenericRtEntitiesQuery(IResolveConnectionContext<object?> arg)
     {
         Logger.Debug("GraphQL query handling for generic runtime entity started");
-        
+
         var sessionAccessor = arg.RequestServices?.GetRequiredService<IOctoSessionAccessor>();
         if (sessionAccessor == null)
         {
@@ -60,7 +60,14 @@ internal sealed class RtQuery : ObjectGraphType
         }
 
         var graphQlUserContext = (GraphQlUserContext)arg.UserContext;
-        var ckId = arg.GetArgument<string>(Statics.CkIdArg);
+        if (!arg.TryGetArgument(Statics.CkId, out string? ckIdObj))
+        {
+            arg.Errors.Add(new ExecutionError("Invalid query. Missing construction kit id.")
+                { Code = Statics.GraphQLErrorCommon });
+            return null;
+        }
+        
+        CkId<CkTypeId> ckTypeId = new(ckIdObj);
 
         var offset = arg.GetOffset();
         var dataQueryOperation = arg.GetDataQueryOperation();
@@ -86,9 +93,8 @@ internal sealed class RtQuery : ObjectGraphType
         var tenantRepository = graphQlUserContext.TenantContext.GetTenantRepository();
         if (keysList.Any())
         {
-            var resultSetIds =
-                await tenantRepository.GetRtEntitiesByIdAsync(
-                    sessionAccessor.Session, ckId, keysList, dataQueryOperation,
+            var resultSetIds = await tenantRepository.GetRtEntitiesByIdAsync(
+                    sessionAccessor.Session, ckTypeId, keysList, dataQueryOperation,
                     offset, arg.First);
 
             Logger.Debug("GraphQL query handling returning data by keys");
@@ -96,20 +102,19 @@ internal sealed class RtQuery : ObjectGraphType
                 resultSetIds.TotalCount > 0 ? offset.GetValueOrDefault(0) : 0, (int)resultSetIds.TotalCount, resultSetIds.Grouping);
         }
 
-        var resultSet =
-            await tenantRepository.GetRtEntitiesByTypeAsync(sessionAccessor.Session,
-                ckId, dataQueryOperation, offset,
-                arg.First);
+        var resultSet = await tenantRepository.GetRtEntitiesByTypeAsync(sessionAccessor.Session,
+            ckTypeId, dataQueryOperation, offset,
+            arg.First);
 
         Logger.Debug("GraphQL query handling returning data");
         return ConnectionUtils.ToConnection(resultSet.Items.Select(RtEntityDtoType.CreateRtEntityDto), arg,
             resultSet.TotalCount > 0 ? offset.GetValueOrDefault(0) : 0, (int)resultSet.TotalCount, resultSet.Grouping);
     }
-    
+
     private async Task<object?> ResolveRtEntitiesQuery(IResolveConnectionContext<object?> arg)
     {
         Logger.Debug("GraphQL query handling for specific runtime entity type started");
-        
+
         var sessionAccessor = arg.RequestServices?.GetRequiredService<IOctoSessionAccessor>();
         if (sessionAccessor == null)
         {

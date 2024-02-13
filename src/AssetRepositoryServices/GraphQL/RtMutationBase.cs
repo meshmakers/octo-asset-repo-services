@@ -1,6 +1,7 @@
 using GraphQL.Types;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
+using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.ConstructionKit.Contracts.DependencyGraph;
 using Meshmakers.Octo.ConstructionKit.Contracts.Services;
 using Meshmakers.Octo.Runtime.Contracts;
@@ -38,10 +39,10 @@ internal abstract class RtMutationBase : ObjectGraphType
         }
     }
 
-    protected async Task<IEnumerable<RtEntityDto>> GetResultSet(IOctoSession session, ITenantRepository repository, string ckId,
+    protected async Task<IEnumerable<RtEntityDto>> GetResultSet(IOctoSession session, ITenantRepository repository, CkId<CkTypeId> ckTypeId,
         List<EntityUpdateInfo<RtEntity>> entityUpdateInfos)
     {
-        var resultSet = await repository.GetRtEntitiesByIdAsync(session, ckId,
+        var resultSet = await repository.GetRtEntitiesByIdAsync(session, ckTypeId,
             entityUpdateInfos.Select(x => x.RtEntityId.RtId).ToList(), DataQueryOperation.Create());
 
         return resultSet.Items.Select(RtEntityDtoType.CreateRtEntityDto);
