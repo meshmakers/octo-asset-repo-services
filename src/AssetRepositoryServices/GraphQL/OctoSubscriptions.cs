@@ -66,7 +66,7 @@ internal class OctoSubscriptions : ObjectGraphType<object>
         var tenantRepository = tenantContext.GetTenantRepository();
         var messages = tenantRepository.SubscribeToRtEntities(ckId, updateStreamFilter, context.CancellationToken);
 
-        var observable = messages.GetUpdates().Select(x => new DynamicUpdateMessageDto<RtEntityUpdateItemDto>
+        var observable = messages.Result.GetUpdates().Select(x => new DynamicUpdateMessageDto<RtEntityUpdateItemDto>
         {
             Items = new List<RtEntityUpdateItemDto>
             {
