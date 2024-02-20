@@ -24,4 +24,9 @@ internal class AssetRepositoryException : Exception
     {
         return new AssetRepositoryException("CkId metadata is missing");
     }
+
+    internal static Exception DataLoaderContextUnavailable()
+    {
+        return new AssetRepositoryException("DataLoaderContext is not available");
+    }
 }

@@ -61,8 +61,8 @@ internal class RtEntityAssociationType : ObjectGraphType
 
     private object ResolveRtEntitiesQuery(IResolveConnectionContext<RtEntityDto> ctx)
     {
-        var targetCkId = (string?)ctx.FieldDefinition.Metadata[Statics.CkId];
-        if (string.IsNullOrWhiteSpace(targetCkId))
+        var targetCkId = (CkId<CkTypeId>?)ctx.FieldDefinition.Metadata[Statics.CkId];
+        if (targetCkId == null)
         {
             throw AssetRepositoryException.CkIdMetadataMissing();
         }
@@ -79,9 +79,9 @@ internal class RtEntityAssociationType : ObjectGraphType
             keysList.Add(key.Value);
         }
 
-        if (keys == null || _dataLoaderAccessor.Context == null)
+        if (_dataLoaderAccessor.Context == null)
         {
-            return ConnectionUtils.ToConnection(new RtEntityDto[] { }, ctx, 0, 0, null);
+            throw AssetRepositoryException.DataLoaderContextUnavailable();
         }
 
         var graphQlContext = (GraphQlUserContext)ctx.UserContext;

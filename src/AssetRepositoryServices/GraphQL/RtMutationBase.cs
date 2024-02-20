@@ -16,7 +16,7 @@ internal abstract class RtMutationBase : ObjectGraphType
     protected void RtEntityFromInputObject(ICkCacheService ckCacheService, string tenantId, RtEntity rtEntity, RtEntityDto rtEntityDto,
         List<AssociationUpdateInfo> associations)
     {
-        var metaEntityCacheItem = ckCacheService.GetCkType(tenantId, rtEntity.CkTypeId ?? throw OctoGraphQLException.CkTypeIdUndefined());
+        var ckTypeGraph = ckCacheService.GetCkType(tenantId, rtEntity.CkTypeId ?? throw OctoGraphQLException.CkTypeIdUndefined());
 
         rtEntity.RtWellKnownName = rtEntityDto.RtWellKnownName;
 
@@ -24,17 +24,17 @@ internal abstract class RtMutationBase : ObjectGraphType
         {
             foreach (var item in rtEntityDto.Properties)
             {
-                if (TryHandleAttribute(rtEntity, metaEntityCacheItem, item))
+                if (TryHandleAttribute(rtEntity, ckTypeGraph, item))
                 {
                     continue;
                 }
 
-                if (TryHandleInboundAssoc(rtEntity, metaEntityCacheItem, item, associations))
+                if (TryHandleInboundAssoc(rtEntity, ckTypeGraph, item, associations))
                 {
                     continue;
                 }
 
-                TryHandleOutboundAssoc(rtEntity, metaEntityCacheItem, item, associations);
+                TryHandleOutboundAssoc(rtEntity, ckTypeGraph, item, associations);
             }
         }
     }
@@ -50,7 +50,7 @@ internal abstract class RtMutationBase : ObjectGraphType
 
 
     private bool TryHandleAttribute(RtEntity rtEntity, CkTypeGraph entityCacheItem,
-        KeyValuePair<string, object> item)
+        KeyValuePair<string, object?> item)
     {
         var attributeName = item.Key;
 
@@ -65,7 +65,7 @@ internal abstract class RtMutationBase : ObjectGraphType
 
     // ReSharper disable once UnusedMethodReturnValue.Local
     private bool TryHandleInboundAssoc(RtEntity rtEntity, CkTypeGraph entityCacheItem,
-        KeyValuePair<string, object> item, List<AssociationUpdateInfo> associations)
+        KeyValuePair<string, object?> item, List<AssociationUpdateInfo> associations)
     {
         var assocName = item.Key;
 
@@ -76,15 +76,18 @@ internal abstract class RtMutationBase : ObjectGraphType
             return false;
         }
 
-        var rtAssociationInputDtos = (IEnumerable<object>)item.Value;
-        foreach (RtAssociationInputDto rtAssociationDto in rtAssociationInputDtos)
+        if (item.Value != null)
         {
-            var assocInfo = new AssociationUpdateInfo(
-                rtAssociationDto.Target,
-                rtEntity.ToRtEntityId(),
-                associationCacheItem.CkRoleId,
-                rtAssociationDto.ModOption ?? AssociationModOptionsDto.Create);
-            associations.Add(assocInfo);
+            var rtAssociationInputDtos = (IEnumerable<object>)item.Value;
+            foreach (RtAssociationInputDto rtAssociationDto in rtAssociationInputDtos)
+            {
+                var assocInfo = new AssociationUpdateInfo(
+                    rtAssociationDto.Target,
+                    rtEntity.ToRtEntityId(),
+                    associationCacheItem.CkRoleId,
+                    rtAssociationDto.ModOption ?? AssociationModOptionsDto.Create);
+                associations.Add(assocInfo);
+            }
         }
 
         return true;
@@ -92,26 +95,29 @@ internal abstract class RtMutationBase : ObjectGraphType
 
     // ReSharper disable once UnusedMethodReturnValue.Local
     private bool TryHandleOutboundAssoc(RtEntity rtEntity, CkTypeGraph entityCacheItem,
-        KeyValuePair<string, object> item, List<AssociationUpdateInfo> associations)
+        KeyValuePair<string, object?> item, List<AssociationUpdateInfo> associations)
     {
         var assocName = item.Key;
 
-        var associationCacheItem = entityCacheItem.Associations.Out.All
+        var typeAssociationGraph = entityCacheItem.Associations.Out.All
             .FirstOrDefault(a => a.NavigationPropertyName == assocName);
-        if (associationCacheItem == null)
+        if (typeAssociationGraph == null)
         {
             return false;
         }
 
-        var rtAssociationInputDtos = (IEnumerable<object>)item.Value;
-        foreach (RtAssociationInputDto rtAssociationDto in rtAssociationInputDtos)
+        if (item.Value != null)
         {
-            var assocInfo = new AssociationUpdateInfo(
-                rtEntity.ToRtEntityId(),
-                rtAssociationDto.Target,
-                associationCacheItem.CkRoleId,
-                rtAssociationDto.ModOption ?? AssociationModOptionsDto.Create);
-            associations.Add(assocInfo);
+            var rtAssociationInputDtos = (IEnumerable<object>)item.Value;
+            foreach (RtAssociationInputDto rtAssociationDto in rtAssociationInputDtos)
+            {
+                var assocInfo = new AssociationUpdateInfo(
+                    rtEntity.ToRtEntityId(),
+                    rtAssociationDto.Target,
+                    typeAssociationGraph.CkRoleId,
+                    rtAssociationDto.ModOption ?? AssociationModOptionsDto.Create);
+                associations.Add(assocInfo);
+            }
         }
 
         return true;

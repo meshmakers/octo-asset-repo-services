@@ -66,30 +66,34 @@ internal sealed class RtEntityDtoType : ObjectGraphType<RtEntityDto>
             Helpers.AddAttribute(this, graphTypesCache, attribute, false);
         }
 
-        foreach (var ckTypeAssociationGraph in _ckTypeGraph.Associations.Out.All)
+        foreach (var ckTypeAssociationGraph in _ckTypeGraph.Associations.Out.All.GroupBy(x=> x.NavigationPropertyName))
         {
-            var allowedTypes = ckCacheService.GetCkType(tenantId, ckTypeAssociationGraph.TargetCkTypeId).DerivedTypes;
+            var allowedTypes = ckTypeAssociationGraph
+                .SelectMany(x => ckCacheService.GetCkType(tenantId, x.TargetCkTypeId).GetAllDerivedTypes(true))
+                .ToList();
             if (!allowedTypes.Any())
             {
                 continue; // All Ck entities are abstract for that associations
             }
 
-            this.AssociationField(graphTypesCache, dataLoaderAccessor, sessionAccessor, ckTypeAssociationGraph.NavigationPropertyName,
-                allowedTypes.Select(x => x.InheritorCkTypeId).Distinct().ToList(), _ckTypeGraph.CkTypeId,
-                ckTypeAssociationGraph.CkRoleId, GraphDirections.Outbound);
+            this.AssociationField(graphTypesCache, dataLoaderAccessor, sessionAccessor, ckTypeAssociationGraph.Key,
+                allowedTypes.Select(x => x).Distinct().ToList(), _ckTypeGraph.CkTypeId,
+                ckTypeAssociationGraph.First().CkRoleId, GraphDirections.Outbound);
         }
 
-        foreach (var ckTypeAssociationGraph in _ckTypeGraph.Associations.In.All)
+        foreach (var ckTypeAssociationGraph in _ckTypeGraph.Associations.In.All.GroupBy(x=> x.NavigationPropertyName))
         {
-            var allowedTypes = ckCacheService.GetCkType(tenantId, ckTypeAssociationGraph.TargetCkTypeId).DerivedTypes;
+            var allowedTypes = ckTypeAssociationGraph
+                .SelectMany(x => ckCacheService.GetCkType(tenantId, x.OriginCkTypeId).GetAllDerivedTypes(true))
+                .ToList();
             if (!allowedTypes.Any())
             {
                 continue; // All Ck entities are abstract for that associations
             }
 
-            this.AssociationField(graphTypesCache, dataLoaderAccessor, sessionAccessor, ckTypeAssociationGraph.NavigationPropertyName,
-                allowedTypes.Select(x => x.InheritorCkTypeId).Distinct().ToList(), _ckTypeGraph.CkTypeId,
-                ckTypeAssociationGraph.CkRoleId, GraphDirections.Inbound);
+            this.AssociationField(graphTypesCache, dataLoaderAccessor, sessionAccessor, ckTypeAssociationGraph.Key,
+                allowedTypes.Select(x => x).Distinct().ToList(), _ckTypeGraph.CkTypeId,
+                ckTypeAssociationGraph.First().CkRoleId, GraphDirections.Inbound);
         }
     }
 

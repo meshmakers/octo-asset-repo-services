@@ -51,32 +51,32 @@ internal sealed class RtEntityDtoInputType : InputObjectGraphType<RtEntityDto>
             Helpers.AddAttribute(this, graphTypesCache, attribute, true);
         }
 
-        foreach (var ckTypeAssociationGraph in typeGraph.Associations.Out.All)
+        foreach (var ckTypeAssociationGraph in typeGraph.Associations.Out.All.GroupBy(x=> x.NavigationPropertyName))
         {
-            var allowedTypes = ckCacheService.GetCkType(tenantId, ckTypeAssociationGraph.TargetCkTypeId).DerivedTypes;
+            var allowedTypes = ckTypeAssociationGraph.SelectMany(x => ckCacheService.GetCkType(tenantId, x.TargetCkTypeId).GetAllDerivedTypes(true));
             if (!allowedTypes.Any())
             {
                 continue; // All Ck entities are abstract for that assocs
             }
 
-            AddAssociation(ckTypeAssociationGraph.NavigationPropertyName);
+            AddAssociation(ckTypeAssociationGraph.Key);
         }
 
-        foreach (var ckTypeAssociationGraph in typeGraph.Associations.In.All)
+        foreach (var ckTypeAssociationGraph in typeGraph.Associations.In.All.GroupBy(x=> x.NavigationPropertyName))
         {
-            var allowedTypes = ckCacheService.GetCkType(tenantId, ckTypeAssociationGraph.TargetCkTypeId).DerivedTypes;
+            var allowedTypes = ckTypeAssociationGraph.SelectMany(x => ckCacheService.GetCkType(tenantId, x.OriginCkTypeId).GetAllDerivedTypes(true));
             if (!allowedTypes.Any())
             {
                 continue; // All Ck entities are abstract for that assocs
             }
 
-            AddAssociation(ckTypeAssociationGraph.NavigationPropertyName);
+            AddAssociation(ckTypeAssociationGraph.Key);
         }
     }
 
     private void AddAssociation(string name)
     {
-        Expression<Func<RtEntityDto, object>> scalarValueExpression = dto => dto.Properties![name];
+        Expression<Func<RtEntityDto, object?>> scalarValueExpression = dto => dto.Properties![name];
 
         Field(name, type: typeof(ListGraphType<RtAssociationInputDtoType>), expression: scalarValueExpression);
     }
