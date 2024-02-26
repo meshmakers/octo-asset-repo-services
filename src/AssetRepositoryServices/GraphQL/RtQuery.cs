@@ -73,14 +73,14 @@ internal sealed class RtQuery : ObjectGraphType
         var dataQueryOperation = arg.GetDataQueryOperation();
 
         var keysList = new List<OctoObjectId>();
-        if (arg.TryGetArgument(Statics.RtIdArg, out string? key))
+        if (arg.TryGetArgument(Statics.RtIdArg, out OctoObjectId? rtId))
         {
-            keysList.Add(new OctoObjectId(key));
+            keysList.Add(rtId.Value);
         }
 
-        if (arg.TryGetArgument(Statics.RtIdsArg, null, out IEnumerable<string>? keys))
+        if (arg.TryGetArgument(Statics.RtIdsArg, null, out IEnumerable<OctoObjectId>? rtIds))
         {
-            keysList.AddRange(keys.Select(k => new OctoObjectId(k)));
+            keysList.AddRange(rtIds);
         }
 
         // if argument defined, but empty array, do not return any data. That mus be a mistake by client (otherwise
@@ -141,14 +141,14 @@ internal sealed class RtQuery : ObjectGraphType
         var dataQueryOperation = arg.GetDataQueryOperation();
 
         var keysList = new List<OctoObjectId>();
-        if (arg.TryGetArgument(Statics.RtIdArg, out string? key))
+        if (arg.TryGetArgument(Statics.RtIdArg, out OctoObjectId? rtId))
         {
-            keysList.Add(new OctoObjectId(key));
+            keysList.Add(rtId.Value);
         }
 
-        if (arg.TryGetArgument(Statics.RtIdsArg, null, out IEnumerable<string>? keys))
+        if (arg.TryGetArgument(Statics.RtIdsArg, null, out IEnumerable<OctoObjectId>? rtIds))
         {
-            keysList.AddRange(keys.Select(k => new OctoObjectId(k)));
+            keysList.AddRange(rtIds);
         }
 
         // if argument defined, but empty array, do not return any data. That mus be a mistake by client (otherwise
