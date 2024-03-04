@@ -128,7 +128,7 @@ public class ModelsController : ControllerBase
         {
             await file.CopyToAsync(memoryStream);
             memoryStream.Position = 0;
-            var key = await _distributedCache.CacheStreamAsync(tenantId, memoryStream, file.ContentType, file.FileName, TimeSpan.FromHours(1));
+            var key = await _distributedCache.CreateStreamAsync(tenantId, memoryStream, file.ContentType, file.FileName, TimeSpan.FromHours(1));
             return key;
         }
     }

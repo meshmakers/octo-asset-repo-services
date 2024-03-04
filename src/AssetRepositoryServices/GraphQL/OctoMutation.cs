@@ -40,7 +40,8 @@ public sealed class OctoMutation : ObjectGraphType
         var fileName = file.FileName;
         var contentType = file.ContentType;
 
+        Dictionary<string, object> metadata = new();
         return await tenantRepository.UploadLargeBinaryAsync(fileName, contentType, file.OpenReadStream(),
-            CancellationToken.None);
+            metadata, CancellationToken.None);
     }
 }

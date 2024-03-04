@@ -53,6 +53,11 @@ internal sealed class OctoQuery : ObjectGraphType
 
         var tenantRepository = tenantContext.GetTenantRepository();
         var downloadInfo = await tenantRepository.GetLargeBinaryAsync(key);
+        if (downloadInfo == null)
+        {
+            Logger.Warn("GraphQL query handling of large binaries failed: Large binary not found");
+            return ConnectionUtils.ToConnection(Array.Empty<LargeBinaryInfoDto>(), context, 0, 0, null);
+        }
 
         return ConnectionUtils.ToConnection(
             new[]
