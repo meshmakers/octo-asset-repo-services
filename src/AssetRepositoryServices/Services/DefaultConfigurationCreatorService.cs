@@ -4,7 +4,7 @@ using Meshmakers.Common.Shared;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.Configuration.DependencyInjection.Options;
 using Meshmakers.Octo.Common.DistributionEventHub.Services;
 using Meshmakers.Octo.Communication.Contracts;
-using Meshmakers.Octo.ConstructionKit.Models.System.ConstructionKit.Generated.System.v1;
+using Meshmakers.Octo.ConstructionKit.Models.System.Generated.System.v1;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb;
 using Meshmakers.Octo.Services.Common.DistributionEventHub.Commands;
 using Meshmakers.Octo.Services.Common.DistributionEventHub.Commands.Payloads;
