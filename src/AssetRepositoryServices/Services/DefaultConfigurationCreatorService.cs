@@ -14,15 +14,18 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.Services;
 
 internal class DefaultConfigurationCreatorService : IDefaultConfigurationCreatorService
 {
+    private readonly ILogger<DefaultConfigurationCreatorService> _logger;
     private readonly ICommandClient<CreateIdentityDataCommandRequest> _commandClient;
     private readonly OctoAssetRepositoryServicesOptions _octoAssetRepositoryServicesOptions;
     private readonly ISystemContext _systemContext;
 
 
-    public DefaultConfigurationCreatorService(IOctoService octoService, ICommandClient<CreateIdentityDataCommandRequest> commandClient,
+    public DefaultConfigurationCreatorService(ILogger<DefaultConfigurationCreatorService> logger,
+        IOctoService octoService, ICommandClient<CreateIdentityDataCommandRequest> commandClient,
         OctoAssetRepositoryServicesOptions octoAssetRepositoryServicesOptions)
     {
         _systemContext = octoService.SystemContext;
+        _logger = logger;
         _commandClient = commandClient;
         _octoAssetRepositoryServicesOptions = octoAssetRepositoryServicesOptions;
     }
@@ -34,38 +37,55 @@ internal class DefaultConfigurationCreatorService : IDefaultConfigurationCreator
             // Currently we only support the system tenant.
             return;
         }
-        
+
         // Do nothing if the system tenant is not existing.
         // Identity Service is creating the system tenant currently.
         if (!await _systemContext.IsSystemTenantExistingAsync())
         {
             return;
         }
-        
+
         // That means that the system tenant database is existing but (currently) not valid.
         // We wait for a PosTenantCreated event to create the default configuration.
         if (!await _systemContext.IsCkModelExistingAsync(SystemCkIds.ModelId))
         {
             return;
         }
-        
+
         using var session = await _systemContext.GetSystemSessionAsync();
         session.StartTransaction();
 
         var assetRepConfiguration =
-            await _systemContext.GetConfigurationAsync(session, AssetRepositoryServiceConstants.AssetServiceSchemaVersionKey,
+            await _systemContext.GetConfigurationAsync(session,
+                AssetRepositoryServiceConstants.AssetServiceSchemaVersionKey,
                 new DefaultConfigurationVersion { Version = -1 });
-        if (assetRepConfiguration == null || assetRepConfiguration.Version < AssetRepositoryServiceConstants.AssetServiceSchemaVersionValue)
+        if (assetRepConfiguration == null || assetRepConfiguration.Version <
+            AssetRepositoryServiceConstants.AssetServiceSchemaVersionValue)
         {
             CreateIdentityDataCommandRequest createIdentityDataCommandRequest = new(tenantId);
             CreateApiScopes(createIdentityDataCommandRequest);
             CreateApiResources(createIdentityDataCommandRequest);
             CreateClients(createIdentityDataCommandRequest);
 
-            await _commandClient.GetResponse<GenericCommandResponse>(createIdentityDataCommandRequest);
-
-            await _systemContext.SetConfigurationAsync(session, AssetRepositoryServiceConstants.AssetServiceSchemaVersionKey,
-                new DefaultConfigurationVersion { Version = AssetRepositoryServiceConstants.AssetServiceSchemaVersionValue });
+            var r = await _commandClient.GetResponse<EnumCommandResponse<CreateIdentityDataResult>>(
+                createIdentityDataCommandRequest);
+            if (r.Response == CreateIdentityDataResult.Success)
+            {
+                await _systemContext.SetConfigurationAsync(session,
+                    AssetRepositoryServiceConstants.AssetServiceSchemaVersionKey,
+                    new DefaultConfigurationVersion
+                        { Version = AssetRepositoryServiceConstants.AssetServiceSchemaVersionValue });
+            }
+            else if (r.Response != CreateIdentityDataResult.FailedTenantHasNoIdentityCk)
+            {
+                _logger.LogInformation("The tenant '{TenantId}' has no identity CK, skipped to create identity data",
+                    tenantId);
+            }
+            else
+            {
+                _logger.LogError("The tenant '{TenantId}' has no identity CK, skipped to create identity data",
+                    tenantId);
+            }
         }
 
         await session.CommitTransactionAsync();
