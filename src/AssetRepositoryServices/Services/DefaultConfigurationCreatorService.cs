@@ -52,6 +52,8 @@ internal class DefaultConfigurationCreatorService : IDefaultConfigurationCreator
             return;
         }
 
+        _logger.LogInformation("Setting up default configuration for tenant '{TenantId}'", tenantId);
+
         using var session = await _systemContext.GetSystemSessionAsync();
         session.StartTransaction();
 
@@ -67,8 +69,11 @@ internal class DefaultConfigurationCreatorService : IDefaultConfigurationCreator
             CreateApiResources(createIdentityDataCommandRequest);
             CreateClients(createIdentityDataCommandRequest);
 
-            var r = await _commandClient.GetResponse<EnumCommandResponse<CreateIdentityDataResult>>(
+            _logger.LogInformation("Creating identity data for tenant '{TenantId}'", tenantId);
+            // We retry 5 times to create identity data. This is important because the identity service might not be ready yet.
+            var r = await _commandClient.GetResponseWithRetry<EnumCommandResponse<CreateIdentityDataResult>>(
                 createIdentityDataCommandRequest);
+            _logger.LogInformation("Create identity data response: {Response}", r.Response);
             if (r.Response == CreateIdentityDataResult.Success)
             {
                 await _systemContext.SetConfigurationAsync(session,
