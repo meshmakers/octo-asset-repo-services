@@ -37,6 +37,14 @@ internal sealed class OctoQuery : ObjectGraphType
         Field("Runtime", new RtQuery(graphTypesCache))
             .Resolve(_ => new RtEntityDto());
 
+        
+        if (graphTypesCache.GetStreamTypes().Length != 0)
+        {
+            // make sure to only add the stream data field if there are stream types.
+            Field("StreamData", new TsQuery(graphTypesCache))
+                .Resolve(_ => new RtEntityDto());
+        }
+
         Connection<LargeBinaryInfoDtoType>("sysLargeBinaries")
             .Argument<OctoObjectIdType>(Statics.LargeBinaryIdArg, "ID of large binary that is requested.")
             .ResolveAsync(ResolveLargeBinariesQuery);

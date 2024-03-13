@@ -82,6 +82,12 @@ internal class GraphTypesCache : IGraphTypesCache
         return _types.Values.ToArray();
     }
 
+    /// <inheritdoc />
+    public RtEntityDtoType[] GetStreamTypes()
+    {
+        return _types.Values.Where(x => x.IsStreamType).ToArray();
+    }
+
     public RtEntityDtoType GetType(CkId<CkTypeId> ckTypeId)
     {
         return _types[ckTypeId];

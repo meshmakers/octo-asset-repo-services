@@ -54,6 +54,11 @@ internal sealed class RtEntityDtoType : ObjectGraphType<RtEntityDto>
     /// </summary>
     public bool IsAbstract => _ckTypeGraph.IsAbstract;
 
+    /// <summary>
+    /// Returns true if the type is a stream type
+    /// </summary>
+    public bool IsStreamType => _ckTypeGraph.IsStreamType;
+
 
     internal void Populate(ICkCacheService ckCacheService, string tenantId, IGraphTypesCache graphTypesCache,
         IDataLoaderContextAccessor dataLoaderAccessor,

@@ -66,4 +66,10 @@ internal interface IGraphTypesCache
     /// </summary>
     /// <returns></returns>
     IGraphType[] GetKnownGraphTypes();
+
+    /// <summary>
+    /// Returns an array of known time series graph types
+    /// </summary>
+    /// <returns></returns>
+    RtEntityDtoType[] GetStreamTypes();
 }
