@@ -13,10 +13,12 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL;
 
 internal abstract class RtMutationBase : ObjectGraphType
 {
-    protected void RtEntityFromInputObject(ICkCacheService ckCacheService, string tenantId, RtEntity rtEntity, RtEntityDto rtEntityDto,
+    protected void RtEntityFromInputObject(ICkCacheService ckCacheService, string tenantId, RtEntity rtEntity,
+        RtEntityDto rtEntityDto,
         List<AssociationUpdateInfo> associations)
     {
-        var ckTypeGraph = ckCacheService.GetCkType(tenantId, rtEntity.CkTypeId ?? throw OctoGraphQLException.CkTypeIdUndefined());
+        var ckTypeGraph =
+            ckCacheService.GetCkType(tenantId, rtEntity.CkTypeId ?? throw OctoGraphQLException.CkTypeIdUndefined());
 
         rtEntity.RtWellKnownName = rtEntityDto.RtWellKnownName;
 
@@ -39,7 +41,8 @@ internal abstract class RtMutationBase : ObjectGraphType
         }
     }
 
-    protected async Task<IEnumerable<RtEntityDto>> GetResultSet(IOctoSession session, ITenantRepository repository, CkId<CkTypeId> ckTypeId,
+    protected async Task<IEnumerable<RtEntityDto>> GetResultSet(IOctoSession session, ITenantRepository repository,
+        CkId<CkTypeId> ckTypeId,
         List<EntityUpdateInfo<RtEntity>> entityUpdateInfos)
     {
         var resultSet = await repository.GetRtEntitiesByIdAsync(session, ckTypeId,
@@ -82,7 +85,7 @@ internal abstract class RtMutationBase : ObjectGraphType
             foreach (RtAssociationInputDto rtAssociationDto in rtAssociationInputDtos)
             {
                 var assocInfo = new AssociationUpdateInfo(
-                    rtAssociationDto.Target,
+                    new RtEntityId(rtAssociationDto.Target.CkTypeId, rtAssociationDto.Target.RtId),
                     rtEntity.ToRtEntityId(),
                     associationCacheItem.CkRoleId,
                     rtAssociationDto.ModOption ?? AssociationModOptionsDto.Create);
@@ -113,7 +116,7 @@ internal abstract class RtMutationBase : ObjectGraphType
             {
                 var assocInfo = new AssociationUpdateInfo(
                     rtEntity.ToRtEntityId(),
-                    rtAssociationDto.Target,
+                    new RtEntityId(rtAssociationDto.Target.CkTypeId, rtAssociationDto.Target.RtId),
                     typeAssociationGraph.CkRoleId,
                     rtAssociationDto.ModOption ?? AssociationModOptionsDto.Create);
                 associations.Add(assocInfo);

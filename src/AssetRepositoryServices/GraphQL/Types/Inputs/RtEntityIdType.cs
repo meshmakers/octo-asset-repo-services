@@ -1,6 +1,7 @@
 using GraphQL.Types;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Scalars;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
+using Meshmakers.Octo.ConstructionKit.Contracts;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Inputs;
 
@@ -15,10 +16,10 @@ internal sealed class RtEntityIdType : InputObjectGraphType<RtEntityIdDto>
     public RtEntityIdType()
     {
         Name = "RtEntityId";
-        Description = "Id information consists of CkId and RtId";
+        Description = "Id information consists of CkTypeId and RtId";
 
         Field(x => x.RtId, type: typeof(NonNullGraphType<OctoObjectIdType>)).Description("Unique id of the object.");
-        Field(x => x.CkTypeId, type: typeof(NonNullGraphType<StringGraphType>))
-            .Description("Construction kit id of the object.");
+        Field(x => x.CkTypeId, type: typeof(NonNullGraphType<CkIdTypeGraph<CkTypeId>>))
+            .Description("Construction kit type id of the object.");
     }
 }

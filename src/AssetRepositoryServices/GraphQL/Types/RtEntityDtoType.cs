@@ -38,7 +38,7 @@ internal sealed class RtEntityDtoType : ObjectGraphType<RtEntityDto>
         };
 
         Field(d => d.RtId, type: typeof(NonNullGraphType<OctoObjectIdType>));
-        Field(d => d.CkTypeId, type: typeof(NonNullGraphType<CkIdTypeGraph<CkTypeId>>));
+        Field(d => d.CkTypeId, type: typeof(CkIdTypeGraph<CkTypeId>));
         Field(d => d.RtCreationDateTime, type: typeof(DateTimeGraphType));
         Field(d => d.RtChangedDateTime, type: typeof(DateTimeGraphType));
         Field(x => x.RtWellKnownName, true);
