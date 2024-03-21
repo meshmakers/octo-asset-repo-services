@@ -15,9 +15,9 @@ internal interface IGraphTypesCache
     ///     Gets or creates a Connection Type based on the given GraphQL type
     /// </summary>
     /// <param name="graphType">The GraphQL type</param>
-    /// <param name="prefixName">The prefix of the name of the connection</param>
+    /// <param name="typeName">The typename of the name of the connection</param>
     /// <returns>ConnectionType that corresponds to the given GraphQL type</returns>
-    DynamicConnectionType GetOrCreateConnection(IGraphType graphType, string prefixName);
+    DynamicConnectionType GetOrCreateConnection(IGraphType graphType, string typeName);
 
     /// <summary>
     ///     Returns an array of known construction kit type graph types
@@ -71,5 +71,5 @@ internal interface IGraphTypesCache
     /// Returns an array of known time series graph types
     /// </summary>
     /// <returns></returns>
-    RtEntityDtoType[] GetStreamTypes();
+    TsEntityDtoType[] GetStreamTypes();
 }
