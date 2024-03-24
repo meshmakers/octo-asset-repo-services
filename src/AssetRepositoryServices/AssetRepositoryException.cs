@@ -14,7 +14,6 @@ internal class AssetRepositoryException : Exception
     {
     }
 
-
     internal static Exception ServiceNotRegistered(Type type)
     {
         return new AssetRepositoryException($"Service {type.FullName} is not registered");
@@ -28,5 +27,10 @@ internal class AssetRepositoryException : Exception
     internal static Exception DataLoaderContextUnavailable()
     {
         return new AssetRepositoryException("DataLoaderContext is not available");
+    }
+    
+    internal static Exception SessionUnavailable()
+    {
+        return new AssetRepositoryException("Session is not available");
     }
 }

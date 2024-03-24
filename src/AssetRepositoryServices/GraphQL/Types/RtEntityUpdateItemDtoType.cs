@@ -9,6 +9,7 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
 /// <summary>
 ///     Implements an update item for RtEntities
 /// </summary>
+[DoNotRegister]
 internal sealed class RtEntityUpdateItemDtoType : ObjectGraphType<RtEntityUpdateItemDto>
 {
     /// <summary>

@@ -1,5 +1,6 @@
 using GraphQL;
 using GraphQL.Builders;
+using GraphQL.DataLoader;
 using GraphQL.Types;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Caches;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.RequestHandling;
@@ -13,6 +14,7 @@ using NLog;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL;
 
+[DoNotRegister]
 internal sealed class RtQuery : ObjectGraphType
 {
     private static readonly Logger Logger = LogManager.GetCurrentClassLogger();
@@ -54,9 +56,9 @@ internal sealed class RtQuery : ObjectGraphType
         Logger.Debug("GraphQL query handling for generic runtime entity started");
 
         var sessionAccessor = arg.RequestServices?.GetRequiredService<IOctoSessionAccessor>();
-        if (sessionAccessor == null)
+        if (sessionAccessor?.Session == null)
         {
-            throw AssetRepositoryException.ServiceNotRegistered(typeof(IOctoSessionAccessor));
+            throw AssetRepositoryException.SessionUnavailable();
         }
 
         var graphQlUserContext = (GraphQlUserContext)arg.UserContext;
@@ -114,11 +116,11 @@ internal sealed class RtQuery : ObjectGraphType
     private async Task<object?> ResolveRtEntitiesQuery(IResolveConnectionContext<object?> arg)
     {
         Logger.Debug("GraphQL query handling for specific runtime entity type started");
-
+        
         var sessionAccessor = arg.RequestServices?.GetRequiredService<IOctoSessionAccessor>();
-        if (sessionAccessor == null)
+        if (sessionAccessor?.Session == null)
         {
-            throw AssetRepositoryException.ServiceNotRegistered(typeof(IOctoSessionAccessor));
+            throw AssetRepositoryException.SessionUnavailable();
         }
 
         var graphQlUserContext = (GraphQlUserContext)arg.UserContext;

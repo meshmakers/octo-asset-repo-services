@@ -16,6 +16,7 @@ using Meshmakers.Octo.Runtime.Contracts.RepositoryEntities;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL;
 
+[DoNotRegister]
 internal class RtEntityMutation : RtMutationBase
 {
     public RtEntityMutation(IGraphTypesCache graphTypesCache, RtEntityDtoType rtEntityDtoType)
@@ -60,9 +61,9 @@ internal class RtEntityMutation : RtMutationBase
         }
         
         var sessionAccessor = arg.RequestServices?.GetRequiredService<IOctoSessionAccessor>();
-        if (sessionAccessor == null)
+        if (sessionAccessor?.Session == null)
         {
-            throw AssetRepositoryException.ServiceNotRegistered(typeof(IOctoSessionAccessor));
+            throw AssetRepositoryException.SessionUnavailable();
         }
 
         var tenantContext = Helpers.GetTenantContext(arg.UserContext);
@@ -129,7 +130,7 @@ internal class RtEntityMutation : RtMutationBase
 
             return await GetResultSet(sessionAccessor.Session, tenantRepository, ckTypeId, entityUpdateInfos);
         }
-        catch (OperationFailedException e)
+        catch (PersistenceException e)
         {
             arg.Errors.Add(new ExecutionError(e.Message, e) { Code = Statics.GraphQLErrorDataStore });
             return null;
@@ -149,9 +150,9 @@ internal class RtEntityMutation : RtMutationBase
         var tenantRepository = tenantContext.GetTenantRepository();
         
         var sessionAccessor = arg.RequestServices?.GetRequiredService<IOctoSessionAccessor>();
-        if (sessionAccessor == null)
+        if (sessionAccessor?.Session == null)
         {
-            throw AssetRepositoryException.ServiceNotRegistered(typeof(IOctoSessionAccessor));
+            throw AssetRepositoryException.SessionUnavailable();
         }
 
         if (!arg.FieldDefinition.Metadata.TryGetValue(Statics.CkId, out var ckIdObj))
@@ -209,9 +210,9 @@ internal class RtEntityMutation : RtMutationBase
         }
                 
         var sessionAccessor = arg.RequestServices?.GetRequiredService<IOctoSessionAccessor>();
-        if (sessionAccessor == null)
+        if (sessionAccessor?.Session == null)
         {
-            throw AssetRepositoryException.ServiceNotRegistered(typeof(IOctoSessionAccessor));
+            throw AssetRepositoryException.SessionUnavailable();
         }
 
         var tenantContext = Helpers.GetTenantContext(arg.UserContext);

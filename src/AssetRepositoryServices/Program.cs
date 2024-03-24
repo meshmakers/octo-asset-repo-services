@@ -1,54 +1,81 @@
-using Microsoft.AspNetCore;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.Routing;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.Services;
+using Meshmakers.Octo.Services.Common.Cors;
+using Meshmakers.Octo.Services.Infrastructure.Services;
+using Microsoft.AspNetCore.Cors.Infrastructure;
 using NLog;
 using NLog.Web;
 using LogLevel = Microsoft.Extensions.Logging.LogLevel;
 
-#pragma warning disable 1591
+// NLog: setup the logger first to catch all errors
+var nLogFactory = LogManager.Setup().RegisterNLogWeb().LoadConfigurationFromFile("nlog.config").LogFactory;
+var logger = nLogFactory.GetCurrentClassLogger();
 
-namespace Meshmakers.Octo.Backend.AssetRepositoryServices;
-
-public class Program
+try
 {
-    public static void Main(string[] args)
+    logger.Debug("init main");
+
+    var builder = WebApplication.CreateBuilder(new WebApplicationOptions
     {
-        // NLog: setup the logger first to catch all errors
-        var nLogFactory = LogManager.Setup().RegisterNLogWeb().LoadConfigurationFromFile("nlog.config").LogFactory;
-        var logger = nLogFactory.GetCurrentClassLogger();
-        try
-        {
-            logger.Debug("init main");
-            CreateWebHostBuilder(args).Build().Run();
-        }
-        catch (Exception ex)
-        {
-            //NLog: catch setup errors
-            logger.Error(ex, "Stopped program because of exception");
-            throw;
-        }
-        finally
-        {
-            // Ensure to flush and stop internal timers/threads before application-exit (Avoid segmentation fault on Linux)
-            LogManager.Shutdown();
-        }
+        Args = args,
+        ContentRootPath = Directory.GetCurrentDirectory(),
+        WebRootPath = "wwwroot",
+    });
+
+    // NLog: Setup NLog for Dependency injection
+    builder.Logging.ClearProviders();
+    builder.Logging.SetMinimumLevel(LogLevel.Trace);
+    builder.Host.UseNLog();
+
+    // additional providers here needed.
+    // allow environment variables to override values from other providers.
+    builder.Configuration.AddEnvironmentVariables("OCTO_").AddCommandLine(args)
+        .AddUserSecrets(typeof(Program).Assembly, true);
+    
+    builder.Services.AddTransient<IDefaultConfigurationCreatorService, DefaultConfigurationCreatorService>();
+    builder.Services.AddSingleton<CorsPolicyProvider>();
+    builder.Services.AddSingleton<ICorsPolicyProvider>(p => p.GetRequiredService<CorsPolicyProvider>());
+    builder.Services.AddCors();
+
+    builder.Services.Configure<RouteOptions>(options =>
+        options.ConstraintMap.Add("tenantId", typeof(TenantIdRouteConstraint)));
+
+    builder.Services.AddRuntimeEngine()
+        .AddOctoAssetRepositoryServices(
+            systemOptions => builder.Configuration.GetSection("System").Bind(systemOptions),
+            options => builder.Configuration.GetSection("AssetRepository").Bind(options));
+    
+    var app = builder.Build();
+    
+    if (app.Environment.IsDevelopment())
+    {
+        app.UseDeveloperExceptionPage();
+    }
+    else
+    // The default HSTS value is 30 days. You may want to change this for production scenarios, see https://aka.ms/aspnetcore-hsts.
+    {
+        app.UseHsts();
     }
 
-    private static IWebHostBuilder CreateWebHostBuilder(string[] args)
-    {
-        return WebHost.CreateDefaultBuilder(args)
-            .ConfigureAppConfiguration((_, config) =>
-            {
-                // Call additional providers here as needed.
-                // Call AddEnvironmentVariables last if you need to allow environment
-                // variables to override values from other providers.
-                config.AddEnvironmentVariables("OCTO_").AddCommandLine(args);
-                config.AddUserSecrets(typeof(Program).Assembly, true);
-            })
-            .ConfigureLogging((_, logging) =>
-            {
-                logging.ClearProviders();
-                logging.SetMinimumLevel(LogLevel.Trace);
-            })
-            .UseNLog() // NLog: setup NLog for Dependency injection
-            .UseStartup<Startup>();
-    }
+    app.UseCors();
+
+    app.UseOctoAssetRepositoryServices();
+
+    app.UseHttpsRedirection();
+
+    app.UseStaticFiles();
+
+    app.Run();
 }
+catch (Exception ex)
+{
+    //NLog: catch setup errors
+    logger.Error(ex, "Stopped program because of exception");
+    throw;
+}
+finally
+{
+    // Ensure to flush and stop internal timers/threads before application-exit (Avoid segmentation fault on Linux)
+    LogManager.Shutdown();
+}
+          

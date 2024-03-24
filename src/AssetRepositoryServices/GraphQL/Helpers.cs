@@ -3,11 +3,9 @@ using System.Reflection;
 using System.Text.Json.Serialization;
 using GraphQL;
 using GraphQL.Builders;
-using GraphQL.DataLoader;
 using GraphQL.Resolvers;
 using GraphQL.Types;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Caches;
-using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.RequestHandling;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Scalars;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Utils;
@@ -96,16 +94,15 @@ internal static class Helpers
 
     public static FieldType AssociationField<TSourceType>(
         this ComplexGraphType<TSourceType> complexGraphType,
-        IGraphTypesCache graphTypesCache, IDataLoaderContextAccessor dataLoaderAccessor,
-        IOctoSessionAccessor sessionAccessor, string name, IReadOnlyList<CkId<CkTypeId>> allowedTypes, CkId<CkTypeId> originCkId,
+        IGraphTypesCache graphTypesCache, string name, IReadOnlyList<CkId<CkTypeId>> allowedTypes, CkId<CkTypeId> originCkId,
         CkId<CkAssociationRoleId> roleId, GraphDirections graphDirection)
     {
         var graphTypes = allowedTypes.Select(graphTypesCache.GetType);
 
         var unionType = new RtEntityAssociationType(
             $"{complexGraphType.Name}_{name}{Statics.GraphQlUnionSuffix}",
-            $"Association {roleId} ({graphDirection}) of entity type {complexGraphType.Name}", graphTypesCache, dataLoaderAccessor,
-            sessionAccessor, graphTypes, originCkId, roleId, graphDirection);
+            $"Association {roleId} ({graphDirection}) of entity type {complexGraphType.Name}", graphTypesCache,
+             graphTypes, originCkId, roleId, graphDirection);
 
         return complexGraphType.Field(name, null, unionType, resolve: context => context.Source);
     }

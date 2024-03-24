@@ -1,3 +1,4 @@
+using GraphQL;
 using GraphQL.Types;
 using GraphQL.Types.Relay;
 using Meshmakers.Common.Shared;
@@ -8,6 +9,7 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
 ///     Implements a Connection GraphQL type for dynamic creation (without using generic types - because we create types
 ///     based on data source settings!)
 /// </summary>
+[DoNotRegister]
 internal sealed class DynamicConnectionType : ObjectGraphType
 {
     /// <summary>

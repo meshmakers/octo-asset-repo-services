@@ -11,9 +11,10 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL;
 /// <summary>
 ///     Implements mutations of Octo
 /// </summary>
-public sealed class OctoMutation : ObjectGraphType
+[DoNotRegister]
+internal sealed class OctoMutation : ObjectGraphType
 {
-    internal OctoMutation(IGraphTypesCache graphTypesCache)
+    public OctoMutation(IGraphTypesCache graphTypesCache)
     {
         Field("Runtime", new RtMutation(graphTypesCache))
             .Resolve(_ => new RtEntityDto());

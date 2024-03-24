@@ -20,7 +20,6 @@ using Meshmakers.Octo.Services.Common;
 using Meshmakers.Octo.Services.Common.DistributionEventHub.Commands;
 using Meshmakers.Octo.Services.Common.DistributionEventHub.Messages;
 using Microsoft.AspNetCore.Authentication.Cookies;
-using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 
@@ -122,7 +121,7 @@ public static class RuntimeEngineBuilderExtensions
 
         builder.Services.AddOctoApiVersioningAndDocumentation(options =>
         {
-            options.AddXmlDocAssembly<Startup>();
+            options.AddXmlDocAssembly<OctoAssetRepositoryServicesOptions>();
             options.AddXmlDocAssembly<ClientDto>();
             options.Scopes = new Dictionary<string, string>
             {
@@ -145,13 +144,13 @@ public static class RuntimeEngineBuilderExtensions
 
         // Add GraphQL services and configure options
         builder.Services.AddGraphQL(graphQlBuilder => graphQlBuilder
-            .AddSchema<OctoSchema>()
             .ConfigureExecutionOptions(options =>
             {
                 options.EnableMetrics = true;
                 if (options.RequestServices != null)
                 {
-                    var logger = options.RequestServices.GetRequiredService<ILogger<Startup>>();
+                    var logger =
+                        options.RequestServices.GetRequiredService<ILogger<OctoAssetRepositoryServicesOptions>>();
                     options.UnhandledExceptionDelegate = ctx =>
                     {
                         logger.LogError(ctx.OriginalException, "{Error} occurred", ctx.OriginalException.Message);
@@ -163,13 +162,12 @@ public static class RuntimeEngineBuilderExtensions
             .AddSystemTextJson() // For .NET Core 3+
             .AddErrorInfoProvider(opt => opt.ExposeExceptionDetails = true)
             .AddDataLoader() // Add required services for DataLoader support
-            .AddDocumentListener<OctoSessionListener>()
             .AddUserContextBuilder<TenantUserContextBuilder>()
-            .AddGraphTypes(typeof(OctoSchema)
-                .Assembly)); // Add all IGraphType implementors in assembly which ChatSchema exists 
-
-        // GraphQL
-        builder.Services.AddSingleton<IOctoSessionAccessor, OctoSessionAccessor>();
+            .AddGraphTypes() // Add all IGraphType implementors in assembly
+            .AddDocumentListener<OctoSessionListener>()
+            .Services.Register<IOctoSessionAccessor, OctoSessionAccessor>(GraphQL.DI.ServiceLifetime.Singleton)
+        );
+        
         builder.Services.AddSingleton<IDocumentExecuter<OctoSchema>, TenantDocumentExecutor>();
 
         return builder;

@@ -1,4 +1,5 @@
-﻿using GraphQL.Builders;
+﻿using GraphQL;
+using GraphQL.Builders;
 using GraphQL.DataLoader;
 using GraphQL.Types;
 using Meshmakers.Common.Shared;
@@ -17,18 +18,15 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL;
 /// <summary>
 ///     Implements an Octo query, based on a given data source
 /// </summary>
+[DoNotRegister]
 internal sealed class OctoQuery : ObjectGraphType
 {
     private static readonly Logger Logger = LogManager.GetCurrentClassLogger();
-    private readonly IDataLoaderContextAccessor _dataLoaderContextAccessor;
     private readonly IOptions<OctoAssetRepositoryServicesOptions> _options;
 
-
-    internal OctoQuery(IOptions<OctoAssetRepositoryServicesOptions> options, IGraphTypesCache graphTypesCache,
-        IDataLoaderContextAccessor dataLoaderContextAccessor)
+    public OctoQuery(IOptions<OctoAssetRepositoryServicesOptions> options, IGraphTypesCache graphTypesCache)
     {
         _options = options;
-        _dataLoaderContextAccessor = dataLoaderContextAccessor;
         Name = "OctoQuery";
 
         Field<CkQuery>("ConstructionKit")

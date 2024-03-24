@@ -72,9 +72,9 @@ internal abstract class RtMutationBase : ObjectGraphType
     {
         var assocName = item.Key;
 
-        var associationCacheItem = entityCacheItem.Associations.In.All
+        var ckTypeAssociationGraph = entityCacheItem.Associations.In.All
             .FirstOrDefault(a => a.NavigationPropertyName == assocName);
-        if (associationCacheItem == null)
+        if (ckTypeAssociationGraph == null)
         {
             return false;
         }
@@ -87,7 +87,7 @@ internal abstract class RtMutationBase : ObjectGraphType
                 var assocInfo = new AssociationUpdateInfo(
                     new RtEntityId(rtAssociationDto.Target.CkTypeId, rtAssociationDto.Target.RtId),
                     rtEntity.ToRtEntityId(),
-                    associationCacheItem.CkRoleId,
+                    ckTypeAssociationGraph.CkRoleId,
                     rtAssociationDto.ModOption ?? AssociationModOptionsDto.Create);
                 associations.Add(assocInfo);
             }

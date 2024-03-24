@@ -1,4 +1,5 @@
 using System.Linq.Expressions;
+using GraphQL;
 using GraphQL.Types;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Caches;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
@@ -11,6 +12,7 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Inputs;
 /// <summary>
 ///     Implements a GraphQL runtime entity type
 /// </summary>
+[DoNotRegister]
 internal sealed class RtEntityDtoInputType : InputObjectGraphType<RtEntityDto>
 {
     /// <summary>

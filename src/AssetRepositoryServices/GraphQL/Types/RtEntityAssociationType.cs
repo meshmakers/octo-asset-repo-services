@@ -1,3 +1,4 @@
+using GraphQL;
 using GraphQL.Builders;
 using GraphQL.DataLoader;
 using GraphQL.Types;
@@ -16,22 +17,17 @@ using Meshmakers.Octo.Runtime.Contracts.RepositoryEntities;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
 
+[DoNotRegister]
 internal class RtEntityAssociationType : ObjectGraphType
 {
-    private readonly IDataLoaderContextAccessor _dataLoaderAccessor;
     private readonly GraphDirections _graphDirection;
     private readonly CkId<CkTypeId> _originCkId;
     private readonly CkId<CkAssociationRoleId> _roleId;
-    private readonly IOctoSessionAccessor _sessionAccessor;
 
     public RtEntityAssociationType(string name, string description, IGraphTypesCache entityDtoCache,
-        IDataLoaderContextAccessor dataLoaderAccessor,
-        IOctoSessionAccessor sessionAccessor,
         IEnumerable<RtEntityDtoType> rtEntityDtoTypes, CkId<CkTypeId> originCkId, CkId<CkAssociationRoleId> roleId,
         GraphDirections graphDirection)
     {
-        _dataLoaderAccessor = dataLoaderAccessor;
-        _sessionAccessor = sessionAccessor;
         _originCkId = originCkId;
         _roleId = roleId;
         _graphDirection = graphDirection;
@@ -45,8 +41,6 @@ internal class RtEntityAssociationType : ObjectGraphType
         {
             this.Connection<object?, IGraphType, RtEntityDto>(entityDtoCache, rtEntityDtoType, rtEntityDtoType.Name)
                 .AddMetadata(Statics.CkId, rtEntityDtoType.CkTypeId)
-                // .Metadata(Statics.RoleId, roleId)
-                // .Metadata(Statics.GraphDirection, graphDirection)
                 .Argument<OctoObjectIdType>(Statics.RtIdArg, "Returns the entity with the given rtId.")
                 .Argument<ListGraphType<OctoObjectIdType>>(Statics.RtIdsArg,
                     "Returns entities with the given rtIds.")
@@ -79,16 +73,23 @@ internal class RtEntityAssociationType : ObjectGraphType
             keysList.Add(key.Value);
         }
 
-        if (_dataLoaderAccessor.Context == null)
+        var sessionAccessor = ctx.RequestServices?.GetRequiredService<IOctoSessionAccessor>();
+        if (sessionAccessor?.Session == null)
+        {
+            throw AssetRepositoryException.SessionUnavailable();
+        }
+        
+        var dataLoaderAccessor = ctx.RequestServices?.GetRequiredService<IDataLoaderContextAccessor>();
+        if (dataLoaderAccessor?.Context == null)
         {
             throw AssetRepositoryException.DataLoaderContextUnavailable();
         }
 
         var graphQlContext = (GraphQlUserContext)ctx.UserContext;
         var tenantRepository = graphQlContext.TenantContext.GetTenantRepository();
-        var loader = _dataLoaderAccessor.Context.GetOrAddBatchLoader<OctoObjectId, IResultSet<RtEntity>>(
+        var loader = dataLoaderAccessor.Context.GetOrAddBatchLoader<OctoObjectId, IResultSet<RtEntity>>(
             $"Get{_originCkId}_{targetCkId}_{_roleId}", async rtIds =>
-                await tenantRepository.GetRtAssociationTargetsAsync(_sessionAccessor.Session,
+                await tenantRepository.GetRtAssociationTargetsAsync(sessionAccessor.Session,
                     rtIds, _originCkId, _roleId, targetCkId, _graphDirection, keysList, dataQueryOperation, offset, ctx.First)
         );
 

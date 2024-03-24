@@ -65,9 +65,9 @@ internal sealed class CkQuery : ObjectGraphType
         Logger.Debug("GraphQL query handling of contruction kit records started");
 
         var sessionAccessor = arg.RequestServices?.GetRequiredService<IOctoSessionAccessor>();
-        if (sessionAccessor == null)
+        if (sessionAccessor?.Session == null)
         {
-            throw AssetRepositoryException.ServiceNotRegistered(typeof(IOctoSessionAccessor));
+            throw AssetRepositoryException.SessionUnavailable();
         }
 
         var graphQlUserContext = (GraphQlUserContext)arg.UserContext;
@@ -108,9 +108,9 @@ internal sealed class CkQuery : ObjectGraphType
         Logger.Debug("GraphQL query handling of contruction kit enums started");
 
         var sessionAccessor = arg.RequestServices?.GetRequiredService<IOctoSessionAccessor>();
-        if (sessionAccessor == null)
+        if (sessionAccessor?.Session == null)
         {
-            throw AssetRepositoryException.ServiceNotRegistered(typeof(IOctoSessionAccessor));
+            throw AssetRepositoryException.SessionUnavailable();
         }
 
         var graphQlUserContext = (GraphQlUserContext)arg.UserContext;
@@ -151,9 +151,9 @@ internal sealed class CkQuery : ObjectGraphType
         Logger.Debug("GraphQL query handling of contruction kit entities started");
 
         var sessionAccessor = arg.RequestServices?.GetRequiredService<IOctoSessionAccessor>();
-        if (sessionAccessor == null)
+        if (sessionAccessor?.Session == null)
         {
-            throw AssetRepositoryException.ServiceNotRegistered(typeof(IOctoSessionAccessor));
+            throw AssetRepositoryException.SessionUnavailable();
         }
 
         var graphQlUserContext = (GraphQlUserContext)arg.UserContext;
@@ -194,9 +194,9 @@ internal sealed class CkQuery : ObjectGraphType
         Logger.Debug("GraphQL query handling of contruction kit attributes started");
         
         var sessionAccessor = arg.RequestServices?.GetRequiredService<IOctoSessionAccessor>();
-        if (sessionAccessor == null)
+        if (sessionAccessor?.Session == null)
         {
-            throw AssetRepositoryException.ServiceNotRegistered(typeof(IOctoSessionAccessor));
+            throw AssetRepositoryException.SessionUnavailable();
         }
 
         var graphQlUserContext = (GraphQlUserContext)arg.UserContext;

@@ -14,6 +14,7 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
 /// <summary>
 ///     Implements the GraphQL runtime record type
 /// </summary>
+[DoNotRegister]
 internal sealed class RtRecordDtoType : ObjectGraphType<RtRecordDto>
 {
     /// <inheritdoc />
@@ -40,9 +41,7 @@ internal sealed class RtRecordDtoType : ObjectGraphType<RtRecordDto>
     public CkId<CkRecordId> CkRecordId { get; }
 
 
-    internal void Populate(ICkCacheService ckCacheService, string tenantId, IGraphTypesCache graphTypesCache,
-        IDataLoaderContextAccessor dataLoaderAccessor,
-        IOctoSessionAccessor sessionAccessor, CkRecordGraph entityCacheItem)
+    internal void Populate(ICkCacheService ckCacheService, string tenantId, IGraphTypesCache graphTypesCache, CkRecordGraph entityCacheItem)
     {
         AddConstructionKit(entityCacheItem);
 

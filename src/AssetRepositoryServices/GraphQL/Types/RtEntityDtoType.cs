@@ -16,6 +16,7 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
 /// <summary>
 ///     Implements the GraphQL Runtime Entity Type
 /// </summary>
+[DoNotRegister]
 internal sealed class RtEntityDtoType : ObjectGraphType<RtEntityDto>
 {
     private readonly CkTypeGraph _ckTypeGraph;
@@ -60,9 +61,7 @@ internal sealed class RtEntityDtoType : ObjectGraphType<RtEntityDto>
     public bool IsStreamType => _ckTypeGraph.IsStreamType;
 
 
-    internal void Populate(ICkCacheService ckCacheService, string tenantId, IGraphTypesCache graphTypesCache,
-        IDataLoaderContextAccessor dataLoaderAccessor,
-        IOctoSessionAccessor sessionAccessor)
+    internal void Populate(ICkCacheService ckCacheService, string tenantId, IGraphTypesCache graphTypesCache)
     {
         AddConstructionKit();
 
@@ -81,7 +80,7 @@ internal sealed class RtEntityDtoType : ObjectGraphType<RtEntityDto>
                 continue; // All Ck entities are abstract for that associations
             }
 
-            this.AssociationField(graphTypesCache, dataLoaderAccessor, sessionAccessor, ckTypeAssociationGraph.Key,
+            this.AssociationField(graphTypesCache, ckTypeAssociationGraph.Key,
                 allowedTypes.Select(x => x).Distinct().ToList(), _ckTypeGraph.CkTypeId,
                 ckTypeAssociationGraph.First().CkRoleId, GraphDirections.Outbound);
         }
@@ -96,7 +95,7 @@ internal sealed class RtEntityDtoType : ObjectGraphType<RtEntityDto>
                 continue; // All Ck entities are abstract for that associations
             }
 
-            this.AssociationField(graphTypesCache, dataLoaderAccessor, sessionAccessor, ckTypeAssociationGraph.Key,
+            this.AssociationField(graphTypesCache, ckTypeAssociationGraph.Key,
                 allowedTypes.Select(x => x).Distinct().ToList(), _ckTypeGraph.CkTypeId,
                 ckTypeAssociationGraph.First().CkRoleId, GraphDirections.Inbound);
         }

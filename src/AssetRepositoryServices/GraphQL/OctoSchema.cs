@@ -7,6 +7,7 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL;
 /// <summary>
 ///     Implements the Octo schema for a given data source
 /// </summary>
+[DoNotRegister]
 internal sealed class OctoSchema : Schema
 {
     static OctoSchema()

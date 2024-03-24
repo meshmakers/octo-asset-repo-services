@@ -1,7 +1,5 @@
 using System.Collections.Concurrent;
-using GraphQL.DataLoader;
 using GraphQL.Types;
-using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.RequestHandling;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Enums;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Inputs;
@@ -20,12 +18,10 @@ internal class GraphTypesCache : IGraphTypesCache
     private readonly ICkCacheService _ckCacheService;
     private readonly IOctoService _octoService;
     private readonly ConcurrentDictionary<IGraphType, DynamicConnectionType> _connectionTypes;
-    private readonly IDataLoaderContextAccessor _dataLoaderAccessor;
 
     private readonly ConcurrentDictionary<CkId<CkEnumId>, RtEnumScalarType> _enumTypes;
     private readonly ConcurrentDictionary<CkId<CkRecordId>, RtRecordDtoInputType> _inputRecordTypes;
     private readonly ConcurrentDictionary<CkId<CkTypeId>, RtEntityDtoInputType> _inputTypes;
-    private readonly IOctoSessionAccessor _octoSessionAccessor;
 
     private readonly ConcurrentDictionary<CkId<CkRecordId>, RtRecordDtoType> _recordTypes;
     private readonly string _tenantId;
@@ -36,18 +32,12 @@ internal class GraphTypesCache : IGraphTypesCache
     /// </summary>
     /// <param name="octoService"></param>
     /// <param name="tenantId"></param>
-    /// <param name="dataLoaderAccessor">Data loader context accessor to solve the n+1 issue</param>
     /// <param name="ckCacheService"></param>
-    /// <param name="octoSessionAccessor"></param>
-    public GraphTypesCache(ICkCacheService ckCacheService, IOctoService octoService, string tenantId,
-        IDataLoaderContextAccessor dataLoaderAccessor,
-        IOctoSessionAccessor octoSessionAccessor)
+    public GraphTypesCache(ICkCacheService ckCacheService, IOctoService octoService, string tenantId)
     {
         _ckCacheService = ckCacheService;
         _octoService = octoService;
         _tenantId = tenantId;
-        _dataLoaderAccessor = dataLoaderAccessor;
-        _octoSessionAccessor = octoSessionAccessor;
         _enumTypes = new ConcurrentDictionary<CkId<CkEnumId>, RtEnumScalarType>();
         _types = new ConcurrentDictionary<CkId<CkTypeId>, RtEntityDtoType>();
         _inputTypes = new ConcurrentDictionary<CkId<CkTypeId>, RtEntityDtoInputType>();
@@ -152,7 +142,7 @@ internal class GraphTypesCache : IGraphTypesCache
                 var rtEnumType = new RtEnumScalarType(ckEnumGraph.CkEnumId);
                 return rtEnumType;
             });
-            rtEnumType.Populate(_ckCacheService, _tenantId, this, _dataLoaderAccessor, _octoSessionAccessor, ckEnumGraph);
+            rtEnumType.Populate(_ckCacheService, _tenantId, this, ckEnumGraph);
         }
 
         // Make records second, because types depend on it.
@@ -177,7 +167,7 @@ internal class GraphTypesCache : IGraphTypesCache
         foreach (var rtRecordDtoType in _recordTypes.Values)
         {
             var ckRecordGraph = _ckCacheService.GetCkRecord(_tenantId, rtRecordDtoType.CkRecordId);
-            rtRecordDtoType.Populate(_ckCacheService, _tenantId, this, _dataLoaderAccessor, _octoSessionAccessor, ckRecordGraph);
+            rtRecordDtoType.Populate(_ckCacheService, _tenantId, this, ckRecordGraph);
         }
         foreach (var rtRecordDtoInputType in _inputRecordTypes.Values)
         {
@@ -206,7 +196,7 @@ internal class GraphTypesCache : IGraphTypesCache
 
         foreach (var rtEntityDtoType in _types.Values)
         {
-            rtEntityDtoType.Populate(_ckCacheService, _tenantId, this, _dataLoaderAccessor, _octoSessionAccessor);
+            rtEntityDtoType.Populate(_ckCacheService, _tenantId, this);
         }
     }
 }

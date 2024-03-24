@@ -1,9 +1,7 @@
 using GraphQL;
-using GraphQL.DataLoader;
 using GraphQL.Types;
 using Meshmakers.Common.Shared;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.Configuration.DependencyInjection.Options;
-using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.RequestHandling;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.Services;
 using Meshmakers.Octo.ConstructionKit.Contracts.Services;
 using Microsoft.Extensions.Caching.Memory;
@@ -15,33 +13,19 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Caches;
 /// <summary>
 ///     The schema context allows to cache GraphQL Schemas based on a data source
 /// </summary>
-internal class SchemaContext : ISchemaContext
+internal class SchemaContext(
+    IOptions<OctoAssetRepositoryServicesOptions> options,
+    ICkCacheService ckCacheService,
+    IOctoService octoService)
+    : ISchemaContext
 {
     private static readonly Logger Logger = LogManager.GetCurrentClassLogger();
-    private readonly MemoryCache _cache;
-    private readonly ICkCacheService _ckCacheService;
-    private readonly IOctoService _octoService;
-    private readonly IDataLoaderContextAccessor _dataLoaderAccessor;
-    private readonly IOctoSessionAccessor _octoSessionAccessor;
-
-    private readonly IOptions<OctoAssetRepositoryServicesOptions> _options;
-    private readonly SemaphoreSlim _semaphore = new(1, 1);
-
-    public SchemaContext(IOptions<OctoAssetRepositoryServicesOptions> options,
-        ICkCacheService ckCacheService, IOctoService octoService,
-        IDataLoaderContextAccessor dataLoaderAccessor, IOctoSessionAccessor octoSessionAccessor)
+    private readonly MemoryCache _cache = new(new MemoryCacheOptions
     {
-        _options = options;
-        _ckCacheService = ckCacheService;
-        _octoService = octoService;
-        _dataLoaderAccessor = dataLoaderAccessor;
-        _octoSessionAccessor = octoSessionAccessor;
+        SizeLimit = 64
+    });
 
-        _cache = new MemoryCache(new MemoryCacheOptions
-        {
-            SizeLimit = 64
-        });
-    }
+    private readonly SemaphoreSlim _semaphore = new(1, 1);
 
     /// <summary>
     ///     Invalidates a cached schema
@@ -75,10 +59,10 @@ internal class SchemaContext : ISchemaContext
                 entry.SetSize(1);
                 entry.SlidingExpiration = TimeSpan.FromDays(1);
 
-                var graphTypesCache = new GraphTypesCache(_ckCacheService, _octoService, tenantId, _dataLoaderAccessor, _octoSessionAccessor);
+                var graphTypesCache = new GraphTypesCache(ckCacheService, octoService, tenantId);
                 await graphTypesCache.PopulateAsync();
 
-                var query = new OctoQuery(_options, graphTypesCache, _dataLoaderAccessor);
+                var query = new OctoQuery(options, graphTypesCache);
                 var mutation = new OctoMutation(graphTypesCache);
                 var subscriptions = new OctoSubscriptions(graphTypesCache);
 

@@ -25,20 +25,12 @@ public class TenantUserContextBuilder : IUserContextBuilder
     /// <inheritdoc />
     public async ValueTask<IDictionary<string, object?>?> BuildUserContextAsync(HttpContext httpContext, object? payload)
     {
-        var tenantId = httpContext.GetTenantId();
+        var tenantId = httpContext.GetTenantId() ?? _octoService.SystemContext.TenantId;
 
-        using var systemSession = await _octoService.SystemContext.GetSystemSessionAsync();
-        systemSession.StartTransaction();
-
-        ITenantContext tenantContext = _octoService.SystemContext;
-        if (tenantId != null && tenantId.NormalizeString() != _octoService.SystemContext.TenantId)
-        {
-            tenantContext = await _octoService.SystemContext.GetChildTenantContextAsync(tenantId);
-        }
+        var tenantContext = await _octoService.SystemContext.FindTenantContextAsync(tenantId.NormalizeString());
 
         var userContext = new GraphQlUserContext(httpContext.User, tenantContext);
 
-        await systemSession.CommitTransactionAsync();
         return userContext;
     }
 }

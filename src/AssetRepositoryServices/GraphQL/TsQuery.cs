@@ -13,6 +13,7 @@ using NLog;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL;
 
+[DoNotRegister]
 internal sealed class TsQuery : ObjectGraphType
 {
     private static readonly Logger Logger = LogManager.GetCurrentClassLogger();
@@ -41,9 +42,9 @@ internal sealed class TsQuery : ObjectGraphType
         
 
         var sessionAccessor = arg.RequestServices?.GetRequiredService<IOctoSessionAccessor>();
-        if (sessionAccessor == null)
+        if (sessionAccessor?.Session == null)
         {
-            throw AssetRepositoryException.ServiceNotRegistered(typeof(IOctoSessionAccessor));
+            throw AssetRepositoryException.SessionUnavailable();
         }
 
         var graphQlUserContext = (GraphQlUserContext)arg.UserContext;

@@ -9,6 +9,7 @@ using Meshmakers.Octo.ConstructionKit.Contracts.Services;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Enums;
 
+[DoNotRegister]
 internal class RtEnumScalarType : EnumerationGraphType
 {
     public RtEnumScalarType(CkId<CkEnumId> ckEnumId)
@@ -20,9 +21,7 @@ internal class RtEnumScalarType : EnumerationGraphType
 
     public CkId<CkEnumId> CkEnumId { get; }
 
-    internal void Populate(ICkCacheService ckCacheService, string tenantId, IGraphTypesCache graphTypesCache,
-        IDataLoaderContextAccessor dataLoaderAccessor,
-        IOctoSessionAccessor sessionAccessor, CkEnumGraph ckEnumGraph)
+    internal void Populate(ICkCacheService ckCacheService, string tenantId, IGraphTypesCache graphTypesCache, CkEnumGraph ckEnumGraph)
     {
         var enumGraphData = ckEnumGraph.Values.Select(e => (
             name: e.Name.ToConstantCase(),

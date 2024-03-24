@@ -10,5 +10,5 @@ public interface IOctoSessionAccessor
     /// <summary>
     ///     Returns the session object of Octo
     /// </summary>
-    IOctoSession Session { get; set; }
+    IOctoSession? Session { get; set; }
 }

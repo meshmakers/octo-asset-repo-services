@@ -1,9 +1,11 @@
+using GraphQL;
 using GraphQL.Types;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Caches;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL;
 
+[DoNotRegister]
 internal sealed class RtMutation : ObjectGraphType
 {
     public RtMutation(IGraphTypesCache graphTypesCache)

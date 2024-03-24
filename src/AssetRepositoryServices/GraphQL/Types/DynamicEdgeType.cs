@@ -1,3 +1,4 @@
+using GraphQL;
 using GraphQL.Types;
 using Meshmakers.Common.Shared;
 
@@ -7,6 +8,7 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
 ///     Implements an edge GraphQL type for dynamic creation (without using generic types - because we create types based
 ///     on data source settings!)
 /// </summary>
+[DoNotRegister]
 internal sealed class DynamicEdgeType : ObjectGraphType<object>
 {
     /// <summary>

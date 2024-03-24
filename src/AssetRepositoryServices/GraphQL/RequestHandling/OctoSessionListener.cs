@@ -25,24 +25,32 @@ internal class OctoSessionListener : IDocumentExecutionListener
     }
 
     /// <inheritdoc />
-    public async Task BeforeExecutionAsync(IExecutionContext context)
+    public Task BeforeExecutionAsync(IExecutionContext context)
     {
         var tenantContext = Helpers.GetTenantContext(context.UserContext);
         var tenantRepository = tenantContext.GetTenantRepository();
-        _accessor.Session = await tenantRepository.GetSessionAsync();
+        _accessor.Session = tenantRepository.GetSession();
         _accessor.Session.StartTransaction();
+        return Task.CompletedTask;
     }
 
     /// <inheritdoc />
     public async Task AfterExecutionAsync(IExecutionContext context)
     {
+        if (_accessor.Session == null)
+        {
+            return;
+        }
+        
         if (context.Errors.Count == 0)
         {
-            await _accessor.Session.CommitTransactionAsync();
+            await _accessor.Session.CommitTransactionAsync().ConfigureAwait(false);;
         }
         else
         {
-            await _accessor.Session.AbortTransactionAsync();
+            await _accessor.Session.AbortTransactionAsync().ConfigureAwait(false);;
         }
+
+        _accessor.Session = null;
     }
 }
