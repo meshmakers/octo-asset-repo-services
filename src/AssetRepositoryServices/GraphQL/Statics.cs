@@ -19,6 +19,7 @@ internal static class Statics
     internal const string AttributeGraphType = "AttributeGraphType";
     internal const string TypeGraphType = "TypeGraphType";
     internal const string TimeSeriesFilterArg = "timeSeriesFilter";
+    internal const string ItemsQueryArg = "items";
 
     internal const string LargeBinaryIdArg = "largeBinaryId";
     internal const string LargeBinaryDataArg = "binaryData";
