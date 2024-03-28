@@ -249,7 +249,10 @@ internal class RtEntityMutation : RtMutationBase
                 };
 
                 RtEntityFromInputObject(ckCacheService, graphQlUserContext.TenantId, document, mutationDto.Item, associationUpdateInfoList);
-                entityUpdateInfos.Add(EntityUpdateInfo<RtEntity>.CreateUpdate(rtEntityId, document));
+                if (document.Attributes.Any())
+                {
+                    entityUpdateInfos.Add(EntityUpdateInfo<RtEntity>.CreateUpdate(rtEntityId, document));
+                }
             }
 
             OperationResult operationResult = new();
