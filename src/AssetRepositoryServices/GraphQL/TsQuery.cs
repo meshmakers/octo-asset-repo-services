@@ -11,6 +11,7 @@ using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.ConstructionKit.Contracts.DependencyGraph;
 using Meshmakers.Octo.ConstructionKit.Contracts.Services;
 using Meshmakers.Octo.Services.Common.Timeseries;
+using Meshmakers.Octo.Services.Common.Timeseries.Dtos;
 using Meshmakers.Octo.Services.Common.Timeseries.QueryBuilder;
 using NLog;
 
@@ -131,21 +132,29 @@ internal sealed class TsQuery : ObjectGraphType
             return;
         }
 
+        var orderQueue = new PriorityQueue<Tuple<string, SortOrderDto>, int>();
+
         foreach (var field in itemField.Fields)
         {
-            var streamAttributes = requestedType.AllAttributes.Where(x => x.Value.IsDataStream);
+            var dataStreamAttributes = requestedType.AllAttributes.Where(x => x.Value.IsDataStream);
             var argument = field.GetArgument<AttributeTsArgumentDto>(Statics.TimeSeriesAttributeArgument);
 
             bool ContainsField(KeyValuePair<CkId<CkAttributeId>, CkTypeAttributeGraph> x) =>
                 string.Equals(x.Value.AttributeName, field.Name, StringComparison.InvariantCultureIgnoreCase);
 
-            var (_, requestedAttribute) = streamAttributes
+            var (_, requestedAttribute) = dataStreamAttributes
                 .FirstOrDefault(ContainsField);
 
             if (requestedAttribute != null)
             {
                 AddVariable(requestedAttribute.AttributeName, argument, true, q);
+                if (argument?.SortPriority != null)
+                {
+                    orderQueue.Enqueue(new Tuple<string, SortOrderDto>(requestedAttribute.AttributeName, argument.SortOrder.GetValueOrDefault(SortOrderDto.Ascending)),
+                        argument.SortPriority.GetValueOrDefault(0));
+                }
             }
+
 
             var standardField = Constants.DefaultTimeSeriesFields.FirstOrDefault(x =>
                 string.Equals(x, field.Name, StringComparison.InvariantCultureIgnoreCase));
@@ -155,15 +164,22 @@ internal sealed class TsQuery : ObjectGraphType
             }
 
             AddVariable(standardField, argument, false, q);
-            
+        }
+        
+        
+        while(orderQueue.Count > 0)
+        {
+            var order = orderQueue.Dequeue();
+            q.OrderBy(order.Item1, order.Item2);
         }
     }
 
-    private static void AddVariable(string name, AttributeTsArgumentDto? attribute, bool isDataVariable, CrateQueryBuilder q)
+    private static void AddVariable(string name, AttributeTsArgumentDto? attribute, bool isDataVariable,
+        CrateQueryBuilder q)
     {
-        if (attribute != null)
+        if (attribute is { AggregationType: not null })
         {
-            q.AddAggregationVariable(name, attribute.AggregationType, null, isDataVariable);
+            q.AddAggregationVariable(name, attribute.AggregationType.Value, null, isDataVariable);
         }
         else
         {

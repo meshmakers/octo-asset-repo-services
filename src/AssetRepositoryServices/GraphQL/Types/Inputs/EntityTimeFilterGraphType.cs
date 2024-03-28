@@ -24,6 +24,15 @@ internal sealed class AggregationGraphType : EnumerationGraphType<AggregationFun
     }
 }
 
+internal sealed class SortOrderDtoGraphType : EnumerationGraphType<SortOrderDto>
+{
+    public SortOrderDtoGraphType()
+    {
+        Name = "SortOrder";
+        Description = "Defines the sort order";
+    }
+}
+
 /// <summary>
 /// The input type for filtering by time
 /// </summary>
@@ -45,9 +54,9 @@ public class EntityTimeFilterDto
     public TimeSpan? Interval { get; set; }
 
     /// <summary>
-    /// The limit for the aggregation. Default is 100
+    /// The limit for the aggregation. Default
     /// </summary>
-    public int? Limit { get; set; } = 100;
+    public int? Limit { get; set; }
 }
 
 
@@ -63,6 +72,9 @@ public sealed class AttributeTsArgumentGraphType : InputObjectGraphType<Attribut
     {
         Name = "AttributeArgument";
         Field(x => x.AggregationType, type: typeof(AggregationGraphType));
+        Field(x => x.SortOrder, type: typeof(SortOrderDtoGraphType));
+        Field(x => x.SortPriority, true, typeof(IntGraphType))
+            .Description(" Defines the priority of the sort. Lower values are sorted first; null values aren't sorted at all.");
     }
 }
 
@@ -74,5 +86,17 @@ public class AttributeTsArgumentDto
     /// <summary>
     /// The aggregation type
     /// </summary>
-    public AggregationFunctionDto AggregationType { get; set; }
+    public AggregationFunctionDto? AggregationType { get; set; }
+    
+    /// <summary>
+    /// Defines the priority of the sort. Lower values are sorted first; null values aren't sorted at all.
+    /// When two entities have the same priority value, order cannot be guaranteed. 
+    /// </summary>
+    public int? SortPriority { get; set; }
+
+    /// <summary>
+    /// Defines the sort order
+    /// </summary>
+    public SortOrderDto? SortOrder { get; set; } 
+        
 }
