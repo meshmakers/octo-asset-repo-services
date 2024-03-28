@@ -77,9 +77,6 @@ internal sealed class TsQuery : ObjectGraphType
             return ConnectionUtils.ToConnection(new List<RtEntityDto>(), arg, null);
         }
 
-        q.IncludeDefaultVariables();
-
-
         var comp = new CrateQueryCompiler();
         var sql = comp.CompileQuery(q);
 
@@ -128,37 +125,49 @@ internal sealed class TsQuery : ObjectGraphType
     private static void HandleRequestedAttributes(FieldContext fieldContext, CkTypeGraph requestedType,
         CrateQueryBuilder q)
     {
-        var items = fieldContext.Fields.FirstOrDefault(x => x.Name == Statics.ItemsQueryArg);
-        if (items == null)
+        var itemField = fieldContext.Fields.FirstOrDefault(x => x.Name == Statics.ItemsQueryArg);
+        if (itemField == null)
         {
             return;
         }
 
-        foreach (var (_, attribute) in requestedType.AllAttributes.Where(x => x.Value.IsDataStream))
+        foreach (var field in itemField.Fields)
         {
-            bool ContainsAttribute(FieldContext x) => string.Equals(x.Name,
-                attribute.AttributeName, StringComparison.InvariantCultureIgnoreCase);
+            var streamAttributes = requestedType.AllAttributes.Where(x => x.Value.IsDataStream);
+            var argument = field.GetArgument<AttributeTsArgumentDto>(Statics.TimeSeriesAttributeArgument);
 
-            var field = items.Fields.FirstOrDefault(ContainsAttribute);
+            bool ContainsField(KeyValuePair<CkId<CkAttributeId>, CkTypeAttributeGraph> x) =>
+                string.Equals(x.Value.AttributeName, field.Name, StringComparison.InvariantCultureIgnoreCase);
 
-            if (field != null)
+            var (_, requestedAttribute) = streamAttributes
+                .FirstOrDefault(ContainsField);
+
+            if (requestedAttribute != null)
             {
-                var argument = field.GetArgument<AttributeTsArgumentDto>(Statics.TimeSeriesAttributeArgument);
-                if (argument != null)
-                {
-                    q.AddAggregationVariable(attribute.AttributeName, argument.AggregationType, null, true);
-                }
-                else
-                {
-                    // we want data from the data field
-                    q.AddVariable(attribute.AttributeName, attribute.AttributeName, null, true);
-                }
+                AddVariable(requestedAttribute.AttributeName, argument, true, q);
             }
-            else if (Constants.DefaultTimeSeriesFields.Any(x =>
-                         string.Equals(attribute.AttributeName, x, StringComparison.InvariantCultureIgnoreCase)))
+
+            var standardField = Constants.DefaultTimeSeriesFields.FirstOrDefault(x =>
+                string.Equals(x, field.Name, StringComparison.InvariantCultureIgnoreCase));
+            if (standardField == null)
             {
-                q.AddVariable(attribute.AttributeName, null, null, false);
+                continue;
             }
+
+            AddVariable(standardField, argument, false, q);
+            
+        }
+    }
+
+    private static void AddVariable(string name, AttributeTsArgumentDto? attribute, bool isDataVariable, CrateQueryBuilder q)
+    {
+        if (attribute != null)
+        {
+            q.AddAggregationVariable(name, attribute.AggregationType, null, isDataVariable);
+        }
+        else
+        {
+            q.AddVariable(name, name, null, isDataVariable);
         }
     }
 
