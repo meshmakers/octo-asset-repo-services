@@ -26,6 +26,8 @@ internal class GraphTypesCache : IGraphTypesCache
     private readonly ConcurrentDictionary<CkId<CkRecordId>, RtRecordDtoType> _recordTypes;
     private readonly string _tenantId;
     private readonly ConcurrentDictionary<CkId<CkTypeId>, RtEntityDtoType> _types;
+    private readonly ConcurrentDictionary<CkId<CkTypeId>, TsEntityDtoType> _tsTypes;
+    
 
     /// <summary>
     ///     Constructor
@@ -44,22 +46,23 @@ internal class GraphTypesCache : IGraphTypesCache
         _recordTypes = new ConcurrentDictionary<CkId<CkRecordId>, RtRecordDtoType>();
         _inputRecordTypes = new ConcurrentDictionary<CkId<CkRecordId>, RtRecordDtoInputType>();
         _connectionTypes = new ConcurrentDictionary<IGraphType, DynamicConnectionType>();
+        _tsTypes = new ConcurrentDictionary<CkId<CkTypeId>, TsEntityDtoType>();
     }
 
 
     /// <inheritdoc />
-    public DynamicConnectionType GetOrCreateConnection(IGraphType graphType, string prefixName)
+    public DynamicConnectionType GetOrCreateConnection(IGraphType graphType, string typeName)
     {
         return _connectionTypes.GetOrAdd(graphType, _ =>
         {
             var edgeType = new DynamicEdgeType(
-                $"{prefixName}{Statics.GraphQlEdgeSuffix}",
+                $"{typeName}{Statics.GraphQlEdgeSuffix}",
                 $"An edge in a connection from an object to another object of type `{graphType.Name}`.", graphType);
 
             return new DynamicConnectionType
             (
-                $"{prefixName}{Statics.GraphQlConnectionSuffix}",
-                $"A connection to `{prefixName}`.",
+                $"{typeName}{Statics.GraphQlConnectionSuffix}",
+                $"A connection to `{typeName}`.",
                 graphType, edgeType
             );
         });
@@ -73,9 +76,9 @@ internal class GraphTypesCache : IGraphTypesCache
     }
 
     /// <inheritdoc />
-    public RtEntityDtoType[] GetStreamTypes()
+    public TsEntityDtoType[] GetStreamTypes()
     {
-        return _types.Values.Where(x => x.IsStreamType).ToArray();
+        return _tsTypes.Values.ToArray();
     }
 
     public RtEntityDtoType GetType(CkId<CkTypeId> ckTypeId)
@@ -192,11 +195,25 @@ internal class GraphTypesCache : IGraphTypesCache
                 });
                 rtEntityDtoInputType.Populate(_ckCacheService, _tenantId, this, ckTypeGraph);
             }
+
+            if (ckTypeGraph.IsStreamType)
+            {
+                _ =_tsTypes.GetOrAdd(ckTypeGraph.CkTypeId, _ =>
+                {
+                    var tsEntityDtoType = new TsEntityDtoType(ckTypeGraph);
+                    return tsEntityDtoType;
+                });
+            }
         }
 
         foreach (var rtEntityDtoType in _types.Values)
         {
             rtEntityDtoType.Populate(_ckCacheService, _tenantId, this);
+        }
+
+        foreach (var tsEntityDtoType in _tsTypes.Values)
+        {
+            tsEntityDtoType.Populate(this);
         }
     }
 }

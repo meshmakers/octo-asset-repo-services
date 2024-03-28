@@ -79,14 +79,12 @@ internal static class Helpers
 
     public static ConnectionBuilder<TSourceType> Connection<TNodeType, TGraphType, TSourceType>(
         this ComplexGraphType<TNodeType> complexGraphType, IGraphTypesCache graphTypesCache, TGraphType itemType,
-        string prefixName)
+        string typeName)
         where TGraphType : IGraphType
     {
-        var type = graphTypesCache.GetOrCreateConnection(itemType, prefixName);
+        var type = graphTypesCache.GetOrCreateConnection(itemType, typeName);
 
-        var connectionBuilder =
-            ConnectionBuilder<TSourceType>.Create<TGraphType>(
-                $"{prefixName}");
+        var connectionBuilder = ConnectionBuilder<TSourceType>.Create<TGraphType>($"{typeName}");
         connectionBuilder.FieldType.ResolvedType = type;
         complexGraphType.AddField(connectionBuilder.FieldType);
         return connectionBuilder;
@@ -398,7 +396,7 @@ internal static class Helpers
     {
         var rtTypeWithAttributes = context.Source.UserContext as RtTypeWithAttributes;
         var typeAttributeGraph = context.FieldDefinition.GetMetadata<CkTypeAttributeGraph>(Statics.AttributeGraphType);
-
+        
         var r = rtTypeWithAttributes?.GetAttributeValueOrDefault(typeAttributeGraph.AttributeName);
         switch (typeAttributeGraph.ValueType)
         {

@@ -60,4 +60,10 @@ public class OctoGraphQLException : Exception
     {
         return new OctoGraphQLException("CkTypeId is undefined.");
     }
+
+    public static Exception TimeSeriesQueryInvalid(string[] requiredParameterNames)
+    {
+        return new OctoGraphQLException("TimeSeriesQuery is invalid. " +
+                                        "RequiredParameterNames: " + string.Join(", ", requiredParameterNames));
+    }
 }

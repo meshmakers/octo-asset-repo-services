@@ -18,6 +18,9 @@ internal static class Statics
     internal const string SortOrderArg = "sortOrder";
     internal const string AttributeGraphType = "AttributeGraphType";
     internal const string TypeGraphType = "TypeGraphType";
+    internal const string TimeSeriesFilterArg = "timeSeriesFilter";
+    internal const string TimeSeriesAttributeArgument = "timeSeriesAttributeArguments";
+    internal const string ItemsQueryArg = "items";
 
     internal const string LargeBinaryIdArg = "largeBinaryId";
     internal const string LargeBinaryDataArg = "binaryData";
@@ -56,5 +59,13 @@ internal static class Statics
             .Replace(".", "")
             .Replace("/", "")
             .ToCamelCase();
+    }
+    
+    public static string GetGraphQlPascalCaseNameForTs<TKey>(this CkId<TKey> ckKey) where TKey : IComparable<TKey>, ICkKey
+    {
+        return "ts" + ckKey.SemanticVersionedFullName
+            .Replace(".", "")
+            .Replace("/", "")
+            .ToPascalCase();
     }
 }
