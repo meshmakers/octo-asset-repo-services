@@ -1,10 +1,11 @@
 ﻿using GraphQL.Types;
+using Meshmakers.Octo.Services.Common.Timeseries.Dtos;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Inputs;
 
-internal sealed class TimeFilterGraphType : InputObjectGraphType<EntityTimeFilterDto>
+internal sealed class EntityTimeFilterGraphType : InputObjectGraphType<EntityTimeFilterDto>
 {
-    public TimeFilterGraphType()
+    public EntityTimeFilterGraphType()
     {
         Name = "TimeFilter";
         Field(x => x.From);
@@ -14,7 +15,7 @@ internal sealed class TimeFilterGraphType : InputObjectGraphType<EntityTimeFilte
     }
 }
 
-internal sealed class AggregationGraphType : EnumerationGraphType<AggregationType>
+internal sealed class AggregationGraphType : EnumerationGraphType<AggregationFunctionDto>
 {
     public AggregationGraphType()
     {
@@ -22,26 +23,6 @@ internal sealed class AggregationGraphType : EnumerationGraphType<AggregationTyp
         Description = "Defines the aggregation type";
     }
 }
-
-/// <summary>
-/// The aggregation type
-/// </summary>
-public enum AggregationType
-{
-    /// <summary>
-    /// Calculate the minimum
-    /// </summary>
-    Min,
-    /// <summary>
-    /// Calculate the maximum
-    /// </summary>
-    Max,
-    /// <summary>
-    /// Calculate the average
-    /// </summary>
-    Average
-}
-
 
 /// <summary>
 /// The input type for filtering by time
@@ -67,4 +48,31 @@ public class EntityTimeFilterDto
     /// The limit for the aggregation. Default is 100
     /// </summary>
     public int? Limit { get; set; } = 100;
+}
+
+
+/// <summary>
+/// The input type for filtering by attributes
+/// </summary>
+public sealed class AttributeTsArgumentGraphType : InputObjectGraphType<AttributeTsArgumentDto>
+{
+    /// <summary>
+    /// ctor
+    /// </summary>
+    public AttributeTsArgumentGraphType()
+    {
+        Name = "AttributeArgument";
+        Field(x => x.AggregationType, type: typeof(AggregationGraphType));
+    }
+}
+
+/// <summary>
+/// The input type for filtering by attributes
+/// </summary>
+public class AttributeTsArgumentDto
+{
+    /// <summary>
+    /// The aggregation type
+    /// </summary>
+    public AggregationFunctionDto AggregationType { get; set; }
 }

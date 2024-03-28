@@ -11,13 +11,14 @@ using Meshmakers.Octo.ConstructionKit.Contracts.DataTransferObjects;
 using Meshmakers.Octo.ConstructionKit.Contracts.DependencyGraph;
 using Meshmakers.Octo.ConstructionKit.Contracts.Services;
 using Meshmakers.Octo.Runtime.Contracts.RepositoryEntities;
-using Meshmakers.Octo.Services.Common.Timeseries;
+using Meshmakers.Octo.Services.Common.Timeseries.Dtos;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
 
 /// <summary>
 ///     Implements the GraphQL Time series Entity Type
 /// </summary>
+[DoNotRegister]
 internal sealed class TsEntityDtoType : ObjectGraphType<TsEntityDto>
 {
     private readonly CkTypeGraph _ckTypeGraph;
@@ -135,7 +136,7 @@ internal sealed class TsEntityDtoType : ObjectGraphType<TsEntityDto>
         }
 
         builder = builder.Metadata(Statics.AttributeGraphType, typeAttributeGraph);
-        builder.Argument<TimeFilterGraphType>(Statics.TimeSeriesFilterArg, "Filter for time series data.");
+        builder.Argument<AttributeTsArgumentGraphType>(Statics.TimeSeriesAttributeArgument, "Arguments for time series data.");
         builder.Resolve(ResolveAttributeValue);
     }
     
@@ -143,8 +144,15 @@ internal sealed class TsEntityDtoType : ObjectGraphType<TsEntityDto>
     {
         var rtTypeWithAttributes = context.Source.UserContext as RtTypeWithAttributes;
         var typeAttributeGraph = context.FieldDefinition.GetMetadata<CkTypeAttributeGraph>(Statics.AttributeGraphType);
+
+        var attributeName = typeAttributeGraph.AttributeName;
         
-        var r = rtTypeWithAttributes?.GetAttributeValueOrDefault(typeAttributeGraph.AttributeName);
+        if (context.TryGetArgument(Statics.TimeSeriesAttributeArgument, out AttributeTsArgumentDto? argument))
+        {
+            attributeName = $"{argument.AggregationType.ToString()}_{attributeName}";
+        }
+
+        var r = rtTypeWithAttributes?.GetAttributeValueOrDefault(attributeName);
         switch (typeAttributeGraph.ValueType)
         {
             case AttributeValueTypesDto.Record:
@@ -193,15 +201,15 @@ internal sealed class TsEntityDtoType : ObjectGraphType<TsEntityDto>
         return CkTypeDtoType.CreateCkTypeDto(ckTypeGraph);
     }
 
-    internal static TsEntityDto CreateTsEntityDto(DataPointDto tsEntity)
+    internal static TsEntityDto CreateTsEntityDto(DataPointDto datapoint)
     {
-        var rtEntityDto = new TsEntityDto()
+        var tsEntityDto = new TsEntityDto()
         {
-            RtId = tsEntity.RtId ?? throw OctoGraphQLException.CkTypeIdUndefined(),
-            CkTypeId = tsEntity.CkTypeId ?? throw OctoGraphQLException.CkTypeIdUndefined(),
-            TimeStamp = tsEntity.Timestamp,
-            UserContext = tsEntity
+            RtId = datapoint.RtId ?? throw OctoGraphQLException.CkTypeIdUndefined(),
+            CkTypeId = datapoint.CkTypeId ?? throw OctoGraphQLException.CkTypeIdUndefined(),
+            TimeStamp = datapoint.Timestamp,
+            UserContext = datapoint
         };
-        return rtEntityDto;
+        return tsEntityDto;
     }
 }

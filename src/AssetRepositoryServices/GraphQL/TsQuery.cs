@@ -11,12 +11,12 @@ using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.ConstructionKit.Contracts.DependencyGraph;
 using Meshmakers.Octo.ConstructionKit.Contracts.Services;
 using Meshmakers.Octo.Services.Common.Timeseries;
+using Meshmakers.Octo.Services.Common.Timeseries.QueryBuilder;
 using NLog;
-using SqlKata;
-using SqlKata.Compilers;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL;
 
+[DoNotRegister]
 internal sealed class TsQuery : ObjectGraphType
 {
     private static readonly Logger Logger = LogManager.GetCurrentClassLogger();
@@ -31,7 +31,7 @@ internal sealed class TsQuery : ObjectGraphType
                 .AddMetadata(Statics.CkId, rtEntityDtoType.CkTypeId)
                 .Argument<OctoObjectIdType>(Statics.RtIdArg, "Returns the entity with the given rtId.")
                 .Argument<ListGraphType<OctoObjectIdType>>(Statics.RtIdsArg, "Returns entities with the given rtIds.")
-                .Argument<TimeFilterGraphType>(Statics.TimeSeriesFilterArg, "Filter for time series data.")
+                .Argument<EntityTimeFilterGraphType>(Statics.TimeSeriesFilterArg, "Filter for time series data.")
                 .Argument<ListGraphType<SortDtoType>>(Statics.SortOrderArg, "Sort order for items")
                 .ResolveAsync(ResolveRtEntitiesQuery);
         }
@@ -39,10 +39,10 @@ internal sealed class TsQuery : ObjectGraphType
 
     private async Task<object?> ResolveRtEntitiesQuery(IResolveConnectionContext<object?> arg)
     {
-        Logger.Debug("GraphQL query handling for specific runtime entity type started");
+        Logger.Debug("GraphQL query handling for specific timeseries entity type started");
 
         var fieldContext = FieldContext.FromContext(arg);
-        
+
         var services = arg.RequestServices;
         if (services == null)
         {
@@ -59,51 +59,45 @@ internal sealed class TsQuery : ObjectGraphType
         var graphQlUserContext = (GraphQlUserContext)arg.UserContext;
         var tenantId = graphQlUserContext.TenantId;
         var requestedType = typeCache.GetCkType(tenantId, ckTypeId);
-        
-        var tsQuery = new Query(tenantId);
+
+        var q = new CrateQueryBuilder(tenantId);
 
         var entityTimeFilter = fieldContext.GetArgument<EntityTimeFilterDto>(Statics.TimeSeriesFilterArg);
 
         if (entityTimeFilter is not null)
         {
-            tsQuery.WhereBetween(Constants.Timestamp, entityTimeFilter.From, entityTimeFilter.To);
+            q.WithTimeFilter(entityTimeFilter.From, entityTimeFilter.To);
         }
 
-        HandleRequestedAttributes(fieldContext, requestedType, tsQuery);
-   
+        HandleRequestedAttributes(fieldContext, requestedType, q);
 
-
-        // add standard fields 
-        tsQuery.Select(Constants.CkTypeId);
-        tsQuery.Select(Constants.Timestamp);
-        tsQuery.Select(Constants.RtId);
-
-
-        if (!HandleRequestedRtIds(arg, tsQuery))
+        if (!HandleRequestedRtIds(arg))
         {
+            // we got an empty array of rtIds so we return a empty connection
             return ConnectionUtils.ToConnection(new List<RtEntityDto>(), arg, null);
         }
 
+        q.IncludeDefaultVariables();
 
-        var compiler = new PostgresCompiler();
-        var compiled = compiler.Compile(tsQuery);
-        if (compiled == null)
-        {
-            return null;
-        }
 
-        var sql = compiled.ToString();
-        var tsClient = services.GetRequiredService<ITimeSeriesDatabaseClient>()!;
+        var comp = new CrateQueryCompiler();
+        var sql = comp.CompileQuery(q);
+
+        Logger.Debug("Executing SQL query: {0}", sql);
+
+        var tsClient = services.GetRequiredService<ITimeSeriesDatabaseClient>();
         var data = await tsClient.GetDataAsync(sql);
 
+        Logger.Debug("SQL query executed. Got {0} rows", data.Count());
+
         var result = data.Select(TsEntityDtoType.CreateTsEntityDto).ToList();
-        
+
         var offset = arg.GetOffset();
         return ConnectionUtils.ToConnection(result, arg, result.Count != 0 ? offset.GetValueOrDefault(0) : 0,
             result.Count, []);
     }
 
-    private bool HandleRequestedRtIds(IResolveConnectionContext<object?> arg, Query tsQuery)
+    private bool HandleRequestedRtIds(IResolveConnectionContext<object?> arg)
     {
         var rtIdList = new List<OctoObjectId>();
         if (arg.TryGetArgument(Statics.RtIdArg, out OctoObjectId? rtId))
@@ -125,34 +119,45 @@ internal sealed class TsQuery : ObjectGraphType
 
         if (rtIdList.Any())
         {
-            tsQuery.WhereIn(Constants.RtId, rtIdList.Select(x => x.ToString()));
+            throw new NotImplementedException();
         }
 
         return true;
     }
 
-    private static void HandleRequestedAttributes(FieldContext fieldContext, CkTypeGraph requestedType, Query tsQuery)
+    private static void HandleRequestedAttributes(FieldContext fieldContext, CkTypeGraph requestedType,
+        CrateQueryBuilder q)
     {
         var items = fieldContext.Fields.FirstOrDefault(x => x.Name == Statics.ItemsQueryArg);
         if (items == null)
         {
             return;
         }
-        
+
         foreach (var (_, attribute) in requestedType.AllAttributes.Where(x => x.Value.IsDataStream))
         {
-            bool SelectionContainsAttribute(FieldContext x) => string.Equals(x.Name,
+            bool ContainsAttribute(FieldContext x) => string.Equals(x.Name,
                 attribute.AttributeName, StringComparison.InvariantCultureIgnoreCase);
 
-            if (items.Fields.Any(SelectionContainsAttribute))
+            var field = items.Fields.FirstOrDefault(ContainsAttribute);
+
+            if (field != null)
             {
-                // we want data from the data field
-                tsQuery.Select($"data['{attribute.AttributeName}'] as {attribute.AttributeName}");
+                var argument = field.GetArgument<AttributeTsArgumentDto>(Statics.TimeSeriesAttributeArgument);
+                if (argument != null)
+                {
+                    q.AddAggregationVariable(attribute.AttributeName, argument.AggregationType, null, true);
+                }
+                else
+                {
+                    // we want data from the data field
+                    q.AddVariable(attribute.AttributeName, attribute.AttributeName, null, true);
+                }
             }
             else if (Constants.DefaultTimeSeriesFields.Any(x =>
                          string.Equals(attribute.AttributeName, x, StringComparison.InvariantCultureIgnoreCase)))
             {
-                tsQuery.Select(attribute.AttributeName);
+                q.AddVariable(attribute.AttributeName, null, null, false);
             }
         }
     }
