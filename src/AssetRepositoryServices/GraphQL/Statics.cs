@@ -15,6 +15,7 @@ internal static class Statics
     internal const string SearchFilterArg = "searchFilter";
     internal const string AttributeNamesFilterArg = "attributeNames";
     internal const string FieldFilterArg = "fieldFilter";
+    internal const string GeoNearFilterArg = "geoNearFilter";
     internal const string SortOrderArg = "sortOrder";
     internal const string AttributeGraphType = "AttributeGraphType";
     internal const string TypeGraphType = "TypeGraphType";

@@ -7,12 +7,14 @@ using GraphQL.Resolvers;
 using GraphQL.Types;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Caches;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Inputs;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Scalars;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Utils;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
 using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.ConstructionKit.Contracts.DataTransferObjects;
 using Meshmakers.Octo.ConstructionKit.Contracts.DependencyGraph;
+using Meshmakers.Octo.Runtime.Contracts.Geospatial.Geometry;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb;
 using Meshmakers.Octo.Runtime.Contracts.RepositoryEntities;
 using ObjectExtensions = GraphQL.ObjectExtensions;
@@ -92,7 +94,8 @@ internal static class Helpers
 
     public static FieldType AssociationField<TSourceType>(
         this ComplexGraphType<TSourceType> complexGraphType,
-        IGraphTypesCache graphTypesCache, string name, IReadOnlyList<CkId<CkTypeId>> allowedTypes, CkId<CkTypeId> originCkId,
+        IGraphTypesCache graphTypesCache, string name, IReadOnlyList<CkId<CkTypeId>> allowedTypes,
+        CkId<CkTypeId> originCkId,
         CkId<CkAssociationRoleId> roleId, GraphDirections graphDirection)
     {
         var graphTypes = allowedTypes.Select(graphTypesCache.GetType);
@@ -100,7 +103,7 @@ internal static class Helpers
         var unionType = new RtEntityAssociationType(
             $"{complexGraphType.Name}_{name}{Statics.GraphQlUnionSuffix}",
             $"Association {roleId} ({graphDirection}) of entity type {complexGraphType.Name}", graphTypesCache,
-             graphTypes, originCkId, roleId, graphDirection);
+            graphTypes, originCkId, roleId, graphDirection);
 
         return complexGraphType.Field(name, null, unionType, resolve: context => context.Source);
     }
@@ -299,7 +302,8 @@ internal static class Helpers
         return ValueConverter.ConvertTo(value, targetType);
     }
 
-    internal static void AddAttribute<TSourceType>(ComplexGraphType<TSourceType> complexGraphType, IGraphTypesCache graphTypesCache,
+    internal static void AddAttribute<TSourceType>(ComplexGraphType<TSourceType> complexGraphType,
+        IGraphTypesCache graphTypesCache,
         CkTypeAttributeGraph typeAttributeGraph, bool isInputType) where TSourceType : GraphQlDto
     {
         var attributeName = typeAttributeGraph.AttributeName;
@@ -380,6 +384,15 @@ internal static class Helpers
 
                 builder = complexGraphType.Field(attributeName, new ListGraphType(graphType));
                 break;
+            case AttributeValueTypesDto.GeospatialPoint:
+
+                graphType = isInputType switch
+                {
+                    true => new PointInputGraphType(),
+                    _ => new RtGeospatialValueDtoType()
+                };
+                builder = complexGraphType.Field(attributeName, graphType);
+                break;
             default:
                 throw OctoGraphQLException.AttributeValueTypeNotSupported(typeAttributeGraph.ValueType);
 #pragma warning restore GQL005
@@ -392,11 +405,12 @@ internal static class Helpers
         }
     }
 
-    private static object? ResolveAttributeValue<TSourceType>(IResolveFieldContext<TSourceType> context) where TSourceType : GraphQlDto
+    private static object? ResolveAttributeValue<TSourceType>(IResolveFieldContext<TSourceType> context)
+        where TSourceType : GraphQlDto
     {
         var rtTypeWithAttributes = context.Source.UserContext as RtTypeWithAttributes;
         var typeAttributeGraph = context.FieldDefinition.GetMetadata<CkTypeAttributeGraph>(Statics.AttributeGraphType);
-        
+
         var r = rtTypeWithAttributes?.GetAttributeValueOrDefault(typeAttributeGraph.AttributeName);
         switch (typeAttributeGraph.ValueType)
         {
@@ -418,6 +432,18 @@ internal static class Helpers
                 if (r is string timeSpanString)
                 {
                     return TimeSpan.Parse(timeSpanString);
+                }
+
+                break;
+            case AttributeValueTypesDto.GeospatialPoint:
+                if (r is Point point)
+                {
+                    return new RtGeospatialValueDto
+                    {
+                        Distance = rtTypeWithAttributes?.GetAttributeValueOrDefault(
+                            typeAttributeGraph.AttributeName + "_distance", default(double?)),
+                        Point = point
+                    };
                 }
 
                 break;

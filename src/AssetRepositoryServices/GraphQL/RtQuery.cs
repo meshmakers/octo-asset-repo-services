@@ -1,6 +1,5 @@
 using GraphQL;
 using GraphQL.Builders;
-using GraphQL.DataLoader;
 using GraphQL.Types;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Caches;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.RequestHandling;
@@ -45,6 +44,7 @@ internal sealed class RtQuery : ObjectGraphType
                 .Argument<SearchFilterDtoType>(Statics.SearchFilterArg, "Filters items based on text search")
                 .Argument<FieldGroupByType>(Statics.GroupByArg, "Groups items based on attributes")
                 .Argument<ListGraphType<SortDtoType>>(Statics.SortOrderArg, "Sort order for items")
+                .Argument<NearGeospatialFilterDtoType>(Statics.GeoNearFilterArg, "Geospatial filter for items, that searches for items near a point")
                 .Argument<ListGraphType<FieldFilterDtoType>>(Statics.FieldFilterArg,
                     "Filters items based on field compare")
                 .ResolveAsync(ResolveRtEntitiesQuery);

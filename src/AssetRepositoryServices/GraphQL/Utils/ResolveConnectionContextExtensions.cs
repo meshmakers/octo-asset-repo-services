@@ -91,6 +91,12 @@ internal static class ResolveConnectionContextExtensions
             groupBy.MinAttributeNames(groupByDto.MinValueAttributeNameList.Select(TransformAttributeName).ToArray());
             groupBy.AvgAttributeNames(groupByDto.AvgAttributeNameList.Select(TransformAttributeName).ToArray());
         }
+        
+        if (ctx.TryGetArgument(Statics.GeoNearFilterArg, out NearGeospatialFilterDto? nearGeospatialFilterDto))
+        {
+            dataQueryOperation.NearGeospatialFilter(nearGeospatialFilterDto.AttributeName, nearGeospatialFilterDto.Point,
+                nearGeospatialFilterDto.MinDistance, nearGeospatialFilterDto.MaxDistance);
+        }
 
         return dataQueryOperation;
     }
