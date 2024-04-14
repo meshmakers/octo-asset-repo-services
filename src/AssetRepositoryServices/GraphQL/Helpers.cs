@@ -386,12 +386,12 @@ internal static class Helpers
                 break;
             case AttributeValueTypesDto.GeospatialPoint:
 
-                graphType = isInputType switch
+                var pointType = isInputType switch
                 {
-                    true => new PointInputGraphType(),
-                    _ => new RtGeospatialValueDtoType()
+                    true => typeof(PointInputGraphType),
+                    _ => typeof(RtGeospatialValueDtoType)
                 };
-                builder = complexGraphType.Field(attributeName, graphType);
+                builder = complexGraphType.Field(attributeName, pointType);
                 break;
             default:
                 throw OctoGraphQLException.AttributeValueTypeNotSupported(typeAttributeGraph.ValueType);
