@@ -83,13 +83,29 @@ internal static class ResolveConnectionContextExtensions
             }
         }
 
-        if (ctx.TryGetArgument(Statics.GroupByArg, out FieldGroupBy? groupByDto))
+        if (ctx.TryGetArgument(Statics.GroupByArg, out FieldGroupByDto? groupByDto))
         {
             var groupBy = dataQueryOperation.GroupBy(groupByDto.GroupByAttributeNameList.Select(TransformAttributeName).ToArray());
-            groupBy.CountAttributeNames(groupByDto.CountAttributeNameList.Select(TransformAttributeName).ToArray());
-            groupBy.MaxAttributeNames(groupByDto.MaxValueAttributeNameList.Select(TransformAttributeName).ToArray());
-            groupBy.MinAttributeNames(groupByDto.MinValueAttributeNameList.Select(TransformAttributeName).ToArray());
-            groupBy.AvgAttributeNames(groupByDto.AvgAttributeNameList.Select(TransformAttributeName).ToArray());
+            if (groupByDto.CountAttributeNameList != null)
+            {
+                groupBy.CountAttributeNames(groupByDto.CountAttributeNameList.Select(TransformAttributeName).ToArray());
+            }
+
+            if (groupByDto.MaxValueAttributeNameList != null)
+            {
+                groupBy.MaxAttributeNames(groupByDto.MaxValueAttributeNameList.Select(TransformAttributeName)
+                        .ToArray());
+            }
+
+            if (groupByDto.MinValueAttributeNameList != null)
+            {
+                groupBy.MinAttributeNames(groupByDto.MinValueAttributeNameList.Select(TransformAttributeName).ToArray());
+            }
+
+            if (groupByDto.AvgAttributeNameList != null)
+            {
+                groupBy.AvgAttributeNames(groupByDto.AvgAttributeNameList.Select(TransformAttributeName).ToArray());
+            }
         }
         
         if (ctx.TryGetArgument(Statics.GeoNearFilterArg, out NearGeospatialFilterDto? nearGeospatialFilterDto))
