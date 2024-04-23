@@ -125,6 +125,7 @@ internal sealed class CkTypeDtoType : ObjectGraphType<CkTypeDto>
             AttributeValueType = ckTypeAttributeGraph.ValueType,
             AutoIncrementReference = ckTypeAttributeGraph.AutoIncrementReference,
             AutoCompleteValues = ckTypeAttributeGraph.AutoCompleteValues,
+            IsOptional = ckTypeAttributeGraph.IsOptional,
             Attribute = CkAttributeDtoType.CreateCkAttributeDto(ckTypeAttributeGraph)
         };
         return ckEntityAttributeDto;

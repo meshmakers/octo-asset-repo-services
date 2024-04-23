@@ -3,7 +3,7 @@ using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
 
-internal sealed class CkAttributeMetaDataDtoType: ObjectGraphType<CkAttributeMetaDataDto>
+internal sealed class CkAttributeMetaDataDtoType : ObjectGraphType<CkAttributeMetaDataDto>
 {
     public CkAttributeMetaDataDtoType()
     {
@@ -16,5 +16,16 @@ internal sealed class CkAttributeMetaDataDtoType: ObjectGraphType<CkAttributeMet
             .Description("Value of the meta data.");
         Field(x => x.Description, type: typeof(StringGraphType))
             .Description("Optional description of the meta data.");
+    }
+
+    public static CkAttributeMetaDataDto CreateCkAttributeMetaDataDto(
+        ConstructionKit.Contracts.DataTransferObjects.CkAttributeMetaDataDto meta)
+    {
+        return new CkAttributeMetaDataDto
+        {
+            Key = meta.Key,
+            Value = meta.Value,
+            Description = meta.Description
+        };
     }
 }

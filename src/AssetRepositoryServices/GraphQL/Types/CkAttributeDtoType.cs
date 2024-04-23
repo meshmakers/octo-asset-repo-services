@@ -89,6 +89,7 @@ internal sealed class CkAttributeDtoType : ObjectGraphType<CkAttributeDto>
             ValueCkRecordId = ckTypeAttributeGraph.ValueCkRecordId,
             ValueCkEnumId = ckTypeAttributeGraph.ValueCkEnumId,
             Description = ckTypeAttributeGraph.Description,
+            MetaData = ckTypeAttributeGraph.MetaData?.Select(CkAttributeMetaDataDtoType.CreateCkAttributeMetaDataDto).ToList(),
             IsDataStream = ckTypeAttributeGraph.IsDataStream,
             DefaultValues = ckTypeAttributeGraph.DefaultValues
         };
