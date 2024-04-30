@@ -18,9 +18,9 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Runtime.Contracts.MongoDb",
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Runtime.Engine.MongoDb", "src\octo-common-services\src\octo-construction-kit-engine-mongodb\src\Runtime.Engine.MongoDb\Runtime.Engine.MongoDb.csproj", "{E7E33CAA-2D58-4F48-8378-B8DE6BF1C5A0}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Timeseries", "src\octo-common-services\src\Timeseries\Timeseries.csproj", "{1E3BC1C0-9DDF-4EDB-9970-40D4406E6819}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "StreamData", "src\octo-common-services\src\StreamData\StreamData.csproj", "{1E3BC1C0-9DDF-4EDB-9970-40D4406E6819}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TimeSeries.Tests", "src\octo-common-services\tests\TimeSeries.Tests\TimeSeries.Tests.csproj", "{A307F8E3-5B56-4DA2-8F6F-478D332A52D3}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "StreamData.Tests", "src\octo-common-services\tests\StreamData.Tests\StreamData.Tests.csproj", "{A307F8E3-5B56-4DA2-8F6F-478D332A52D3}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

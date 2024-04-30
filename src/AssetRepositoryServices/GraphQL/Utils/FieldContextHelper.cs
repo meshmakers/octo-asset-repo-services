@@ -8,7 +8,7 @@ using ExecutionContext = GraphQL.Execution.ExecutionContext;
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Utils;
 
 /// <summary>
-/// Helper class that parses the AST of sub fields. We need this for time series queries to get the
+/// Helper class that parses the AST of sub fields. We need this for stream data queries to get the
 /// all information of sub fields WHILE resolving the parent field.
 /// Imagine the following query:
 /// <code>

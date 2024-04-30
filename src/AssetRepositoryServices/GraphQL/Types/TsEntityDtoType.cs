@@ -11,12 +11,12 @@ using Meshmakers.Octo.ConstructionKit.Contracts.DataTransferObjects;
 using Meshmakers.Octo.ConstructionKit.Contracts.DependencyGraph;
 using Meshmakers.Octo.ConstructionKit.Contracts.Services;
 using Meshmakers.Octo.Runtime.Contracts.RepositoryEntities;
-using Meshmakers.Octo.Services.Common.Timeseries.Dtos;
+using Meshmakers.Octo.Services.Common.StreamData.Dtos;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
 
 /// <summary>
-///     Implements the GraphQL Time series Entity Type
+///     Implements the GraphQL Stream data Entity Type
 /// </summary>
 [DoNotRegister]
 internal sealed class TsEntityDtoType : ObjectGraphType<TsEntityDto>
@@ -29,7 +29,8 @@ internal sealed class TsEntityDtoType : ObjectGraphType<TsEntityDto>
         _ckTypeGraph = ckTypeGraph;
 
         Name = _ckTypeGraph.CkTypeId.GetGraphQlPascalCaseNameForTs();
-        Description = $"Time series entities of construction kit type '{_ckTypeGraph.CkTypeId}'";
+        
+        Description = $"Stream data entities of construction kit type '{_ckTypeGraph.CkTypeId}'";
         IsTypeOf = o =>
         {
             if (o is TsEntityDto rtEntityDto)
@@ -55,11 +56,11 @@ internal sealed class TsEntityDtoType : ObjectGraphType<TsEntityDto>
 
         foreach (var attribute in _ckTypeGraph.AllAttributes.Values.Where(x => x.IsDataStream))
         {
-            AddTimeSeriesAttribute(graphTypesCache, attribute);
+            AddStreamDataAttribute(graphTypesCache, attribute);
         }
     }
 
-    private void AddTimeSeriesAttribute(
+    private void AddStreamDataAttribute(
         IGraphTypesCache graphTypesCache,
         CkTypeAttributeGraph typeAttributeGraph)
     {
@@ -136,7 +137,7 @@ internal sealed class TsEntityDtoType : ObjectGraphType<TsEntityDto>
         }
 
         builder = builder.Metadata(Statics.AttributeGraphType, typeAttributeGraph);
-        builder.Argument<AttributeTsArgumentGraphType>(Statics.TimeSeriesAttributeArgument, "Arguments for time series data.");
+        builder.Argument<AttributeTsArgumentGraphType>(Statics.StreamDataAttributeArgument, "Arguments for stream data data.");
         builder.Resolve(ResolveAttributeValue);
     }
     
@@ -147,7 +148,7 @@ internal sealed class TsEntityDtoType : ObjectGraphType<TsEntityDto>
 
         var attributeName = typeAttributeGraph.AttributeName;
         
-        if (context.TryGetArgument(Statics.TimeSeriesAttributeArgument, out AttributeTsArgumentDto? argument))
+        if (context.TryGetArgument(Statics.StreamDataAttributeArgument, out AttributeTsArgumentDto? argument))
         {
             attributeName = $"{argument.AggregationType.ToString()}_{attributeName}";
         }

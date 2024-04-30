@@ -19,8 +19,8 @@ internal static class Statics
     internal const string SortOrderArg = "sortOrder";
     internal const string AttributeGraphType = "AttributeGraphType";
     internal const string TypeGraphType = "TypeGraphType";
-    internal const string TimeSeriesFilterArg = "timeSeriesFilter";
-    internal const string TimeSeriesAttributeArgument = "timeSeriesAttributeArguments";
+    internal const string StreamDataFilterArg = "timeSeriesFilter";
+    internal const string StreamDataAttributeArgument = "arg";
     internal const string ItemsQueryArg = "items";
 
     internal const string LargeBinaryIdArg = "largeBinaryId";
@@ -45,6 +45,8 @@ internal static class Statics
     public const string GraphQLDeleteOperationsNotSupported = "OCTO1005";
     public const string GraphQLOperationError = "OCTO1006_{0}";
     public const string GraphQLOperationFatalError = "OCTO1007_{0}";
+
+    public const string GraphQlStreamDataQueryError = "OCT01008";
 
     public static string GetGraphQlPascalCaseName<TKey>(this CkId<TKey> ckKey) where TKey : IComparable<TKey>, ICkKey
     {

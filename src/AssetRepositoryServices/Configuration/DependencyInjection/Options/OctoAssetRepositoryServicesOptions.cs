@@ -19,7 +19,7 @@ public class OctoAssetRepositoryServicesOptions
         PublicUrl = "https://localhost:5001";
         PublicAdminPanelUrl = "https://localhost:5005";
         BrokerHost = "localhost";
-        TimeSeriesConnectionString = "Host=127.0.0.1;Username=crate;SSL Mode=Prefer";
+        StreamDataConnectionString = "Host=127.0.0.1;Username=crate;SSL Mode=Prefer";
     }
 
     /// <summary>
@@ -63,7 +63,7 @@ public class OctoAssetRepositoryServicesOptions
     public string PublicAdminPanelUrl { get; set; }
     
     /// <summary>
-    /// (Public) connection string to the time series database
+    /// (Public) connection string to the stream data database
     /// </summary>
-    public string TimeSeriesConnectionString { get; set; }
+    public string StreamDataConnectionString { get; set; }
 }

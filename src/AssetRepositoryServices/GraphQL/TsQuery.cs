@@ -10,9 +10,9 @@ using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
 using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.ConstructionKit.Contracts.DependencyGraph;
 using Meshmakers.Octo.ConstructionKit.Contracts.Services;
-using Meshmakers.Octo.Services.Common.Timeseries;
-using Meshmakers.Octo.Services.Common.Timeseries.Dtos;
-using Meshmakers.Octo.Services.Common.Timeseries.QueryBuilder;
+using Meshmakers.Octo.Services.Common.StreamData;
+using Meshmakers.Octo.Services.Common.StreamData.Dtos;
+using Meshmakers.Octo.Services.Common.StreamData.QueryBuilder;
 using NLog;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL;
@@ -32,7 +32,7 @@ internal sealed class TsQuery : ObjectGraphType
                 .AddMetadata(Statics.CkId, rtEntityDtoType.CkTypeId)
                 .Argument<OctoObjectIdType>(Statics.RtIdArg, "Returns the entity with the given rtId.")
                 .Argument<ListGraphType<OctoObjectIdType>>(Statics.RtIdsArg, "Returns entities with the given rtIds.")
-                .Argument<EntityTimeFilterGraphType>(Statics.TimeSeriesFilterArg, "Filter for time series data.")
+                .Argument<EntityTimeFilterGraphType>(Statics.StreamDataFilterArg, "Filter for stream data data.")
                 .Argument<ListGraphType<SortDtoType>>(Statics.SortOrderArg, "Sort order for items")
                 .ResolveAsync(ResolveRtEntitiesQuery);
         }
@@ -40,7 +40,7 @@ internal sealed class TsQuery : ObjectGraphType
 
     private async Task<object?> ResolveRtEntitiesQuery(IResolveConnectionContext<object?> arg)
     {
-        Logger.Debug("GraphQL query handling for specific timeseries entity type started");
+        Logger.Debug("GraphQL query handling for specific stream data entity type started");
 
         var fieldContext = FieldContext.FromContext(arg);
 
@@ -63,7 +63,7 @@ internal sealed class TsQuery : ObjectGraphType
 
         var q = new CrateQueryBuilder(tenantId);
 
-        var entityTimeFilter = fieldContext.GetArgument<EntityTimeFilterDto>(Statics.TimeSeriesFilterArg);
+        var entityTimeFilter = fieldContext.GetArgument<EntityTimeFilterDto>(Statics.StreamDataFilterArg);
 
         if (entityTimeFilter is not null)
         {
@@ -83,8 +83,21 @@ internal sealed class TsQuery : ObjectGraphType
 
         Logger.Debug("Executing SQL query: {0}", sql);
 
-        var tsClient = services.GetRequiredService<ITimeSeriesDatabaseClient>();
-        var data = await tsClient.GetDataAsync(sql);
+        var tsClient = services.GetRequiredService<IStreamDataDatabaseClient>();
+
+        List<DataPointDto> data;
+        try
+        {
+            data = await tsClient.GetDataAsync(sql);
+        }
+        catch (Exception ex)
+        {
+            Logger.Debug(ex, "Error while executing query: {0}", ex.Message);
+            arg.Errors.Add(new ExecutionError($"Error while executing query '{ex.Message}'")
+                { Code = Statics.GraphQlStreamDataQueryError });
+            return null;
+        }
+
 
         Logger.Debug("SQL query executed. Got {0} rows", data.Count());
 
@@ -117,7 +130,9 @@ internal sealed class TsQuery : ObjectGraphType
 
         if (rtIdList.Any())
         {
-            throw new NotImplementedException();
+            arg.Errors.Add(new ExecutionError("Filtering by RtIds is not yet supported")
+                { Code = Statics.GraphQlStreamDataQueryError });
+            return false;
         }
 
         return true;
@@ -137,7 +152,7 @@ internal sealed class TsQuery : ObjectGraphType
         foreach (var field in itemField.Fields)
         {
             var dataStreamAttributes = requestedType.AllAttributes.Where(x => x.Value.IsDataStream);
-            var argument = field.GetArgument<AttributeTsArgumentDto>(Statics.TimeSeriesAttributeArgument);
+            var argument = field.GetArgument<AttributeTsArgumentDto>(Statics.StreamDataAttributeArgument);
 
             bool ContainsField(KeyValuePair<CkId<CkAttributeId>, CkTypeAttributeGraph> x) =>
                 string.Equals(x.Value.AttributeName, field.Name, StringComparison.InvariantCultureIgnoreCase);
@@ -150,13 +165,15 @@ internal sealed class TsQuery : ObjectGraphType
                 AddVariable(requestedAttribute.AttributeName, argument, true, q);
                 if (argument?.SortPriority != null)
                 {
-                    orderQueue.Enqueue(new Tuple<string, SortOrderDto>(requestedAttribute.AttributeName, argument.SortOrder.GetValueOrDefault(SortOrderDto.Ascending)),
+                    orderQueue.Enqueue(
+                        new Tuple<string, SortOrderDto>(requestedAttribute.AttributeName,
+                            argument.SortOrder.GetValueOrDefault(SortOrderDto.Ascending)),
                         argument.SortPriority.GetValueOrDefault(0));
                 }
             }
 
 
-            var standardField = Constants.DefaultTimeSeriesFields.FirstOrDefault(x =>
+            var standardField = Constants.DefaultStreamDataFields.FirstOrDefault(x =>
                 string.Equals(x, field.Name, StringComparison.InvariantCultureIgnoreCase));
             if (standardField == null)
             {
@@ -165,9 +182,9 @@ internal sealed class TsQuery : ObjectGraphType
 
             AddVariable(standardField, argument, false, q);
         }
-        
-        
-        while(orderQueue.Count > 0)
+
+
+        while (orderQueue.Count > 0)
         {
             var order = orderQueue.Dequeue();
             q.OrderBy(order.Item1, order.Item2);

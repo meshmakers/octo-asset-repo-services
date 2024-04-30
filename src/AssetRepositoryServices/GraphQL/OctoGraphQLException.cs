@@ -61,9 +61,9 @@ public class OctoGraphQLException : Exception
         return new OctoGraphQLException("CkTypeId is undefined.");
     }
 
-    public static Exception TimeSeriesQueryInvalid(string[] requiredParameterNames)
+    public static Exception StreamDataQueryInvalid(string[] requiredParameterNames)
     {
-        return new OctoGraphQLException("TimeSeriesQuery is invalid. " +
+        return new OctoGraphQLException("StreamDataQuery is invalid. " +
                                         "RequiredParameterNames: " + string.Join(", ", requiredParameterNames));
     }
 }

@@ -2,8 +2,9 @@ using Meshmakers.Octo.Backend.AssetRepositoryServices;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.Configuration.DependencyInjection.Options;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.Routing;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.Services;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.StreamData;
 using Meshmakers.Octo.Services.Common.Cors;
-using Meshmakers.Octo.Services.Common.Timeseries.Extensions;
+using Meshmakers.Octo.Services.Common.StreamData.Extensions;
 using Meshmakers.Octo.Services.Infrastructure.Services;
 using Microsoft.AspNetCore.Cors.Infrastructure;
 using Microsoft.Extensions.Options;
@@ -49,7 +50,8 @@ try
             systemOptions => builder.Configuration.GetSection("System").Bind(systemOptions),
             options => builder.Configuration.GetSection("AssetRepository").Bind(options));
     
-    builder.Services.AddTimeSeriesDatabase(configuration =>
+    builder.Services.AddStreamDataManagement()
+        .AddStreamDataDatabase(configuration =>
     {
         var assetRepoConfig = builder.Configuration.Get<OctoAssetRepositoryServicesOptions>();
         if (assetRepoConfig == null)
@@ -58,7 +60,7 @@ try
                 typeof(IOptions<OctoAssetRepositoryServicesOptions>));
         }
 
-        configuration.TimeSeriesConnectionString = assetRepoConfig.TimeSeriesConnectionString;
+        configuration.ConnectionString = assetRepoConfig.StreamDataConnectionString;
     });
     
     var app = builder.Build();
