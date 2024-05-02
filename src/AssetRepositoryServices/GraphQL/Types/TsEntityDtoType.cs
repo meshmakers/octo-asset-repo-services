@@ -29,7 +29,7 @@ internal sealed class TsEntityDtoType : ObjectGraphType<TsEntityDto>
         _ckTypeGraph = ckTypeGraph;
 
         Name = _ckTypeGraph.CkTypeId.GetGraphQlPascalCaseNameForTs();
-        
+
         Description = $"Stream data entities of construction kit type '{_ckTypeGraph.CkTypeId}'";
         IsTypeOf = o =>
         {
@@ -118,7 +118,7 @@ internal sealed class TsEntityDtoType : ObjectGraphType<TsEntityDto>
                 {
                     throw OctoGraphQLException.RecordAttributeHasNoCkRecordId(typeAttributeGraph.AttributeName);
                 }
-                
+
                 graphType = graphTypesCache.GetRecord(typeAttributeGraph.ValueCkRecordId);
                 builder = Field(attributeName, graphType);
                 break;
@@ -137,19 +137,23 @@ internal sealed class TsEntityDtoType : ObjectGraphType<TsEntityDto>
         }
 
         builder = builder.Metadata(Statics.AttributeGraphType, typeAttributeGraph);
-        builder.Argument<AttributeTsArgumentGraphType>(Statics.StreamDataAttributeArgument, "Arguments for stream data data.");
+        builder.Argument<AttributeTsArgumentGraphType>(Statics.StreamDataAttributeArgument,
+            "Arguments for stream data data.");
         builder.Resolve(ResolveAttributeValue);
     }
-    
-    private static object? ResolveAttributeValue<TSourceType>(IResolveFieldContext<TSourceType> context) where TSourceType : TsEntityDto
+
+    private static object? ResolveAttributeValue<TSourceType>(IResolveFieldContext<TSourceType> context)
+        where TSourceType : TsEntityDto
     {
         var rtTypeWithAttributes = context.Source.UserContext as RtTypeWithAttributes;
         var typeAttributeGraph = context.FieldDefinition.GetMetadata<CkTypeAttributeGraph>(Statics.AttributeGraphType);
 
         var attributeName = typeAttributeGraph.AttributeName;
-        
-        if (context.TryGetArgument(Statics.StreamDataAttributeArgument, out AttributeTsArgumentDto? argument))
+
+        if (context.TryGetArgument(Statics.StreamDataAttributeArgument, out AttributeTsArgumentDto? argument) 
+            && argument.AggregationType is not null)
         {
+            //When we queried an attribute with an aggregation, we do as if it is a normal attribute
             attributeName = $"{argument.AggregationType.ToString()}_{attributeName}";
         }
 
