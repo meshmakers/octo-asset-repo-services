@@ -8,8 +8,8 @@ internal sealed class EntityTimeFilterGraphType : InputObjectGraphType<EntityTim
     public EntityTimeFilterGraphType()
     {
         Name = "TimeFilter";
-        Field(x => x.From);
-        Field(x => x.To);
+        Field(x => x.From, true);
+        Field(x => x.To, true);
         Field(x => x.Interval, true);
         Field(x => x.Limit, true);
     }
@@ -41,12 +41,12 @@ public class EntityTimeFilterDto
     /// <summary>
     /// Starting time
     /// </summary>
-    public DateTime From { get; set; }
+    public DateTime? From { get; set; }
     
     /// <summary>
     /// End Time
     /// </summary>
-    public DateTime To { get; set; }
+    public DateTime? To { get; set; }
     
     /// <summary>
     /// The interval for the aggregation

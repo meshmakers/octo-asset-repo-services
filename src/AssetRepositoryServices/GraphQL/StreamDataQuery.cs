@@ -65,14 +65,19 @@ internal sealed class StreamDataQuery : ObjectGraphType
 
         var entityTimeFilter = fieldContext.GetArgument<EntityTimeFilterDto>(Statics.StreamDataFilterArg);
 
-        if (entityTimeFilter is not null)
+        if (entityTimeFilter is { From: not null, To: not null })
         {
-            q.WithTimeFilter(entityTimeFilter.From, entityTimeFilter.To);
+            q.WithTimeFilter(entityTimeFilter.From.Value, entityTimeFilter.To.Value);
+        }
+
+        if (entityTimeFilter is { Limit: not null })
+        {
+            q.WithLimit(entityTimeFilter.Limit.Value);
         }
 
         HandleRequestedAttributes(fieldContext, requestedType, q);
 
-        if (!HandleRequestedRtIds(arg))
+        if (!HandleRequestedRtIds(arg, q))
         {
             // we got an empty array of rtIds so we return a empty connection
             return ConnectionUtils.ToConnection(new List<RtEntityDto>(), arg, null);
@@ -108,7 +113,7 @@ internal sealed class StreamDataQuery : ObjectGraphType
             result.Count, []);
     }
 
-    private bool HandleRequestedRtIds(IResolveConnectionContext<object?> arg)
+    private bool HandleRequestedRtIds(IResolveConnectionContext<object?> arg, CrateQueryBuilder q)
     {
         var rtIdList = new List<OctoObjectId>();
         if (arg.TryGetArgument(Statics.RtIdArg, out OctoObjectId? rtId))
@@ -130,9 +135,11 @@ internal sealed class StreamDataQuery : ObjectGraphType
 
         if (rtIdList.Any())
         {
-            arg.Errors.Add(new ExecutionError("Filtering by RtIds is not yet supported")
-                { Code = Statics.GraphQlStreamDataQueryError });
-            return false;
+            var rtIdStrings = rtIdList.Select(x => x.ToString());
+            q.AddWhereIn("RtId", rtIdStrings.ToArray());
+            // arg.Errors.Add(new ExecutionError("Filtering by RtIds is not yet supported")
+                // { Code = Statics.GraphQlStreamDataQueryError });
+            return true;
         }
 
         return true;
@@ -175,9 +182,17 @@ internal sealed class StreamDataQuery : ObjectGraphType
 
             var standardField = Constants.DefaultStreamDataFields.FirstOrDefault(x =>
                 string.Equals(x, field.Name, StringComparison.InvariantCultureIgnoreCase));
+            
             if (standardField == null)
             {
                 continue;
+            }
+            if (argument?.SortPriority != null)
+            {
+                orderQueue.Enqueue(
+                    new Tuple<string, SortOrderDto>(standardField,
+                        argument.SortOrder.GetValueOrDefault(SortOrderDto.Ascending)),
+                    argument.SortPriority.GetValueOrDefault(0));
             }
 
             AddVariable(standardField, argument, false, q);
