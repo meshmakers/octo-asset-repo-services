@@ -64,9 +64,9 @@ internal static class Statics
             .ToCamelCase();
     }
     
-    public static string GetGraphQlPascalCaseNameForTs<TKey>(this CkId<TKey> ckKey) where TKey : IComparable<TKey>, ICkKey
+    public static string GetGraphQlPascalCaseNameForStreamData<TKey>(this CkId<TKey> ckKey) where TKey : IComparable<TKey>, ICkKey
     {
-        return "ts" + ckKey.SemanticVersionedFullName
+        return "stream" + ckKey.SemanticVersionedFullName
             .Replace(".", "")
             .Replace("/", "")
             .ToPascalCase();

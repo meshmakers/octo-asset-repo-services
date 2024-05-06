@@ -26,7 +26,7 @@ internal class GraphTypesCache : IGraphTypesCache
     private readonly ConcurrentDictionary<CkId<CkRecordId>, RtRecordDtoType> _recordTypes;
     private readonly string _tenantId;
     private readonly ConcurrentDictionary<CkId<CkTypeId>, RtEntityDtoType> _types;
-    private readonly ConcurrentDictionary<CkId<CkTypeId>, TsEntityDtoType> _tsTypes;
+    private readonly ConcurrentDictionary<CkId<CkTypeId>, StreamDataEntityDtoType> _tsTypes;
     
 
     /// <summary>
@@ -46,7 +46,7 @@ internal class GraphTypesCache : IGraphTypesCache
         _recordTypes = new ConcurrentDictionary<CkId<CkRecordId>, RtRecordDtoType>();
         _inputRecordTypes = new ConcurrentDictionary<CkId<CkRecordId>, RtRecordDtoInputType>();
         _connectionTypes = new ConcurrentDictionary<IGraphType, DynamicConnectionType>();
-        _tsTypes = new ConcurrentDictionary<CkId<CkTypeId>, TsEntityDtoType>();
+        _tsTypes = new ConcurrentDictionary<CkId<CkTypeId>, StreamDataEntityDtoType>();
     }
 
 
@@ -76,7 +76,7 @@ internal class GraphTypesCache : IGraphTypesCache
     }
 
     /// <inheritdoc />
-    public TsEntityDtoType[] GetStreamTypes()
+    public StreamDataEntityDtoType[] GetStreamTypes()
     {
         return _tsTypes.Values.ToArray();
     }
@@ -200,7 +200,7 @@ internal class GraphTypesCache : IGraphTypesCache
             {
                 _ =_tsTypes.GetOrAdd(ckTypeGraph.CkTypeId, _ =>
                 {
-                    var tsEntityDtoType = new TsEntityDtoType(ckTypeGraph);
+                    var tsEntityDtoType = new StreamDataEntityDtoType(ckTypeGraph);
                     return tsEntityDtoType;
                 });
             }

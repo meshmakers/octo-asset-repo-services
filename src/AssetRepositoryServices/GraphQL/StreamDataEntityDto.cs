@@ -8,7 +8,7 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL;
 /// <summary>
 /// 
 /// </summary>
-public class TsEntityDto : GraphQlDto
+public class StreamDataEntityDto : GraphQlDto
 {
     /// <summary>
     ///  Gets or sets the timestamp of the entity

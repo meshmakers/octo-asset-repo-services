@@ -39,8 +39,8 @@ internal sealed class OctoQuery : ObjectGraphType
         if (graphTypesCache.GetStreamTypes().Length != 0)
         {
             // make sure to only add the stream data field if there are stream types.
-            Field("StreamData", new TsQuery(graphTypesCache))
-                .Resolve(_ => new TsEntityDto());
+            Field("StreamData", new StreamDataQuery(graphTypesCache))
+                .Resolve(_ => new StreamDataEntityDto());
         }
 
         Connection<LargeBinaryInfoDtoType>("sysLargeBinaries")

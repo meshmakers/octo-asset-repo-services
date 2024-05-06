@@ -71,5 +71,5 @@ internal interface IGraphTypesCache
     /// Returns an array of known stream data graph types
     /// </summary>
     /// <returns></returns>
-    TsEntityDtoType[] GetStreamTypes();
+    StreamDataEntityDtoType[] GetStreamTypes();
 }

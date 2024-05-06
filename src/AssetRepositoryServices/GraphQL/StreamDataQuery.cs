@@ -18,17 +18,17 @@ using NLog;
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL;
 
 [DoNotRegister]
-internal sealed class TsQuery : ObjectGraphType
+internal sealed class StreamDataQuery : ObjectGraphType
 {
     private static readonly Logger Logger = LogManager.GetCurrentClassLogger();
 
-    public TsQuery(IGraphTypesCache graphTypesCache)
+    public StreamDataQuery(IGraphTypesCache graphTypesCache)
     {
-        Name = "TimeseriesModelQuery";
+        Name = "StreamDataModelQuery";
 
         foreach (var rtEntityDtoType in graphTypesCache.GetStreamTypes())
         {
-            this.Connection<object?, IGraphType, TsEntityDto>(graphTypesCache, rtEntityDtoType, rtEntityDtoType.Name)
+            this.Connection<object?, IGraphType, StreamDataEntityDto>(graphTypesCache, rtEntityDtoType, rtEntityDtoType.Name)
                 .AddMetadata(Statics.CkId, rtEntityDtoType.CkTypeId)
                 .Argument<OctoObjectIdType>(Statics.RtIdArg, "Returns the entity with the given rtId.")
                 .Argument<ListGraphType<OctoObjectIdType>>(Statics.RtIdsArg, "Returns entities with the given rtIds.")
@@ -101,7 +101,7 @@ internal sealed class TsQuery : ObjectGraphType
 
         Logger.Debug("SQL query executed. Got {0} rows", data.Count());
 
-        var result = data.Select(TsEntityDtoType.CreateTsEntityDto).ToList();
+        var result = data.Select(StreamDataEntityDtoType.CreateTsEntityDto).ToList();
 
         var offset = arg.GetOffset();
         return ConnectionUtils.ToConnection(result, arg, result.Count != 0 ? offset.GetValueOrDefault(0) : 0,

@@ -19,21 +19,21 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
 ///     Implements the GraphQL Stream data Entity Type
 /// </summary>
 [DoNotRegister]
-internal sealed class TsEntityDtoType : ObjectGraphType<TsEntityDto>
+internal sealed class StreamDataEntityDtoType : ObjectGraphType<StreamDataEntityDto>
 {
     private readonly CkTypeGraph _ckTypeGraph;
 
     /// <inheritdoc />
-    public TsEntityDtoType(CkTypeGraph ckTypeGraph)
+    public StreamDataEntityDtoType(CkTypeGraph ckTypeGraph)
     {
         _ckTypeGraph = ckTypeGraph;
 
-        Name = _ckTypeGraph.CkTypeId.GetGraphQlPascalCaseNameForTs();
+        Name = _ckTypeGraph.CkTypeId.GetGraphQlPascalCaseNameForStreamData();
 
         Description = $"Stream data entities of construction kit type '{_ckTypeGraph.CkTypeId}'";
         IsTypeOf = o =>
         {
-            if (o is TsEntityDto rtEntityDto)
+            if (o is StreamDataEntityDto rtEntityDto)
             {
                 return _ckTypeGraph.GetAllDerivedTypes(true).Contains(rtEntityDto.CkTypeId);
             }
@@ -66,7 +66,7 @@ internal sealed class TsEntityDtoType : ObjectGraphType<TsEntityDto>
     {
         var attributeName = typeAttributeGraph.AttributeName;
         IGraphType? graphType;
-        FieldBuilder<TsEntityDto, object>? builder;
+        FieldBuilder<StreamDataEntityDto, object>? builder;
 
         switch (typeAttributeGraph.ValueType)
         {
@@ -143,7 +143,7 @@ internal sealed class TsEntityDtoType : ObjectGraphType<TsEntityDto>
     }
 
     private static object? ResolveAttributeValue<TSourceType>(IResolveFieldContext<TSourceType> context)
-        where TSourceType : TsEntityDto
+        where TSourceType : StreamDataEntityDto
     {
         var rtTypeWithAttributes = context.Source.UserContext as RtTypeWithAttributes;
         var typeAttributeGraph = context.FieldDefinition.GetMetadata<CkTypeAttributeGraph>(Statics.AttributeGraphType);
@@ -192,7 +192,7 @@ internal sealed class TsEntityDtoType : ObjectGraphType<TsEntityDto>
             .Resolve(ResolveCkEntity);
     }
 
-    private object ResolveCkEntity(IResolveFieldContext<TsEntityDto> arg)
+    private object ResolveCkEntity(IResolveFieldContext<StreamDataEntityDto> arg)
     {
         var ckCacheService = arg.RequestServices?.GetRequiredService<ICkCacheService>();
         if (ckCacheService == null)
@@ -206,9 +206,9 @@ internal sealed class TsEntityDtoType : ObjectGraphType<TsEntityDto>
         return CkTypeDtoType.CreateCkTypeDto(ckTypeGraph);
     }
 
-    internal static TsEntityDto CreateTsEntityDto(DataPointDto datapoint)
+    internal static StreamDataEntityDto CreateTsEntityDto(DataPointDto datapoint)
     {
-        var tsEntityDto = new TsEntityDto()
+        var tsEntityDto = new StreamDataEntityDto()
         {
             RtId = datapoint.RtId ?? throw OctoGraphQLException.CkTypeIdUndefined(),
             CkTypeId = datapoint.CkTypeId ?? throw OctoGraphQLException.CkTypeIdUndefined(),
