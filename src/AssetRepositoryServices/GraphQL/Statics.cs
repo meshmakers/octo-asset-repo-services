@@ -19,7 +19,7 @@ internal static class Statics
     internal const string SortOrderArg = "sortOrder";
     internal const string AttributeGraphType = "AttributeGraphType";
     internal const string TypeGraphType = "TypeGraphType";
-    internal const string StreamDataFilterArg = "timeSeriesFilter";
+    internal const string StreamDataFilterArg = "streamDataFilter";
     internal const string StreamDataAttributeArgument = "arg";
     internal const string ItemsQueryArg = "items";
 
