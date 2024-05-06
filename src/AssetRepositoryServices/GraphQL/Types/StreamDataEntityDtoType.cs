@@ -23,12 +23,32 @@ internal sealed class StreamDataEntityDtoType : ObjectGraphType<StreamDataEntity
 {
     private readonly CkTypeGraph _ckTypeGraph;
 
+    public string ConnectionName { get; }
+
     /// <inheritdoc />
     public StreamDataEntityDtoType(CkTypeGraph ckTypeGraph)
     {
         _ckTypeGraph = ckTypeGraph;
 
+        //name results to the connection type.
+        // e.g. StreamDataIndustryEnergyMeterConnection
         Name = _ckTypeGraph.CkTypeId.GetGraphQlPascalCaseNameForStreamData();
+
+        // this results to the connection Name
+        // data can be queried like this
+        // query{
+        //  streamData{
+        //      industryEnergyMeter{
+        //          items{
+        //              rtId
+        //              name
+        //          }
+        //      }
+        //   }
+        // }
+        // 
+        
+        ConnectionName = _ckTypeGraph.CkTypeId.GetGraphQlPascalCaseName();
 
         Description = $"Stream data entities of construction kit type '{_ckTypeGraph.CkTypeId}'";
         IsTypeOf = o =>
@@ -150,7 +170,7 @@ internal sealed class StreamDataEntityDtoType : ObjectGraphType<StreamDataEntity
 
         var attributeName = typeAttributeGraph.AttributeName;
 
-        if (context.TryGetArgument(Statics.StreamDataAttributeArgument, out AttributeTsArgumentDto? argument) 
+        if (context.TryGetArgument(Statics.StreamDataAttributeArgument, out AttributeTsArgumentDto? argument)
             && argument.AggregationType is not null)
         {
             //When we queried an attribute with an aggregation, we do as if it is a normal attribute

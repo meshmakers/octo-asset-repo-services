@@ -81,12 +81,12 @@ internal static class Helpers
 
     public static ConnectionBuilder<TSourceType> Connection<TNodeType, TGraphType, TSourceType>(
         this ComplexGraphType<TNodeType> complexGraphType, IGraphTypesCache graphTypesCache, TGraphType itemType,
-        string typeName)
+        string connectionName)
         where TGraphType : IGraphType
     {
-        var type = graphTypesCache.GetOrCreateConnection(itemType, typeName);
+        var type = graphTypesCache.GetOrCreateConnection(itemType);
 
-        var connectionBuilder = ConnectionBuilder<TSourceType>.Create<TGraphType>($"{typeName}");
+        var connectionBuilder = ConnectionBuilder<TSourceType>.Create<TGraphType>(connectionName);
         connectionBuilder.FieldType.ResolvedType = type;
         complexGraphType.AddField(connectionBuilder.FieldType);
         return connectionBuilder;

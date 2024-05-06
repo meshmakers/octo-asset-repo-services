@@ -51,8 +51,9 @@ internal class GraphTypesCache : IGraphTypesCache
 
 
     /// <inheritdoc />
-    public DynamicConnectionType GetOrCreateConnection(IGraphType graphType, string typeName)
+    public DynamicConnectionType GetOrCreateConnection(IGraphType graphType)
     {
+        var typeName = graphType.Name;
         return _connectionTypes.GetOrAdd(graphType, _ =>
         {
             var edgeType = new DynamicEdgeType(

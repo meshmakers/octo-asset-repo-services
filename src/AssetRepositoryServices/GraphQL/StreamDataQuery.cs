@@ -28,7 +28,7 @@ internal sealed class StreamDataQuery : ObjectGraphType
 
         foreach (var rtEntityDtoType in graphTypesCache.GetStreamTypes())
         {
-            this.Connection<object?, IGraphType, StreamDataEntityDto>(graphTypesCache, rtEntityDtoType, rtEntityDtoType.Name)
+            this.Connection<object?, IGraphType, StreamDataEntityDto>(graphTypesCache, rtEntityDtoType, rtEntityDtoType.ConnectionName)
                 .AddMetadata(Statics.CkId, rtEntityDtoType.CkTypeId)
                 .Argument<OctoObjectIdType>(Statics.RtIdArg, "Returns the entity with the given rtId.")
                 .Argument<ListGraphType<OctoObjectIdType>>(Statics.RtIdsArg, "Returns entities with the given rtIds.")

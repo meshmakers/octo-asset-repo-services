@@ -15,9 +15,8 @@ internal interface IGraphTypesCache
     ///     Gets or creates a Connection Type based on the given GraphQL type
     /// </summary>
     /// <param name="graphType">The GraphQL type</param>
-    /// <param name="typeName">The typename of the name of the connection</param>
     /// <returns>ConnectionType that corresponds to the given GraphQL type</returns>
-    DynamicConnectionType GetOrCreateConnection(IGraphType graphType, string typeName);
+    DynamicConnectionType GetOrCreateConnection(IGraphType graphType);
 
     /// <summary>
     ///     Returns an array of known construction kit type graph types
