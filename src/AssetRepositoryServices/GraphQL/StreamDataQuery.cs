@@ -32,7 +32,7 @@ internal sealed class StreamDataQuery : ObjectGraphType
                 .AddMetadata(Statics.CkId, rtEntityDtoType.CkTypeId)
                 .Argument<OctoObjectIdType>(Statics.RtIdArg, "Returns the entity with the given rtId.")
                 .Argument<ListGraphType<OctoObjectIdType>>(Statics.RtIdsArg, "Returns entities with the given rtIds.")
-                .Argument<EntityTimeFilterGraphType>(Statics.StreamDataFilterArg, "Filter for stream data data.")
+                .Argument<StreamDataArgumentsGraphType>(Statics.StreamDataArgument, "Filter for stream data data.")
                 .Argument<ListGraphType<SortDtoType>>(Statics.SortOrderArg, "Sort order for items")
                 .ResolveAsync(ResolveRtEntitiesQuery);
         }
@@ -63,7 +63,7 @@ internal sealed class StreamDataQuery : ObjectGraphType
 
         var q = new CrateQueryBuilder(tenantId);
 
-        var entityTimeFilter = fieldContext.GetArgument<EntityTimeFilterDto>(Statics.StreamDataFilterArg);
+        var entityTimeFilter = fieldContext.GetArgument<StreamDataArguments>(Statics.StreamDataArgument);
 
         if (entityTimeFilter is { From: not null, To: not null })
         {
