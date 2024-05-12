@@ -30,8 +30,8 @@ internal class ConfigureDistributionEventHubOptions : IConfigureNamedOptions<Dis
         options.BrokerUser = _assetRepoServiceOptions.Value.BrokerUser;
         options.BrokerPassword = _assetRepoServiceOptions.Value.BrokerPassword;
         options.RepositoryHost = _octoSystemConfiguration.Value.DatabaseHost;
-        options.RepositoryUser = _octoSystemConfiguration.Value.DatabaseUser;
-        options.RepositoryPassword = _octoSystemConfiguration.Value.DatabaseUserPassword;
+        options.RepositoryUser = _octoSystemConfiguration.Value.AdminUser;
+        options.RepositoryPassword = _octoSystemConfiguration.Value.AdminUserPassword;
         options.DatabaseAuthenticationSource = _octoSystemConfiguration.Value.AuthenticationDatabaseName;
     }
 }
