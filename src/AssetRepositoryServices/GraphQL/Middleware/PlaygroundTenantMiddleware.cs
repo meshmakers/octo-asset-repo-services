@@ -58,7 +58,7 @@ public class PlaygroundTenantMiddleware
             return;
         }
         
-        using var systemSession = await _octoService.SystemContext.GetSystemSessionAsync();
+        using var systemSession = await _octoService.SystemContext.GetAdminSessionAsync();
         systemSession.StartTransaction();
 
         if (tenantId.NormalizeString() != _octoService.SystemContext.TenantId &&

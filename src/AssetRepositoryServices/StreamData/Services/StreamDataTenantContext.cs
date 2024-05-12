@@ -87,7 +87,7 @@ internal class StreamDataTenantContext(
 
     private async Task<StreamDataGlobalSettings?> GetSettings()
     {
-        using var session = await context.GetSystemSessionAsync();
+        using var session = await context.GetAdminSessionAsync();
         session.StartTransaction();
         var configuration =
             await context.GetConfigurationAsync<StreamDataGlobalSettings>(session, Constants.StreamDataEnabledKey,

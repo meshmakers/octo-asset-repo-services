@@ -54,7 +54,7 @@ internal class DefaultConfigurationCreatorService : IDefaultConfigurationCreator
 
         _logger.LogInformation("Setting up default configuration for tenant '{TenantId}'", tenantId);
 
-        using var session = await _systemContext.GetSystemSessionAsync();
+        using var session = await _systemContext.GetAdminSessionAsync();
         session.StartTransaction();
 
         var assetRepConfiguration =

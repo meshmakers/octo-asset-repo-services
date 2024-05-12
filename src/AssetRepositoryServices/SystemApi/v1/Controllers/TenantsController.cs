@@ -44,7 +44,7 @@ public class TenantsController : ControllerBase
     [Authorize(AssetRepositoryServiceConstants.SystemApiReadOnlyPolicy)]
     public async Task<IActionResult> Get([FromQuery] PagingParams? pagingParams)
     {
-        using var session = await _octoService.SystemContext.GetSystemSessionAsync();
+        using var session = await _octoService.SystemContext.GetAdminSessionAsync();
         session.StartTransaction();
 
         var result = await _octoService.SystemContext.GetChildTenantsAsync(session, pagingParams?.Skip, pagingParams?.Take);
@@ -74,7 +74,7 @@ public class TenantsController : ControllerBase
     [Authorize(AssetRepositoryServiceConstants.SystemApiReadOnlyPolicy)]
     public async Task<IActionResult> Get([Required] string id)
     {
-        using var session = await _octoService.SystemContext.GetSystemSessionAsync();
+        using var session = await _octoService.SystemContext.GetAdminSessionAsync();
         session.StartTransaction();
 
         if (!await _octoService.SystemContext.IsChildTenantExistingAsync(session, id))
@@ -98,7 +98,7 @@ public class TenantsController : ControllerBase
     [Authorize(AssetRepositoryServiceConstants.SystemApiReadWritePolicy)]
     public async Task<IActionResult> Post([Required] string tenantId, [Required] string databaseName)
     {
-        using var session = await _octoService.SystemContext.GetSystemSessionAsync();
+        using var session = await _octoService.SystemContext.GetAdminSessionAsync();
         session.StartTransaction();
 
         try
@@ -124,7 +124,7 @@ public class TenantsController : ControllerBase
     [Authorize(AssetRepositoryServiceConstants.SystemApiReadWritePolicy)]
     public async Task<IActionResult> Attach([Required] string tenantId, [Required] string databaseName)
     {
-        using var session = await _octoService.SystemContext.GetSystemSessionAsync();
+        using var session = await _octoService.SystemContext.GetAdminSessionAsync();
         session.StartTransaction();
 
         try
@@ -149,7 +149,7 @@ public class TenantsController : ControllerBase
     [Authorize(AssetRepositoryServiceConstants.SystemApiReadWritePolicy)]
     public async Task<IActionResult> Detach([Required] string tenantId)
     {
-        using var session = await _octoService.SystemContext.GetSystemSessionAsync();
+        using var session = await _octoService.SystemContext.GetAdminSessionAsync();
         session.StartTransaction();
 
         try
@@ -174,7 +174,7 @@ public class TenantsController : ControllerBase
     [Authorize(AssetRepositoryServiceConstants.SystemApiReadWritePolicy)]
     public async Task<IActionResult> Clear([Required] string tenantId)
     {
-        using var session = await _octoService.SystemContext.GetSystemSessionAsync();
+        using var session = await _octoService.SystemContext.GetAdminSessionAsync();
         session.StartTransaction();
 
         try
@@ -199,7 +199,7 @@ public class TenantsController : ControllerBase
     [Authorize(AssetRepositoryServiceConstants.SystemApiReadWritePolicy)]
     public async Task<IActionResult> Update([Required] string tenantId)
     {
-        using var session = await _octoService.SystemContext.GetSystemSessionAsync();
+        using var session = await _octoService.SystemContext.GetAdminSessionAsync();
         session.StartTransaction();
 
         try
@@ -248,7 +248,7 @@ public class TenantsController : ControllerBase
     [Authorize(AssetRepositoryServiceConstants.SystemApiReadWritePolicy)]
     public async Task<IActionResult> Delete([Required] string tenantId)
     {
-        using var session = await _octoService.SystemContext.GetSystemSessionAsync();
+        using var session = await _octoService.SystemContext.GetAdminSessionAsync();
         session.StartTransaction();
 
         try

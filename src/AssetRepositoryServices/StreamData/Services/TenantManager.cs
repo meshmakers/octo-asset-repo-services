@@ -89,7 +89,7 @@ internal class TenantManager : ITenantManager
         {
             var tenantContext = await _systemContext.FindTenantContextAsync(tenantId);
 
-            var session = await tenantContext.GetSystemSessionAsync();
+            var session = await tenantContext.GetAdminSessionAsync();
             session.StartTransaction();
 
             await tenantContext.SetConfigurationAsync(session, Constants.StreamDataEnabledKey,
@@ -117,14 +117,14 @@ internal class TenantManager : ITenantManager
 
         // first we check if the tenant has already a stream data configuration
         // this configuration only tells us if stream data is enabled or not, but not if any data is gathered.
-        using var session = await tenantContext.GetSystemSessionAsync();
+        using var session = await tenantContext.GetAdminSessionAsync();
         session.StartTransaction();
         
-        var StreamDataGlobalSettings =
+        var streamDataGlobalSettings =
             await tenantContext.GetConfigurationAsync<StreamDataGlobalSettings>(session, Constants.StreamDataEnabledKey,
                 null);
 
-        if (StreamDataGlobalSettings is not { IsEnabled: true }) // was never enabled or is disabled
+        if (streamDataGlobalSettings is not { IsEnabled: true }) // was never enabled or is disabled
         {
             await tenantContext.SetConfigurationAsync(session, Constants.StreamDataEnabledKey, StreamDataGlobalSettings.Enabled);
           
@@ -135,7 +135,7 @@ internal class TenantManager : ITenantManager
             return;
         }
 
-        if (StreamDataGlobalSettings.IsEnabled)
+        if (streamDataGlobalSettings.IsEnabled)
         {
             _logger.LogDebug("Tenant '{TenantId}' is already enabled", tenantId);
             await session.CommitTransactionAsync();
