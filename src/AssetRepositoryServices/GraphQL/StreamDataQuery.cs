@@ -65,12 +65,24 @@ internal sealed class StreamDataQuery : ObjectGraphType
 
         var entityTimeFilter = fieldContext.GetArgument<StreamDataArguments>(Statics.StreamDataArgument);
 
-        if (entityTimeFilter is { From: not null, To: not null })
+        if (entityTimeFilter is { QueryMode: QueryModeDto.Downsampling })
+        {
+            if(entityTimeFilter.From is null || entityTimeFilter.To is null || entityTimeFilter.Limit is null)
+            {
+                arg.Errors.Add(new ExecutionError("Invalid query. From, To and Limit must be set for downsampling.")
+                    { Code = Statics.GraphQLErrorCommon });
+                return null;
+            }
+            
+            q.WithDownsampling(entityTimeFilter.Limit.Value, entityTimeFilter.From.Value, entityTimeFilter.To.Value);
+        }
+
+        else if (entityTimeFilter is { From: not null, To: not null })
         {
             q.WithTimeFilter(entityTimeFilter.From.Value, entityTimeFilter.To.Value);
         }
 
-        if (entityTimeFilter is { Limit: not null })
+        else if (entityTimeFilter is { Limit: not null })
         {
             q.WithLimit(entityTimeFilter.Limit.Value);
         }
@@ -215,7 +227,14 @@ internal sealed class StreamDataQuery : ObjectGraphType
         }
         else
         {
-            q.AddVariable(name, name, null, isDataVariable);
+            if (name == "Timestamp")
+            {
+                q.AddVariable("Timestamp", "T", null, isDataVariable);
+            }
+            else
+            {
+                q.AddVariable(name, name, null, isDataVariable);
+            }
         }
     }
 
