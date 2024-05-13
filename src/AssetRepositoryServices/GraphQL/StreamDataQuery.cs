@@ -105,7 +105,7 @@ internal sealed class StreamDataQuery : ObjectGraphType
         List<DataPointDto> data;
         try
         {
-            data = await tsClient.GetDataAsync(sql);
+            data = await tsClient.GetDataAsync(tenantId, sql);
         }
         catch (Exception ex)
         {
