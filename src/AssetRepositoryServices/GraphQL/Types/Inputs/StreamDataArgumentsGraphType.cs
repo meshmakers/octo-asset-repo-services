@@ -3,15 +3,16 @@ using Meshmakers.Octo.Services.Common.StreamData.Dtos;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Inputs;
 
-internal sealed class EntityTimeFilterGraphType : InputObjectGraphType<EntityTimeFilterDto>
+internal sealed class StreamDataArgumentsGraphType : InputObjectGraphType<StreamDataArguments>
 {
-    public EntityTimeFilterGraphType()
+    public StreamDataArgumentsGraphType()
     {
-        Name = "TimeFilter";
-        Field(x => x.From);
-        Field(x => x.To);
+        Name = "StreamDataArguments";
+        Field(x => x.From, true);
+        Field(x => x.To, true);
         Field(x => x.Interval, true);
         Field(x => x.Limit, true);
+        Field(x => x.QueryMode, false, typeof(QueryModeDtoGraphType));
     }
 }
 
@@ -33,20 +34,29 @@ internal sealed class SortOrderDtoGraphType : EnumerationGraphType<SortOrderDto>
     }
 }
 
+internal sealed class QueryModeDtoGraphType : EnumerationGraphType<QueryModeDto>
+{
+    public QueryModeDtoGraphType()
+    {
+        Name = "QueryMode";
+        Description = "Defines the kind of query to be executed";
+    }
+}
+
 /// <summary>
 /// The input type for filtering by time
 /// </summary>
-public class EntityTimeFilterDto
+public class StreamDataArguments
 {
     /// <summary>
     /// Starting time
     /// </summary>
-    public DateTime From { get; set; }
+    public DateTime? From { get; set; }
     
     /// <summary>
     /// End Time
     /// </summary>
-    public DateTime To { get; set; }
+    public DateTime? To { get; set; }
     
     /// <summary>
     /// The interval for the aggregation
@@ -57,6 +67,11 @@ public class EntityTimeFilterDto
     /// The limit for the aggregation. Default
     /// </summary>
     public int? Limit { get; set; }
+    
+    /// <summary>
+    /// Defines the kind of query to be executed
+    /// </summary>
+    public QueryModeDto QueryMode { get; set; } = QueryModeDto.Default;
 }
 
 
@@ -97,6 +112,6 @@ public class AttributeTsArgumentDto
     /// <summary>
     /// Defines the sort order
     /// </summary>
-    public SortOrderDto? SortOrder { get; set; } 
-        
+    public SortOrderDto? SortOrder { get; set; }
+
 }

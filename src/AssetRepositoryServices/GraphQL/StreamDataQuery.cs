@@ -32,7 +32,7 @@ internal sealed class StreamDataQuery : ObjectGraphType
                 .AddMetadata(Statics.CkId, rtEntityDtoType.CkTypeId)
                 .Argument<OctoObjectIdType>(Statics.RtIdArg, "Returns the entity with the given rtId.")
                 .Argument<ListGraphType<OctoObjectIdType>>(Statics.RtIdsArg, "Returns entities with the given rtIds.")
-                .Argument<EntityTimeFilterGraphType>(Statics.StreamDataFilterArg, "Filter for stream data data.")
+                .Argument<StreamDataArgumentsGraphType>(Statics.StreamDataArgument, "Filter for stream data data.")
                 .Argument<ListGraphType<SortDtoType>>(Statics.SortOrderArg, "Sort order for items")
                 .ResolveAsync(ResolveRtEntitiesQuery);
         }
@@ -63,16 +63,33 @@ internal sealed class StreamDataQuery : ObjectGraphType
 
         var q = new CrateQueryBuilder(tenantId);
 
-        var entityTimeFilter = fieldContext.GetArgument<EntityTimeFilterDto>(Statics.StreamDataFilterArg);
+        var entityTimeFilter = fieldContext.GetArgument<StreamDataArguments>(Statics.StreamDataArgument);
 
-        if (entityTimeFilter is not null)
+        if (entityTimeFilter is { QueryMode: QueryModeDto.Downsampling })
         {
-            q.WithTimeFilter(entityTimeFilter.From, entityTimeFilter.To);
+            if(entityTimeFilter.From is null || entityTimeFilter.To is null || entityTimeFilter.Limit is null)
+            {
+                arg.Errors.Add(new ExecutionError("Invalid query. From, To and Limit must be set for downsampling.")
+                    { Code = Statics.GraphQLErrorCommon });
+                return null;
+            }
+            
+            q.WithDownsampling(entityTimeFilter.Limit.Value, entityTimeFilter.From.Value, entityTimeFilter.To.Value);
+        }
+
+        else if (entityTimeFilter is { From: not null, To: not null })
+        {
+            q.WithTimeFilter(entityTimeFilter.From.Value, entityTimeFilter.To.Value);
+        }
+
+        else if (entityTimeFilter is { Limit: not null })
+        {
+            q.WithLimit(entityTimeFilter.Limit.Value);
         }
 
         HandleRequestedAttributes(fieldContext, requestedType, q);
 
-        if (!HandleRequestedRtIds(arg))
+        if (!HandleRequestedRtIds(arg, q))
         {
             // we got an empty array of rtIds so we return a empty connection
             return ConnectionUtils.ToConnection(new List<RtEntityDto>(), arg, null);
@@ -88,7 +105,7 @@ internal sealed class StreamDataQuery : ObjectGraphType
         List<DataPointDto> data;
         try
         {
-            data = await tsClient.GetDataAsync(sql);
+            data = await tsClient.GetDataAsync(tenantId, sql);
         }
         catch (Exception ex)
         {
@@ -108,7 +125,7 @@ internal sealed class StreamDataQuery : ObjectGraphType
             result.Count, []);
     }
 
-    private bool HandleRequestedRtIds(IResolveConnectionContext<object?> arg)
+    private bool HandleRequestedRtIds(IResolveConnectionContext<object?> arg, CrateQueryBuilder q)
     {
         var rtIdList = new List<OctoObjectId>();
         if (arg.TryGetArgument(Statics.RtIdArg, out OctoObjectId? rtId))
@@ -130,9 +147,11 @@ internal sealed class StreamDataQuery : ObjectGraphType
 
         if (rtIdList.Any())
         {
-            arg.Errors.Add(new ExecutionError("Filtering by RtIds is not yet supported")
-                { Code = Statics.GraphQlStreamDataQueryError });
-            return false;
+            var rtIdStrings = rtIdList.Select(x => x.ToString());
+            q.AddWhereIn("RtId", rtIdStrings.ToArray());
+            // arg.Errors.Add(new ExecutionError("Filtering by RtIds is not yet supported")
+                // { Code = Statics.GraphQlStreamDataQueryError });
+            return true;
         }
 
         return true;
@@ -175,9 +194,17 @@ internal sealed class StreamDataQuery : ObjectGraphType
 
             var standardField = Constants.DefaultStreamDataFields.FirstOrDefault(x =>
                 string.Equals(x, field.Name, StringComparison.InvariantCultureIgnoreCase));
+            
             if (standardField == null)
             {
                 continue;
+            }
+            if (argument?.SortPriority != null)
+            {
+                orderQueue.Enqueue(
+                    new Tuple<string, SortOrderDto>(standardField,
+                        argument.SortOrder.GetValueOrDefault(SortOrderDto.Ascending)),
+                    argument.SortPriority.GetValueOrDefault(0));
             }
 
             AddVariable(standardField, argument, false, q);
@@ -200,7 +227,14 @@ internal sealed class StreamDataQuery : ObjectGraphType
         }
         else
         {
-            q.AddVariable(name, name, null, isDataVariable);
+            if (name == "Timestamp")
+            {
+                q.AddVariable("Timestamp", "T", null, isDataVariable);
+            }
+            else
+            {
+                q.AddVariable(name, name, null, isDataVariable);
+            }
         }
     }
 

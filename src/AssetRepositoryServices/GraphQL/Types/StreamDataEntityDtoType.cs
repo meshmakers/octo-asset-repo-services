@@ -63,7 +63,9 @@ internal sealed class StreamDataEntityDtoType : ObjectGraphType<StreamDataEntity
 
         Field(d => d.RtId, type: typeof(NonNullGraphType<OctoObjectIdType>));
         Field(d => d.CkTypeId, type: typeof(NonNullGraphType<CkIdTypeGraph<CkTypeId>>));
-        Field(d => d.TimeStamp, type: typeof(DateTimeGraphType));
+        Field(d => d.TimeStamp, type: typeof(DateTimeGraphType))
+            .Argument<AttributeTsArgumentGraphType>(Statics.StreamDataAttributeArgument,
+                        "Arguments for stream data.");
     }
 
 
@@ -158,7 +160,7 @@ internal sealed class StreamDataEntityDtoType : ObjectGraphType<StreamDataEntity
 
         builder = builder.Metadata(Statics.AttributeGraphType, typeAttributeGraph);
         builder.Argument<AttributeTsArgumentGraphType>(Statics.StreamDataAttributeArgument,
-            "Arguments for stream data data.");
+            "Arguments for stream data.");
         builder.Resolve(ResolveAttributeValue);
     }
 
