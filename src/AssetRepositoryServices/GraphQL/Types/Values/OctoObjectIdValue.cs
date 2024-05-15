@@ -3,9 +3,9 @@ using GraphQLParser;
 using GraphQLParser.AST;
 using Meshmakers.Octo.ConstructionKit.Contracts;
 
-namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Converter;
+namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Values;
 
-[DebuggerDisplay("GraphQLIntValue: {Value}")]
+[DebuggerDisplay("OctoObjectIdValue: {Value}")]
 internal class OctoObjectIdValue : GraphQLValue, IHasValueNode
 {
     /// <summary>

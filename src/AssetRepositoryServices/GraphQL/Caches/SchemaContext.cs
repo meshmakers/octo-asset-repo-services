@@ -6,7 +6,6 @@ using Meshmakers.Octo.Backend.AssetRepositoryServices.Services;
 using Meshmakers.Octo.ConstructionKit.Contracts.Services;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Options;
-using NLog;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Caches;
 
@@ -14,12 +13,13 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Caches;
 ///     The schema context allows to cache GraphQL Schemas based on a data source
 /// </summary>
 internal class SchemaContext(
+    ILogger<SchemaContext> logger,
+    IServiceProvider serviceProvider,
     IOptions<OctoAssetRepositoryServicesOptions> options,
     ICkCacheService ckCacheService,
     IOctoService octoService)
     : ISchemaContext
 {
-    private static readonly Logger Logger = LogManager.GetCurrentClassLogger();
     private readonly MemoryCache _cache = new(new MemoryCacheOptions
     {
         SizeLimit = 64
@@ -42,7 +42,7 @@ internal class SchemaContext(
     {
         var key = tenantId.NormalizeString();
 
-        Logger.Debug($"Looking up GraphQL schema for {tenantId}");
+        logger.LogDebug("Looking up GraphQL schema for {TenantId}", tenantId);
 
         if (_cache.TryGetValue(key, out OctoSchema? schema) && schema != null)
         {
@@ -55,7 +55,7 @@ internal class SchemaContext(
 
             var t = new Func<ICacheEntry, Task<ISchema?>>(async entry =>
             {
-                Logger.Debug($"Creating GraphQL schema for {tenantId}");
+                logger.LogDebug("Creating GraphQL schema for {TenantId}", tenantId);    
                 entry.SetSize(1);
                 entry.SlidingExpiration = TimeSpan.FromDays(1);
 
@@ -66,10 +66,10 @@ internal class SchemaContext(
                 var mutation = new OctoMutation(graphTypesCache);
                 var subscriptions = new OctoSubscriptions(graphTypesCache);
 
-                var createdSchema = new OctoSchema(query, mutation, subscriptions);
+                var createdSchema = new OctoSchema(serviceProvider, query, mutation, subscriptions);
                 createdSchema.RegisterTypes(graphTypesCache.GetKnownGraphTypes());
 
-                Logger.Debug($"GraphQL schema for {tenantId} completed");
+                logger.LogDebug("GraphQL schema for {TenantId} completed", tenantId);
                 return createdSchema;
             });
 
@@ -83,7 +83,6 @@ internal class SchemaContext(
         }
         catch (Exception e)
         {
-            Logger.Error(e);
             throw OctoGraphQLException.SchemaCreationFailed(tenantId, e);
         }
         finally

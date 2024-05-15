@@ -33,4 +33,9 @@ internal class AssetRepositoryException : Exception
     {
         return new AssetRepositoryException("Session is not available");
     }
+
+    public static Exception RequestServicesNotAvailable()
+    {
+        return new AssetRepositoryException("RequestServices is not available");
+    }
 }

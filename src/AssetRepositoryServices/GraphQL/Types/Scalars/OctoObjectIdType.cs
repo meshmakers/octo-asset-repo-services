@@ -1,7 +1,7 @@
 using GraphQL;
 using GraphQL.Types;
 using GraphQLParser.AST;
-using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Converter;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Values;
 using Meshmakers.Octo.ConstructionKit.Contracts;
 using MongoDB.Bson;
 

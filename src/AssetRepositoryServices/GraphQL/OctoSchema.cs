@@ -18,10 +18,12 @@ internal sealed class OctoSchema : Schema
     /// <summary>
     ///     Constructor
     /// </summary>
+    /// <param name="serviceProvider">The DI based service provider</param>
     /// <param name="octoQuery">The Octo query schema of a given data source</param>
     /// <param name="octoMutation"></param>
     /// <param name="octoSubscriptions"></param>
-    public OctoSchema(OctoQuery octoQuery, OctoMutation octoMutation, OctoSubscriptions octoSubscriptions)
+    public OctoSchema(IServiceProvider serviceProvider, OctoQuery octoQuery, OctoMutation octoMutation, OctoSubscriptions octoSubscriptions)
+        :base(serviceProvider)
     {
         Query = octoQuery;
         Mutation = octoMutation;

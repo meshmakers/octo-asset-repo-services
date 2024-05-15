@@ -19,7 +19,7 @@ internal sealed class CkTypeDtoType : ObjectGraphType<CkTypeDto>
         Name = "CkType";
         Description = "A construction kit type";
 
-        Field(x => x.CkTypeId, type: typeof(NonNullGraphType<CkIdTypeGraph<CkTypeId>>)).Description("Unique id of the object.");
+        Field(x => x.CkTypeId, type: typeof(NonNullGraphType<CkIdTypeGraph<CkTypeId>>)).Description("Construction kit type id, the unique identifier of the type.");
         Field(x => x.IsAbstract);
         Field(x => x.IsFinal);
 
