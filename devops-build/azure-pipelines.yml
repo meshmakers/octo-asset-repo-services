@@ -70,9 +70,8 @@ stages:
               script: |
                 New-Item $(build.artifactstagingdirectory)/versioninfo.txt
                 Set-Content $(build.artifactstagingdirectory)/versioninfo.txt $(Build.BuildNumber)
-          - template: buildAndPushDockerImage.yml
+          - template: build-and-push-docker-image.yml
             parameters:
-              ContainerRegistry: 'dockerhub@ianitor'
               Repository: meshmakers/octo-mesh-asset-rep-services
               Dockerfile: src/AssetRepositoryServices/Dockerfile
               IsRelease: ${{ variables.isRelease }}
