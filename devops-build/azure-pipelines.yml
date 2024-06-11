@@ -35,7 +35,7 @@ stages:
               knownHostsEntry: '$(SSHKnownHosts)'
               sshPublicKey: '$(SSHPublicKey)'
               sshPassphrase: '$(SSHPassphrase)'
-              sshKeySecureFile: '$(SSHPrivateKeyFile)'            
+              sshKeySecureFile: '$(SSHPrivateKeyFile)'
           - task: PowerShell@2
             inputs:
               targetType: 'inline'
@@ -56,6 +56,7 @@ stages:
                 }
             displayName: 'Set build number'
           - template: setversion.yml
+          - template: download-ca.yml
           - task: DotNetCoreCLI@2
             displayName: 'Test'
             inputs:
