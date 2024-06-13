@@ -1,4 +1,5 @@
-﻿using GraphQL.Builders;
+﻿using AssetRepositoryServices.Resources;
+using GraphQL.Builders;
 using GraphQL.Types;
 using Meshmakers.Common.Shared;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Scalars;
@@ -17,17 +18,20 @@ internal sealed class CkTypeDtoType : ObjectGraphType<CkTypeDto>
     public CkTypeDtoType()
     {
         Name = "CkType";
-        Description = "A construction kit type";
+        Description = AssetTexts.Graphql_Type_Description;
 
-        Field(x => x.CkTypeId, type: typeof(NonNullGraphType<CkIdTypeGraph<CkTypeId>>)).Description("Construction kit type id, the unique identifier of the type.");
-        Field(x => x.IsAbstract);
-        Field(x => x.IsFinal);
+        Field(x => x.CkTypeId, type: typeof(NonNullGraphType<CkIdTypeGraph<CkTypeId>>))
+            .Description(AssetTexts.Graphql_Type_CkTypeId_Description);
+        Field(x => x.IsAbstract).Description(AssetTexts.Graphql_Type_IsAbstract_Description);
+        Field(x => x.IsFinal).Description(AssetTexts.Graphql_Type_IsFinal_Description);
+        Field(x => x.Description, nullable: true).Description(AssetTexts.Graphql_Type_Description_Description);
 
         Connection<CkTypeAttributeDtoType>("attributes")
-            .Argument<ListGraphType<StringGraphType>>(Statics.AttributeNamesFilterArg, "Filter of attribute names")
+            .Argument<ListGraphType<StringGraphType>>(Statics.AttributeNamesFilterArg, AssetTexts.Graphql_Type_Filter_Attributes_Description)
             .Resolve(ResolveAttributes);
 
         Connection<CkTypeDtoType>("derivedTypes")
+            .Description(AssetTexts.Graphql_Type_DerivedTypes_Description)
             .Resolve(ctx =>
                 {
                     var ckCacheService = ctx.RequestServices?.GetRequiredService<ICkCacheService>();
@@ -44,7 +48,9 @@ internal sealed class CkTypeDtoType : ObjectGraphType<CkTypeDto>
                 }
             );
 
-        Field<CkTypeDtoType>("baseType").Resolve(ctx =>
+        Field<CkTypeDtoType>("baseType")
+            .Description(AssetTexts.Graphql_Type_BaseType_Description)
+            .Resolve(ctx =>
         {
             var ckCacheService = ctx.RequestServices?.GetRequiredService<ICkCacheService>();
             if (ckCacheService == null)
@@ -99,6 +105,7 @@ internal sealed class CkTypeDtoType : ObjectGraphType<CkTypeDto>
         var ckEntityDto = new CkTypeDto
         {
             CkTypeId = ckTypeGraph.CkTypeId,
+            Description = ckTypeGraph.Description,
             IsFinal = ckTypeGraph.IsFinal,
             IsAbstract = ckTypeGraph.IsAbstract
         };
@@ -110,6 +117,7 @@ internal sealed class CkTypeDtoType : ObjectGraphType<CkTypeDto>
         var ckEntityDto = new CkTypeDto
         {
             CkTypeId = ckEntity.CkTypeId,
+            Description = ckEntity.Description,
             IsFinal = ckEntity.IsFinal,
             IsAbstract = ckEntity.IsAbstract
         };

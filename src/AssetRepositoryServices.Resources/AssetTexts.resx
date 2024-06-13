@@ -28,9 +28,75 @@
         <value>Full access to system API</value>
     </data>
     <data name="Backend_AssetServices_Api_ReadOnlyAccess" xml:space="preserve">
-    <value>Readonly access to system API</value>
-  </data>
+        <value>Readonly access to system API</value>
+    </data>
     <data name="Backend_AssetServices_UserSchema_AdminPanel_DisplayName" xml:space="preserve">
         <value>Octo Mesh Admin Panel</value>
-    </data>    
+    </data>
+    <data name="Graphql_Type_IsFinal_Description" xml:space="preserve">
+        <value>Indicates if the type is final.</value>
+    </data>
+    <data name="Graphql_Type_Description_Description" xml:space="preserve">
+        <value>Optional description of the type.</value>
+    </data>
+    <data name="Graphql_Type_IsAbstract_Description" xml:space="preserve">
+        <value>Indicates if the type is abstract.</value>
+    </data>
+    <data name="Graphql_Type_CkTypeId_Description" xml:space="preserve">
+        <value>Construction kit type id, the unique identifier of the type.</value>
+    </data>
+    <data name="Graphql_Type_Description" xml:space="preserve">
+        <value>Definition of a construction kit type with name, associations and attributes.</value>
+    </data>
+    <data name="Graphql_Type_Filter_Attributes_Description" xml:space="preserve">
+        <value>Allows to filter for specific attribute names within construction kit types.</value>
+    </data>
+    <data name="Graphql_Type_DerivedTypes_Description" xml:space="preserve">
+        <value>Lists types that are derived from the current construction kit type.</value>
+    </data>
+    <data name="Graphql_Type_BaseType_Description" xml:space="preserve">
+        <value>The base type the current type is derived from.</value>
+    </data>
+    <data name="Graphql_Record_Description" xml:space="preserve">
+        <value>Definition of a construction kit record with name and attributes.</value>
+    </data>
+    <data name="Graphql_Record_Description_Description" xml:space="preserve">
+        <value>Optional description of the record.</value>
+    </data>
+    <data name="Graphql_Record_IsAbstract_Description" xml:space="preserve">
+        <value>Indicates if the record is abstract.</value>
+    </data>
+    <data name="Graphql_Record_IsFinal_Description" xml:space="preserve">
+        <value>Indicates if the record is final.</value>
+    </data>
+    <data name="Graphql_Record_CkRecordId_Description" xml:space="preserve">
+        <value>Construction kit record id, the unique identifier of the record.</value>
+    </data>
+    <data name="Graphql_Record_DerivedRecords_Description" xml:space="preserve">
+        <value>Lists types that are derived from the current construction kit record.</value>
+    </data>
+    <data name="Graphql_Record_Filter_Attributes_Description" xml:space="preserve">
+        <value>Allows to filter for specific attribute names within construction kit records.</value>
+    </data>
+    <data name="Graphql_Record_BaseRecord_Description" xml:space="preserve">
+        <value>The base record the current record is derived from.</value>
+    </data>
+    <data name="Graphql_Enum_Description" xml:space="preserve">
+        <value>Definition of a construction kit record with name and attributes.</value>
+    </data>
+    <data name="Graphql_Enum_Description_Description" xml:space="preserve">
+        <value>Optional description of the record.</value>
+    </data>
+    <data name="Graphql_Enum_UseFlags_Description" xml:space="preserve">
+        <value>Whether the enum is a flags enum</value>
+    </data>
+    <data name="Graphql_Enum_Values_Description" xml:space="preserve">
+        <value>Values of the enum.</value>
+    </data>
+    <data name="Graphql_Enum_CkEnumId_Description" xml:space="preserve">
+        <value>Construction kit enum id, the unique identifier of the enum.</value>
+    </data>
+    <data name="Graphql_Model_Description_Description" xml:space="preserve">
+        <value>Optional description of the model.</value>
+    </data>
 </root>

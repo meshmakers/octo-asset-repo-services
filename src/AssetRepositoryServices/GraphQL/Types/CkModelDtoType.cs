@@ -1,3 +1,4 @@
+using AssetRepositoryServices.Resources;
 using GraphQL;
 using GraphQL.Builders;
 using GraphQL.Types;
@@ -25,6 +26,7 @@ internal sealed class CkModelDtoType : ObjectGraphType<CkModelDto>
 
         Field(x => x.Id, type: typeof(NonNullGraphType<ModelIdType>))
             .Description("Construction kit model id, the unique identifier of the model.");
+        Field(x => x.Description, nullable: true).Description(AssetTexts.Graphql_Model_Description_Description);
         Field(x => x.ModelState, type: typeof(ModelStateDtoType))
             .Description("Availability of the model within the repository.");
 
@@ -249,6 +251,7 @@ internal sealed class CkModelDtoType : ObjectGraphType<CkModelDto>
         return new CkModelDto
         {
             ModelState = model.ModelState,
+            Description = model.Description,
             Id = model.Id
         };
     }
