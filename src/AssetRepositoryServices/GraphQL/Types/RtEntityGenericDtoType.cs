@@ -1,6 +1,9 @@
 using GraphQL;
 using GraphQL.Builders;
 using GraphQL.Types;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.RequestHandling;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Enums;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Inputs;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Scalars;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Utils;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
@@ -32,6 +35,20 @@ internal sealed class RtEntityGenericDtoType : ObjectGraphType<RtEntityDto>
         Connection<RtEntityAttributeDtoType>("attributes")
             .Argument<ListGraphType<StringGraphType>>(Statics.AttributeNamesFilterArg, "Filter of attribute names")
             .Resolve(ResolveAttributes);
+        Connection<RtEntityGenericDtoType>("Associations")
+            .Argument<NonNullGraphType<StringGraphType>>(Statics.RoleIdArg, "The role id of the association.")
+            .Argument<BooleanGraphType>(Statics.IncludeIndirectArg,
+                "Include indirect associations, otherwise direct associations are returned.")
+            .Argument<NonNullGraphType<GraphDirectionsDtoType>>(Statics.DirectionArg,
+                "The direction of the association.")
+            .Argument<NonNullGraphType<StringGraphType>>(Statics.CkIdArg,
+                "The construction kit type with the given id.")
+            .Argument<SearchFilterDtoType>(Statics.SearchFilterArg, "Filters items based on text search")
+            .Argument<FieldGroupByType>(Statics.GroupByArg, "Groups items based on attributes")
+            .Argument<ListGraphType<SortDtoType>>(Statics.SortOrderArg, "Sort order for items")
+            .Argument<ListGraphType<FieldFilterDtoType>>(Statics.FieldFilterArg,
+                "Filters items based on field compare")
+            .ResolveAsync(ResolveGenericRtAssociationsQuery);
     }
 
     private object ResolveAttributes(IResolveConnectionContext<RtEntityDto> ctx)
@@ -51,7 +68,7 @@ internal sealed class RtEntityGenericDtoType : ObjectGraphType<RtEntityDto>
         if (ctx.HasArgument(Statics.AttributeNamesFilterArg))
         {
             var filterAttributeNames = ctx.GetArgument<IEnumerable<string>>(Statics.AttributeNamesFilterArg);
-            
+
             resultList =
                 ckTypeGraph.AllAttributes.Values.Where(a =>
                     filterAttributeNames.Contains(a.AttributeName.ToCamelCase()));
@@ -64,6 +81,69 @@ internal sealed class RtEntityGenericDtoType : ObjectGraphType<RtEntityDto>
         return ConnectionUtils.ToConnection(
             resultList.Select(item => CreateRtEntityAttributeDto((RtEntity)ctx.Source.UserContext!, item)),
             ctx, null);
+    }
+
+    private async Task<object?> ResolveGenericRtAssociationsQuery(IResolveConnectionContext<RtEntityDto> arg)
+    {
+        await Task.Yield();
+
+        var sessionAccessor = arg.RequestServices?.GetRequiredService<IOctoSessionAccessor>();
+        if (sessionAccessor?.Session == null)
+        {
+            throw AssetRepositoryException.SessionUnavailable();
+        }
+
+        var graphQlUserContext = (GraphQlUserContext)arg.UserContext;
+
+        var offset = arg.GetOffset();
+        var dataQueryOperation = arg.GetDataQueryOperation();
+
+        if (!arg.TryGetArgument(Statics.RoleIdArg, out string? roleId))
+        {
+            throw AssetRepositoryException.RoleIdMissing();
+        }
+
+        if (!arg.TryGetArgument(Statics.IncludeIndirectArg, out bool? indirectAssociations))
+        {
+            indirectAssociations = false;
+        }
+
+        if (!arg.TryGetArgument(Statics.DirectionArg, out GraphDirections? direction))
+        {
+            throw AssetRepositoryException.DirectionMissing();
+        }
+
+        if (!arg.TryGetArgument(Statics.CkId, out string? ckIdObj))
+        {
+            arg.Errors.Add(new ExecutionError("Invalid query. Missing construction kit id.")
+                { Code = Statics.GraphQLErrorCommon });
+            return null;
+        }
+
+        CkId<CkTypeId> targetCkId = new(ckIdObj);
+
+        var tenantRepository = graphQlUserContext.TenantContext.GetTenantRepository();
+
+        if (indirectAssociations.Value)
+        {
+            var result = await tenantRepository.GetIndirectRtAssociationTargetsAsync(
+                sessionAccessor.Session, new[] { arg.Source.RtId }, arg.Source.CkTypeId,
+                new CkId<CkAssociationRoleId>(roleId),
+                direction.Value,
+                null, targetCkId, dataQueryOperation, offset, arg.First);
+
+            return ConnectionUtils.ToConnection(result.First().Value.Items.Select(RtEntityDtoType.CreateRtEntityDto), arg, null);
+        }
+        else
+        {
+            var result = await tenantRepository.GetRtAssociationTargetsAsync(
+                sessionAccessor.Session, new[] { arg.Source.RtId }, arg.Source.CkTypeId,
+                new CkId<CkAssociationRoleId>(roleId),
+                targetCkId, direction.Value,
+                null, dataQueryOperation, offset, arg.First);
+
+            return ConnectionUtils.ToConnection(result.First().Value.Items.Select(RtEntityDtoType.CreateRtEntityDto), arg, null);
+        }
     }
 
     private RtEntityAttributeDto CreateRtEntityAttributeDto(RtEntity rtEntity,

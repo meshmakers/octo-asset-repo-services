@@ -58,12 +58,6 @@ internal sealed class RtEntityDtoType : ObjectGraphType<RtEntityDto>
     /// </summary>
     public bool IsAbstract => _ckTypeGraph.IsAbstract;
 
-    /// <summary>
-    /// Returns true if the type is a stream type
-    /// </summary>
-    public bool IsStreamType => _ckTypeGraph.IsStreamType;
-
-
     internal void Populate(ICkCacheService ckCacheService, string tenantId, IGraphTypesCache graphTypesCache)
     {
         AddConstructionKit();
@@ -115,7 +109,7 @@ internal sealed class RtEntityDtoType : ObjectGraphType<RtEntityDto>
     {
         Connection<RtEntityGenericDtoType>("Associations")
             .Argument<NonNullGraphType<StringGraphType>>(Statics.RoleIdArg, "The role id of the association.")
-            .Argument<NonNullGraphType<BooleanGraphType>>(Statics.IncludeIndirectArg,
+            .Argument<BooleanGraphType>(Statics.IncludeIndirectArg,
                 "Include indirect associations, otherwise direct associations are returned.")
             .Argument<NonNullGraphType<GraphDirectionsDtoType>>(Statics.DirectionArg,
                 "The direction of the association.")
