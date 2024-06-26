@@ -86,13 +86,17 @@ internal sealed class CkQuery : ObjectGraphType
         var dataQueryOperation = arg.GetDataQueryOperation();
         
         var keysList = new List<CkModelId>();
+        if (arg.TryGetArgument(Statics.CkIdArg, out string? key))
+        {
+            keysList.Add(new CkModelId(key));
+        }
         if (arg.TryGetArgument(Statics.CkIdsArg, null, out IEnumerable<string>? keys))
         {
             keysList.AddRange(keys.Select(k => new CkModelId(k)));
         }
 
-        // if argument defined, but empty array, do not return any data. That mus be a mistake by client (otherwise
-        // all entities are returned.
+        // If argument defined, but empty array, do not return any data. That must be a mistake by client (otherwise
+        // all entities are returned)
         if (!keysList.Any() && (arg.HasArgument(Statics.CkIdArg) || arg.HasArgument(Statics.CkIdsArg)))
         {
             return ConnectionUtils.ToConnection(new List<CkModelDto>(), arg, null);
@@ -126,16 +130,15 @@ internal sealed class CkQuery : ObjectGraphType
         var keysList = new List<CkId<CkRecordId>>();
         if (arg.TryGetArgument(Statics.CkIdArg, out string? key))
         {
-            keysList.Add(key);
+            keysList.Add(new CkId<CkRecordId>(key));
         }
-
         if (arg.TryGetArgument(Statics.CkIdsArg, null, out IEnumerable<string>? keys))
         {
             keysList.AddRange(keys.Select(k => new CkId<CkRecordId>(k)));
         }
 
-        // if argument defined, but empty array, do not return any data. That mus be a mistake by client (otherwise
-        // all entities are returned.
+        // If argument defined, but empty array, do not return any data. That must be a mistake by client (otherwise
+        // all entities are returned)
         if (!keysList.Any() && (arg.HasArgument(Statics.CkIdArg) || arg.HasArgument(Statics.CkIdsArg)))
         {
             return ConnectionUtils.ToConnection(new List<CkRecordDto>(), arg, null);
@@ -169,16 +172,15 @@ internal sealed class CkQuery : ObjectGraphType
         var keysList = new List<CkId<CkEnumId>>();
         if (arg.TryGetArgument(Statics.CkIdArg, out string? key))
         {
-            keysList.Add(key);
+            keysList.Add(new CkId<CkEnumId>(key));
         }
-
         if (arg.TryGetArgument(Statics.CkIdsArg, null, out IEnumerable<string>? keys))
         {
             keysList.AddRange(keys.Select(k => new CkId<CkEnumId>(k)));
         }
 
-        // if argument defined, but empty array, do not return any data. That mus be a mistake by client (otherwise
-        // all entities are returned.
+        // If argument defined, but empty array, do not return any data. That must be a mistake by client (otherwise
+        // all entities are returned)
         if (!keysList.Any() && (arg.HasArgument(Statics.CkIdArg) || arg.HasArgument(Statics.CkIdsArg)))
         {
             return ConnectionUtils.ToConnection(new List<CkEnumDto>(), arg, null);
@@ -212,16 +214,15 @@ internal sealed class CkQuery : ObjectGraphType
         var keysList = new List<CkId<CkTypeId>>();
         if (arg.TryGetArgument(Statics.CkIdArg, out string? key))
         {
-            keysList.Add(key);
+            keysList.Add(new CkId<CkTypeId>(key));
         }
-
         if (arg.TryGetArgument(Statics.CkIdsArg, null, out IEnumerable<string>? keys))
         {
             keysList.AddRange(keys.Select(k => new CkId<CkTypeId>(k)));
         }
 
-        // if argument defined, but empty array, do not return any data. That mus be a mistake by client (otherwise
-        // all entities are returned.
+        // If argument defined, but empty array, do not return any data. That must be a mistake by client (otherwise
+        // all entities are returned)
         if (!keysList.Any() && (arg.HasArgument(Statics.CkIdArg) || arg.HasArgument(Statics.CkIdsArg)))
         {
             return ConnectionUtils.ToConnection(new List<CkTypeDto>(), arg, null);
@@ -257,14 +258,13 @@ internal sealed class CkQuery : ObjectGraphType
         {
             keysList.Add(new CkId<CkAttributeId>(key));
         }
-
         if (arg.TryGetArgument(Statics.CkIdsArg, null, out IEnumerable<string>? keys))
         {
             keysList.AddRange(keys.Select(k => new CkId<CkAttributeId>(k)));
         }
 
-        // if argument defined, but empty array, do not return any data. That mus be a mistake by client (otherwise
-        // all entities are returned.
+        // If argument defined, but empty array, do not return any data. That must be a mistake by client (otherwise
+        // all entities are returned)
         if (!keysList.Any() && (arg.HasArgument(Statics.CkIdArg) || arg.HasArgument(Statics.CkIdsArg)))
         {
             return ConnectionUtils.ToConnection(new List<RtEntityDto>(), arg, null);
