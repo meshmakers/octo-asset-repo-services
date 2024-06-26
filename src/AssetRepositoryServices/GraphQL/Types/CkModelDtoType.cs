@@ -70,7 +70,7 @@ internal sealed class CkModelDtoType : ObjectGraphType<CkModelDto>
                 "Filters items based on field compare")
             .ResolveAsync(ResolveCkRecordQuery);
 
-        Field<ModelIdType>("dependencies")
+        Field<ListGraphType<ModelIdType>>("dependencies")
             .ResolveAsync(ResolveCkModelDependenciesQuery);
     }
 
