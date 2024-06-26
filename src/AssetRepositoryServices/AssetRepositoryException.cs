@@ -34,8 +34,18 @@ internal class AssetRepositoryException : Exception
         return new AssetRepositoryException("Session is not available");
     }
 
-    public static Exception RequestServicesNotAvailable()
+    internal static Exception RequestServicesNotAvailable()
     {
         return new AssetRepositoryException("RequestServices is not available");
+    }
+
+    internal static Exception RoleIdMissing()
+    {
+        return new AssetRepositoryException("RoleId is missing");
+    }
+
+    internal static Exception DirectionMissing()
+    {
+        return new AssetRepositoryException("Direction is missing");
     }
 }

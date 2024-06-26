@@ -4,6 +4,7 @@ using GraphQL.Types;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Scalars;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Utils;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
+using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.ConstructionKit.Contracts.DependencyGraph;
 using Meshmakers.Octo.ConstructionKit.Contracts.Services;
 using Meshmakers.Octo.Runtime.Contracts.RepositoryEntities;
@@ -23,6 +24,7 @@ internal sealed class RtEntityGenericDtoType : ObjectGraphType<RtEntityDto>
         Name = "RtEntity";
         Description = "A runtime entity type of Octo";
         Field(d => d.RtId, type: typeof(OctoObjectIdType));
+        Field(d => d.CkTypeId, type: typeof(CkIdTypeGraph<CkTypeId>));
         Field(x => x.RtCreationDateTime, true);
         Field(x => x.RtChangedDateTime, true);
         Field(x => x.RtWellKnownName, true);
