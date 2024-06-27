@@ -157,7 +157,7 @@ internal sealed class CkModelDtoType : ObjectGraphType<CkModelDto>
 
         var tenantRepository = graphQlUserContext.TenantContext.GetTenantRepository();
         var resultSet =
-            await tenantRepository.GetCkTypeAsync(sessionAccessor.Session,
+            await tenantRepository.GetCkTypeAsync(sessionAccessor.Session, null,
                 keysList, dataQueryOperation, offset, arg.First);
 
         _logger.LogDebug("GraphQL query handling returning data for construction kit types");
@@ -184,7 +184,7 @@ internal sealed class CkModelDtoType : ObjectGraphType<CkModelDto>
 
         var tenantRepository = graphQlUserContext.TenantContext.GetTenantRepository();
         var resultSet =
-            await tenantRepository.GetCkAttributesAsync(sessionAccessor.Session,
+            await tenantRepository.GetCkAttributesAsync(sessionAccessor.Session, null,
                 keysList, dataQueryOperation, offset, arg.First);
 
         _logger.LogDebug("GraphQL query handling returning data for construction kit attribute");
@@ -211,7 +211,7 @@ internal sealed class CkModelDtoType : ObjectGraphType<CkModelDto>
 
         var tenantRepository = graphQlUserContext.TenantContext.GetTenantRepository();
         var resultSet =
-            await tenantRepository.GetCkEnumAsync(sessionAccessor.Session,
+            await tenantRepository.GetCkEnumAsync(sessionAccessor.Session, null,
                 keysList, dataQueryOperation, offset, arg.First);
 
         _logger.LogDebug("GraphQL query handling returning data for construction kit enums");
@@ -238,7 +238,7 @@ internal sealed class CkModelDtoType : ObjectGraphType<CkModelDto>
 
         var tenantRepository = graphQlUserContext.TenantContext.GetTenantRepository();
         var resultSet =
-            await tenantRepository.GetCkRecordAsync(sessionAccessor.Session,
+            await tenantRepository.GetCkRecordAsync(sessionAccessor.Session, null,
                 keysList, dataQueryOperation, offset, arg.First);
 
         _logger.LogDebug("GraphQL query handling returning data for construction kit records");

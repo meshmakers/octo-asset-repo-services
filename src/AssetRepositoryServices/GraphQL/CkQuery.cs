@@ -30,6 +30,7 @@ internal sealed class CkQuery : ObjectGraphType
             .ResolveAsync(ResolveCkModelsQuery);
 
         Connection<CkTypeDtoType>("Types")
+            .Argument<ListGraphType<StringGraphType>>(Statics.CkModelIds, "Filters items based on model ids")
             .Argument<StringGraphType>(Statics.CkIdArg, "Returns the construction kit type with the given id.")
             .Argument<ListGraphType<StringGraphType>>(Statics.CkIdsArg,
                 "Returns the construction kit types with the given ids.")
@@ -40,6 +41,7 @@ internal sealed class CkQuery : ObjectGraphType
             .ResolveAsync(ResolveCkTypesQuery);
         
         Connection<CkAttributeDtoType>("Attributes")
+            .Argument<ListGraphType<StringGraphType>>(Statics.CkModelIds, "Filters items based on model ids")
             .Argument<StringGraphType>(Statics.CkIdArg, "Returns the entity with the given attribute id.")
             .Argument<ListGraphType<StringGraphType>>(Statics.CkIdsArg,
                 "Returns entities with the given attribute ids.")
@@ -50,6 +52,7 @@ internal sealed class CkQuery : ObjectGraphType
             .ResolveAsync(ResolveCkAttributesQuery);
         
         Connection<CkEnumDtoType>("Enums")
+            .Argument<ListGraphType<StringGraphType>>(Statics.CkModelIds, "Filters items based on model ids")
             .Argument<StringGraphType>(Statics.CkIdArg, "Returns the enum with the given enum id.")
             .Argument<ListGraphType<StringGraphType>>(Statics.CkIdsArg,
                 "Returns enums with the given enum ids.")
@@ -60,6 +63,7 @@ internal sealed class CkQuery : ObjectGraphType
             .ResolveAsync(ResolveCkEnumQuery);
         
         Connection<CkRecordDtoType>("Records")
+            .Argument<ListGraphType<StringGraphType>>(Statics.CkModelIds, "Filters items based on model ids")
             .Argument<StringGraphType>(Statics.CkIdArg, "Returns the record with the given record id.")
             .Argument<ListGraphType<StringGraphType>>(Statics.CkIdsArg,
                 "Returns records with the given record ids.")
@@ -126,6 +130,12 @@ internal sealed class CkQuery : ObjectGraphType
 
         var offset = arg.GetOffset();
         var dataQueryOperation = arg.GetDataQueryOperation();
+        
+        var modelIdList = new List<CkModelId>();
+        if (arg.TryGetArgument(Statics.CkModelIds, null, out IEnumerable<string>? modelIds))
+        {
+            modelIdList.AddRange(modelIds.Select(k => new CkModelId(k)));
+        }
 
         var keysList = new List<CkId<CkRecordId>>();
         if (arg.TryGetArgument(Statics.CkIdArg, out string? key))
@@ -146,7 +156,7 @@ internal sealed class CkQuery : ObjectGraphType
 
         var tenantRepository = graphQlUserContext.TenantContext.GetTenantRepository();
         var resultSet =
-            await tenantRepository.GetCkRecordAsync(sessionAccessor.Session,
+            await tenantRepository.GetCkRecordAsync(sessionAccessor.Session, modelIdList,
                 keysList, dataQueryOperation, offset, arg.First);
 
         _logger.LogDebug("GraphQL query handling returning data for construction kit records");
@@ -169,6 +179,12 @@ internal sealed class CkQuery : ObjectGraphType
         var offset = arg.GetOffset();
         var dataQueryOperation = arg.GetDataQueryOperation();
 
+        var modelIdList = new List<CkModelId>();
+        if (arg.TryGetArgument(Statics.CkModelIds, null, out IEnumerable<string>? modelIds))
+        {
+            modelIdList.AddRange(modelIds.Select(k => new CkModelId(k)));
+        }
+        
         var keysList = new List<CkId<CkEnumId>>();
         if (arg.TryGetArgument(Statics.CkIdArg, out string? key))
         {
@@ -188,7 +204,7 @@ internal sealed class CkQuery : ObjectGraphType
 
         var tenantRepository = graphQlUserContext.TenantContext.GetTenantRepository();
         var resultSet =
-            await tenantRepository.GetCkEnumAsync(sessionAccessor.Session,
+            await tenantRepository.GetCkEnumAsync(sessionAccessor.Session, modelIdList,
                 keysList, dataQueryOperation, offset, arg.First);
 
         _logger.LogDebug("GraphQL query handling returning data for construction kit enums");
@@ -210,6 +226,12 @@ internal sealed class CkQuery : ObjectGraphType
 
         var offset = arg.GetOffset();
         var dataQueryOperation = arg.GetDataQueryOperation();
+        
+        var modelIdList = new List<CkModelId>();
+        if (arg.TryGetArgument(Statics.CkModelIds, null, out IEnumerable<string>? modelIds))
+        {
+            modelIdList.AddRange(modelIds.Select(k => new CkModelId(k)));
+        }
 
         var keysList = new List<CkId<CkTypeId>>();
         if (arg.TryGetArgument(Statics.CkIdArg, out string? key))
@@ -230,7 +252,7 @@ internal sealed class CkQuery : ObjectGraphType
 
         var tenantRepository = graphQlUserContext.TenantContext.GetTenantRepository();
         var resultSet =
-            await tenantRepository.GetCkTypeAsync(sessionAccessor.Session,
+            await tenantRepository.GetCkTypeAsync(sessionAccessor.Session, modelIdList,
                 keysList, dataQueryOperation, offset, arg.First);
 
         _logger.LogDebug("GraphQL query handling returning data for construction kit entities");
@@ -252,6 +274,12 @@ internal sealed class CkQuery : ObjectGraphType
 
         var offset = arg.GetOffset();
         var dataQueryOperation = arg.GetDataQueryOperation();
+        
+        var modelIdList = new List<CkModelId>();
+        if (arg.TryGetArgument(Statics.CkModelIds, null, out IEnumerable<string>? modelIds))
+        {
+            modelIdList.AddRange(modelIds.Select(k => new CkModelId(k)));
+        }
 
         var keysList = new List<CkId<CkAttributeId>>();
         if (arg.TryGetArgument(Statics.CkIdArg, out string? key))
@@ -272,7 +300,7 @@ internal sealed class CkQuery : ObjectGraphType
 
         var tenantRepository = graphQlUserContext.TenantContext.GetTenantRepository();
         var resultSet =
-            await tenantRepository.GetCkAttributesAsync(sessionAccessor.Session,
+            await tenantRepository.GetCkAttributesAsync(sessionAccessor.Session, modelIdList,
                 keysList, dataQueryOperation, offset, arg.First);
 
         _logger.LogDebug("GraphQL query handling returning data for construction kit attributes");

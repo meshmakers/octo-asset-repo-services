@@ -9,6 +9,7 @@ internal static class Statics
     internal const string EntitiesArg = "entities";
     internal const string RtIdArg = "rtId";
     internal const string RtIdsArg = "rtIds";
+    internal const string CkModelIds = "ckModelIds";
     internal const string CkIdArg = "ckId";
     internal const string CkIdsArg = "ckIds";
     internal const string RoleIdArg = "roleId";
