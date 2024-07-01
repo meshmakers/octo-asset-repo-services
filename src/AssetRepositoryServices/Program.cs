@@ -7,11 +7,11 @@ using Meshmakers.Octo.Runtime.Contracts.MongoDb.Extensions;
 using Meshmakers.Octo.Services.Common.Cors;
 using Meshmakers.Octo.Services.Common.StreamData.Extensions;
 using Meshmakers.Octo.Services.Infrastructure.Services;
+using Meshmakers.Octo.Services.Observability;
 using Microsoft.AspNetCore.Cors.Infrastructure;
 using Microsoft.Extensions.Options;
 using NLog;
 using NLog.Web;
-using Observability;
 using LogLevel = Microsoft.Extensions.Logging.LogLevel;
 
 // NLog: setup the logger first to catch all errors
