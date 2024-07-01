@@ -3,6 +3,7 @@ using Meshmakers.Octo.Backend.AssetRepositoryServices.Configuration.DependencyIn
 using Meshmakers.Octo.Backend.AssetRepositoryServices.Routing;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.Services;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.StreamData;
+using Meshmakers.Octo.Runtime.Contracts.MongoDb.Extensions;
 using Meshmakers.Octo.Services.Common.Cors;
 using Meshmakers.Octo.Services.Common.StreamData.Extensions;
 using Meshmakers.Octo.Services.Infrastructure.Services;
@@ -10,6 +11,7 @@ using Microsoft.AspNetCore.Cors.Infrastructure;
 using Microsoft.Extensions.Options;
 using NLog;
 using NLog.Web;
+using Observability;
 using LogLevel = Microsoft.Extensions.Logging.LogLevel;
 
 // NLog: setup the logger first to catch all errors
@@ -26,6 +28,10 @@ try
         ContentRootPath = Directory.GetCurrentDirectory(),
         WebRootPath = "wwwroot",
     });
+
+    builder.AddObservability()
+        .AddStreamDataHealthCheck()
+        .AddSystemContextHealthCheck();
 
     // NLog: Setup NLog for Dependency injection
     builder.Logging.ClearProviders();
@@ -64,6 +70,7 @@ try
     });
     
     var app = builder.Build();
+    app.MapObservability();
     
     if (app.Environment.IsDevelopment())
     {
@@ -78,8 +85,6 @@ try
     app.UseCors();
 
     app.UseOctoAssetRepositoryServices();
-
-    app.UseHttpsRedirection();
 
     app.UseStaticFiles();
 
