@@ -59,7 +59,7 @@ try
     builder.Services.AddStreamDataManagement()
         .AddStreamDataDatabase(configuration =>
         {
-            var assetRepoConfig = builder.Configuration.Get<OctoAssetRepositoryServicesOptions>();
+            var assetRepoConfig = builder.Configuration.GetSection("AssetRepository").Get<OctoAssetRepositoryServicesOptions>();
             if (assetRepoConfig == null)
             {
                 throw AssetRepositoryException.ServiceNotRegistered(
