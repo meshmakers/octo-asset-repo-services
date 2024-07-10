@@ -42,7 +42,7 @@ try
     // allow environment variables to override values from other providers.
     builder.Configuration.AddEnvironmentVariables("OCTO_").AddCommandLine(args)
         .AddUserSecrets(typeof(Program).Assembly, true);
-    
+
     builder.Services.AddTransient<IDefaultConfigurationCreatorService, DefaultConfigurationCreatorService>();
     builder.Services.AddSingleton<CorsPolicyProvider>();
     builder.Services.AddSingleton<ICorsPolicyProvider>(p => p.GetRequiredService<CorsPolicyProvider>());
@@ -55,29 +55,32 @@ try
         .AddOctoAssetRepositoryServices(
             systemOptions => builder.Configuration.GetSection("System").Bind(systemOptions),
             options => builder.Configuration.GetSection("AssetRepository").Bind(options));
-    
+
     builder.Services.AddStreamDataManagement()
         .AddStreamDataDatabase(configuration =>
-    {
-        var assetRepoConfig = builder.Configuration.Get<OctoAssetRepositoryServicesOptions>();
-        if (assetRepoConfig == null)
         {
-            throw AssetRepositoryException.ServiceNotRegistered(
-                typeof(IOptions<OctoAssetRepositoryServicesOptions>));
-        }
+            var assetRepoConfig = builder.Configuration.Get<OctoAssetRepositoryServicesOptions>();
+            if (assetRepoConfig == null)
+            {
+                throw AssetRepositoryException.ServiceNotRegistered(
+                    typeof(IOptions<OctoAssetRepositoryServicesOptions>));
+            }
 
-        configuration.ConnectionString = assetRepoConfig.StreamDataConnectionString;
-    });
-    
+            configuration.ConnectionStringFromConfiguration(
+                assetRepoConfig.StreamDataHost,
+                assetRepoConfig.StreamDataUser,
+                assetRepoConfig.StreamDataPassword);
+        });
+
     var app = builder.Build();
     app.MapObservability();
-    
+
     if (app.Environment.IsDevelopment())
     {
         app.UseDeveloperExceptionPage();
     }
     else
-    // The default HSTS value is 30 days. You may want to change this for production scenarios, see https://aka.ms/aspnetcore-hsts.
+        // The default HSTS value is 30 days. You may want to change this for production scenarios, see https://aka.ms/aspnetcore-hsts.
     {
         app.UseHsts();
     }
@@ -101,4 +104,3 @@ finally
     // Ensure to flush and stop internal timers/threads before application-exit (Avoid segmentation fault on Linux)
     LogManager.Shutdown();
 }
-          

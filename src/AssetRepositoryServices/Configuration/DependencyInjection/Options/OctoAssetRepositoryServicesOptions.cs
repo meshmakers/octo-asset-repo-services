@@ -19,7 +19,8 @@ public class OctoAssetRepositoryServicesOptions
         PublicUrl = "https://localhost:5001";
         PublicAdminPanelUrl = "https://localhost:5005";
         BrokerHost = "localhost";
-        StreamDataConnectionString = "Host=127.0.0.1;Username=crate;SSL Mode=Prefer";
+        StreamDataUser = "crate";
+        StreamDataHost = "127.0.0.1";
     }
 
     /// <summary>
@@ -63,7 +64,17 @@ public class OctoAssetRepositoryServicesOptions
     public string PublicAdminPanelUrl { get; set; }
     
     /// <summary>
-    /// (Public) connection string to the stream data database
+    /// Hostname of crate db server
     /// </summary>
-    public string StreamDataConnectionString { get; set; }
+    public string StreamDataHost { get; set; }
+    
+    /// <summary>
+    /// User of crate db
+    /// </summary>
+    public string StreamDataUser { get; set; }
+    
+    /// <summary>
+    /// Password for crate db
+    /// </summary>
+    public string? StreamDataPassword { get; set; }
 }
