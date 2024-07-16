@@ -4,7 +4,7 @@ using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Scalars;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
 using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.ConstructionKit.Contracts.DependencyGraph;
-using Meshmakers.Octo.Runtime.Contracts.MongoDb.Repository.Entities;
+using Meshmakers.Octo.Runtime.Contracts.MongoDb.Repositories.Entities;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
 

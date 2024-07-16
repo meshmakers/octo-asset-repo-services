@@ -1,6 +1,6 @@
 using GraphQL.Types;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
-using Meshmakers.Octo.Runtime.Contracts.MongoDb.Repository.Entities;
+using Meshmakers.Octo.Runtime.Contracts.MongoDb.Repositories.Entities;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
 

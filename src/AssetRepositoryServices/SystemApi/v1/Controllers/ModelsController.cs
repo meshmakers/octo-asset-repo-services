@@ -45,7 +45,7 @@ public class ModelsController : ControllerBase
     /// <summary>
     ///     Exports a runtime model
     /// </summary>
-    /// <param name="tenantId">Id of tenant the request relies to</param>
+    /// <param name="tenantId">ID of tenant the request relies on to</param>
     /// <param name="exportModelRequestDto">The query, whose result data should be exported</param>
     /// <returns></returns>
     [HttpPost]
@@ -71,7 +71,7 @@ public class ModelsController : ControllerBase
     /// <summary>
     ///     Imports a runtime model
     /// </summary>
-    /// <param name="tenantId">Id of tenant the request relies to</param>
+    /// <param name="tenantId">ID of tenant the request relies on to</param>
     /// <param name="file">The file with the RT model definition</param>
     /// <returns></returns>
     [HttpPost]
@@ -98,7 +98,7 @@ public class ModelsController : ControllerBase
     /// <summary>
     ///     Imports a construction kit model
     /// </summary>
-    /// <param name="tenantId">Id of tenant the request relies to</param>
+    /// <param name="tenantId">ID of tenant the request relies on to</param>
     /// <param name="file">The file with the CK model definition</param>
     /// <returns></returns>
     [HttpPost]
