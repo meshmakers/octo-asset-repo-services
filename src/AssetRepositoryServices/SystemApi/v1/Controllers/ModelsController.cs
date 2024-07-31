@@ -19,7 +19,7 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.SystemApi.v1.Controlle
 public class ModelsController : ControllerBase
 {
     private readonly IDistributedCacheService _distributedCache;
-    private readonly ICommandClient<ExportRtCommandRequest> _exportRtCommandClient;
+    private readonly ICommandClient<ExportRtByQueryCommandRequest> _exportRtByQueryCommandClient;
     private readonly ICommandClient<ImportCkCommandRequest> _importCkCommandClient;
     private readonly ICommandClient<ImportRtCommandRequest> _importRtCommandClient;
 
@@ -27,16 +27,16 @@ public class ModelsController : ControllerBase
     ///     Constructor
     /// </summary>
     /// <param name="distributedCache">Instance of distributed cache</param>
-    /// <param name="exportRtCommandClient"></param>
+    /// <param name="exportRtByQueryCommandClient"></param>
     /// <param name="importRtCommandClient"></param>
     /// <param name="importCkCommandClient"></param>
     public ModelsController(IDistributedCacheService distributedCache,
-        ICommandClient<ExportRtCommandRequest> exportRtCommandClient,
+        ICommandClient<ExportRtByQueryCommandRequest> exportRtByQueryCommandClient,
         ICommandClient<ImportRtCommandRequest> importRtCommandClient,
         ICommandClient<ImportCkCommandRequest> importCkCommandClient)
     {
         _distributedCache = distributedCache;
-        _exportRtCommandClient = exportRtCommandClient;
+        _exportRtByQueryCommandClient = exportRtByQueryCommandClient;
         _importRtCommandClient = importRtCommandClient;
         _importCkCommandClient = importCkCommandClient;
     }
@@ -56,9 +56,9 @@ public class ModelsController : ControllerBase
     {
         try
         {
-            var args = new ExportRtCommandRequest(tenantId, exportModelRequestDto.QueryId);
+            var args = new ExportRtByQueryCommandRequest(tenantId, exportModelRequestDto.QueryId);
             var r =
-                await _exportRtCommandClient.GetResponse<JobCreatedResponse>(args);
+                await _exportRtByQueryCommandClient.GetResponse<JobCreatedResponse>(args);
             return Ok(new ExportModelResponseDto { JobId = r.JobId });
         }
         catch (InvalidOperationException e)
@@ -124,12 +124,10 @@ public class ModelsController : ControllerBase
 
     private async Task<string> AddFileToCache(string tenantId, IFormFile file)
     {
-        await using (var memoryStream = new MemoryStream())
-        {
-            await file.CopyToAsync(memoryStream);
-            memoryStream.Position = 0;
-            var key = await _distributedCache.CreateStreamAsync(tenantId, memoryStream, file.ContentType, file.FileName, TimeSpan.FromHours(1));
-            return key;
-        }
+        await using var memoryStream = new MemoryStream();
+        await file.CopyToAsync(memoryStream);
+        memoryStream.Position = 0;
+        var key = await _distributedCache.CreateStreamAsync(tenantId, memoryStream, file.ContentType, file.FileName, TimeSpan.FromHours(1));
+        return key;
     }
 }

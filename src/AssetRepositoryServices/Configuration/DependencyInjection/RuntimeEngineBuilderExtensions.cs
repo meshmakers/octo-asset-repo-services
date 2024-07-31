@@ -209,13 +209,15 @@ public static class RuntimeEngineBuilderExtensions
 
         // GraphQL custom services
         builder.Services.AddSingleton<ISchemaContext, SchemaContext>();
-
+        
+        
         builder.Services.AddOctoServiceInfrastructure("AssetRepositoryService", c =>
         {
-            c.AddCommandClient<CreateIdentityDataCommandRequest>("identity::create-identity-data");
-            c.AddCommandClient<ExportRtCommandRequest>("bot::export-rt");
-            c.AddCommandClient<ImportRtCommandRequest>("bot::import-rt");
-            c.AddCommandClient<ImportCkCommandRequest>("bot::import-ck");
+            c.AddCommandClient<CreateIdentityDataCommandRequest>(QueueNames.CreateIdentityDataCommand);
+            c.AddCommandClient<ExportRtByQueryCommandRequest>(QueueNames.ExportRtByQueryCommand);
+            c.AddCommandClient<ExportRtByDeepGraphCommandRequest>(QueueNames.ExportRtByDeepGraphCommand);
+            c.AddCommandClient<ImportRtCommandRequest>(QueueNames.ImportRtCommand);
+            c.AddCommandClient<ImportCkCommandRequest>(QueueNames.ImportCkCommand);
             c.AddBroadcastEventConsumer<TenantManagementConsumer, PosUpdateTenant>();
             c.AddBroadcastEventConsumer<TenantManagementConsumer, PreDeleteTenant>();
         });
