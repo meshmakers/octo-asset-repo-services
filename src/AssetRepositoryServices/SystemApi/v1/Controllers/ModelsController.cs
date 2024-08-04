@@ -20,6 +20,7 @@ public class ModelsController : ControllerBase
 {
     private readonly IDistributedCacheService _distributedCache;
     private readonly ICommandClient<ExportRtByQueryCommandRequest> _exportRtByQueryCommandClient;
+    private readonly ICommandClient<ExportRtByDeepGraphCommandRequest> _exportRtByDeepGraphCommandClient;
     private readonly ICommandClient<ImportCkCommandRequest> _importCkCommandClient;
     private readonly ICommandClient<ImportRtCommandRequest> _importRtCommandClient;
 
@@ -28,37 +29,68 @@ public class ModelsController : ControllerBase
     /// </summary>
     /// <param name="distributedCache">Instance of distributed cache</param>
     /// <param name="exportRtByQueryCommandClient"></param>
+    /// <param name="exportRtByDeepGraphCommandClient"></param>
     /// <param name="importRtCommandClient"></param>
     /// <param name="importCkCommandClient"></param>
     public ModelsController(IDistributedCacheService distributedCache,
         ICommandClient<ExportRtByQueryCommandRequest> exportRtByQueryCommandClient,
+        ICommandClient<ExportRtByDeepGraphCommandRequest> exportRtByDeepGraphCommandClient,
         ICommandClient<ImportRtCommandRequest> importRtCommandClient,
         ICommandClient<ImportCkCommandRequest> importCkCommandClient)
     {
         _distributedCache = distributedCache;
         _exportRtByQueryCommandClient = exportRtByQueryCommandClient;
+        _exportRtByDeepGraphCommandClient = exportRtByDeepGraphCommandClient;
         _importRtCommandClient = importRtCommandClient;
         _importCkCommandClient = importCkCommandClient;
     }
 
-    // POST: system/Models/ExportRt
+    // POST: system/Models/ExportRtByQuery
+    /// <summary>
+    ///     Exports a runtime model by query
+    /// </summary>
+    /// <param name="tenantId">ID of tenant the request relies on to</param>
+    /// <param name="exportModelRequestByQueryDto">The query options for the export</param>
+    /// <returns></returns>
+    [HttpPost]
+    [Route("ExportRtByQuery")]
+    [Authorize(AssetRepositoryServiceConstants.SystemApiReadOnlyPolicy)]
+    public async Task<IActionResult> ExportRtByQueryAsync([Required] string tenantId,
+        [FromBody] ExportModelRequestByQueryDto exportModelRequestByQueryDto)
+    {
+        try
+        {
+            var args = new ExportRtByQueryCommandRequest(tenantId, exportModelRequestByQueryDto.QueryId);
+            var r =
+                await _exportRtByQueryCommandClient.GetResponse<JobCreatedResponse>(args);
+            return Ok(new ExportModelResponseDto { JobId = r.JobId });
+        }
+        catch (InvalidOperationException e)
+        {
+            return BadRequest(new InternalServerError(e.Message));
+        }
+    }
+    
+    // POST: system/Models/ExportRtByDeepGraph
     /// <summary>
     ///     Exports a runtime model
     /// </summary>
     /// <param name="tenantId">ID of tenant the request relies on to</param>
-    /// <param name="exportModelRequestDto">The query, whose result data should be exported</param>
+    /// <param name="exportModelRequestByDeepGraphDto">The deep graph options for the export</param>
     /// <returns></returns>
     [HttpPost]
-    [Route("ExportRt")]
+    [Route("ExportRtByDeepGraph")]
     [Authorize(AssetRepositoryServiceConstants.SystemApiReadOnlyPolicy)]
-    public async Task<IActionResult> ExportRt([Required] string tenantId,
-        [FromBody] ExportModelRequestDto exportModelRequestDto)
+    public async Task<IActionResult> ExportRtByDeepGraphAsync([Required] string tenantId,
+        [FromBody] ExportModelRequestByDeepGraphDto exportModelRequestByDeepGraphDto)
     {
         try
         {
-            var args = new ExportRtByQueryCommandRequest(tenantId, exportModelRequestDto.QueryId);
+            var args = new ExportRtByDeepGraphCommandRequest(tenantId,
+                exportModelRequestByDeepGraphDto.OriginRtIds, 
+                exportModelRequestByDeepGraphDto.OriginCkTypeId);
             var r =
-                await _exportRtByQueryCommandClient.GetResponse<JobCreatedResponse>(args);
+                await _exportRtByDeepGraphCommandClient.GetResponse<JobCreatedResponse>(args);
             return Ok(new ExportModelResponseDto { JobId = r.JobId });
         }
         catch (InvalidOperationException e)
