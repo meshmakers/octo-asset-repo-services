@@ -63,7 +63,7 @@ public class ModelsController : ControllerBase
             var args = new ExportRtByQueryCommandRequest(tenantId, exportModelRequestByQueryDto.QueryId);
             var r =
                 await _exportRtByQueryCommandClient.GetResponse<JobCreatedResponse>(args);
-            return Ok(new ExportModelResponseDto { JobId = r.JobId });
+            return Ok(new ExportModelResponseDto(r.JobId));
         }
         catch (InvalidOperationException e)
         {
@@ -91,7 +91,7 @@ public class ModelsController : ControllerBase
                 exportModelRequestByDeepGraphDto.OriginCkTypeId);
             var r =
                 await _exportRtByDeepGraphCommandClient.GetResponse<JobCreatedResponse>(args);
-            return Ok(new ExportModelResponseDto { JobId = r.JobId });
+            return Ok(new ExportModelResponseDto(r.JobId));
         }
         catch (InvalidOperationException e)
         {
