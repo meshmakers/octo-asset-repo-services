@@ -118,7 +118,7 @@ public class ModelsController : ControllerBase
             var args = new ImportRtCommandRequest(tenantId, cacheKey);
             var r =
                 await _importRtCommandClient.GetResponse<JobCreatedResponse>(args);
-            return Ok(r.JobId);
+            return Ok(new ExportModelResponseDto(r.JobId));
         }
         catch (InvalidOperationException e)
         {
