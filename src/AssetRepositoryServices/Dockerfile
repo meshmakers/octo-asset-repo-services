@@ -18,7 +18,7 @@ WORKDIR "/src/src/AssetRepositoryServices"
 RUN dotnet build "AssetRepositoryServices.csproj" -c Release -p:OctoNugetPrivateServer=${OCTO_PRIVATE_NUGET_SERVICE}
 
 FROM build AS publish
-RUN dotnet publish "AssetRepositoryServices.csproj" -c Release -o /app
+RUN dotnet publish "AssetRepositoryServices.csproj" -c Release -p:OctoNugetPrivateServer=${OCTO_PRIVATE_NUGET_SERVICE} -o /app
 
 FROM base AS final
 WORKDIR /app
