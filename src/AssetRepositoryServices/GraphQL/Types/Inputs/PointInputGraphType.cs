@@ -1,9 +1,9 @@
 ﻿using GraphQL.Types;
-using Meshmakers.Octo.Runtime.Contracts.Geospatial.Geometry;
+using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Inputs;
 
-internal sealed class PointInputGraphType : InputObjectGraphType<Point>
+internal sealed class PointInputGraphType : InputObjectGraphType<PointDto>
 {
     public PointInputGraphType()
     {

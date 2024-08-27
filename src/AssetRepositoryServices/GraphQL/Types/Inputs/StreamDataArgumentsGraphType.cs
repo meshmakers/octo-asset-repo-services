@@ -12,7 +12,7 @@ internal sealed class StreamDataArgumentsGraphType : InputObjectGraphType<Stream
         Field(x => x.To, true);
         Field(x => x.Interval, true);
         Field(x => x.Limit, true);
-        Field(x => x.QueryMode, false, typeof(QueryModeDtoGraphType));
+        Field(x => x.QueryMode, typeof(NonNullGraphType<QueryModeDtoGraphType>));
     }
 }
 
@@ -88,7 +88,7 @@ public sealed class AttributeTsArgumentGraphType : InputObjectGraphType<Attribut
         Name = "AttributeArgument";
         Field(x => x.AggregationType, type: typeof(AggregationGraphType));
         Field(x => x.SortOrder, type: typeof(SortOrderDtoGraphType));
-        Field(x => x.SortPriority, true, typeof(IntGraphType))
+        Field(x => x.SortPriority, typeof(IntGraphType))
             .Description(" Defines the priority of the sort. Lower values are sorted first; null values aren't sorted at all.");
     }
 }

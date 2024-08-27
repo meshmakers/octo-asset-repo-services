@@ -3,6 +3,7 @@ using GraphQL;
 using GraphQL.Builders;
 using Meshmakers.Common.Shared;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
+using Meshmakers.Octo.Runtime.Contracts.Geospatial.Geometry;
 using Meshmakers.Octo.Runtime.Contracts.Repositories.Query;
 using StringExtensions = GraphQL.StringExtensions;
 
@@ -110,7 +111,8 @@ internal static class ResolveConnectionContextExtensions
         
         if (ctx.TryGetArgument(Statics.GeoNearFilterArg, out NearGeospatialFilterDto? nearGeospatialFilterDto))
         {
-            dataQueryOperation.NearGeospatialFilter(nearGeospatialFilterDto.AttributeName, nearGeospatialFilterDto.Point,
+            var point = new Point(new Position(nearGeospatialFilterDto.Point.Coordinates.Latitude, nearGeospatialFilterDto.Point.Coordinates.Longitude));
+            dataQueryOperation.NearGeospatialFilter(nearGeospatialFilterDto.AttributeName, point,
                 nearGeospatialFilterDto.MinDistance, nearGeospatialFilterDto.MaxDistance);
         }
 
