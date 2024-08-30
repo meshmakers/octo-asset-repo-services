@@ -1,6 +1,7 @@
 using System.ComponentModel.DataAnnotations;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
 using Meshmakers.Octo.Services.Infrastructure.Services;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.SystemApi.v1.Controllers;
