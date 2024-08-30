@@ -9,30 +9,30 @@ using Meshmakers.Octo.Runtime.Contracts.MongoDb;
 using Meshmakers.Octo.Services.Common.DistributionEventHub.Commands;
 using Meshmakers.Octo.Services.Common.DistributionEventHub.Commands.Payloads;
 using Meshmakers.Octo.Services.Infrastructure.Services;
+using Microsoft.Extensions.Options;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.Services;
 
-internal class DefaultConfigurationCreatorService : IDefaultConfigurationCreatorService
+internal class DefaultConfigurationCreatorService(
+    ILogger<DefaultConfigurationCreatorService> logger,
+    IDiagnosticsService diagnosticsService,
+    IOptions<OctoAssetRepositoryServicesOptions> options,
+    ISystemContext systemContext,
+    ICommandClient<CreateIdentityDataCommandRequest> commandClient,
+    OctoAssetRepositoryServicesOptions octoAssetRepositoryServicesOptions)
+    : DefaultConfigurationCreatorServiceBase(logger)
 {
-    private readonly ILogger<DefaultConfigurationCreatorService> _logger;
-    private readonly ICommandClient<CreateIdentityDataCommandRequest> _commandClient;
-    private readonly OctoAssetRepositoryServicesOptions _octoAssetRepositoryServicesOptions;
-    private readonly ISystemContext _systemContext;
-
-
-    public DefaultConfigurationCreatorService(ILogger<DefaultConfigurationCreatorService> logger,
-        IOctoService octoService, ICommandClient<CreateIdentityDataCommandRequest> commandClient,
-        OctoAssetRepositoryServicesOptions octoAssetRepositoryServicesOptions)
+    public override async Task InitializeAsync()
     {
-        _systemContext = octoService.SystemContext;
-        _logger = logger;
-        _commandClient = commandClient;
-        _octoAssetRepositoryServicesOptions = octoAssetRepositoryServicesOptions;
+        // Reconfigure the log level based on the configuration
+        await diagnosticsService.ReconfigureLogLevelAsync(options.Value.MinLogLevel);
+
+        await base.InitializeAsync();
     }
 
-    public async Task SetupAsync(string tenantId)
+    protected override async Task SetupTenantAsync(string tenantId)
     {
-        if (tenantId != _systemContext.TenantId)
+        if (tenantId != systemContext.TenantId)
         {
             // Currently we only support the system tenant.
             return;
@@ -40,25 +40,25 @@ internal class DefaultConfigurationCreatorService : IDefaultConfigurationCreator
 
         // Do nothing if the system tenant is not existing.
         // Identity Service is creating the system tenant currently.
-        if (!await _systemContext.IsSystemTenantExistingAsync())
+        if (!await systemContext.IsSystemTenantExistingAsync())
         {
             return;
         }
 
         // That means that the system tenant database is existing but (currently) not valid.
         // We wait for a PosTenantCreated event to create the default configuration.
-        if (!await _systemContext.IsCkModelExistingAsync(SystemCkIds.ModelId))
+        if (!await systemContext.IsCkModelExistingAsync(SystemCkIds.ModelId))
         {
             return;
         }
 
-        _logger.LogInformation("Setting up default configuration for tenant '{TenantId}'", tenantId);
+        logger.LogInformation("Setting up default configuration for tenant '{TenantId}'", tenantId);
 
-        using var session = await _systemContext.GetAdminSessionAsync();
+        using var session = await systemContext.GetAdminSessionAsync();
         session.StartTransaction();
 
         var assetRepConfiguration =
-            await _systemContext.GetConfigurationAsync(session,
+            await systemContext.GetConfigurationAsync(session,
                 AssetRepositoryServiceConstants.AssetServiceSchemaVersionKey,
                 new DefaultConfigurationVersion { Version = -1 });
         if (assetRepConfiguration == null || assetRepConfiguration.Version <
@@ -69,26 +69,26 @@ internal class DefaultConfigurationCreatorService : IDefaultConfigurationCreator
             CreateApiResources(createIdentityDataCommandRequest);
             CreateClients(createIdentityDataCommandRequest);
 
-            _logger.LogInformation("Creating identity data for tenant '{TenantId}'", tenantId);
+            logger.LogInformation("Creating identity data for tenant '{TenantId}'", tenantId);
             // We retry 5 times to create identity data. This is important because the identity service might not be ready yet.
-            var r = await _commandClient.GetResponseWithRetry<EnumCommandResponse<CreateIdentityDataResult>>(
+            var r = await commandClient.GetResponseWithRetry<EnumCommandResponse<CreateIdentityDataResult>>(
                 createIdentityDataCommandRequest);
-            _logger.LogInformation("Create identity data response: {Response}", r.Response);
+            logger.LogInformation("Create identity data response: {Response}", r.Response);
             if (r.Response == CreateIdentityDataResult.Success)
             {
-                await _systemContext.SetConfigurationAsync(session,
+                await systemContext.SetConfigurationAsync(session,
                     AssetRepositoryServiceConstants.AssetServiceSchemaVersionKey,
                     new DefaultConfigurationVersion
                         { Version = AssetRepositoryServiceConstants.AssetServiceSchemaVersionValue });
             }
             else if (r.Response != CreateIdentityDataResult.FailedTenantHasNoIdentityCk)
             {
-                _logger.LogInformation("The tenant '{TenantId}' has no identity CK, skipped to create identity data",
+                logger.LogInformation("The tenant '{TenantId}' has no identity CK, skipped to create identity data",
                     tenantId);
             }
             else
             {
-                _logger.LogError("The tenant '{TenantId}' has no identity CK, skipped to create identity data",
+                logger.LogError("The tenant '{TenantId}' has no identity CK, skipped to create identity data",
                     tenantId);
             }
         }
@@ -130,7 +130,7 @@ internal class DefaultConfigurationCreatorService : IDefaultConfigurationCreator
         {
             new(CommonConstants.OctoAdminPanelClientId,
                 AssetTexts.Backend_AssetServices_UserSchema_AdminPanel_DisplayName,
-                _octoAssetRepositoryServicesOptions.PublicAdminPanelUrl)
+                octoAssetRepositoryServicesOptions.PublicAdminPanelUrl)
             {
                 AllowedGrantTypes = [OidcConstants.GrantTypes.AuthorizationCode],
 
@@ -138,11 +138,11 @@ internal class DefaultConfigurationCreatorService : IDefaultConfigurationCreator
 
                 RedirectUris =
                 [
-                    _octoAssetRepositoryServicesOptions.PublicAdminPanelUrl.EnsureEndsWith("/")
+                    octoAssetRepositoryServicesOptions.PublicAdminPanelUrl.EnsureEndsWith("/")
                 ],
 
-                PostLogoutRedirectUris = [_octoAssetRepositoryServicesOptions.PublicAdminPanelUrl.EnsureEndsWith("/")],
-                AllowedCorsOrigins = [_octoAssetRepositoryServicesOptions.PublicAdminPanelUrl.TrimEnd('/')],
+                PostLogoutRedirectUris = [octoAssetRepositoryServicesOptions.PublicAdminPanelUrl.EnsureEndsWith("/")],
+                AllowedCorsOrigins = [octoAssetRepositoryServicesOptions.PublicAdminPanelUrl.TrimEnd('/')],
                 AllowOfflineAccess = true,
                 AllowedScopes =
                 [
@@ -157,17 +157,17 @@ internal class DefaultConfigurationCreatorService : IDefaultConfigurationCreator
             },
             new(CommonConstants.AssetRepositoryServicesClientId,
                 AssetTexts.Backend_AssetServices_UserSchema_AssetServices_DisplayName,
-                _octoAssetRepositoryServicesOptions.PublicUrl)
+                octoAssetRepositoryServicesOptions.PublicUrl)
             {
                 AllowedGrantTypes = [OidcConstants.GrantTypes.Implicit],
 
                 RedirectUris =
                 [
-                    _octoAssetRepositoryServicesOptions.PublicUrl.EnsureEndsWith("/signin-oidc")
+                    octoAssetRepositoryServicesOptions.PublicUrl.EnsureEndsWith("/signin-oidc")
                 ],
 
-                PostLogoutRedirectUris = [_octoAssetRepositoryServicesOptions.PublicUrl.EnsureEndsWith("/")],
-                AllowedCorsOrigins = [_octoAssetRepositoryServicesOptions.PublicUrl.TrimEnd('/')],
+                PostLogoutRedirectUris = [octoAssetRepositoryServicesOptions.PublicUrl.EnsureEndsWith("/")],
+                AllowedCorsOrigins = [octoAssetRepositoryServicesOptions.PublicUrl.TrimEnd('/')],
                 AllowedScopes =
                 [
                     CommonConstants.Scopes.OpenId,
@@ -178,17 +178,17 @@ internal class DefaultConfigurationCreatorService : IDefaultConfigurationCreator
             },
             new(CommonConstants.AsserRepositoryServicesSwaggerClientId,
                 AssetTexts.Backend_AssetServices_UserSchema_Swagger_DisplayName,
-                _octoAssetRepositoryServicesOptions.PublicUrl)
+                octoAssetRepositoryServicesOptions.PublicUrl)
             {
                 AllowedGrantTypes = [OidcConstants.GrantTypes.AuthorizationCode],
 
                 RedirectUris =
                 [
-                    _octoAssetRepositoryServicesOptions.PublicUrl.EnsureEndsWith("/swagger/oauth2-redirect.html")
+                    octoAssetRepositoryServicesOptions.PublicUrl.EnsureEndsWith("/swagger/oauth2-redirect.html")
                 ],
 
-                PostLogoutRedirectUris = [_octoAssetRepositoryServicesOptions.PublicUrl.EnsureEndsWith("/")],
-                AllowedCorsOrigins = [_octoAssetRepositoryServicesOptions.PublicUrl.TrimEnd('/')],
+                PostLogoutRedirectUris = [octoAssetRepositoryServicesOptions.PublicUrl.EnsureEndsWith("/")],
+                AllowedCorsOrigins = [octoAssetRepositoryServicesOptions.PublicUrl.TrimEnd('/')],
                 AllowedScopes =
                 [
                     CommonConstants.Scopes.OpenId,

@@ -228,6 +228,7 @@ public class TenantsController : ControllerBase
         try
         {
             await _distributionEventHubService.PublishAsync(new PreUpdateTenant(tenantId));
+            await Task.Delay(2000);
             await _distributionEventHubService.PublishAsync(new PosUpdateTenant(tenantId));
 
             return Ok("Cache cleared");

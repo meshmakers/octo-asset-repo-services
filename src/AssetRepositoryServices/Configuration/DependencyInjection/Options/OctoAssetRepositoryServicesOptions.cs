@@ -1,6 +1,8 @@
 // ReSharper disable MemberCanBePrivate.Global
 // ReSharper disable AutoPropertyCanBeMadeGetOnly.Global
 
+using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
+
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.Configuration.DependencyInjection.Options;
 
 /// <summary>
@@ -21,6 +23,7 @@ public class OctoAssetRepositoryServicesOptions
         BrokerHost = "localhost";
         StreamDataUser = "crate";
         StreamDataHost = "127.0.0.1";
+        MinLogLevel = LogLevelDto.Warn;
     }
 
     /// <summary>
@@ -77,4 +80,9 @@ public class OctoAssetRepositoryServicesOptions
     /// Password for crate db
     /// </summary>
     public string? StreamDataPassword { get; set; }
+        
+    /// <summary>
+    /// Gets or sets the minimal log level to be logged
+    /// </summary>
+    public LogLevelDto MinLogLevel { get; set; }
 }
