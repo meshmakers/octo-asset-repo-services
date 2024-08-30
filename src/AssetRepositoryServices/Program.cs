@@ -1,5 +1,4 @@
-using Meshmakers.Octo.Backend.AssetRepositoryServices;
-using Meshmakers.Octo.Backend.AssetRepositoryServices.Configuration.DependencyInjection.Options;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.Configuration;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.Routing;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.Services;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.StreamData;
@@ -9,7 +8,6 @@ using Meshmakers.Octo.Services.Common.StreamData.Extensions;
 using Meshmakers.Octo.Services.Infrastructure.Services;
 using Meshmakers.Octo.Services.Observability;
 using Microsoft.AspNetCore.Cors.Infrastructure;
-using Microsoft.Extensions.Options;
 using NLog;
 using NLog.Web;
 using LogLevel = Microsoft.Extensions.Logging.LogLevel;
@@ -57,20 +55,7 @@ try
             options => builder.Configuration.GetSection("AssetRepository").Bind(options));
 
     builder.Services.AddStreamDataManagement()
-        .AddStreamDataDatabase(configuration =>
-        {
-            var assetRepoConfig = builder.Configuration.GetSection("AssetRepository").Get<OctoAssetRepositoryServicesOptions>();
-            if (assetRepoConfig == null)
-            {
-                throw AssetRepositoryException.ServiceNotRegistered(
-                    typeof(IOptions<OctoAssetRepositoryServicesOptions>));
-            }
-
-            configuration.ConnectionStringFromConfiguration(
-                assetRepoConfig.StreamDataHost,
-                assetRepoConfig.StreamDataUser,
-                assetRepoConfig.StreamDataPassword);
-        });
+        .AddStreamDataDatabase<ConfigureStreamDataConfiguration>();
 
     var app = builder.Build();
     app.MapObservability();
