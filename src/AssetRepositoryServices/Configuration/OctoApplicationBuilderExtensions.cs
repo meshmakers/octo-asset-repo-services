@@ -1,4 +1,4 @@
-using GraphQL.Server.Ui.Playground;
+using GraphQL.Server.Ui.Altair;
 using Meshmakers.Octo.Backend.AssetRepositoryServices;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Middleware;
 using Meshmakers.Octo.Services.Swagger.Configuration;
@@ -57,9 +57,9 @@ public static class OctoApplicationBuilderExtensions
         app.UseEndpoints(endpoints =>
         {
             endpoints.MapControllers();
-            endpoints.MapGraphQlTenantPlayground(new PlaygroundOptions
+            endpoints.MapGraphQlTenantPlayground(new AltairOptions
                 {
-                    RequestCredentials = RequestCredentials.Include,
+//                    RequestCredentials = RequestCredentials.Include,
                     GraphQLEndPoint = "/tenants/{tenantId}/graphQl"
                 }, "tenants/{tenantId:tenantId}/graphQl/playground")
                 .RequireAuthorization(AssetRepositoryServiceConstants.AuthenticatedUserPolicy);

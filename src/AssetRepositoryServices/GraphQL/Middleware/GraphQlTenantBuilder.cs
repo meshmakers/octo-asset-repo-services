@@ -1,4 +1,4 @@
-using GraphQL.Server.Ui.Playground;
+using GraphQL.Server.Ui.Altair;
 
 #pragma warning disable 1591
 
@@ -7,7 +7,7 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Middleware;
 internal static class GraphQlTenantBuilder
 {
     internal static PlaygroundTenantEndpointConventionBuilder MapGraphQlTenantPlayground(
-        this IEndpointRouteBuilder endpoints, PlaygroundOptions options, string pattern = "ui/playground")
+        this IEndpointRouteBuilder endpoints, AltairOptions options, string pattern = "ui/playground")
     {
         if (endpoints == null)
         {

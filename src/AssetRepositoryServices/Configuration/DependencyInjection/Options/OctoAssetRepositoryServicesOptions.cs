@@ -23,7 +23,11 @@ public class OctoAssetRepositoryServicesOptions
         BrokerHost = "localhost";
         StreamDataUser = "crate";
         StreamDataHost = "127.0.0.1";
+#if DEBUGL || DEBUG
+        MinLogLevel = LogLevelDto.Trace;
+#else
         MinLogLevel = LogLevelDto.Warn;
+#endif
     }
 
     /// <summary>

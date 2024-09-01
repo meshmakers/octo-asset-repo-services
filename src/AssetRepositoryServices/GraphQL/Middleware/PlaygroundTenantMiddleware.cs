@@ -1,10 +1,12 @@
 using System.Diagnostics.CodeAnalysis;
 using System.Text;
-using GraphQL.Server.Ui.Playground;
+using GraphQL.Server.Ui.Altair;
 using Meshmakers.Common.Shared;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.Configuration.DependencyInjection.Options;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.RequestHandling;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.Services;
 using Meshmakers.Octo.Services.Common;
+using Microsoft.Extensions.Options;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Middleware;
 
@@ -13,27 +15,31 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Middleware;
 /// </summary>
 public class PlaygroundTenantMiddleware
 {
+    private readonly IOptions<OctoAssetRepositoryServicesOptions> _assetOptions;
     private readonly IOctoService _octoService;
-    private readonly PlaygroundOptions _options;
+    private readonly AltairOptions _options;
 
     private string? _lastTenantId;
 
     /// <summary>
     ///     The page model used to render Playground
     /// </summary>
-    private PlaygroundPageModel? _pageModel;
+    private AltairPageModel? _pageModel;
 
     /// <summary>
-    ///     Create a new <see cref="PlaygroundMiddleware" />
+    ///     Create a new <see cref="PlaygroundTenantMiddleware" />
     /// </summary>
     /// <param name="next">The next request delegate; not used, this is a terminal middleware.</param>
+    /// <param name="assetOptions">Asset options to check the tenantId</param>
     /// <param name="octoService">Octo service instance to check the tenantId</param>
     /// <param name="options">Options to customize middleware</param>
     [SuppressMessage("Style", "IDE0060:Remove unused parameter",
         Justification = "ASP.NET Core conventions")]
     // ReSharper disable once UnusedParameter.Local
-    public PlaygroundTenantMiddleware(RequestDelegate next, IOctoService octoService, PlaygroundOptions options)
+    public PlaygroundTenantMiddleware(RequestDelegate next,
+        IOptions<OctoAssetRepositoryServicesOptions> assetOptions, IOctoService octoService, AltairOptions options)
     {
+        _assetOptions = assetOptions;
         _octoService = octoService;
         _options = options ?? throw new ArgumentNullException(nameof(options));
     }
@@ -76,11 +82,12 @@ public class PlaygroundTenantMiddleware
 
     private async Task InvokePlayground(HttpResponse httpResponse, string? tenantId)
     {
+        
         if (string.Compare(tenantId, _lastTenantId, StringComparison.OrdinalIgnoreCase) != 0)
         {
             _lastTenantId = tenantId;
             _pageModel =
-                new PlaygroundPageModel(_options.GraphQLEndPoint.Replace("{tenantId}", tenantId),
+                new AltairPageModel(_assetOptions.Value.PublicUrl.EnsureEndsWith("/"), _options.GraphQLEndPoint.Replace("{tenantId}", tenantId),
                     _options);
         }
 

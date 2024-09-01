@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <title>Octo Mesh Playground</title>
+  <base href="@Model.BaseUri">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <link rel="icon" type="image/x-icon" href="/assets/favicon.ico">
+  <link href="/styles.css" rel="stylesheet"/>
+</head>
+
+<body>
+<app-root>
+  <style>
+    .loading-screen {
+      display: none;
+    }
+
+  </style>
+  <div class="loading-screen styled">
+    <div class="loading-screen-inner">
+      <div class="loading-screen-logo-container">
+        <img src="/assets/loading.svg" alt="Octo Mesh Playground">
+      </div>
+      <div class="loading-screen-loading-indicator">
+        <span class="loading-indicator-dot"></span>
+        <span class="loading-indicator-dot"></span>
+        <span class="loading-indicator-dot"></span>
+      </div>
+    </div>
+  </div>
+</app-root>
+<script rel="preload" as="script" type="text/javascript" src="/common.js"></script>
+<script rel="preload" as="script" type="text/javascript" src="/main.js"></script>
+<script rel="preload" as="script" type="text/javascript" src="/polyfills.js"></script>
+<script rel="preload" as="script" type="text/javascript" src="/runtime.js"></script>
+
+<script>
+  function getSubscriptionsEndPoint() {
+    let subscriptionsEndPoint = "@Model.SubscriptionsEndPoint";
+    if (/^(?:[a-z]+:)?\/\//i.test(subscriptionsEndPoint)) {
+      // if location includes protocol (e.g. "wss://") then return exact string
+      return subscriptionsEndPoint;
+    } else if (subscriptionsEndPoint[0] != '/') {
+      // if location is relative (e.g. "api") then prepend host and current path
+      let currentUrl = /^[^?]*(?=\/)/.exec(window.location.pathname);
+      currentUrl = currentUrl ? currentUrl[0] : '';
+      while (subscriptionsEndPoint.substring(0, 3) == '../') {
+        subscriptionsEndPoint = subscriptionsEndPoint.substring(3);
+        currentUrl = /^[^?]*(?=\/)/.exec(currentUrl);
+        currentUrl = currentUrl ? currentUrl[0] : '';
+      }
+      return (window.location.protocol === "http:" ? "ws://" : "wss://") + window.location.host + currentUrl + '/' + subscriptionsEndPoint;
+    }
+    // if location is absolute (e.g. "/api") then prepend host only
+    return (window.location.protocol === "http:" ? "ws://" : "wss://") + window.location.host + subscriptionsEndPoint;
+  }
+
+  var altairOptions = {
+    endpointURL: "@Model.GraphQLEndPoint",
+    subscriptionsEndpoint: getSubscriptionsEndPoint(),
+    initialHeaders: @Model.Headers,
+    initialSubscriptionsPayload: @Model.SubscriptionsPayload,
+    initialSettings: @Model.Settings,
+  };
+
+  window.addEventListener("load", function () {
+    AltairGraphQL.init(altairOptions);
+  });
+</script>
+</body>
+
+</html>
