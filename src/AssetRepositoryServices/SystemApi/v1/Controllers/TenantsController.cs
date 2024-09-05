@@ -47,7 +47,8 @@ public class TenantsController : ControllerBase
         using var session = await _octoService.SystemContext.GetAdminSessionAsync();
         session.StartTransaction();
 
-        var result = await _octoService.SystemContext.GetChildTenantsAsync(session, pagingParams?.Skip, pagingParams?.Take);
+        var result =
+            await _octoService.SystemContext.GetChildTenantsAsync(session, pagingParams?.Skip, pagingParams?.Take);
 
         if (pagingParams != null)
         {
@@ -227,9 +228,10 @@ public class TenantsController : ControllerBase
     {
         try
         {
-            await _distributionEventHubService.PublishAsync(new PreUpdateTenant(tenantId));
+            var correlationId = Guid.NewGuid();
+            await _distributionEventHubService.PublishAsync(new PreUpdateTenant(tenantId, correlationId, DateTime.Now));
             await Task.Delay(2000);
-            await _distributionEventHubService.PublishAsync(new PosUpdateTenant(tenantId));
+            await _distributionEventHubService.PublishAsync(new PosUpdateTenant(tenantId, correlationId, DateTime.Now));
 
             return Ok("Cache cleared");
         }
