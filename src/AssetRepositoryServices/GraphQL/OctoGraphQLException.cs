@@ -66,4 +66,9 @@ public class OctoGraphQLException : Exception
         return new OctoGraphQLException("StreamDataQuery is invalid. " +
                                         "RequiredParameterNames: " + string.Join(", ", requiredParameterNames));
     }
+
+    public static Exception RtIdUndefined()
+    {
+        return new OctoGraphQLException("RtId is undefined.");
+    }
 }

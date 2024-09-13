@@ -46,7 +46,8 @@ internal abstract class RtMutationBase : ObjectGraphType
         List<EntityUpdateInfo<RtEntity>> entityUpdateInfos)
     {
         var resultSet = await repository.GetRtEntitiesByIdAsync(session, ckTypeId,
-            entityUpdateInfos.Select(x => x.RtEntityId.RtId).ToList(), DataQueryOperation.Create());
+            entityUpdateInfos.Select(x => x.RtId ?? throw OctoGraphQLException.RtIdUndefined() 
+                ).ToList(), DataQueryOperation.Create());
 
         return resultSet.Items.Select(RtEntityDtoType.CreateRtEntityDto);
     }
