@@ -55,13 +55,11 @@ public interface ITenantManager
 /// <inheritdoc />
 internal class TenantManager : ITenantManager
 {
-    private const string CommunicationControllerServiceSchemaVersionKey = "CommunicationControllerServices";
-
     private readonly ILogger<TenantManager> _logger;
     private readonly ISystemContext _systemContext;
-    private readonly IStreamDataTenantContextFactory _StreamDataTenantContextFactory;
+    private readonly IStreamDataTenantContextFactory _streamDataTenantContextFactory;
 
-    private readonly Dictionary<string, IStreamDataTenantContext> _StreamDataTenantContexts = new();
+    private readonly Dictionary<string, IStreamDataTenantContext> _streamDataTenantContexts = new();
     private readonly SemaphoreSlim _startTenantSemaphore = new(1);
 
 
@@ -77,7 +75,7 @@ internal class TenantManager : ITenantManager
     {
         _logger = logger;
         _systemContext = systemContext;
-        _StreamDataTenantContextFactory = streamDataTenantContextFactory;
+        _streamDataTenantContextFactory = streamDataTenantContextFactory;
     }
 
     /// <inheritdoc />
@@ -107,7 +105,7 @@ internal class TenantManager : ITenantManager
 
     public async Task EnableStreamData(string tenantId)
     {
-        if (_StreamDataTenantContexts.TryGetValue(tenantId, out _))
+        if (_streamDataTenantContexts.TryGetValue(tenantId, out _))
         {
             _logger.LogDebug("Tenant '{TenantId}' is already enabled and started", tenantId);
             return;
@@ -148,18 +146,18 @@ internal class TenantManager : ITenantManager
         try
         {
             _logger.LogInformation("Starting tenant '{TenantId}'", tenantId);
-            if (_StreamDataTenantContexts.TryGetValue(tenantId, out _))
+            if (_streamDataTenantContexts.TryGetValue(tenantId, out _))
             {
                 _logger.LogInformation("Tenant '{TenantId}' is already started", tenantId);
                 return;
             }
 
 
-            var StreamDataContext = await _StreamDataTenantContextFactory.CreateAsync(tenantId);
+            var streamDataContext = await _streamDataTenantContextFactory.CreateAsync(tenantId);
 
-            if (await StreamDataContext.StartAsync())
+            if (await streamDataContext.StartAsync())
             {
-                _StreamDataTenantContexts.Add(tenantId, StreamDataContext);
+                _streamDataTenantContexts.Add(tenantId, streamDataContext);
 
                 _logger.LogInformation("Started tenant '{TenantId}'", tenantId);
             }
@@ -178,7 +176,7 @@ internal class TenantManager : ITenantManager
 
     public async Task StopTenantAsync(string tenantId)
     {
-        if (_StreamDataTenantContexts.Remove(tenantId, out var context))
+        if (_streamDataTenantContexts.Remove(tenantId, out var context))
         {
             _logger.LogInformation("Tenant '{TenantId}' is stopping", tenantId);
             await context.StopAsync();
@@ -188,7 +186,7 @@ internal class TenantManager : ITenantManager
     public async Task DeleteTenantAsync(string tenantId)
     {
         _logger.LogInformation("Deleting tenant '{TenantId}'", tenantId);
-        if (_StreamDataTenantContexts.Remove(tenantId, out var context))
+        if (_streamDataTenantContexts.Remove(tenantId, out var context))
         {
             _logger.LogInformation("Deleting tenant '{TenantId}'", tenantId);
             await context.DeleteAsync();
@@ -197,6 +195,6 @@ internal class TenantManager : ITenantManager
 
     public IStreamDataTenantContext? GetStreamDataTenantContext(string tenantId)
     {
-        return _StreamDataTenantContexts.GetValueOrDefault(tenantId);
+        return _streamDataTenantContexts.GetValueOrDefault(tenantId);
     }
 }
