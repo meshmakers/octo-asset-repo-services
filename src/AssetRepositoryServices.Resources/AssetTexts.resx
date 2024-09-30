@@ -99,4 +99,22 @@
     <data name="Graphql_Model_Description_Description" xml:space="preserve">
         <value>Optional description of the model.</value>
     </data>
+    <data name="Graphql_Enum_IsExtensible_Description" xml:space="preserve">
+        <value>Whether the enum is extensible for customization.</value>
+    </data>
+    <data name="Graphql_EnumValue_Description" xml:space="preserve">
+        <value>A construction kit enum value</value>
+    </data>
+    <data name="Graphql_EnumValue_Key_Description" xml:space="preserve">
+        <value>Unique key of enum value</value>
+    </data>
+    <data name="Graphql_EnumValue_Description_Description" xml:space="preserve">
+        <value>Description of enum value</value>
+    </data>
+    <data name="Graphql_EnumValue_Name_Description" xml:space="preserve">
+        <value>Name of enum value</value>
+    </data>
+    <data name="Graphql_EnumValue_IsExtension_Description" xml:space="preserve">
+        <value>True, when the enum value is a custom extension, otherwise false</value>
+    </data>
 </root>

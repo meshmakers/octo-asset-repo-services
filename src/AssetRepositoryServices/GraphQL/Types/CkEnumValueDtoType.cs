@@ -1,3 +1,4 @@
+using AssetRepositoryServices.Resources;
 using GraphQL.Types;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb.Repositories.Entities;
@@ -9,14 +10,16 @@ internal sealed class CkEnumValueDtoType : ObjectGraphType<CkEnumValueDto>
     public CkEnumValueDtoType()
     {
         Name = "CkEnumValue";
-        Description = "A construction kit enum value";
+        Description = AssetTexts.Graphql_EnumValue_Description;
 
         Field(x => x.Key, type: typeof(IntGraphType))
-            .Description("Key of the enum");
+            .Description(AssetTexts.Graphql_EnumValue_Key_Description);
         Field(x => x.Name, type: typeof(StringGraphType))
-            .Description("Value of the enum");
+            .Description(AssetTexts.Graphql_EnumValue_Name_Description);
         Field(x => x.Description, type: typeof(StringGraphType))
-            .Description("Description of the enum");
+            .Description(AssetTexts.Graphql_EnumValue_Description_Description);
+        Field(x => x.IsExtension, type: typeof(BooleanGraphType))
+            .Description(AssetTexts.Graphql_EnumValue_IsExtension_Description);
     }
     
     internal static CkEnumValueDto CreateCkEnumValueDto(ConstructionKit.Contracts.DataTransferObjects.CkEnumValueDto ckEnumValue)
@@ -25,7 +28,8 @@ internal sealed class CkEnumValueDtoType : ObjectGraphType<CkEnumValueDto>
         {
             Key = ckEnumValue.Key,
             Name = ckEnumValue.Name,
-            Description = ckEnumValue.Description
+            Description = ckEnumValue.Description,
+            IsExtension = ckEnumValue.IsExtension
         };
         return ckEnumValueDto;
     }
@@ -36,7 +40,8 @@ internal sealed class CkEnumValueDtoType : ObjectGraphType<CkEnumValueDto>
         {
             Key = ckEnumValue.Key,
             Name = ckEnumValue.Name,
-            Description = ckEnumValue.Description
+            Description = ckEnumValue.Description,
+            IsExtension = ckEnumValue.IsExtension
         };
         return ckEnumValueDto;
     }

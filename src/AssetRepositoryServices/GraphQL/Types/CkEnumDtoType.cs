@@ -21,6 +21,8 @@ internal sealed class CkEnumDtoType : ObjectGraphType<CkEnumDto>
             .Description(AssetTexts.Graphql_Enum_Description_Description);
         Field(x => x.UseFlags, type: typeof(NonNullGraphType<BooleanGraphType>))
             .Description(AssetTexts.Graphql_Enum_UseFlags_Description);
+        Field(x => x.IsExtensible, type: typeof(NonNullGraphType<BooleanGraphType>))
+            .Description(AssetTexts.Graphql_Enum_IsExtensible_Description);
         Field(x => x.Values, type: typeof(NonNullGraphType<ListGraphType<CkEnumValueDtoType>>))
             .Description(AssetTexts.Graphql_Enum_Values_Description);
     }
@@ -32,6 +34,7 @@ internal sealed class CkEnumDtoType : ObjectGraphType<CkEnumDto>
             CkEnumId = ckEnumGraph.CkEnumId,
             Description = ckEnumGraph.Description,
             UseFlags = ckEnumGraph.UseFlags,
+            IsExtensible = ckEnumGraph.IsExtensible,
             Values = ckEnumGraph.Values.Select(CkEnumValueDtoType.CreateCkEnumValueDto).ToList()
         };
         return ckEnumDto;
@@ -44,6 +47,7 @@ internal sealed class CkEnumDtoType : ObjectGraphType<CkEnumDto>
             CkEnumId = ckEnum.CkEnumId,
             Description = ckEnum.Description,
             UseFlags = ckEnum.UseFlags,
+            IsExtensible = ckEnum.IsExtensible,
             Values = ckEnum.Values.Select(CkEnumValueDtoType.CreateCkEnumValueDto).ToList()
         };
         return ckEnumDto;
