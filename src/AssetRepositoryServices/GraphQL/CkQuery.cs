@@ -17,7 +17,7 @@ internal sealed class CkQuery : ObjectGraphType
     public CkQuery(ILogger<CkQuery> logger)
     {
         _logger = logger;
-        Name = "ConstructionKit";
+        Name = "ConstructionKitQuery";
         
         Connection<CkModelDtoType>("Models")
             .Argument<StringGraphType>(Statics.CkIdArg, "Returns the construction kit model with the given id.")

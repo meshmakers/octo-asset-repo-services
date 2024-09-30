@@ -242,5 +242,29 @@ namespace AssetRepositoryServices.Resources {
                 return ResourceManager.GetString("Graphql_EnumValue_IsExtension_Description", resourceCulture);
             }
         }
+        
+        public static string Graphql_Enum_CkExtensionUpdateOperations_Description {
+            get {
+                return ResourceManager.GetString("Graphql_Enum_CkExtensionUpdateOperations_Description", resourceCulture);
+            }
+        }
+        
+        public static string Graphql_CkMutation_CkId_Description {
+            get {
+                return ResourceManager.GetString("Graphql_CkMutation_CkId_Description", resourceCulture);
+            }
+        }
+        
+        public static string Graphql_CkMutation_CkIds_Description {
+            get {
+                return ResourceManager.GetString("Graphql_CkMutation_CkIds_Description", resourceCulture);
+            }
+        }
+        
+        public static string Graphql_CkMutation_Description {
+            get {
+                return ResourceManager.GetString("Graphql_CkMutation_Description", resourceCulture);
+            }
+        }
     }
 }

@@ -18,6 +18,9 @@ internal sealed class OctoMutation : ObjectGraphType
     {
         Field("Runtime", new RtMutation(graphTypesCache))
             .Resolve(_ => new RtEntityDto());
+        
+        Field<CkMutation>("ConstructionKit")
+            .Resolve(_ => new object());
 
         AddField(new FieldType
         {

@@ -48,4 +48,14 @@ internal class AssetRepositoryException : Exception
     {
         return new AssetRepositoryException("Direction is missing");
     }
+
+    public static Exception ParentUnavailable()
+    {
+       return new AssetRepositoryException("Parent is not available");
+    }
+
+    public static Exception ArgumentMissing(string valuesArg)
+    {
+        return new AssetRepositoryException($"Argument {valuesArg} is missing");
+    }
 }

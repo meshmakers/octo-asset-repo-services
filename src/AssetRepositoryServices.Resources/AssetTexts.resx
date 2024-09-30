@@ -117,4 +117,16 @@
     <data name="Graphql_EnumValue_IsExtension_Description" xml:space="preserve">
         <value>True, when the enum value is a custom extension, otherwise false</value>
     </data>
+    <data name="Graphql_Enum_CkExtensionUpdateOperations_Description" xml:space="preserve">
+        <value>Defines the possible operation operations to extend construction elements.</value>
+    </data>
+    <data name="Graphql_CkMutation_CkId_Description" xml:space="preserve">
+        <value>CkEnumId to filter for</value>
+    </data>
+    <data name="Graphql_CkMutation_CkIds_Description" xml:space="preserve">
+        <value>CkEnumIds to filter for</value>
+    </data>
+    <data name="Graphql_CkMutation_Description" xml:space="preserve">
+        <value>Construction Kit element mutations</value>
+    </data>
 </root>
