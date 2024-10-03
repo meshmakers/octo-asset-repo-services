@@ -9,6 +9,7 @@ using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Scalars;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Utils;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
 using Meshmakers.Octo.ConstructionKit.Contracts;
+using Meshmakers.Octo.Runtime.Contracts.Repositories.Query;
 using NLog;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL;
@@ -34,6 +35,12 @@ internal sealed class RtQuery : ObjectGraphType
                 "Filters items based on field compare")
             .ResolveAsync(ResolveGenericRtEntitiesQuery);
 
+
+        Connection<RtEntityGenericDtoType>("RuntimeQuery")
+            .Argument<OctoObjectIdType>(Statics.RtIdArg, "The query runtime id.")
+            .ResolveAsync(ResolveRtQueryAsync);
+
+
         foreach (var rtEntityDtoType in graphTypesCache.GetTypes())
         {
             this.Connection<object?, IGraphType, RtEntityDto>(graphTypesCache, rtEntityDtoType, rtEntityDtoType.Name)
@@ -44,11 +51,53 @@ internal sealed class RtQuery : ObjectGraphType
                 .Argument<SearchFilterDtoType>(Statics.SearchFilterArg, "Filters items based on text search")
                 .Argument<FieldGroupByType>(Statics.GroupByArg, "Groups items based on attributes")
                 .Argument<ListGraphType<SortDtoType>>(Statics.SortOrderArg, "Sort order for items")
-                .Argument<NearGeospatialFilterDtoType>(Statics.GeoNearFilterArg, "Geospatial filter for items, that searches for items near a point")
+                .Argument<NearGeospatialFilterDtoType>(Statics.GeoNearFilterArg,
+                    "Geospatial filter for items, that searches for items near a point")
                 .Argument<ListGraphType<FieldFilterDtoType>>(Statics.FieldFilterArg,
                     "Filters items based on field compare")
                 .ResolveAsync(ResolveRtEntitiesQuery);
         }
+    }
+
+    private async Task<object?> ResolveRtQueryAsync(IResolveConnectionContext<object?> arg)
+    {
+        Logger.Debug("GraphQL query handling for runtime query started");
+
+        var sessionAccessor = arg.RequestServices?.GetRequiredService<IOctoSessionAccessor>();
+        if (sessionAccessor?.Session == null)
+        {
+            throw AssetRepositoryException.SessionUnavailable();
+        }
+
+        var graphQlUserContext = (GraphQlUserContext)arg.UserContext;
+        if (!arg.TryGetArgument(Statics.RtIdArg, out OctoObjectId? queryRtId))
+        {
+            arg.Errors.Add(new ExecutionError("Invalid query. Missing runtime id.")
+                { Code = Statics.GraphQLErrorCommon });
+            return null;
+        }
+
+        var tenantRepository = graphQlUserContext.TenantContext.GetTenantRepository();
+        var rtQuery =
+            await tenantRepository.GetRtEntityByRtIdAsync<ConstructionKit.Models.System.Generated.System.v1.RtQuery>(
+                sessionAccessor.Session, queryRtId.Value);
+
+        if (rtQuery == null)
+        {
+            arg.Errors.Add(new ExecutionError("Invalid query. Query not found.")
+                { Code = Statics.GraphQLErrorCommon });
+            return null;
+        }
+        
+        var offset = arg.GetOffset();
+        DataQueryOperation dataQueryOperation = DataQueryOperation.Create();
+
+        var resultSet = await tenantRepository.GetRtEntitiesByTypeAsync(sessionAccessor.Session,
+            rtQuery.QueryCkTypeId, dataQueryOperation, offset, arg.First);
+        
+        Logger.Debug("GraphQL query handling returning data");
+        return ConnectionUtils.ToConnection(resultSet.Items.Select(RtEntityDtoType.CreateRtEntityDto), arg,
+            0, (int)resultSet.TotalCount, resultSet.Grouping);
     }
 
     private async Task<object?> ResolveGenericRtEntitiesQuery(IResolveConnectionContext<object?> arg)
@@ -68,7 +117,7 @@ internal sealed class RtQuery : ObjectGraphType
                 { Code = Statics.GraphQLErrorCommon });
             return null;
         }
-        
+
         CkId<CkTypeId> ckTypeId = new(ckIdObj);
 
         var offset = arg.GetOffset();
@@ -96,12 +145,13 @@ internal sealed class RtQuery : ObjectGraphType
         if (keysList.Any())
         {
             var resultSetIds = await tenantRepository.GetRtEntitiesByIdAsync(
-                    sessionAccessor.Session, ckTypeId, keysList, dataQueryOperation,
-                    offset, arg.First);
+                sessionAccessor.Session, ckTypeId, keysList, dataQueryOperation,
+                offset, arg.First);
 
             Logger.Debug("GraphQL query handling returning data by keys");
             return ConnectionUtils.ToConnection(resultSetIds.Items.Select(RtEntityDtoType.CreateRtEntityDto), arg,
-                resultSetIds.TotalCount > 0 ? offset.GetValueOrDefault(0) : 0, (int)resultSetIds.TotalCount, resultSetIds.Grouping);
+                resultSetIds.TotalCount > 0 ? offset.GetValueOrDefault(0) : 0, (int)resultSetIds.TotalCount,
+                resultSetIds.Grouping);
         }
 
         var resultSet = await tenantRepository.GetRtEntitiesByTypeAsync(sessionAccessor.Session,
@@ -116,7 +166,7 @@ internal sealed class RtQuery : ObjectGraphType
     private async Task<object?> ResolveRtEntitiesQuery(IResolveConnectionContext<object?> arg)
     {
         Logger.Debug("GraphQL query handling for specific runtime entity type started");
-        
+
         var sessionAccessor = arg.RequestServices?.GetRequiredService<IOctoSessionAccessor>();
         if (sessionAccessor?.Session == null)
         {
@@ -170,7 +220,8 @@ internal sealed class RtQuery : ObjectGraphType
 
             Logger.Debug("GraphQL query handling returning data by keys");
             return ConnectionUtils.ToConnection(resultSetIds.Items.Select(RtEntityDtoType.CreateRtEntityDto), arg,
-                resultSetIds.TotalCount > 0 ? offset.GetValueOrDefault(0) : 0, (int)resultSetIds.TotalCount, resultSetIds.Grouping);
+                resultSetIds.TotalCount > 0 ? offset.GetValueOrDefault(0) : 0, (int)resultSetIds.TotalCount,
+                resultSetIds.Grouping);
         }
 
         var resultSet =
