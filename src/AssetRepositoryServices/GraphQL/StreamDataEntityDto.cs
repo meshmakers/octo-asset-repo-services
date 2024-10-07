@@ -29,6 +29,24 @@ public class StreamDataEntityDto : GraphQlDto
     public CkId<CkTypeId> CkTypeId { get; set; } = null!;
 
     /// <summary>
+    /// The Well known name of the entity
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public string? RtWellKnownName { get; set; }
+
+    /// <summary>
+    /// The creation date time of the entity
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public DateTime? RtCreationDateTime { get; set; }
+
+    /// <summary>
+    /// The last changed date time of the entity
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public DateTime? RtChangedDateTime { get; set; }
+
+    /// <summary>
     ///     Gets or sets the properties of the entity
     /// </summary>
     [JsonExtensionData]

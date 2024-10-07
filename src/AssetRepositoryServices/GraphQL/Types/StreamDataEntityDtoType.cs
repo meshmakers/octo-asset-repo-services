@@ -47,7 +47,7 @@ internal sealed class StreamDataEntityDtoType : ObjectGraphType<StreamDataEntity
         //   }
         // }
         // 
-        
+
         ConnectionName = _ckTypeGraph.CkTypeId.GetGraphQlPascalCaseName();
 
         Description = $"Stream data entities of construction kit type '{_ckTypeGraph.CkTypeId}'";
@@ -63,9 +63,12 @@ internal sealed class StreamDataEntityDtoType : ObjectGraphType<StreamDataEntity
 
         Field(d => d.RtId, type: typeof(NonNullGraphType<OctoObjectIdType>));
         Field(d => d.CkTypeId, type: typeof(NonNullGraphType<CkIdTypeGraph<CkTypeId>>));
-        Field(d => d.TimeStamp, type: typeof(DateTimeGraphType))
+        Field(d => d.TimeStamp, type: typeof(DateTimeGraphType));
+        Field(d => d.RtWellKnownName, type: typeof(StringGraphType));
+        Field(d => d.RtCreationDateTime, type: typeof(DateTimeGraphType));
+        Field(d => d.RtChangedDateTime, type: typeof(DateTimeGraphType))
             .Argument<AttributeTsArgumentGraphType>(Statics.StreamDataAttributeArgument,
-                        "Arguments for stream data.");
+            "Arguments for stream data.");
     }
 
 
@@ -235,6 +238,9 @@ internal sealed class StreamDataEntityDtoType : ObjectGraphType<StreamDataEntity
             RtId = datapoint.RtId ?? throw OctoGraphQLException.CkTypeIdUndefined(),
             CkTypeId = datapoint.CkTypeId ?? throw OctoGraphQLException.CkTypeIdUndefined(),
             TimeStamp = datapoint.Timestamp,
+            RtWellKnownName = datapoint.RtWellKnownName,
+            RtCreationDateTime = datapoint.RtCreationDateTime,
+            RtChangedDateTime = datapoint.RtChangedDateTime,
             UserContext = datapoint
         };
         return tsEntityDto;
