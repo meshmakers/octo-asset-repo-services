@@ -46,6 +46,7 @@ internal sealed class RtEntityDtoType : ObjectGraphType<RtEntityDto>
         Field(d => d.RtCreationDateTime, type: typeof(DateTimeGraphType));
         Field(d => d.RtChangedDateTime, type: typeof(DateTimeGraphType));
         Field(x => x.RtWellKnownName, true);
+        Field(x => x.RtVersion, false);
     }
 
     /// <summary>
@@ -206,6 +207,7 @@ internal sealed class RtEntityDtoType : ObjectGraphType<RtEntityDto>
             RtCreationDateTime = rtEntity.RtCreationDateTime,
             RtChangedDateTime = rtEntity.RtChangedDateTime,
             RtWellKnownName = rtEntity.RtWellKnownName,
+            RtVersion = rtEntity.RtVersion,
             UserContext = rtEntity
         };
         return rtEntityDto;
