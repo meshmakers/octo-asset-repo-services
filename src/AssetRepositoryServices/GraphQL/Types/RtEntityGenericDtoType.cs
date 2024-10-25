@@ -52,23 +52,23 @@ internal sealed class RtEntityGenericDtoType : ObjectGraphType<RtEntityDto>
             .ResolveAsync(ResolveGenericRtAssociationsQuery);
     }
 
-    private object ResolveAttributes(IResolveConnectionContext<RtEntityDto> ctx)
+    private object ResolveAttributes(IResolveConnectionContext<RtEntityDto> context)
     {
-        var ckCacheService = ctx.RequestServices?.GetRequiredService<ICkCacheService>();
+        var ckCacheService = context.RequestServices?.GetRequiredService<ICkCacheService>();
         if (ckCacheService == null)
         {
             throw AssetRepositoryException.ServiceNotRegistered(typeof(ICkCacheService));
         }
 
-        var graphQlContext = (GraphQlUserContext)ctx.UserContext;
+        var graphQlContext = (GraphQlUserContext)context.UserContext;
 
 
-        var ckTypeGraph = ckCacheService.GetCkType(graphQlContext.TenantId, ctx.Source.CkTypeId);
+        var ckTypeGraph = ckCacheService.GetCkType(graphQlContext.TenantId, context.Source.CkTypeId);
 
         IEnumerable<CkTypeAttributeGraph> resultList;
-        if (ctx.HasArgument(Statics.AttributeNamesFilterArg))
+        if (context.HasArgument(Statics.AttributeNamesFilterArg))
         {
-            var filterAttributeNames = ctx.GetArgument<IEnumerable<string>>(Statics.AttributeNamesFilterArg);
+            var filterAttributeNames = context.GetArgument<IEnumerable<string>>(Statics.AttributeNamesFilterArg);
 
             resultList =
                 ckTypeGraph.AllAttributes.Values.Where(a =>
@@ -80,14 +80,12 @@ internal sealed class RtEntityGenericDtoType : ObjectGraphType<RtEntityDto>
         }
 
         return ConnectionUtils.ToConnection(
-            resultList.Select(item => CreateRtEntityAttributeDto((RtEntity)ctx.Source.UserContext!, item)),
-            ctx, null);
+            resultList.Select(item => CreateRtEntityAttributeDto((RtEntity)context.Source.UserContext!, item)),
+            context, null);
     }
 
     private async Task<object?> ResolveGenericRtAssociationsQuery(IResolveConnectionContext<RtEntityDto> arg)
     {
-        await Task.Yield();
-
         var sessionAccessor = arg.RequestServices?.GetRequiredService<IOctoSessionAccessor>();
         if (sessionAccessor?.Session == null)
         {
@@ -148,13 +146,12 @@ internal sealed class RtEntityGenericDtoType : ObjectGraphType<RtEntityDto>
     }
 
     private RtEntityAttributeDto CreateRtEntityAttributeDto(RtEntity rtEntity,
-        CkTypeAttributeGraph attributeCacheItem)
+        CkTypeAttributeGraph ckTypeAttributeGraph)
     {
         var attributeDto = new RtEntityAttributeDto
         {
-            AttributeName = attributeCacheItem.AttributeName.ToCamelCase(),
-            Value = rtEntity.GetAttributeValueOrDefault(attributeCacheItem.AttributeName),
-            UserContext = attributeCacheItem
+            AttributeName = ckTypeAttributeGraph.AttributeName.ToCamelCase(),
+            Value = rtEntity.GetAttributeValueOrDefault(ckTypeAttributeGraph.AttributeName)
         };
         return attributeDto;
     }

@@ -1,4 +1,5 @@
 using GraphQL.Types;
+using Meshmakers.Common.Shared;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
 using Meshmakers.Octo.ConstructionKit.Contracts;
@@ -22,9 +23,9 @@ internal abstract class RtMutationBase : ObjectGraphType
 
         rtEntity.RtWellKnownName = rtEntityDto.RtWellKnownName;
 
-        if (rtEntityDto.Properties != null)
+        if (rtEntityDto.Attributes != null)
         {
-            foreach (var item in rtEntityDto.Properties)
+            foreach (var item in rtEntityDto.Attributes)
             {
                 if (TryHandleAttribute(rtEntity, ckTypeGraph, item))
                 {
@@ -42,25 +43,31 @@ internal abstract class RtMutationBase : ObjectGraphType
     }
 
     protected async Task<IEnumerable<RtEntityDto>> GetResultSet(IOctoSession session, ITenantRepository repository,
-        CkId<CkTypeId> ckTypeId,
         List<EntityUpdateInfo<RtEntity>> entityUpdateInfos)
     {
-        var resultSet = await repository.GetRtEntitiesByIdAsync(session, ckTypeId,
-            entityUpdateInfos.Select(x => x.RtId ?? throw OctoGraphQLException.RtIdUndefined() 
-                ).ToList(), DataQueryOperation.Create());
+        var resultSetComplete = new List<RtEntity>();
+        foreach (var grouping in entityUpdateInfos.GroupBy(x => x.CkTypeId))
+        {
+            var resultSet = await repository.GetRtEntitiesByIdAsync(session, grouping.Key,
+                entityUpdateInfos.Select(x => x.RtId ?? throw OctoGraphQLException.RtIdUndefined() 
+                ).ToList(), DataQueryOperation.Create()); 
+            
+            resultSetComplete.AddRange(resultSet.Items);
+        }
+        
 
-        return resultSet.Items.Select(RtEntityDtoType.CreateRtEntityDto);
+        return resultSetComplete.Select(RtEntityDtoType.CreateRtEntityDto);
     }
 
 
-    private bool TryHandleAttribute(RtEntity rtEntity, CkTypeGraph entityCacheItem,
-        KeyValuePair<string, object?> item)
+    private bool TryHandleAttribute(RtEntity rtEntity, CkTypeGraph ckTypeGraph,
+        RtEntityAttributeDto item)
     {
-        var attributeName = item.Key;
+        var attributeName = item.AttributeName.ToPascalCase();
 
-        if (entityCacheItem.AllAttributesByName.TryGetValue(attributeName, out var attributeCacheItem))
+        if (ckTypeGraph.AllAttributesByName.TryGetValue(attributeName, out var ckTypeAttributeGraph))
         {
-            rtEntity.SetAttributeValue(attributeCacheItem.AttributeName, attributeCacheItem.ValueType, item.Value);
+            rtEntity.SetAttributeValue(ckTypeAttributeGraph.AttributeName, ckTypeAttributeGraph.ValueType, item.Value);
             return true;
         }
 
@@ -68,12 +75,12 @@ internal abstract class RtMutationBase : ObjectGraphType
     }
 
     // ReSharper disable once UnusedMethodReturnValue.Local
-    private bool TryHandleInboundAssoc(RtEntity rtEntity, CkTypeGraph entityCacheItem,
-        KeyValuePair<string, object?> item, List<AssociationUpdateInfo> associations)
+    private bool TryHandleInboundAssoc(RtEntity rtEntity, CkTypeGraph ckTypeGraph,
+        RtEntityAttributeDto item, List<AssociationUpdateInfo> associations)
     {
-        var assocName = item.Key;
+        var assocName = item.AttributeName.ToPascalCase();
 
-        var ckTypeAssociationGraph = entityCacheItem.Associations.In.All
+        var ckTypeAssociationGraph = ckTypeGraph.Associations.In.All
             .FirstOrDefault(a => a.NavigationPropertyName == assocName);
         if (ckTypeAssociationGraph == null)
         {
@@ -98,12 +105,12 @@ internal abstract class RtMutationBase : ObjectGraphType
     }
 
     // ReSharper disable once UnusedMethodReturnValue.Local
-    private bool TryHandleOutboundAssoc(RtEntity rtEntity, CkTypeGraph entityCacheItem,
-        KeyValuePair<string, object?> item, List<AssociationUpdateInfo> associations)
+    private bool TryHandleOutboundAssoc(RtEntity rtEntity, CkTypeGraph ckTypeGraph,
+        RtEntityAttributeDto item, List<AssociationUpdateInfo> associations)
     {
-        var assocName = item.Key;
+        var assocName = item.AttributeName.ToPascalCase();
 
-        var typeAssociationGraph = entityCacheItem.Associations.Out.All
+        var typeAssociationGraph = ckTypeGraph.Associations.Out.All
             .FirstOrDefault(a => a.NavigationPropertyName == assocName);
         if (typeAssociationGraph == null)
         {

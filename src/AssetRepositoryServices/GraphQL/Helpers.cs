@@ -304,7 +304,7 @@ internal static class Helpers
 
     internal static void AddAttribute<TSourceType>(ComplexGraphType<TSourceType> complexGraphType,
         IGraphTypesCache graphTypesCache,
-        CkTypeAttributeGraph typeAttributeGraph, bool isInputType) where TSourceType : GraphQlDto
+        CkTypeAttributeGraph typeAttributeGraph, bool isInputType)  where TSourceType : GraphQlDto
     {
         var attributeName = typeAttributeGraph.AttributeName;
         IGraphType? graphType;

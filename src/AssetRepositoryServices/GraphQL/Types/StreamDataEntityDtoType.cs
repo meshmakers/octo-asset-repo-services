@@ -6,6 +6,7 @@ using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Caches;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Inputs;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Scalars;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Utils;
+using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
 using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.ConstructionKit.Contracts.DataTransferObjects;
 using Meshmakers.Octo.ConstructionKit.Contracts.DependencyGraph;
@@ -231,18 +232,17 @@ internal sealed class StreamDataEntityDtoType : ObjectGraphType<StreamDataEntity
         return CkTypeDtoType.CreateCkTypeDto(ckTypeGraph);
     }
 
-    internal static StreamDataEntityDto CreateTsEntityDto(DataPointDto datapoint)
+    internal static StreamDataEntityDto CreateStreamDataEntityDto(DataPointDto datapoint)
     {
-        var tsEntityDto = new StreamDataEntityDto()
+        var streamDataEntityDto = new StreamDataEntityDto
         {
             RtId = datapoint.RtId ?? throw OctoGraphQLException.CkTypeIdUndefined(),
             CkTypeId = datapoint.CkTypeId ?? throw OctoGraphQLException.CkTypeIdUndefined(),
             TimeStamp = datapoint.Timestamp,
             RtWellKnownName = datapoint.RtWellKnownName,
             RtCreationDateTime = datapoint.RtCreationDateTime,
-            RtChangedDateTime = datapoint.RtChangedDateTime,
-            UserContext = datapoint
+            RtChangedDateTime = datapoint.RtChangedDateTime
         };
-        return tsEntityDto;
+        return streamDataEntityDto;
     }
 }

@@ -2,7 +2,6 @@ using GraphQL;
 using GraphQL.Types;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Caches;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.RequestHandling;
-using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Inputs;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Scalars;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Utils;
@@ -14,7 +13,7 @@ using Meshmakers.Octo.Runtime.Contracts;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb;
 using Meshmakers.Octo.Runtime.Contracts.RepositoryEntities;
 
-namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL;
+namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
 
 [DoNotRegister]
 internal class RtEntityMutation : RtMutationBase
@@ -128,7 +127,7 @@ internal class RtEntityMutation : RtMutationBase
                 return null;
             }
 
-            return await GetResultSet(sessionAccessor.Session, tenantRepository, ckTypeId, entityUpdateInfos);
+            return await GetResultSet(sessionAccessor.Session, tenantRepository, entityUpdateInfos);
         }
         catch (PersistenceException e)
         {
@@ -277,7 +276,7 @@ internal class RtEntityMutation : RtMutationBase
                 return null;
             }
 
-            return await GetResultSet(sessionAccessor.Session, tenantRepository, ckTypeId, entityUpdateInfos);
+            return await GetResultSet(sessionAccessor.Session, tenantRepository, entityUpdateInfos);
         }
         catch (OperationFailedException e)
         {

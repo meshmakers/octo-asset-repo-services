@@ -78,7 +78,7 @@ internal sealed class RtEntityDtoInputType : InputObjectGraphType<RtEntityDto>
 
     private void AddAssociation(string name)
     {
-        Expression<Func<RtEntityDto, object?>> scalarValueExpression = dto => dto.Properties![name];
+        Expression<Func<RtEntityDto, object?>> scalarValueExpression = dto => dto.Attributes!.First(x => x.AttributeName == name).Value;
 
         Field(name, type: typeof(ListGraphType<RtAssociationInputDtoType>), expression: scalarValueExpression);
     }

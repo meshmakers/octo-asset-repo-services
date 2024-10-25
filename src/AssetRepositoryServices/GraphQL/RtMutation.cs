@@ -1,6 +1,8 @@
 using GraphQL;
 using GraphQL.Types;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Caches;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Scalars;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL;
@@ -11,6 +13,10 @@ internal sealed class RtMutation : ObjectGraphType
     public RtMutation(IGraphTypesCache graphTypesCache)
     {
         Name = "Runtime";
+        
+        Field<RtQueryMutation>("RuntimeQuery")
+            .Argument<OctoObjectIdType>(Statics.RtIdArg, "The query runtime id.")
+            .Resolve(_ => new RtEntityDto());
         
         foreach (var rtEntityDtoType in graphTypesCache.GetTypes())
         {
