@@ -36,7 +36,22 @@ internal sealed class RtEntityDtoInputType : InputObjectGraphType<RtEntityDto>
     /// <remarks>We need an overload, to deserialize all properties to the dictionary of <see cref="RtEntityDto" /></remarks>
     public override object ParseDictionary(IDictionary<string, object?> value)
     {
-        return value.ToObjectWithWithUnknownProperties<RtEntityDto>() ?? throw new InvalidOperationException();
+        var rtEntity = value.ToObjectWithWithUnknownProperties<RtEntityDto>(out var unmappedDictionary);
+
+        if (unmappedDictionary.Count > 0)
+        {
+            rtEntity.Attributes = new List<RtEntityAttributeDto>();
+            foreach (var (dictKey, dictValue) in unmappedDictionary)
+            {
+                rtEntity.Attributes.Add(new RtEntityAttributeDto
+                {
+                    AttributeName = dictKey,
+                    Value = dictValue
+                });
+            }
+        }
+
+        return rtEntity;
     }
 
     /// <summary>
@@ -46,16 +61,18 @@ internal sealed class RtEntityDtoInputType : InputObjectGraphType<RtEntityDto>
     /// <param name="graphTypesCache"></param>
     /// <param name="typeGraph">The cache item</param>
     /// <param name="ckCacheService"></param>
-    public void Populate(ICkCacheService ckCacheService, string tenantId, IGraphTypesCache graphTypesCache, CkTypeGraph typeGraph)
+    public void Populate(ICkCacheService ckCacheService, string tenantId, IGraphTypesCache graphTypesCache,
+        CkTypeGraph typeGraph)
     {
         foreach (var attribute in typeGraph.AllAttributes.Values)
         {
             Helpers.AddAttribute(this, graphTypesCache, attribute, true);
         }
 
-        foreach (var ckTypeAssociationGraph in typeGraph.Associations.Out.All.GroupBy(x=> x.NavigationPropertyName))
+        foreach (var ckTypeAssociationGraph in typeGraph.Associations.Out.All.GroupBy(x => x.NavigationPropertyName))
         {
-            var allowedTypes = ckTypeAssociationGraph.SelectMany(x => ckCacheService.GetCkType(tenantId, x.TargetCkTypeId).GetAllDerivedTypes(true));
+            var allowedTypes = ckTypeAssociationGraph.SelectMany(x =>
+                ckCacheService.GetCkType(tenantId, x.TargetCkTypeId).GetAllDerivedTypes(true));
             if (!allowedTypes.Any())
             {
                 continue; // All Ck entities are abstract for that assocs
@@ -64,9 +81,10 @@ internal sealed class RtEntityDtoInputType : InputObjectGraphType<RtEntityDto>
             AddAssociation(ckTypeAssociationGraph.Key);
         }
 
-        foreach (var ckTypeAssociationGraph in typeGraph.Associations.In.All.GroupBy(x=> x.NavigationPropertyName))
+        foreach (var ckTypeAssociationGraph in typeGraph.Associations.In.All.GroupBy(x => x.NavigationPropertyName))
         {
-            var allowedTypes = ckTypeAssociationGraph.SelectMany(x => ckCacheService.GetCkType(tenantId, x.OriginCkTypeId).GetAllDerivedTypes(true));
+            var allowedTypes = ckTypeAssociationGraph.SelectMany(x =>
+                ckCacheService.GetCkType(tenantId, x.OriginCkTypeId).GetAllDerivedTypes(true));
             if (!allowedTypes.Any())
             {
                 continue; // All Ck entities are abstract for that assocs
@@ -78,7 +96,8 @@ internal sealed class RtEntityDtoInputType : InputObjectGraphType<RtEntityDto>
 
     private void AddAssociation(string name)
     {
-        Expression<Func<RtEntityDto, object?>> scalarValueExpression = dto => dto.Attributes!.First(x => x.AttributeName == name).Value;
+        Expression<Func<RtEntityDto, object?>> scalarValueExpression =
+            dto => dto.Attributes!.First(x => x.AttributeName == name).Value;
 
         Field(name, type: typeof(ListGraphType<RtAssociationInputDtoType>), expression: scalarValueExpression);
     }

@@ -31,7 +31,7 @@ internal sealed class RtEntityGenericDtoType : ObjectGraphType<RtEntityDto>
         Field(x => x.RtCreationDateTime, true);
         Field(x => x.RtChangedDateTime, true);
         Field(x => x.RtWellKnownName, true);
-        Field(x => x.RtVersion, false);
+        Field(x => x.RtVersion, true);
         
         Connection<RtEntityAttributeDtoType>("attributes")
             .Argument<ListGraphType<StringGraphType>>(Statics.AttributeNamesFilterArg, "Filter of attribute names")

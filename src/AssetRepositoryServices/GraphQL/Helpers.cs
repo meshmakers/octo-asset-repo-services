@@ -133,10 +133,10 @@ internal static class Helpers
     }
 
 
-    public static T? ToObjectWithWithUnknownProperties<T>(this IDictionary<string, object?> source)
+    public static T ToObjectWithWithUnknownProperties<T>(this IDictionary<string, object?> source, out Dictionary<string, object?> unmappedDictionary)
         where T : class, new()
     {
-        return (T?)source.ToObjectWithWithUnknownProperties(typeof(T));
+        return (T)source.ToObjectWithWithUnknownProperties(typeof(T), out unmappedDictionary);
     }
 
     /// <summary>
@@ -144,11 +144,17 @@ internal static class Helpers
     /// </summary>
     /// <param name="source">The source of values.</param>
     /// <param name="type">The type to create.</param>
-    private static object? ToObjectWithWithUnknownProperties(this IDictionary<string, object?> source, Type type)
+    /// <param name="unmappedDictionary">The dictionary of values that were not mapped to properties.</param>
+    private static object ToObjectWithWithUnknownProperties(this IDictionary<string, object?> source, Type type, out Dictionary<string, object?> unmappedDictionary)
     {
         var obj = Activator.CreateInstance(type);
+        if (obj == null)
+        {
+            throw new InvalidOperationException($"Could not create instance of type {type.FullName}");
+        }
 
-        Dictionary<string, object?>? unknownPropertyDictionary = null;
+        Dictionary<string, object?>? extensionDataDictionary = null;
+        unmappedDictionary = new();
 
         foreach (var item in source)
         {
@@ -161,19 +167,26 @@ internal static class Helpers
             }
             else
             {
-                if (unknownPropertyDictionary == null)
+                if (extensionDataDictionary == null)
                 {
                     var dictionaryType = type.GetProperties().FirstOrDefault(prop =>
                         Attribute.IsDefined(prop, typeof(JsonExtensionDataAttribute)));
 
                     if (dictionaryType != null)
                     {
-                        unknownPropertyDictionary = new Dictionary<string, object?>();
-                        dictionaryType.SetValue(obj, unknownPropertyDictionary, null);
+                        extensionDataDictionary = new Dictionary<string, object?>();
+                        dictionaryType.SetValue(obj, extensionDataDictionary, null);
                     }
                 }
 
-                unknownPropertyDictionary?.Add(item.Key.ToPascalCase(), item.Value);
+                if (extensionDataDictionary != null)
+                {
+                    extensionDataDictionary.Add(item.Key.ToPascalCase(), item.Value);
+                }
+                else
+                {
+                    unmappedDictionary.Add(item.Key, item.Value);
+                }
             }
         }
 
@@ -271,7 +284,7 @@ internal static class Helpers
 
         if (propertyValue is Dictionary<string, object?> objects)
         {
-            return ToObjectWithWithUnknownProperties(objects, fieldType);
+            return ToObjectWithWithUnknownProperties(objects, fieldType, out _); 
         }
 
         if (fieldType.GetTypeInfo().IsEnum)

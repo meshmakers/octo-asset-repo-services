@@ -33,7 +33,22 @@ internal sealed class RtRecordDtoInputType : InputObjectGraphType<RtRecordDto>
     /// <remarks>We need an overload, to deserialize all properties to the dictionary of <see cref="RtEntityDto" /></remarks>
     public override object ParseDictionary(IDictionary<string, object?> value)
     {
-        return value.ToObjectWithWithUnknownProperties<RtEntityDto>() ?? throw new InvalidOperationException();
+        var rtEntity = value.ToObjectWithWithUnknownProperties<RtEntityDto>(out var unmappedDictionary);
+        
+        if (unmappedDictionary.Count > 0)
+        {
+            rtEntity.Attributes = new List<RtEntityAttributeDto>();
+            foreach (var (dictKey, dictValue) in unmappedDictionary)
+            {
+                rtEntity.Attributes.Add(new RtEntityAttributeDto
+                {
+                    AttributeName = dictKey,
+                    Value = dictValue
+                });
+            }
+        }
+
+        return rtEntity;
     }
 
     /// <summary>
