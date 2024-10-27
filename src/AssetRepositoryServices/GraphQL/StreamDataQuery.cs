@@ -64,8 +64,6 @@ internal sealed class StreamDataQuery : ObjectGraphType
         var q = new CrateQueryBuilder(tenantId);
         q.IncludeDefaultVariables();
 
-        
-
         q.WithCkTypeIdFilter(requestedType.CkTypeId.ToString());
 
         var entityTimeFilter = fieldContext.GetArgument<StreamDataArguments>(Statics.StreamDataArgument);

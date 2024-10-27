@@ -241,7 +241,8 @@ internal sealed class StreamDataEntityDtoType : ObjectGraphType<StreamDataEntity
             TimeStamp = datapoint.Timestamp,
             RtWellKnownName = datapoint.RtWellKnownName,
             RtCreationDateTime = datapoint.RtCreationDateTime,
-            RtChangedDateTime = datapoint.RtChangedDateTime
+            RtChangedDateTime = datapoint.RtChangedDateTime,
+            UserContext = datapoint
         };
         return streamDataEntityDto;
     }
