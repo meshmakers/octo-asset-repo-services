@@ -36,7 +36,7 @@ internal sealed class RtQuery : ObjectGraphType
             .ResolveAsync(ResolveGenericRtEntitiesQuery);
 
 
-        Connection<RtEntityGenericDtoType>("RuntimeQuery")
+        Connection<RtQueryRowDtoType>("RuntimeQuery")
             .Argument<OctoObjectIdType>(Statics.RtIdArg, "The query runtime id.")
             .ResolveAsync(ResolveRtQueryAsync);
 
@@ -88,15 +88,32 @@ internal sealed class RtQuery : ObjectGraphType
                 { Code = Statics.GraphQLErrorCommon });
             return null;
         }
-        
+
         var offset = arg.GetOffset();
         DataQueryOperation dataQueryOperation = DataQueryOperation.Create();
+        if (rtQuery.FieldFilter != null)
+        {
+            foreach (var fieldFilter in rtQuery.FieldFilter)
+            {
+                dataQueryOperation.FieldFilter(fieldFilter.AttributeName.ToPascalCase(),
+                    (FieldFilterOperator)fieldFilter.Operator,
+                    fieldFilter.ComparisonValue);
+            }
+        }
+        if (rtQuery.Sorting != null)
+        {
+            foreach (var sort in rtQuery.Sorting)
+            {
+                dataQueryOperation.SortOrder(sort.AttributeName.ToPascalCase(), (SortOrders)sort.SortOrder);
+            }
+        }
 
         var resultSet = await tenantRepository.GetRtEntitiesByTypeAsync(sessionAccessor.Session,
             rtQuery.QueryCkTypeId, dataQueryOperation, offset, arg.First);
-        
+
         Logger.Debug("GraphQL query handling returning data");
-        return ConnectionUtils.ToConnection(resultSet.Items.Select(RtEntityDtoType.CreateRtEntityDto), arg,
+        return ConnectionUtils.ToConnection(
+            resultSet.Items.Select((entity, _) => RtQueryRowDtoType.CreateRtQueryRowDto(entity, rtQuery)), arg,
             0, (int)resultSet.TotalCount, resultSet.Grouping);
     }
 

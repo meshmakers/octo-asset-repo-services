@@ -3,6 +3,7 @@ using Meshmakers.Common.Shared;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
 using Meshmakers.Octo.ConstructionKit.Contracts;
+using Meshmakers.Octo.ConstructionKit.Contracts.DataTransferObjects;
 using Meshmakers.Octo.ConstructionKit.Contracts.DependencyGraph;
 using Meshmakers.Octo.ConstructionKit.Contracts.Services;
 using Meshmakers.Octo.Runtime.Contracts;
@@ -27,7 +28,8 @@ internal abstract class RtMutationBase : ObjectGraphType
         {
             foreach (var item in rtEntityDto.Attributes)
             {
-                if (TryHandleAttribute(rtEntity, ckTypeGraph, item))
+                if (TryHandleAttribute(ckCacheService, tenantId, rtEntity, ckTypeGraph,
+                        item.AttributeName.ToPascalCase(), item.Value))
                 {
                     continue;
                 }
@@ -41,6 +43,24 @@ internal abstract class RtMutationBase : ObjectGraphType
             }
         }
     }
+    
+    protected void RtEntityFromInputObject(ICkCacheService ckCacheService, string tenantId, RtEntity rtEntity,
+        RtQueryRowDto rtQueryRowDto)
+    {
+        var ckTypeGraph =
+            ckCacheService.GetCkType(tenantId, rtEntity.CkTypeId ?? throw OctoGraphQLException.CkTypeIdUndefined());
+
+        rtEntity.RtWellKnownName = rtQueryRowDto.RtWellKnownName;
+
+        if (rtQueryRowDto.Cells != null)
+        {
+            foreach (var cellDto in rtQueryRowDto.Cells)
+            {
+                TryHandleAttribute(ckCacheService, tenantId, rtEntity, ckTypeGraph, 
+                    cellDto.AttributePath.ToPascalCase(), cellDto.Value);
+            }
+        }
+    }
 
     protected async Task<IEnumerable<RtEntityDto>> GetResultSet(IOctoSession session, ITenantRepository repository,
         List<EntityUpdateInfo<RtEntity>> entityUpdateInfos)
@@ -49,29 +69,126 @@ internal abstract class RtMutationBase : ObjectGraphType
         foreach (var grouping in entityUpdateInfos.GroupBy(x => x.CkTypeId))
         {
             var resultSet = await repository.GetRtEntitiesByIdAsync(session, grouping.Key,
-                entityUpdateInfos.Select(x => x.RtId ?? throw OctoGraphQLException.RtIdUndefined() 
-                ).ToList(), DataQueryOperation.Create()); 
-            
+                entityUpdateInfos.Select(x => x.RtId ?? throw OctoGraphQLException.RtIdUndefined()
+                ).ToList(), DataQueryOperation.Create());
+
             resultSetComplete.AddRange(resultSet.Items);
         }
-        
+
 
         return resultSetComplete.Select(RtEntityDtoType.CreateRtEntityDto);
     }
-
-
-    private bool TryHandleAttribute(RtEntity rtEntity, CkTypeGraph ckTypeGraph,
-        RtEntityAttributeDto item)
+    
+    protected async Task<IEnumerable<RtQueryRowDto>> GetRtQueryRowResultSet(IOctoSession session, ITenantRepository repository,
+        List<EntityUpdateInfo<RtEntity>> entityUpdateInfos, OctoObjectId queryRtId)
     {
-        var attributeName = item.AttributeName.ToPascalCase();
-
-        if (ckTypeGraph.AllAttributesByName.TryGetValue(attributeName, out var ckTypeAttributeGraph))
+        var rtQuery =
+            await repository.GetRtEntityByRtIdAsync<ConstructionKit.Models.System.Generated.System.v1.RtQuery>(session,
+                queryRtId);
+        if (rtQuery == null)
         {
-            rtEntity.SetAttributeValue(ckTypeAttributeGraph.AttributeName, ckTypeAttributeGraph.ValueType, item.Value);
-            return true;
+            throw OctoGraphQLException.RtQueryNotFound(queryRtId);
+        }
+        
+        var resultSetComplete = new List<RtEntity>();
+        foreach (var grouping in entityUpdateInfos.GroupBy(x => x.CkTypeId))
+        {
+            var resultSet = await repository.GetRtEntitiesByIdAsync(session, grouping.Key,
+                entityUpdateInfos.Select(x => x.RtId ?? throw OctoGraphQLException.RtIdUndefined()
+                ).ToList(), DataQueryOperation.Create());
+
+            resultSetComplete.AddRange(resultSet.Items);
+        }
+
+
+        return resultSetComplete.Select((entity, _) => RtQueryRowDtoType.CreateRtQueryRowDto(entity, rtQuery));
+    }
+
+
+    private bool TryHandleAttribute(ICkCacheService ckCacheService, string tenantId,
+        RtTypeWithAttributes rtTypeWithAttributes,
+        CkTypeWithAttributesGraph ckTypeWithAttributesGraph, string attributeName,
+        object? value)
+    {
+        if (ckTypeWithAttributesGraph.AllAttributesByName.TryGetValue(attributeName, out var ckTypeAttributeGraph))
+        {
+            switch (ckTypeAttributeGraph.ValueType)
+            {
+                case AttributeValueTypesDto.Record:
+                    if (ckTypeAttributeGraph.ValueCkRecordId == null)
+                    {
+                        throw OctoGraphQLException.CkRecordIdUndefined();
+                    }
+
+                    if (value == null)
+                    {
+                        rtTypeWithAttributes.SetAttributeValue(ckTypeAttributeGraph.AttributeName,
+                            ckTypeAttributeGraph.ValueType, null);
+                        return true;
+                    }
+
+                    var rtRecordDto = (RtRecordDto)value;
+                    var rtRecord = HandleRecord(ckCacheService, tenantId, ckTypeAttributeGraph.ValueCkRecordId,
+                        rtRecordDto);
+                    rtTypeWithAttributes.SetAttributeValue(ckTypeAttributeGraph.AttributeName,
+                        ckTypeAttributeGraph.ValueType, rtRecord);
+                    return true;
+
+                case AttributeValueTypesDto.RecordArray:
+                    if (ckTypeAttributeGraph.ValueCkRecordId == null)
+                    {
+                        throw OctoGraphQLException.CkRecordIdUndefined();
+                    }
+
+                    if (value == null)
+                    {
+                        rtTypeWithAttributes.SetAttributeValue(ckTypeAttributeGraph.AttributeName,
+                            ckTypeAttributeGraph.ValueType, null);
+                        return true;
+                    }
+
+                    var rtRecordList = (IEnumerable<object>)value;
+                    AttributeRecordValueList<RtRecord> rtRecords = new();
+                    foreach (RtRecordDto rtRecordDtoItem in rtRecordList)
+                    {
+                        var rtRecordItem = HandleRecord(ckCacheService, tenantId, ckTypeAttributeGraph.ValueCkRecordId,
+                            rtRecordDtoItem);
+                        rtRecords.Add(rtRecordItem);
+                    }
+
+                    rtTypeWithAttributes.SetAttributeValue(ckTypeAttributeGraph.AttributeName,
+                        ckTypeAttributeGraph.ValueType, rtRecords);
+                    return true;
+                default:
+                    rtTypeWithAttributes.SetAttributeValue(ckTypeAttributeGraph.AttributeName,
+                        ckTypeAttributeGraph.ValueType, value);
+                    return true;
+            }
         }
 
         return false;
+    }
+
+    private RtRecord HandleRecord(ICkCacheService ckCacheService, string tenantId, CkId<CkRecordId> ckRecordId,
+        RtRecordDto rtRecordDto)
+    {
+        var ckRecordGraph = ckCacheService.GetCkRecord(tenantId, ckRecordId);
+
+        var rtRecord = new RtRecord
+        {
+            CkRecordId = ckRecordGraph.CkRecordId
+        };
+
+        if (rtRecordDto.Attributes != null)
+        {
+            foreach (var recordAttributeItem in rtRecordDto.Attributes)
+            {
+                TryHandleAttribute(ckCacheService, tenantId, rtRecord, ckRecordGraph, 
+                    recordAttributeItem.AttributeName.ToPascalCase(), recordAttributeItem.Value);
+            }
+        }
+
+        return rtRecord;
     }
 
     // ReSharper disable once UnusedMethodReturnValue.Local

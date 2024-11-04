@@ -129,4 +129,25 @@
     <data name="Graphql_CkMutation_Description" xml:space="preserve">
         <value>Construction Kit element mutations</value>
     </data>
+    <data name="Graphql_RtQueryRow_Description" xml:space="preserve">
+        <value>Represents a row within a runtime query execution</value>
+    </data>
+    <data name="Graphql_Arguments_AttributePathsFilter_Description" xml:space="preserve">
+        <value>List of attribute paths to filter for.</value>
+    </data>
+    <data name="Graphql_RtQueryCell_Description" xml:space="preserve">
+        <value>Represents a cell of a row within a runtime query execution.</value>
+    </data>
+    <data name="Graphql_RtQueryCell_AttribuePath_Description" xml:space="preserve">
+        <value>Path of the attribute within an entity.</value>
+    </data>
+    <data name="Graphql_RtQueryCell_Value_Description" xml:space="preserve">
+        <value>Value of the cell.</value>
+    </data>
+    <data name="Graphql_RtQueryCellInput_Description" xml:space="preserve">
+        <value>Represents the input for a cell a row within a runtime query.</value>
+    </data>
+    <data name="Graphql_RtQueryRowUpdate_Item_Description" xml:space="preserve">
+        <value>Row as input to be updated within the query.</value>
+    </data>
 </root>

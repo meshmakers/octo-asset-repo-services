@@ -13,6 +13,4 @@ internal class OctoConnection<TNode, TEdge> : Connection<TNode, TEdge> where TEd
 }
 
 /// <inheritdoc />
-internal class OctoConnection<TNode> : OctoConnection<TNode, Edge<TNode>>
-{
-}
+internal class OctoConnection<TNode> : OctoConnection<TNode, Edge<TNode>>;

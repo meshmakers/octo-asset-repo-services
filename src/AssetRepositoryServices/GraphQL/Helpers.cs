@@ -5,6 +5,7 @@ using GraphQL;
 using GraphQL.Builders;
 using GraphQL.Resolvers;
 using GraphQL.Types;
+using GraphQLParser.AST;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Caches;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Inputs;
@@ -133,7 +134,8 @@ internal static class Helpers
     }
 
 
-    public static T ToObjectWithWithUnknownProperties<T>(this IDictionary<string, object?> source, out Dictionary<string, object?> unmappedDictionary)
+    public static T ToObjectWithWithUnknownProperties<T>(this IDictionary<string, object?> source,
+        out Dictionary<string, object?> unmappedDictionary)
         where T : class, new()
     {
         return (T)source.ToObjectWithWithUnknownProperties(typeof(T), out unmappedDictionary);
@@ -145,7 +147,8 @@ internal static class Helpers
     /// <param name="source">The source of values.</param>
     /// <param name="type">The type to create.</param>
     /// <param name="unmappedDictionary">The dictionary of values that were not mapped to properties.</param>
-    private static object ToObjectWithWithUnknownProperties(this IDictionary<string, object?> source, Type type, out Dictionary<string, object?> unmappedDictionary)
+    private static object ToObjectWithWithUnknownProperties(this IDictionary<string, object?> source, Type type,
+        out Dictionary<string, object?> unmappedDictionary)
     {
         var obj = Activator.CreateInstance(type);
         if (obj == null)
@@ -284,7 +287,7 @@ internal static class Helpers
 
         if (propertyValue is Dictionary<string, object?> objects)
         {
-            return ToObjectWithWithUnknownProperties(objects, fieldType, out _); 
+            return ToObjectWithWithUnknownProperties(objects, fieldType, out _);
         }
 
         if (fieldType.GetTypeInfo().IsEnum)
@@ -317,58 +320,73 @@ internal static class Helpers
 
     internal static void AddAttribute<TSourceType>(ComplexGraphType<TSourceType> complexGraphType,
         IGraphTypesCache graphTypesCache,
-        CkTypeAttributeGraph typeAttributeGraph, bool isInputType)  where TSourceType : GraphQlDto
+        CkTypeAttributeGraph typeAttributeGraph, bool isInputType) where TSourceType : GraphQlDto
     {
         var attributeName = typeAttributeGraph.AttributeName;
-        IGraphType? graphType;
-        FieldBuilder<TSourceType, object>? builder;
 
+        FieldBuilder<TSourceType, object>? builder;
+        var (graphType, type) = GetAttributeFieldType(graphTypesCache, typeAttributeGraph, isInputType);
+
+        if (graphType != null)
+        {
+            builder = complexGraphType.Field(attributeName,
+                !typeAttributeGraph.IsOptional && !isInputType ? new NonNullGraphType(graphType) : graphType);
+        }
+        else if (type != null)
+        {
+            builder = complexGraphType.Field(attributeName,
+                !typeAttributeGraph.IsOptional && !isInputType ? typeof(NonNullGraphType<>).MakeGenericType(type) : type);
+        }
+        else
+        {
+            throw new InvalidOperationException("GraphType and Type cannot be null at the same time.");
+        }
+
+        builder = builder.Metadata(Statics.AttributeGraphType, typeAttributeGraph);
+        if (!isInputType)
+        {
+            builder.Resolve(ResolveAttributeValue);
+        }
+    }
+
+
+    private static (IGraphType?, Type?) GetAttributeFieldType(
+        IGraphTypesCache graphTypesCache, CkTypeAttributeGraph typeAttributeGraph, bool isInputType)
+    {
+        IGraphType? graphType;
         switch (typeAttributeGraph.ValueType)
         {
 #pragma warning disable GQL005
 
             case AttributeValueTypesDto.String:
-                builder = complexGraphType.Field(attributeName, typeof(StringGraphType));
-                break;
+                return (null, typeof(StringGraphType));
             case AttributeValueTypesDto.StringArray:
-                builder = complexGraphType.Field(attributeName, typeof(ListGraphType<StringGraphType>));
-                break;
+                return (null, typeof(ListGraphType<NonNullGraphType<StringGraphType>>));
             case AttributeValueTypesDto.Int:
-                builder = complexGraphType.Field(attributeName, typeof(IntGraphType));
-                break;
+                return (null, typeof(IntGraphType));
             case AttributeValueTypesDto.IntArray:
-                builder = complexGraphType.Field(attributeName, typeof(ListGraphType<IntGraphType>));
-                break;
+                return (null, typeof(ListGraphType<NonNullGraphType<IntGraphType>>));
             case AttributeValueTypesDto.Boolean:
-                builder = complexGraphType.Field(attributeName, typeof(BooleanGraphType));
-                break;
+                return (null, typeof(BooleanGraphType));
             case AttributeValueTypesDto.Double:
-                builder = complexGraphType.Field(attributeName, typeof(DecimalGraphType));
-                break;
+                return (null, typeof(DecimalGraphType));
             case AttributeValueTypesDto.DateTime:
-                builder = complexGraphType.Field(attributeName, typeof(DateTimeGraphType));
-                break;
+                return (null, typeof(DateTimeGraphType));
             case AttributeValueTypesDto.DateTimeOffset:
-                builder = complexGraphType.Field(attributeName, typeof(DateTimeOffsetGraphType));
-                break;
+                return (null, typeof(DateTimeOffsetGraphType));
             case AttributeValueTypesDto.TimeSpan:
-                builder = complexGraphType.Field(attributeName, typeof(TimeSpanSecondsGraphType));
-                break;
+                return (null, typeof(TimeSpanSecondsGraphType));
             case AttributeValueTypesDto.Int64:
-                builder = complexGraphType.Field(attributeName, typeof(LongGraphType));
-                break;
+                return (null, typeof(LongGraphType));
             case AttributeValueTypesDto.BinaryLinked:
-                builder = complexGraphType.Field(attributeName, typeof(OctoObjectIdType));
-                break;
+                return (null, typeof(OctoObjectIdType));
             case AttributeValueTypesDto.Enum:
                 if (typeAttributeGraph.ValueCkEnumId == null)
                 {
                     throw OctoGraphQLException.EnumAttributeHasNoCkEnumId(typeAttributeGraph.AttributeName);
                 }
 
-                builder = complexGraphType.Field(attributeName,
-                    graphTypesCache.GetEnum(typeAttributeGraph.ValueCkEnumId));
-                break;
+                return (graphTypesCache.GetEnum(typeAttributeGraph.ValueCkEnumId), null);
             case AttributeValueTypesDto.Record:
                 if (typeAttributeGraph.ValueCkRecordId == null)
                 {
@@ -381,8 +399,7 @@ internal static class Helpers
                     _ => graphTypesCache.GetRecord(typeAttributeGraph.ValueCkRecordId)
                 };
 
-                builder = complexGraphType.Field(attributeName, graphType);
-                break;
+                return (graphType, null);
             case AttributeValueTypesDto.RecordArray:
                 if (typeAttributeGraph.ValueCkRecordId == null)
                 {
@@ -392,11 +409,10 @@ internal static class Helpers
                 graphType = isInputType switch
                 {
                     true => graphTypesCache.GetRecordInput(typeAttributeGraph.ValueCkRecordId),
-                    _ => graphTypesCache.GetRecord(typeAttributeGraph.ValueCkRecordId)
+                    _ => new NonNullGraphType(graphTypesCache.GetRecord(typeAttributeGraph.ValueCkRecordId))
                 };
 
-                builder = complexGraphType.Field(attributeName, new ListGraphType(graphType));
-                break;
+                return (new ListGraphType(graphType), null);
             case AttributeValueTypesDto.GeospatialPoint:
 
                 var pointType = isInputType switch
@@ -404,17 +420,10 @@ internal static class Helpers
                     true => typeof(PointInputGraphType),
                     _ => typeof(RtGeospatialValueDtoType)
                 };
-                builder = complexGraphType.Field(attributeName, pointType);
-                break;
+                return (null, pointType);
             default:
                 throw OctoGraphQLException.AttributeValueTypeNotSupported(typeAttributeGraph.ValueType);
 #pragma warning restore GQL005
-        }
-
-        builder = builder.Metadata(Statics.AttributeGraphType, typeAttributeGraph);
-        if (!isInputType)
-        {
-            builder.Resolve(ResolveAttributeValue);
         }
     }
 

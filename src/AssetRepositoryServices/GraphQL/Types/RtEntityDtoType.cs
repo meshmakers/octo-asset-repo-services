@@ -1,6 +1,5 @@
 ﻿using GraphQL;
 using GraphQL.Builders;
-using GraphQL.DataLoader;
 using GraphQL.Types;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Caches;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.RequestHandling;

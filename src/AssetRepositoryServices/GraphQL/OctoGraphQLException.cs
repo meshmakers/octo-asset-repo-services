@@ -1,3 +1,4 @@
+using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.ConstructionKit.Contracts.DataTransferObjects;
 
 #pragma warning disable 1591
@@ -70,5 +71,15 @@ public class OctoGraphQLException : Exception
     public static Exception RtIdUndefined()
     {
         return new OctoGraphQLException("RtId is undefined.");
+    }
+
+    public static Exception CkRecordIdUndefined()
+    {
+        return new OctoGraphQLException("CkRecordId is undefined.");
+    }
+
+    public static Exception RtQueryNotFound(OctoObjectId queryRtId)
+    {
+        return new OctoGraphQLException($"RtQuery with RtId {queryRtId} not found.");
     }
 }

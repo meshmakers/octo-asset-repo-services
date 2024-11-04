@@ -2,6 +2,7 @@ using GraphQL;
 using GraphQL.Types;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.RequestHandling;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Inputs;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Scalars;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Utils;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
 using Meshmakers.Octo.ConstructionKit.Contracts;
@@ -21,75 +22,70 @@ internal sealed class RtQueryMutation : RtMutationBase
         Name = "RtQueryMutations";
 
         
-        Field<ListGraphType<RtEntityGenericDtoType>>("create")
+        Field<ListGraphType<RtQueryRowDtoType>>("create")
             .Description("Create entities of a runtime query.")
-            .Argument<ListGraphType<RtEntityDtoGenericInputType>>(Statics.EntitiesArg)
+            .Argument<NonNullGraphType<ListGraphType<NonNullGraphType<RtQueryRowDtoInputType>>>>(Statics.EntitiesArg)
             .ResolveAsync(ResolveCreate);
-        Field<ListGraphType<RtEntityGenericDtoType>>("update")
+        Field<ListGraphType<RtQueryRowDtoType>>("update")
             .Description("Updates entities of a runtime query.")
-            .Argument<ListGraphType<UpdateMutationDtoGeneric>>(Statics.EntitiesArg)
+            .Argument<NonNullGraphType<ListGraphType<NonNullGraphType<RtQueryRowDtoUpdateType>>>>(Statics.EntitiesArg)
             .ResolveAsync(ResolveUpdate);
-        Field<ListGraphType<RtEntityGenericDtoType>>("delete")
+        Field<NonNullGraphType<BooleanGraphType>>("delete")
             .Description("Deletes entities of a runtime query.")
+            .Argument<NonNullGraphType<ListGraphType<NonNullGraphType<RtEntityIdType>>>>(Statics.EntitiesArg)
             .ResolveAsync(ResolveDelete);        
     }
 
-    private async Task<object?> ResolveCreate(IResolveFieldContext<object?> arg)
+    private async Task<object?> ResolveCreate(IResolveFieldContext<object?> context)
     {
-        var ckCacheService = arg.RequestServices?.GetRequiredService<ICkCacheService>();
+        var ckCacheService = context.RequestServices?.GetRequiredService<ICkCacheService>();
         if (ckCacheService == null)
         {
             throw AssetRepositoryException.ServiceNotRegistered(typeof(ICkCacheService));
         }
         
-        var sessionAccessor = arg.RequestServices?.GetRequiredService<IOctoSessionAccessor>();
+        var sessionAccessor = context.RequestServices?.GetRequiredService<IOctoSessionAccessor>();
         if (sessionAccessor?.Session == null)
         {
             throw AssetRepositoryException.SessionUnavailable();
         }
 
-        var tenantContext = Helpers.GetTenantContext(arg.UserContext);
+        if (context.Parent == null)
+        {
+            throw AssetRepositoryException.ParentUnavailable();
+        }
+
+        var tenantContext = Helpers.GetTenantContext(context.UserContext);
         var tenantRepository = tenantContext.GetTenantRepository();
-        var graphQlUserContext = (GraphQlUserContext)arg.UserContext;
-
-
-        var inputObjects = arg.GetArgument<List<RtEntityDto>>(Statics.EntitiesArg);
+        var graphQlUserContext = (GraphQlUserContext)context.UserContext;
+        
+        var queryRtId = context.Parent.GetArgument<OctoObjectId>(Statics.RtIdArg);
+        var inputObjects = context.GetArgument<List<RtQueryRowDto>>(Statics.EntitiesArg);
 
         try
         {
             var entityUpdateInfos = new List<EntityUpdateInfo<RtEntity>>();
-            var associationUpdateInfoList = new List<AssociationUpdateInfo>();
-            foreach (var rtEntityDto in inputObjects)
+            foreach (var queryRowDto in inputObjects)
             {
-                var rtEntity = await tenantRepository.CreateTransientRtEntityAsync(rtEntityDto.CkTypeId);
-                RtEntityFromInputObject(ckCacheService, graphQlUserContext.TenantId, rtEntity, rtEntityDto, associationUpdateInfoList);
+                var rtEntity = await tenantRepository.CreateTransientRtEntityAsync(queryRowDto.CkTypeId);
+                RtEntityFromInputObject(ckCacheService, graphQlUserContext.TenantId, rtEntity, queryRowDto);
                 entityUpdateInfos.Add(EntityUpdateInfo<RtEntity>.CreateInsert(rtEntity));
             }
 
-            var deleteAssociations =
-                associationUpdateInfoList.Where(x => x.ModOption == AssociationModOptionsDto.Delete);
-            if (deleteAssociations.Any())
-            {
-                arg.Errors.Add(new ExecutionError("Delete operations during creation are supported")
-                    { Code = Statics.GraphQLDeleteOperationsNotSupported });
-                return null;
-            }
-
             OperationResult operationResult = new();
-            await tenantRepository.ApplyChangesAsync(sessionAccessor.Session, entityUpdateInfos,
-                associationUpdateInfoList, operationResult);
+            await tenantRepository.ApplyChangesAsync(sessionAccessor.Session, entityUpdateInfos, operationResult);
             if (operationResult.HasErrors || operationResult.HasFatalErrors)
             {
                 foreach (var message in operationResult.Messages)
                 {
                     if (message.MessageLevel == MessageLevel.Error)
                     {
-                        arg.Errors.Add(new ExecutionError(message.MessageText)
+                        context.Errors.Add(new ExecutionError(message.MessageText)
                             { Code = string.Format(Statics.GraphQLOperationError, message.MessageNumber) });
                     }
                     else if (message.MessageLevel == MessageLevel.FatalError)
                     {
-                        arg.Errors.Add(new ExecutionError(message.MessageText)
+                        context.Errors.Add(new ExecutionError(message.MessageText)
                             { Code = string.Format(Statics.GraphQLOperationFatalError, message.MessageNumber) });
                     }
                 }
@@ -97,54 +93,40 @@ internal sealed class RtQueryMutation : RtMutationBase
                 return null;
             }
 
-            return await GetResultSet(sessionAccessor.Session, tenantRepository, entityUpdateInfos);
+            return await GetRtQueryRowResultSet(sessionAccessor.Session, tenantRepository, entityUpdateInfos, queryRtId);
         }
         catch (PersistenceException e)
         {
-            arg.Errors.Add(new ExecutionError(e.Message, e) { Code = Statics.GraphQLErrorDataStore });
+            context.Errors.Add(new ExecutionError(e.Message, e) { Code = Statics.GraphQLErrorDataStore });
             return null;
         }
         catch (Exception e)
         {
-            arg.Errors.Add(new ExecutionError("A general error occurred", e)
+            context.Errors.Add(new ExecutionError("A general error occurred", e)
                 { Code = Statics.GraphQLErrorCommon });
             return null;
         }
     }
 
-    private async Task<object?> ResolveDelete(IResolveFieldContext<object?> arg)
+    private async Task<object?> ResolveDelete(IResolveFieldContext<object?> context)
     {
-        var tenantContext = Helpers.GetTenantContext(arg.UserContext);
+        var tenantContext = Helpers.GetTenantContext(context.UserContext);
         var tenantRepository = tenantContext.GetTenantRepository();
         
-        var sessionAccessor = arg.RequestServices?.GetRequiredService<IOctoSessionAccessor>();
+        var sessionAccessor = context.RequestServices?.GetRequiredService<IOctoSessionAccessor>();
         if (sessionAccessor?.Session == null)
         {
             throw AssetRepositoryException.SessionUnavailable();
         }
 
-        if (!arg.FieldDefinition.Metadata.TryGetValue(Statics.CkId, out var ckIdObj))
-        {
-            arg.Errors.Add(new ExecutionError("Invalid query. Missing construction kit id.")
-                { Code = Statics.GraphQLErrorCommon });
-            return null;
-        }
-
-        if (ckIdObj is not CkId<CkTypeId> ckTypeId)
-        {
-            arg.Errors.Add(new ExecutionError("Invalid query. Invalid construction kit id.")
-                { Code = Statics.GraphQLErrorCommon });
-            return null;
-        }
-
-        var inputObjects = arg.GetArgument<List<OctoObjectId>>(Statics.EntitiesArg);
+        var inputObjects = context.GetArgument<List<RtEntityIdDto>>(Statics.EntitiesArg);
 
         try
         {
             var entityUpdateInfos = new List<EntityUpdateInfo<RtEntity>>();
-            foreach (var rtId in inputObjects)
+            foreach (var rtEntityId in inputObjects)
             {
-                entityUpdateInfos.Add(EntityUpdateInfo<RtEntity>.CreateDelete(new RtEntityId(ckTypeId, rtId)));
+                entityUpdateInfos.Add(EntityUpdateInfo<RtEntity>.CreateDelete(new RtEntityId(rtEntityId.CkTypeId, rtEntityId.RtId)));
             }
 
             OperationResult operationResult = new();
@@ -158,41 +140,46 @@ internal sealed class RtQueryMutation : RtMutationBase
         }
         catch (OperationFailedException e)
         {
-            arg.Errors.Add(new ExecutionError(e.Message, e) { Code = Statics.GraphQLErrorDataStore });
+            context.Errors.Add(new ExecutionError(e.Message, e) { Code = Statics.GraphQLErrorDataStore });
             return false;
         }
         catch (Exception e)
         {
-            arg.Errors.Add(new ExecutionError("A general error occurred", e)
+            context.Errors.Add(new ExecutionError("A general error occurred", e)
                 { Code = Statics.GraphQLErrorCommon });
             return false;
         }
     }
 
-    private async Task<object?> ResolveUpdate(IResolveFieldContext<object?> arg)
+    private async Task<object?> ResolveUpdate(IResolveFieldContext<object?> context)
     {
-        var ckCacheService = arg.RequestServices?.GetRequiredService<ICkCacheService>();
+        var ckCacheService = context.RequestServices?.GetRequiredService<ICkCacheService>();
         if (ckCacheService == null)
         {
             throw AssetRepositoryException.ServiceNotRegistered(typeof(ICkCacheService));
         }
                 
-        var sessionAccessor = arg.RequestServices?.GetRequiredService<IOctoSessionAccessor>();
+        var sessionAccessor = context.RequestServices?.GetRequiredService<IOctoSessionAccessor>();
         if (sessionAccessor?.Session == null)
         {
             throw AssetRepositoryException.SessionUnavailable();
         }
 
-        var tenantContext = Helpers.GetTenantContext(arg.UserContext);
-        var tenantRepository = tenantContext.GetTenantRepository();
-        var graphQlUserContext = (GraphQlUserContext)arg.UserContext;
+        if (context.Parent == null)
+        {
+            throw AssetRepositoryException.ParentUnavailable();
+        }
         
-        var inputObjects = arg.GetArgument<List<MutationDto<RtEntityDto>>>(Statics.EntitiesArg);
+        var tenantContext = Helpers.GetTenantContext(context.UserContext);
+        var tenantRepository = tenantContext.GetTenantRepository();
+        var graphQlUserContext = (GraphQlUserContext)context.UserContext;
+
+        var queryRtId = context.Parent.GetArgument<OctoObjectId>(Statics.RtIdArg);
+        var inputObjects = context.GetArgument<List<MutationDto<RtQueryRowDto>>>(Statics.EntitiesArg);
 
         try
         {
             var entityUpdateInfos = new List<EntityUpdateInfo<RtEntity>>();
-            var associationUpdateInfoList = new List<AssociationUpdateInfo>();
             foreach (var mutationDto in inputObjects)
             {
                 var rtEntityId = new RtEntityId(mutationDto.Item.CkTypeId, mutationDto.RtId);
@@ -202,7 +189,7 @@ internal sealed class RtQueryMutation : RtMutationBase
                     CkTypeId = mutationDto.Item.CkTypeId
                 };
 
-                RtEntityFromInputObject(ckCacheService, graphQlUserContext.TenantId, document, mutationDto.Item, associationUpdateInfoList);
+                RtEntityFromInputObject(ckCacheService, graphQlUserContext.TenantId, document, mutationDto.Item);
                 if (document.Attributes.Any())
                 {
                     entityUpdateInfos.Add(EntityUpdateInfo<RtEntity>.CreateUpdate(rtEntityId, document));
@@ -211,19 +198,19 @@ internal sealed class RtQueryMutation : RtMutationBase
 
             OperationResult operationResult = new();
             await tenantRepository.ApplyChangesAsync(sessionAccessor.Session, entityUpdateInfos,
-                associationUpdateInfoList, operationResult);
+                operationResult);
             if (operationResult.HasErrors || operationResult.HasFatalErrors)
             {
                 foreach (var message in operationResult.Messages)
                 {
                     if (message.MessageLevel == MessageLevel.Error)
                     {
-                        arg.Errors.Add(new ExecutionError(message.MessageText)
+                        context.Errors.Add(new ExecutionError(message.MessageText)
                             { Code = string.Format(Statics.GraphQLOperationError, message.MessageNumber) });
                     }
                     else if (message.MessageLevel == MessageLevel.FatalError)
                     {
-                        arg.Errors.Add(new ExecutionError(message.MessageText)
+                        context.Errors.Add(new ExecutionError(message.MessageText)
                             { Code = string.Format(Statics.GraphQLOperationFatalError, message.MessageNumber) });
                     }
                 }
@@ -231,16 +218,16 @@ internal sealed class RtQueryMutation : RtMutationBase
                 return null;
             }
 
-            return await GetResultSet(sessionAccessor.Session, tenantRepository, entityUpdateInfos);
+            return await GetRtQueryRowResultSet(sessionAccessor.Session, tenantRepository, entityUpdateInfos, queryRtId);
         }
         catch (OperationFailedException e)
         {
-            arg.Errors.Add(new ExecutionError(e.Message, e) { Code = Statics.GraphQLErrorDataStore });
+            context.Errors.Add(new ExecutionError(e.Message, e) { Code = Statics.GraphQLErrorDataStore });
             return null;
         }
         catch (Exception e)
         {
-            arg.Errors.Add(new ExecutionError("A general error occurred", e)
+            context.Errors.Add(new ExecutionError("A general error occurred", e)
                 { Code = Statics.GraphQLErrorCommon });
             return null;
         }

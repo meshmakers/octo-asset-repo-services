@@ -266,5 +266,47 @@ namespace AssetRepositoryServices.Resources {
                 return ResourceManager.GetString("Graphql_CkMutation_Description", resourceCulture);
             }
         }
+        
+        public static string Graphql_RtQueryRow_Description {
+            get {
+                return ResourceManager.GetString("Graphql_RtQueryRow_Description", resourceCulture);
+            }
+        }
+        
+        public static string Graphql_Arguments_AttributePathsFilter_Description {
+            get {
+                return ResourceManager.GetString("Graphql_Arguments_AttributePathsFilter_Description", resourceCulture);
+            }
+        }
+        
+        public static string Graphql_RtQueryCell_Description {
+            get {
+                return ResourceManager.GetString("Graphql_RtQueryCell_Description", resourceCulture);
+            }
+        }
+        
+        public static string Graphql_RtQueryCell_AttribuePath_Description {
+            get {
+                return ResourceManager.GetString("Graphql_RtQueryCell_AttribuePath_Description", resourceCulture);
+            }
+        }
+        
+        public static string Graphql_RtQueryCell_Value_Description {
+            get {
+                return ResourceManager.GetString("Graphql_RtQueryCell_Value_Description", resourceCulture);
+            }
+        }
+        
+        public static string Graphql_RtQueryCellInput_Description {
+            get {
+                return ResourceManager.GetString("Graphql_RtQueryCellInput_Description", resourceCulture);
+            }
+        }
+        
+        public static string Graphql_RtQueryRowUpdate_Item_Description {
+            get {
+                return ResourceManager.GetString("Graphql_RtQueryRowUpdate_Item_Description", resourceCulture);
+            }
+        }
     }
 }
