@@ -32,7 +32,7 @@ internal sealed class RtQueryRowDtoType : ObjectGraphType<RtQueryRowDto>
         Field(x => x.RtWellKnownName, true);
         Field(x => x.RtVersion, true);
 
-        Connection<RtQueryCellDtoType>("cells")
+        Connection<NonNullGraphType<RtQueryCellDtoType>>("cells")
             .Argument<ListGraphType<StringGraphType>>(Statics.AttributePathsFilterArg,
                 AssetTexts.Graphql_Arguments_AttributePathsFilter_Description)
             .Resolve(ResolveCells);

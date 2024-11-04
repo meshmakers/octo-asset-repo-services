@@ -36,7 +36,7 @@ internal sealed class RtQuery : ObjectGraphType
             .ResolveAsync(ResolveGenericRtEntitiesQuery);
 
 
-        Connection<RtQueryRowDtoType>("RuntimeQuery")
+        Connection<NonNullGraphType<RtQueryRowDtoType>>("RuntimeQuery")
             .Argument<OctoObjectIdType>(Statics.RtIdArg, "The query runtime id.")
             .ResolveAsync(ResolveRtQueryAsync);
 
