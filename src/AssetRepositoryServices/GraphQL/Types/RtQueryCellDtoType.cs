@@ -13,7 +13,7 @@ internal sealed class RtQueryCellDtoType : ObjectGraphType<RtQueryCellDto>
         Name = "RtQueryCell";
         Description = AssetTexts.Graphql_RtQueryCell_Description;
 
-        Field(x => x.AttributePath, type: typeof(StringGraphType)).Description(AssetTexts.Graphql_RtQueryCell_AttribuePath_Description);
+        Field(x => x.AttributePath, type: typeof(NonNullGraphType<StringGraphType>)).Description(AssetTexts.Graphql_RtQueryCell_AttribuePath_Description);
         Field<SimpleScalarType, object>(nameof(RtQueryCellDto.Value)).Description(AssetTexts.Graphql_RtQueryCell_Value_Description);
     }
 }
