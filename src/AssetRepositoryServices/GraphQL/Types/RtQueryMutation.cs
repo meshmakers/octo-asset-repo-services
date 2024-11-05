@@ -22,11 +22,11 @@ internal sealed class RtQueryMutation : RtMutationBase
         Name = "RtQueryMutations";
 
         
-        Field<ListGraphType<RtQueryRowDtoType>>("create")
+        Field<NonNullGraphType<ListGraphType<NonNullGraphType<RtQueryRowDtoType>>>>("create")
             .Description("Create entities of a runtime query.")
             .Argument<NonNullGraphType<ListGraphType<NonNullGraphType<RtQueryRowDtoInputType>>>>(Statics.EntitiesArg)
             .ResolveAsync(ResolveCreate);
-        Field<ListGraphType<RtQueryRowDtoType>>("update")
+        Field<NonNullGraphType<ListGraphType<NonNullGraphType<RtQueryRowDtoType>>>>("update")
             .Description("Updates entities of a runtime query.")
             .Argument<NonNullGraphType<ListGraphType<NonNullGraphType<RtQueryRowDtoUpdateType>>>>(Statics.EntitiesArg)
             .ResolveAsync(ResolveUpdate);
