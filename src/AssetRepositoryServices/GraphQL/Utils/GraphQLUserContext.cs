@@ -3,16 +3,10 @@ using Meshmakers.Octo.Runtime.Contracts.MongoDb;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Utils;
 
-internal class GraphQlUserContext : Dictionary<string, object?>
+internal class GraphQlUserContext(ClaimsPrincipal? user, ITenantContext tenantContext) : Dictionary<string, object?>
 {
-    public GraphQlUserContext(ClaimsPrincipal? user, ITenantContext tenantContext)
-    {
-        User = user;
-        TenantContext = tenantContext;
-    }
-
-    public ClaimsPrincipal? User { get; }
+    public ClaimsPrincipal? User { get; } = user;
 
     public string TenantId => TenantContext.TenantId;
-    public ITenantContext TenantContext { get; }
+    public ITenantContext TenantContext { get; } = tenantContext;
 }

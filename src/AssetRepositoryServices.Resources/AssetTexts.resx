@@ -150,4 +150,7 @@
     <data name="Graphql_RtQueryRowUpdate_Item_Description" xml:space="preserve">
         <value>Row as input to be updated within the query.</value>
     </data>
+    <data name="Graphql_RtQuery_Description" xml:space="preserve">
+        <value>Represents a runtime query exection.</value>
+    </data>
 </root>

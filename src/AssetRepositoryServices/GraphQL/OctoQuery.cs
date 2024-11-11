@@ -32,7 +32,7 @@ internal sealed class OctoQuery : ObjectGraphType
         Field<CkQuery>("ConstructionKit")
             .Resolve(_ => new object());
 
-        Field("Runtime", new RtQuery(graphTypesCache))
+        Field("Runtime", new RuntimeModelQuery(graphTypesCache))
             .Resolve(_ => new RtEntityDto());
 
         

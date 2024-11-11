@@ -9,17 +9,18 @@ using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Scalars;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Utils;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
 using Meshmakers.Octo.ConstructionKit.Contracts;
+using Meshmakers.Octo.ConstructionKit.Contracts.Services;
 using Meshmakers.Octo.Runtime.Contracts.Repositories.Query;
 using NLog;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL;
 
 [DoNotRegister]
-internal sealed class RtQuery : ObjectGraphType
+internal sealed class RuntimeModelQuery : ObjectGraphType
 {
     private static readonly Logger Logger = LogManager.GetCurrentClassLogger();
 
-    public RtQuery(IGraphTypesCache graphTypesCache)
+    public RuntimeModelQuery(IGraphTypesCache graphTypesCache)
     {
         Name = "RuntimeModelQuery";
 
@@ -36,10 +37,9 @@ internal sealed class RtQuery : ObjectGraphType
             .ResolveAsync(ResolveGenericRtEntitiesQuery);
 
 
-        Connection<NonNullGraphType<RtQueryRowDtoType>>("RuntimeQuery")
+        Connection<NonNullGraphType<RtQueryDtoType>>("RuntimeQuery")
             .Argument<OctoObjectIdType>(Statics.RtIdArg, "The query runtime id.")
             .ResolveAsync(ResolveRtQueryAsync);
-
 
         foreach (var rtEntityDtoType in graphTypesCache.GetTypes())
         {
@@ -68,6 +68,12 @@ internal sealed class RtQuery : ObjectGraphType
         {
             throw AssetRepositoryException.SessionUnavailable();
         }
+        
+        var ckCacheService = arg.RequestServices?.GetRequiredService<ICkCacheService>();
+        if (ckCacheService == null)
+        {
+            throw AssetRepositoryException.ServiceNotRegistered(typeof(ICkCacheService));
+        }
 
         var graphQlUserContext = (GraphQlUserContext)arg.UserContext;
         if (!arg.TryGetArgument(Statics.RtIdArg, out OctoObjectId? queryRtId))
@@ -81,40 +87,20 @@ internal sealed class RtQuery : ObjectGraphType
         var rtQuery =
             await tenantRepository.GetRtEntityByRtIdAsync<ConstructionKit.Models.System.Generated.System.v1.RtQuery>(
                 sessionAccessor.Session, queryRtId.Value);
-
+        
         if (rtQuery == null)
         {
             arg.Errors.Add(new ExecutionError("Invalid query. Query not found.")
                 { Code = Statics.GraphQLErrorCommon });
             return null;
         }
-
-        var offset = arg.GetOffset();
-        DataQueryOperation dataQueryOperation = DataQueryOperation.Create();
-        if (rtQuery.FieldFilter != null)
-        {
-            foreach (var fieldFilter in rtQuery.FieldFilter)
-            {
-                dataQueryOperation.FieldFilter(fieldFilter.AttributeName.ToPascalCase(),
-                    (FieldFilterOperator)fieldFilter.Operator,
-                    fieldFilter.ComparisonValue);
-            }
-        }
-        if (rtQuery.Sorting != null)
-        {
-            foreach (var sort in rtQuery.Sorting)
-            {
-                dataQueryOperation.SortOrder(sort.AttributeName.ToPascalCase(), (SortOrders)sort.SortOrder);
-            }
-        }
-
-        var resultSet = await tenantRepository.GetRtEntitiesByTypeAsync(sessionAccessor.Session,
-            rtQuery.QueryCkTypeId, dataQueryOperation, offset, arg.First);
+        
+        var ckTypeGraph = ckCacheService.GetCkType(graphQlUserContext.TenantId, rtQuery.QueryCkTypeId);
 
         Logger.Debug("GraphQL query handling returning data");
         return ConnectionUtils.ToConnection(
-            resultSet.Items.Select((entity, _) => RtQueryRowDtoType.CreateRtQueryRowDto(entity, rtQuery)), arg,
-            0, (int)resultSet.TotalCount, resultSet.Grouping);
+            [RtQueryDtoType.CreateRtQueryDto(ckTypeGraph, rtQuery)], arg,
+            0, 1, null);
     }
 
     private async Task<object?> ResolveGenericRtEntitiesQuery(IResolveConnectionContext<object?> arg)
