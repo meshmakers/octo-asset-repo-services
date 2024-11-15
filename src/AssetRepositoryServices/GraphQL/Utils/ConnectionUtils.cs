@@ -1,8 +1,8 @@
 using GraphQL.Builders;
 using GraphQL.Types.Relay.DataObjects;
+using Meshmakers.Common.Shared;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
 using Meshmakers.Octo.Runtime.Contracts.Repositories.Query;
-using Panic.StringUtils;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Utils;
 
@@ -77,14 +77,13 @@ internal static class ConnectionUtils
 
     public static int CursorToOffset(string cursor)
     {
-        return int.Parse(
-            StringUtils.Base64Decode(cursor).Substring(Prefix.Length + 1)
+        return int.Parse(cursor.DecodeBase64().Substring(Prefix.Length + 1)
         );
     }
 
     public static string OffsetToCursor(int offset)
     {
-        return StringUtils.Base64Encode($"{Prefix}:{offset}");
+        return $"{Prefix}:{offset}".EncodeBase64();
     }
 
     public static int OffsetOrDefault(string? cursor, int defaultOffset)

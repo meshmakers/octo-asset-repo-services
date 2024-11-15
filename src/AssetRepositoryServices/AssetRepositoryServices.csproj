@@ -27,11 +27,7 @@
         <PackageReference Include="GraphQL.SystemTextJson" Version="8.2.1" />
         <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="8.0.10" />
         <PackageReference Include="Microsoft.AspNetCore.Authentication.OpenIdConnect" Version="8.0.10" />
-        <PackageReference Include="Microsoft.Extensions.PlatformAbstractions" Version="1.1.0" />
         <PackageReference Include="NLog.Web.AspNetCore" Version="5.3.14" />
-        <PackageReference Include="Panic.StringUtils" Version="1.0.1" />
-        <PackageReference Include="System.Reactive.Core" Version="6.0.1" />
-        <PackageReference Include="System.Reactive.Linq" Version="6.0.1" />
     </ItemGroup>
 
     <ItemGroup>
