@@ -5,10 +5,13 @@ using GraphQL.Types;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Caches;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Enums;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Inputs;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Scalars;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Utils;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
 using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb.Repositories;
+using Meshmakers.Octo.Runtime.Contracts.Repositories.Query;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL;
 
@@ -33,7 +36,9 @@ internal class OctoSubscriptions : ObjectGraphType<object>
                 Arguments = new QueryArguments(
                     new QueryArgument<OctoObjectIdType> { Name = Statics.RtIdArg },
                     new QueryArgument<NonNullGraphType<ListGraphType<UpdateTypesDtoType>>>
-                        { Name = Statics.UpdateTypesArg }
+                        { Name = Statics.UpdateTypesArg },
+                    new QueryArgument<ListGraphType<FieldFilterDtoType>>{ Name = Statics.FieldBeforeFilterArg},
+                    new QueryArgument<ListGraphType<FieldFilterDtoType>>{ Name = Statics.FieldFilterArg}
                 ),
                 ResolvedType =
                     new DynamicUpdateMessageDtoType<RtEntityUpdateItemDto>(
@@ -51,6 +56,29 @@ internal class OctoSubscriptions : ObjectGraphType<object>
         var ckId = context.FieldDefinition.GetMetadata<string>(Statics.CkId);
         var rtId = context.GetArgument<OctoObjectId?>(Statics.RtIdArg);
 
+        ICollection<FieldFilter>? beforeFieldFilters = null;
+        ICollection<FieldFilter>? fieldFilters = null;
+        if (context.TryGetArgument(Statics.FieldBeforeFilterArg, out IEnumerable<FieldFilterDto>? beforeFieldFilterDtoList))
+        {
+            beforeFieldFilters = new List<FieldFilter>();
+            foreach (var beforeFieldFilterDto in beforeFieldFilterDtoList)
+            {
+                beforeFieldFilters.Add(
+                    new(beforeFieldFilterDto.AttributeName.ToPascalCase(),
+                        (FieldFilterOperator)beforeFieldFilterDto.Operator, beforeFieldFilterDto.ComparisonValue));
+            }
+        }
+        if (context.TryGetArgument(Statics.FieldFilterArg, out IEnumerable<FieldFilterDto>? fieldFilterDtoList))
+        {
+            fieldFilters = new List<FieldFilter>();
+            foreach (var fieldFilterDto in fieldFilterDtoList)
+            {
+                fieldFilters.Add(
+                    new(fieldFilterDto.AttributeName.ToPascalCase(),
+                        (FieldFilterOperator)fieldFilterDto.Operator, fieldFilterDto.ComparisonValue));
+            }
+        }
+
         var updateTypeDtoList = context.GetArgument<ICollection<UpdateTypesDto>>(Statics.UpdateTypesArg);
         var updateType = UpdateTypes.Undefined;
         foreach (var updateTypeDto in updateTypeDtoList)
@@ -58,14 +86,16 @@ internal class OctoSubscriptions : ObjectGraphType<object>
             updateType |= (UpdateTypes)updateTypeDto;
         }
 
-        var updateStreamFilter = new UpdateStreamFilter
+        var watchStreamFilter = new WatchStreamFilter
         {
             UpdateTypes = updateType,
-            RtId = rtId
+            RtId = rtId,
+            BeforeFieldFilters = beforeFieldFilters,
+            FieldFilters = fieldFilters,
         };
 
         var tenantRepository = tenantContext.GetTenantRepository();
-        var messages = tenantRepository.SubscribeToRtEntities(ckId, updateStreamFilter, context.CancellationToken);
+        var messages = tenantRepository.WatchRtEntitiesAsync(ckId, watchStreamFilter, context.CancellationToken);
 
         var observable = messages.Result.GetUpdates().Select(x => new DynamicUpdateMessageDto<RtEntityUpdateItemDto>
         {
