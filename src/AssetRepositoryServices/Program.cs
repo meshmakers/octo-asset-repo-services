@@ -2,7 +2,6 @@ using Meshmakers.Octo.Backend.AssetRepositoryServices.Configuration;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.Routing;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.Services;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.StreamData;
-using Meshmakers.Octo.Runtime.Contracts.MongoDb.Configuration;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb.Extensions;
 using Meshmakers.Octo.Services.Common.Cors;
 using Meshmakers.Octo.Services.Common.StreamData.Extensions;

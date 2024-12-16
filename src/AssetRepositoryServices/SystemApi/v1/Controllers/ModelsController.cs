@@ -110,7 +110,7 @@ public class ModelsController : ControllerBase
     [RequestSizeLimit(300_000_000)]
     [Route("ImportRt")]
     [Authorize(AssetRepositoryServiceConstants.SystemApiReadWritePolicy)]
-    public async Task<IActionResult> ImportRt([Required] string tenantId, [FromForm] IFormFile file)
+    public async Task<IActionResult> ImportRt([Required] string tenantId, IFormFile file)
     {
         try
         {
@@ -137,8 +137,7 @@ public class ModelsController : ControllerBase
     //[Consumes("application/zip", "application/zip")]
     [Route("ImportCk")]
     [Authorize(AssetRepositoryServiceConstants.SystemApiReadWritePolicy)]
-    public async Task<IActionResult> ImportCk([Required] string tenantId,
-        [FromForm] IFormFile file)
+    public async Task<IActionResult> ImportCk([Required] string tenantId, IFormFile file)
     {
         try
         {
