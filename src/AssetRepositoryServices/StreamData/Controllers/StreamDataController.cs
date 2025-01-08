@@ -1,4 +1,5 @@
 ﻿using System.ComponentModel.DataAnnotations;
+using Asp.Versioning;
 using GraphQL;
 using MassTransit;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.StreamData.Services;

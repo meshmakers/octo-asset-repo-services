@@ -121,8 +121,6 @@ public static class RuntimeEngineBuilderExtensions
 
         builder.Services.AddOctoApiVersioningAndDocumentation(options =>
         {
-            options.AddXmlDocAssembly<OctoAssetRepositoryServicesOptions>();
-            options.AddXmlDocAssembly<ClientDto>();
             options.Scopes = new Dictionary<string, string>
             {
                 {
@@ -140,7 +138,7 @@ public static class RuntimeEngineBuilderExtensions
 
             options.ClientId = CommonConstants.AsserRepositoryServicesSwaggerClientId;
             options.AppName = AssetTexts.Backend_AssetServices_UserSchema_Swagger_DisplayName;
-        });
+        }).AddVersion();
 
         // Add GraphQL services and configure options
         builder.Services.AddGraphQL(graphQlBuilder => graphQlBuilder
@@ -199,7 +197,7 @@ public static class RuntimeEngineBuilderExtensions
         builder.Services.AddSingleton(
             resolver => resolver.GetRequiredService<IOptions<OctoSystemConfiguration>>().Value);
         builder.Services.AddSingleton<GraphQLHttpMiddlewareOptions>();
-        builder.Services.ConfigureOptions<ConfigureOctoSwaggerOptions>();
+        builder.Services.ConfigureOptions<ConfigureOctoOpenApiOptions>();
         builder.Services.ConfigureOptions<ConfigureDistributionEventHubOptions>();
 
         // Add GraphQL types (GraphQL.Relay)

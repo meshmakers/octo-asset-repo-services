@@ -19,7 +19,7 @@ public static class OctoApplicationBuilderExtensions
     /// <returns></returns>
     // ReSharper disable once UnusedMethodReturnValue.Global
     public static IApplicationBuilder UseOctoAssetRepositoryServices(
-        this IApplicationBuilder app)
+        this WebApplication app)
     {
         if (app == null)
         {
@@ -30,7 +30,7 @@ public static class OctoApplicationBuilderExtensions
         return app;
     }
 
-    private static void ConfigureOcto(IApplicationBuilder app)
+    private static void ConfigureOcto(WebApplication app)
     {
         app.UseOctoApiVersioningAndDocumentation();
 
@@ -54,17 +54,14 @@ public static class OctoApplicationBuilderExtensions
             ForwardedHeaders = ForwardedHeaders.XForwardedProto
         });
 
-        app.UseEndpoints(endpoints =>
-        {
-            endpoints.MapControllers();
-            endpoints.MapGraphQlTenantPlayground(new AltairOptions
-                {
+        app.MapControllers();
+        app.MapGraphQlTenantPlayground(new AltairOptions
+            {
 //                    RequestCredentials = RequestCredentials.Include,
-                    GraphQLEndPoint = "/tenants/{tenantId}/graphQl"
-                }, "tenants/{tenantId:tenantId}/graphQl/playground")
-                .RequireAuthorization(AssetRepositoryServiceConstants.AuthenticatedUserPolicy);
-            endpoints.MapGraphQL<GraphQlTenantMiddleware>(
-                "tenants/{tenantId:tenantId}/graphQl"); //.RequireAuthorization(AssetRepositoryServiceConstants.TenantApiReadWritePolicy);// TODO enable again!
-        });
+                GraphQLEndPoint = "/tenants/{tenantId}/graphQl"
+            }, "tenants/{tenantId:tenantId}/graphQl/playground")
+            .RequireAuthorization(AssetRepositoryServiceConstants.AuthenticatedUserPolicy);
+        app.MapGraphQL<GraphQlTenantMiddleware>(
+            "tenants/{tenantId:tenantId}/graphQl"); //.RequireAuthorization(AssetRepositoryServiceConstants.TenantApiReadWritePolicy);// TODO enable again!
     }
 }
