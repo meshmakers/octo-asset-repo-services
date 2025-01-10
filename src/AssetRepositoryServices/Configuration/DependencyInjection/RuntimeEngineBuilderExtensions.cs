@@ -14,6 +14,7 @@ using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.RequestHandling;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.Services;
 using Meshmakers.Octo.Communication.Contracts;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
+using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb.Configuration;
 using Meshmakers.Octo.Runtime.Engine.Configuration.DependencyInjection;
 using Meshmakers.Octo.Services.Common;
@@ -132,6 +133,28 @@ public static class RuntimeEngineBuilderExtensions
                     AssetTexts.Backend_AssetServices_Api_ReadOnlyAccess
                 }
             };
+            
+            options.PolicyScopeMapping = new Dictionary<string, IEnumerable<string>>
+            {
+                {
+                    AssetRepositoryServiceConstants.SystemApiReadOnlyPolicy,
+                    new List<string> {CommonConstants.SystemApiReadOnly}
+                },
+                {
+                    AssetRepositoryServiceConstants.SystemApiReadWritePolicy,
+                    new List<string> {CommonConstants.SystemApiFullAccess}
+                }
+            };
+
+            options.XmlDocDataTransferObjectAssemblies =
+            [
+                typeof(ExportModelRequestByQueryDto).Assembly,
+                typeof(OctoObjectId).Assembly
+            ];
+            options.XmlDocOperationAssemblies =
+            [
+                typeof(Program).Assembly
+            ];
 
             options.ApiTitle = "Octo Asset API";
             options.ApiDescription = "Octo Asset Repository Services.";
