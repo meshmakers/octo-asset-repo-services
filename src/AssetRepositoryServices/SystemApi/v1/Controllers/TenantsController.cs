@@ -43,6 +43,8 @@ public class TenantsController : ControllerBase
     /// <returns></returns>
     [HttpGet]
     [Authorize(AssetRepositoryServiceConstants.SystemApiReadOnlyPolicy)]
+    [ProducesResponseType(typeof(IEnumerable<TenantDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> Get([FromQuery] PagingParams? pagingParams)
     {
         using var session = await _octoService.SystemContext.GetAdminSessionAsync();
@@ -68,12 +70,14 @@ public class TenantsController : ControllerBase
 
     // GET system/v1/tenants/{id}
     /// <summary>
-    ///     Returns client information based on it's client id
+    ///     Returns client information based on its client id
     /// </summary>
-    /// <param name="id">Id of the client</param>
+    /// <param name="id">ID of the client</param>
     /// <returns>An Object that describes the client.</returns>
     [HttpGet("{id}")]
     [Authorize(AssetRepositoryServiceConstants.SystemApiReadOnlyPolicy)]
+    [ProducesResponseType(typeof(TenantDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> Get([Required] string id)
     {
         using var session = await _octoService.SystemContext.GetAdminSessionAsync();
@@ -93,11 +97,13 @@ public class TenantsController : ControllerBase
     /// <summary>
     ///     Creates new tenants
     /// </summary>
-    /// <param name="tenantId">Id of tenant</param>
+    /// <param name="tenantId">ID of tenant</param>
     /// <param name="databaseName">Name of database</param>
     /// <returns></returns>
     [HttpPost]
     [Authorize(AssetRepositoryServiceConstants.SystemApiReadWritePolicy)]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
     public async Task<IActionResult> Post([Required] string tenantId, [Required] string databaseName)
     {
         using var session = await _octoService.SystemContext.GetAdminSessionAsync();
@@ -119,11 +125,13 @@ public class TenantsController : ControllerBase
     /// <summary>
     ///     Appends an existing database as tenant
     /// </summary>
-    /// <param name="tenantId">Id of tenant</param>
+    /// <param name="tenantId">ID tenant</param>
     /// <param name="databaseName">Name of database (have to exist)</param>
     /// <returns></returns>
     [HttpPost("attach")]
     [Authorize(AssetRepositoryServiceConstants.SystemApiReadWritePolicy)]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
     public async Task<IActionResult> Attach([Required] string tenantId, [Required] string databaseName)
     {
         using var session = await _octoService.SystemContext.GetAdminSessionAsync();
@@ -174,6 +182,8 @@ public class TenantsController : ControllerBase
     /// <returns></returns>
     [HttpPut("clear")]
     [Authorize(AssetRepositoryServiceConstants.SystemApiReadWritePolicy)]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
     public async Task<IActionResult> Clear([Required] string tenantId)
     {
         using var session = await _octoService.SystemContext.GetAdminSessionAsync();
@@ -199,6 +209,8 @@ public class TenantsController : ControllerBase
     /// <returns></returns>
     [HttpPut("update")]
     [Authorize(AssetRepositoryServiceConstants.SystemApiReadWritePolicy)]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
     public async Task<IActionResult> Update([Required] string tenantId)
     {
         using var session = await _octoService.SystemContext.GetAdminSessionAsync();
@@ -225,6 +237,8 @@ public class TenantsController : ControllerBase
     /// <returns></returns>
     [HttpPut("clearCache")]
     [Authorize(AssetRepositoryServiceConstants.SystemApiReadWritePolicy)]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
     public async Task<IActionResult> ClearCache([Required] string tenantId)
     {
         try
@@ -246,10 +260,12 @@ public class TenantsController : ControllerBase
     /// <summary>
     ///     Deletes a tenant
     /// </summary>
-    /// <param name="tenantId">Id of tenant</param>
+    /// <param name="tenantId">ID of tenant</param>
     /// <returns></returns>
     [HttpDelete]
     [Authorize(AssetRepositoryServiceConstants.SystemApiReadWritePolicy)]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> Delete([Required] string tenantId)
     {
         using var session = await _octoService.SystemContext.GetAdminSessionAsync();

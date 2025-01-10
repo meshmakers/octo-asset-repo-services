@@ -35,6 +35,8 @@ public class LargeBinariesController
     /// <returns></returns>
     [HttpGet]
     [Authorize(AssetRepositoryServiceConstants.SystemApiReadOnlyPolicy)]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> Get([FromQuery] string tenantId, [FromQuery] string largeBinaryId)
     {
         var tenantContext = await _octoService.SystemContext.GetChildTenantContextAsync(tenantId);

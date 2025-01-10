@@ -1,5 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 using Asp.Versioning;
+using IdentityModel;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
 using Meshmakers.Octo.Services.Infrastructure.Services;
 using Microsoft.AspNetCore.Authorization;
@@ -10,6 +11,7 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.SystemApi.v1.Controlle
 /// <summary>
 /// Manages the diagnostics settings of the service
 /// </summary>
+[Authorize(AuthenticationSchemes = OidcConstants.AuthenticationSchemes.AuthorizationHeaderBearer)]
 [ApiController]
 [Route("system/v{version:apiVersion}/[controller]")]
 [ApiVersion("1.0")]
@@ -36,6 +38,8 @@ public class DiagnosticsController: ControllerBase
     /// <returns></returns>
     [HttpPost("reconfigureLogLevel")]
     [Authorize(AssetRepositoryServiceConstants.SystemApiReadWritePolicy)]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> Enable([Required] LogLevelDto minLogLevel)
     {
         try

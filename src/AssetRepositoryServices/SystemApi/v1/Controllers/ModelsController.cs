@@ -56,6 +56,8 @@ public class ModelsController : ControllerBase
     [HttpPost]
     [Route("ExportRtByQuery")]
     [Authorize(AssetRepositoryServiceConstants.SystemApiReadOnlyPolicy)]
+    [ProducesResponseType(typeof(string), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> ExportRtByQueryAsync([Required] string tenantId,
         [FromBody] ExportModelRequestByQueryDto exportModelRequestByQueryDto)
     {
@@ -82,6 +84,8 @@ public class ModelsController : ControllerBase
     [HttpPost]
     [Route("ExportRtByDeepGraph")]
     [Authorize(AssetRepositoryServiceConstants.SystemApiReadOnlyPolicy)]
+    [ProducesResponseType(typeof(string), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> ExportRtByDeepGraphAsync([Required] string tenantId,
         [FromBody] ExportModelRequestByDeepGraphDto exportModelRequestByDeepGraphDto)
     {
@@ -111,6 +115,8 @@ public class ModelsController : ControllerBase
     [RequestSizeLimit(300_000_000)]
     [Route("ImportRt")]
     [Authorize(AssetRepositoryServiceConstants.SystemApiReadWritePolicy)]
+    [ProducesResponseType(typeof(string), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> ImportRt([Required] string tenantId, IFormFile file)
     {
         try
@@ -138,6 +144,8 @@ public class ModelsController : ControllerBase
     //[Consumes("application/zip", "application/zip")]
     [Route("ImportCk")]
     [Authorize(AssetRepositoryServiceConstants.SystemApiReadWritePolicy)]
+    [ProducesResponseType(typeof(string), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> ImportCk([Required] string tenantId, IFormFile file)
     {
         try
