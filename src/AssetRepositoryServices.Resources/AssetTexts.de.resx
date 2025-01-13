@@ -17,9 +17,6 @@
     <data name="Backend_AssetServices_Api_ReadOnlyAccess" xml:space="preserve">
         <value>Lesezugriff auf die System-API</value>
     </data>
-    <data name="Backend_AssetServices_UserSchema_AdminPanel_DisplayName" xml:space="preserve">
-        <value>Octo Mesh-Admin-Panel</value>
-    </data>
     <data name="Backend_AssetServices_UserSchema_AssetServices_DisplayName" xml:space="preserve">
         <value>Benutzeroberfläche der Asset-Repository-Dienste</value>
     </data>

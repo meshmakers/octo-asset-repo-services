@@ -128,33 +128,6 @@ internal class DefaultConfigurationCreatorService(
     {
         createIdentityDataCommandRequest.Clients = new List<DistClientDto>
         {
-            new(CommonConstants.OctoAdminPanelClientId,
-                AssetTexts.Backend_AssetServices_UserSchema_AdminPanel_DisplayName,
-                octoAssetRepositoryServicesOptions.PublicAdminPanelUrl)
-            {
-                AllowedGrantTypes = [OidcConstants.GrantTypes.AuthorizationCode],
-
-                RequireConsent = false,
-
-                RedirectUris =
-                [
-                    octoAssetRepositoryServicesOptions.PublicAdminPanelUrl.EnsureEndsWith("/")
-                ],
-
-                PostLogoutRedirectUris = [octoAssetRepositoryServicesOptions.PublicAdminPanelUrl.EnsureEndsWith("/")],
-                AllowedCorsOrigins = [octoAssetRepositoryServicesOptions.PublicAdminPanelUrl.TrimEnd('/')],
-                AllowOfflineAccess = true,
-                AllowedScopes =
-                [
-                    CommonConstants.Scopes.OpenId,
-                    CommonConstants.Scopes.Profile,
-                    CommonConstants.Scopes.Email,
-                    JwtClaimTypes.Role,
-                    CommonConstants.SystemApiFullAccess,
-                    CommonConstants.IdentityApiFullAccess,
-                    CommonConstants.BotApiFullAccess
-                ]
-            },
             new(CommonConstants.AssetRepositoryServicesClientId,
                 AssetTexts.Backend_AssetServices_UserSchema_AssetServices_DisplayName,
                 octoAssetRepositoryServicesOptions.PublicUrl)

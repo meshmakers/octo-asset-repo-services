@@ -69,12 +69,6 @@ namespace AssetRepositoryServices.Resources {
             }
         }
         
-        public static string Backend_AssetServices_UserSchema_AdminPanel_DisplayName {
-            get {
-                return ResourceManager.GetString("Backend_AssetServices_UserSchema_AdminPanel_DisplayName", resourceCulture);
-            }
-        }
-        
         public static string Graphql_Type_IsFinal_Description {
             get {
                 return ResourceManager.GetString("Graphql_Type_IsFinal_Description", resourceCulture);
