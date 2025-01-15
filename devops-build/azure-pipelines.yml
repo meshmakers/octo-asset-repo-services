@@ -57,7 +57,7 @@ stages:
               testRunTitle: 'CI'
           - template: build-and-push-docker-image.yml
             parameters:
-              ContainerRegistry: 'dockerhub@ianitor'
+              ContainerRegistry: $(DockerRegistryPublicConnection)
               Repository: meshmakers/octo-mesh-asset-rep-services
               Dockerfile: src/AssetRepositoryServices/Dockerfile
               PrivateRegistry: $(DockerRegistryPrivateUri)
