@@ -55,13 +55,6 @@ stages:
                 '**/*Tests.csproj'
                 !'**/*SystemTests.csproj'
               testRunTitle: 'CI'
-          - task: PowerShell@2
-            displayName: 'Create version info file'
-            inputs:
-              targetType: 'inline'
-              script: |
-                New-Item $(build.artifactstagingdirectory)/versioninfo.txt
-                Set-Content $(build.artifactstagingdirectory)/versioninfo.txt $(Build.BuildNumber)
           - template: build-and-push-docker-image.yml
             parameters:
               ContainerRegistry: 'dockerhub@ianitor'
