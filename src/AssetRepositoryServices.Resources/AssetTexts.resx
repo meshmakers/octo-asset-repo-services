@@ -150,4 +150,7 @@
     <data name="Graphql_RtQuery_Description" xml:space="preserve">
         <value>Represents a runtime query exection.</value>
     </data>
+    <data name="Graphql_Type_Filter_AttributeNameContainsFilter_Description" xml:space="preserve">
+        <value>Filters for attributes containing the given termin as attribute name.</value>
+    </data>
 </root>

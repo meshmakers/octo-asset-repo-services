@@ -6,9 +6,12 @@ using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Scalars;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Utils;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
 using Meshmakers.Octo.ConstructionKit.Contracts;
+using Meshmakers.Octo.ConstructionKit.Contracts.DataTransferObjects;
 using Meshmakers.Octo.ConstructionKit.Contracts.DependencyGraph;
 using Meshmakers.Octo.ConstructionKit.Contracts.Services;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb.Repositories.Entities;
+using CkTypeAttributeDto = Meshmakers.Octo.Communication.Contracts.DataTransferObjects.CkTypeAttributeDto;
+using CkTypeDto = Meshmakers.Octo.Communication.Contracts.DataTransferObjects.CkTypeDto;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
 
@@ -27,8 +30,18 @@ internal sealed class CkTypeDtoType : ObjectGraphType<CkTypeDto>
         Field(x => x.Description, nullable: true).Description(AssetTexts.Graphql_Type_Description_Description);
 
         Connection<CkTypeAttributeDtoType>("attributes")
-            .Argument<ListGraphType<StringGraphType>>(Statics.AttributeNamesFilterArg, AssetTexts.Graphql_Type_Filter_Attributes_Description)
+            .Argument<StringGraphType>(Statics.AttributeNameContainsFilterArg,
+                AssetTexts.Graphql_Type_Filter_AttributeNameContainsFilter_Description)
+            .Argument<ListGraphType<StringGraphType>>(Statics.AttributeNamesFilterArg,
+                AssetTexts.Graphql_Type_Filter_Attributes_Description)
             .Resolve(ResolveAttributes);
+
+        Connection<CkTypeQueryColumnDtoType>("availableQueryColumns")
+            .Argument<StringGraphType>(Statics.AttributeNameContainsFilterArg,
+                AssetTexts.Graphql_Type_Filter_AttributeNameContainsFilter_Description)
+            .Argument<ListGraphType<StringGraphType>>(Statics.AttributeNamesFilterArg,
+                AssetTexts.Graphql_Type_Filter_Attributes_Description)
+            .Resolve(ResolveAvailableQueryColumns);
 
         Connection<CkTypeDtoType>("derivedTypes")
             .Description(AssetTexts.Graphql_Type_DerivedTypes_Description)
@@ -51,23 +64,85 @@ internal sealed class CkTypeDtoType : ObjectGraphType<CkTypeDto>
         Field<CkTypeDtoType>("baseType")
             .Description(AssetTexts.Graphql_Type_BaseType_Description)
             .Resolve(ctx =>
+            {
+                var ckCacheService = ctx.RequestServices?.GetRequiredService<ICkCacheService>();
+                if (ckCacheService == null)
+                {
+                    throw AssetRepositoryException.ServiceNotRegistered(typeof(ICkCacheService));
+                }
+
+                var graphQlContext = (GraphQlUserContext)ctx.UserContext;
+
+                var result = ckCacheService.GetCkType(graphQlContext.TenantId, ctx.Source.CkTypeId).DerivedFromCkTypeId;
+                if (result == null)
+                {
+                    return null;
+                }
+
+                return CreateCkTypeDto(ckCacheService.GetCkType(graphQlContext.TenantId, result));
+            });
+    }
+
+    private object? ResolveAvailableQueryColumns(IResolveConnectionContext<CkTypeDto> arg)
+    {
+        var ckCacheService = arg.RequestServices?.GetRequiredService<ICkCacheService>();
+        if (ckCacheService == null)
         {
-            var ckCacheService = ctx.RequestServices?.GetRequiredService<ICkCacheService>();
-            if (ckCacheService == null)
-            {
-                throw AssetRepositoryException.ServiceNotRegistered(typeof(ICkCacheService));
-            }
+            throw AssetRepositoryException.ServiceNotRegistered(typeof(ICkCacheService));
+        }
 
-            var graphQlContext = (GraphQlUserContext)ctx.UserContext;
+        var graphQlContext = (GraphQlUserContext)arg.UserContext;
 
-            var result = ckCacheService.GetCkType(graphQlContext.TenantId, ctx.Source.CkTypeId).DerivedFromCkTypeId;
-            if (result == null)
-            {
-                return null;
-            }
+        arg.TryGetArgument(Statics.AttributeNamesFilterArg,
+            out IEnumerable<string>? filterAttributeNames);
+        arg.TryGetArgument(Statics.AttributeNameContainsFilterArg,
+            out string? attributeNameContainsFilter);
 
-            return CreateCkTypeDto(ckCacheService.GetCkType(graphQlContext.TenantId, result));
+        var ckTypeGraph = ckCacheService.GetCkType(graphQlContext.TenantId, arg.Source.CkTypeId);
+
+        List<CkTypeQueryColumnDto> resultList =
+            ckTypeGraph.AllAttributes.Values.Select(CreateCkTypeQueryColumnDto).ToList();
+        resultList.Add(new CkTypeQueryColumnDto
+        {
+            AttributeName = nameof(RtEntityDto.RtId).ToCamelCase(),
+            AttributeValueType = AttributeValueTypesDto.String
         });
+        resultList.Add(new CkTypeQueryColumnDto
+        {
+            AttributeName = nameof(RtEntityDto.RtWellKnownName).ToCamelCase(),
+            AttributeValueType = AttributeValueTypesDto.String
+        });
+        resultList.Add(new CkTypeQueryColumnDto
+        {
+            AttributeName = nameof(RtEntityDto.RtVersion).ToCamelCase(),
+            AttributeValueType = AttributeValueTypesDto.Int64
+        });
+        resultList.Add(new CkTypeQueryColumnDto
+        {
+            AttributeName = nameof(RtEntityDto.RtCreationDateTime).ToCamelCase(),
+            AttributeValueType = AttributeValueTypesDto.DateTime
+        });      
+        resultList.Add(new CkTypeQueryColumnDto
+        {
+            AttributeName = nameof(RtEntityDto.RtChangedDateTime).ToCamelCase(),
+            AttributeValueType = AttributeValueTypesDto.DateTime
+        });    
+
+        if (filterAttributeNames != null)
+        {
+            resultList = resultList.Where(a =>
+                filterAttributeNames.Contains(a.AttributeName.ToCamelCase())).ToList();
+        }
+
+        if (!string.IsNullOrWhiteSpace(attributeNameContainsFilter))
+        {
+            resultList =
+                resultList.Where(a => a.AttributeName.ToLower().Contains(attributeNameContainsFilter))
+                    .ToList();
+        }
+
+
+        return ConnectionUtils.ToConnection(resultList.OrderBy(a=> a.AttributeName), arg, null);
     }
 
     private object ResolveAttributes(IResolveConnectionContext<CkTypeDto> ctx)
@@ -82,20 +157,25 @@ internal sealed class CkTypeDtoType : ObjectGraphType<CkTypeDto>
 
         ctx.TryGetArgument(Statics.AttributeNamesFilterArg,
             out IEnumerable<string>? filterAttributeNames);
+        ctx.TryGetArgument(Statics.AttributeNameContainsFilterArg,
+            out string? attributeNameContainsFilter);
 
-        var entityCacheItem = ckCacheService.GetCkType(graphQlContext.TenantId, ctx.Source.CkTypeId);
+        var ckTypeGraph = ckCacheService.GetCkType(graphQlContext.TenantId, ctx.Source.CkTypeId);
 
-        IEnumerable<CkTypeAttributeGraph> resultList;
-        if (filterAttributeNames == null)
+        List<CkTypeAttributeGraph> resultList = ckTypeGraph.AllAttributes.Values.ToList();
+        if (filterAttributeNames != null)
         {
-            resultList = entityCacheItem.AllAttributes.Values;
+            resultList = resultList.Where(a =>
+                filterAttributeNames.Contains(a.AttributeName.ToCamelCase())).ToList();
         }
-        else
+
+        if (!string.IsNullOrWhiteSpace(attributeNameContainsFilter))
         {
             resultList =
-                entityCacheItem.AllAttributes.Values.Where(a =>
-                    filterAttributeNames.Contains(a.AttributeName.ToCamelCase()));
+                resultList.Where(a => a.AttributeName.ToLower().Contains(attributeNameContainsFilter))
+                    .ToList();
         }
+
 
         return ConnectionUtils.ToConnection(resultList.Select(CreateCkTypeAttributeDto), ctx, null);
     }
@@ -137,5 +217,15 @@ internal sealed class CkTypeDtoType : ObjectGraphType<CkTypeDto>
             Attribute = CkAttributeDtoType.CreateCkAttributeDto(ckTypeAttributeGraph)
         };
         return ckEntityAttributeDto;
+    }
+
+    private CkTypeQueryColumnDto CreateCkTypeQueryColumnDto(CkTypeAttributeGraph ckTypeAttributeGraph)
+    {
+        var ckTypeQueryColumnDto = new CkTypeQueryColumnDto
+        {
+            AttributeName = ckTypeAttributeGraph.AttributeName.ToCamelCase(),
+            AttributeValueType = ckTypeAttributeGraph.ValueType,
+        };
+        return ckTypeQueryColumnDto;
     }
 }
