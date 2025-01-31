@@ -39,7 +39,8 @@ public class OctoGraphQLException : Exception
 
     public static Exception AttributeNameMetadataNotFound(string fieldDefinitionName)
     {
-        return new OctoGraphQLException($"Attribute name metadata not found for field definition {fieldDefinitionName}.");
+        return new OctoGraphQLException(
+            $"Attribute name metadata not found for field definition {fieldDefinitionName}.");
     }
 
     public static Exception EnumAttributeHasNoCkEnumId(string attributeName)
@@ -51,7 +52,7 @@ public class OctoGraphQLException : Exception
     {
         return new OctoGraphQLException($"Schema creation failed for tenant {tenantId}.", exception);
     }
-    
+
     public static Exception SchemaCreationFailed(string tenantId)
     {
         return new OctoGraphQLException($"Schema creation failed for tenant {tenantId}.");
@@ -81,5 +82,11 @@ public class OctoGraphQLException : Exception
     public static Exception RtQueryNotFound(OctoObjectId queryRtId)
     {
         return new OctoGraphQLException($"RtQuery with RtId {queryRtId} not found.");
+    }
+
+    public static Exception InvalidQueryColumn(OctoObjectId rtQueryRtId, string attributePath)
+    {
+        return new OctoGraphQLException(
+            $"Invalid query column for RtQuery with RtId '{rtQueryRtId}'. AttributePath: '{attributePath}'");
     }
 }

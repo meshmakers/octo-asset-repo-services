@@ -28,7 +28,8 @@ internal sealed class RtQueryDtoType: ObjectGraphType<RtQueryDto>
     {
         Name = "RtQuery";
         Description = AssetTexts.Graphql_RtQuery_Description;
-        Field(d => d.QueryRtId, type: typeof(OctoObjectIdType));
+        Field(d => d.QueryRtId, type: typeof(NonNullGraphType<OctoObjectIdType>));
+        Field(d => d.AssociatedCkTypeId, type: typeof(NonNullGraphType<CkIdTypeGraph<CkTypeId>>));
         Field(d => d.Columns, type: typeof(NonNullGraphType<ListGraphType<NonNullGraphType<RtQueryColumnType>>>));
 
         Connection<NonNullGraphType<RtQueryRowDtoType>>("Rows")
@@ -96,6 +97,7 @@ internal sealed class RtQueryDtoType: ObjectGraphType<RtQueryDto>
         var rtQueryDto = new RtQueryDto
         {
             QueryRtId = rtQuery.RtId,
+            AssociatedCkTypeId = rtQuery.QueryCkTypeId,
             Columns = rtQuery.Columns.Select(c => RtQueryColumnType.CreateRtQueryColumnDto(ckTypeGraph, rtQuery, c)).ToList(),
             UserContext = rtQuery
         };

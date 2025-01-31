@@ -3,6 +3,7 @@ using GraphQL.Types;
 using Meshmakers.Common.Shared;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Enums;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
+using Meshmakers.Octo.ConstructionKit.Contracts.DataTransferObjects;
 using Meshmakers.Octo.ConstructionKit.Contracts.DependencyGraph;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
@@ -26,13 +27,68 @@ internal sealed class RtQueryColumnType: ObjectGraphType<RtQueryColumnDto>
     
     public static RtQueryColumnDto CreateRtQueryColumnDto(CkTypeGraph ckTypeGraph, ConstructionKit.Models.System.Generated.System.v1.RtQuery rtQuery, string attributePath)
     {
-        var rtQueryColumnDto = new RtQueryColumnDto
+        var pascalCaseAttributePath = attributePath.ToPascalCase();
+        if (ckTypeGraph.AllAttributesByName.ContainsKey(pascalCaseAttributePath))
         {
-            AttributePath = attributePath,
-            AttributeValueType = ckTypeGraph.AllAttributesByName[attributePath.ToPascalCase()].ValueType,
-            UserContext = rtQuery
-        };
+            var rtQueryColumnDto = new RtQueryColumnDto
+            {
+                AttributePath = attributePath,
+                AttributeValueType = ckTypeGraph.AllAttributesByName[attributePath.ToPascalCase()].ValueType,
+                UserContext = rtQuery
+            };
+            return rtQueryColumnDto;
+        }
 
-        return rtQueryColumnDto;
+        if (pascalCaseAttributePath == nameof(RtEntityDto.RtId))
+        {
+            return new RtQueryColumnDto
+            {
+                AttributePath = attributePath,
+                AttributeValueType = AttributeValueTypesDto.String,
+                UserContext = rtQuery
+            };
+        }
+
+        if (pascalCaseAttributePath == nameof(RtEntityDto.RtWellKnownName))
+        {
+            return new RtQueryColumnDto
+            {
+                AttributePath = attributePath,
+                AttributeValueType = AttributeValueTypesDto.String,
+                UserContext = rtQuery
+            };
+        }
+
+        if (pascalCaseAttributePath == nameof(RtEntityDto.RtVersion))
+        {
+            return new RtQueryColumnDto
+            {
+                AttributePath = attributePath,
+                AttributeValueType = AttributeValueTypesDto.Int64,
+                UserContext = rtQuery
+            };
+        }
+
+        if (pascalCaseAttributePath == nameof(RtEntityDto.RtCreationDateTime))
+        {
+            return new RtQueryColumnDto
+            {
+                AttributePath = attributePath,
+                AttributeValueType = AttributeValueTypesDto.DateTime,
+                UserContext = rtQuery
+            };
+        }
+
+        if (pascalCaseAttributePath == nameof(RtEntityDto.RtChangedDateTime))
+        {
+            return new RtQueryColumnDto
+            {
+                AttributePath = attributePath,
+                AttributeValueType = AttributeValueTypesDto.DateTime,
+                UserContext = rtQuery
+            };
+        }
+
+        throw OctoGraphQLException.InvalidQueryColumn(rtQuery.RtId, attributePath);
     }
 }
