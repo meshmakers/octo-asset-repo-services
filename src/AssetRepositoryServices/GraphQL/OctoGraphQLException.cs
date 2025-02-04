@@ -89,4 +89,10 @@ public class OctoGraphQLException : Exception
         return new OctoGraphQLException(
             $"Invalid query column for RtQuery with RtId '{rtQueryRtId}'. AttributePath: '{attributePath}'");
     }
+
+    public static Exception InvalidColumnPaths(List<string> invalidColumnPaths)
+    {
+        return new OctoGraphQLException(
+            $"Invalid column paths: {string.Join(", ", invalidColumnPaths)}");
+    }
 }

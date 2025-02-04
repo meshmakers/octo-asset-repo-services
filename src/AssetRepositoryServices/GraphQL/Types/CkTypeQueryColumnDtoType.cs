@@ -11,8 +11,8 @@ internal sealed class CkTypeQueryColumnDtoType : ObjectGraphType<CkTypeQueryColu
         Name = "CkTypeQueryColumn";
         Description = "Represents a possible column in a query result.";
 
-        Field(x => x.AttributeName, type: typeof(NonNullGraphType<StringGraphType>))
-            .Description("Attribute name within the entity.");
+        Field(x => x.AttributePath, type: typeof(NonNullGraphType<StringGraphType>))
+            .Description("Attribute path within the entity.");
         Field(x => x.AttributeValueType, type: typeof(NonNullGraphType<AttributeValueTypesDtoType>))
             .Description("Value type of the attribute.");
     }

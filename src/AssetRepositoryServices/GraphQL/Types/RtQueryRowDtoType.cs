@@ -51,9 +51,9 @@ internal sealed class RtQueryRowDtoType : ObjectGraphType<RtQueryRowDto>
         var rtQueryRowUserContext = (RtQueryRowUserContext)context.Source.UserContext!;
         var ckTypeGraph = ckCacheService.GetCkType(graphQlContext.TenantId, context.Source.CkTypeId);
         
-        var selectedColumns = rtQueryRowUserContext.RtQuery.Columns.Select(c => c.ToPascalCase());
-        var resultList = ckTypeGraph.AllAttributes.Values.Where(a => selectedColumns.Contains(a.AttributeName));
-
+    //    var selectedColumns = rtQueryRowUserContext.CkTypeQueryColumns.Select(c => c.ToPascalCase());
+     //   var resultList = ckTypeGraph.AllAttributes.Values.Where(a => selectedColumns.Contains(a.AttributeName));
+/*
         if (context.HasArgument(Statics.AttributeNamesFilterArg))
         {
             var filterAttributeNames = context.GetArgument<IEnumerable<string>>(Statics.AttributeNamesFilterArg);
@@ -62,25 +62,24 @@ internal sealed class RtQueryRowDtoType : ObjectGraphType<RtQueryRowDto>
                 resultList.Where(a =>
                     filterAttributeNames.Contains(a.AttributeName.ToCamelCase()));
         }
-     
-
+*/
         return ConnectionUtils.ToConnection(
-            resultList.Select(item => CreateRtQueryCellDto(rtQueryRowUserContext.RtEntity, item)),
+            rtQueryRowUserContext.CkTypeQueryColumns.Select(item => CreateRtQueryCellDto(rtQueryRowUserContext.RtEntity, item)),
             context, null);
     }
 
     private RtQueryCellDto CreateRtQueryCellDto(RtEntity rtEntity,
-        CkTypeAttributeGraph ckTypeAttributeGraph)
+        CkTypeQueryColumn ckTypeQueryColumn)
     {
         var cellDto = new RtQueryCellDto
         {
-            AttributePath = ckTypeAttributeGraph.AttributeName.ToCamelCase(),
-            Value = rtEntity.GetAttributeValueOrDefault(ckTypeAttributeGraph.AttributeName)
+            AttributePath = ckTypeQueryColumn.Path,
+            Value = rtEntity.GetAttributeValueByAccessPath(ckTypeQueryColumn.AccessPathList)
         };
         return cellDto;
     }
 
-    public static RtQueryRowDto CreateRtQueryRowDto(RtEntity rtEntity, ConstructionKit.Models.System.Generated.System.v1.RtQuery rtQuery)
+    public static RtQueryRowDto CreateRtQueryRowDto(RtEntity rtEntity, IReadOnlyList<CkTypeQueryColumn> ckTypeQueryColumns)
     {
         var rtQueryRowDto = new RtQueryRowDto
         {
@@ -90,16 +89,16 @@ internal sealed class RtQueryRowDtoType : ObjectGraphType<RtQueryRowDto>
             RtChangedDateTime = rtEntity.RtChangedDateTime,
             RtWellKnownName = rtEntity.RtWellKnownName,
             RtVersion = rtEntity.RtVersion,
-            UserContext = new RtQueryRowUserContext(rtEntity, rtQuery)
+            UserContext = new RtQueryRowUserContext(rtEntity, ckTypeQueryColumns)
         };
 
         return rtQueryRowDto;
     }
 }
 
-internal class RtQueryRowUserContext(RtEntity rtEntity, ConstructionKit.Models.System.Generated.System.v1.RtQuery rtQuery)
+internal class RtQueryRowUserContext(RtEntity rtEntity, IReadOnlyList<CkTypeQueryColumn> ckTypeQueryColumns)
 {
-    public ConstructionKit.Models.System.Generated.System.v1.RtQuery RtQuery { get; } = rtQuery;
+    public IReadOnlyList<CkTypeQueryColumn> CkTypeQueryColumns { get; } = ckTypeQueryColumns;
 
     public RtEntity RtEntity { get; } = rtEntity;
 }

@@ -93,7 +93,7 @@ internal sealed class RtQueryMutation : RtMutationBase
                 return null;
             }
 
-            return await GetRtQueryRowResultSet(sessionAccessor.Session, tenantRepository, entityUpdateInfos, queryRtId);
+            return await GetRtQueryRowResultSet(sessionAccessor.Session, ckCacheService, tenantRepository, entityUpdateInfos, queryRtId);
         }
         catch (PersistenceException e)
         {
@@ -218,7 +218,7 @@ internal sealed class RtQueryMutation : RtMutationBase
                 return null;
             }
 
-            return await GetRtQueryRowResultSet(sessionAccessor.Session, tenantRepository, entityUpdateInfos, queryRtId);
+            return await GetRtQueryRowResultSet(sessionAccessor.Session, ckCacheService, tenantRepository, entityUpdateInfos, queryRtId);
         }
         catch (OperationFailedException e)
         {

@@ -14,21 +14,20 @@ using NLog;
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
 
 /// <summary>
-///     Implements the GraphQL type for <see cref="RtQueryDto"/>.
+///     Implements the GraphQL type for <see cref="RtTransientQueryDto"/>.
 /// </summary>
 // ReSharper disable once ClassNeverInstantiated.Global
-internal sealed class RtQueryDtoType: ObjectGraphType<RtQueryDto>
+internal sealed class RtTransientQueryDtoType: ObjectGraphType<RtTransientQueryDto>
 {
     private static readonly Logger Logger = LogManager.GetCurrentClassLogger();
 
     /// <summary>
     ///     Constructor
     /// </summary>
-    public RtQueryDtoType()
+    public RtTransientQueryDtoType()
     {
-        Name = "RtQuery";
+        Name = "RtTransientQuery";
         Description = AssetTexts.Graphql_RtQuery_Description;
-        Field(d => d.QueryRtId, type: typeof(NonNullGraphType<OctoObjectIdType>));
         Field(d => d.AssociatedCkTypeId, type: typeof(NonNullGraphType<CkIdTypeGraph<CkTypeId>>));
         Field(d => d.Columns, type: typeof(NonNullGraphType<ListGraphType<NonNullGraphType<RtQueryColumnType>>>));
 
@@ -48,14 +47,13 @@ internal sealed class RtQueryDtoType: ObjectGraphType<RtQueryDto>
 
         var graphQlUserContext = (GraphQlUserContext)arg.UserContext;
         
-        if (arg.Source is not RtQueryDto rtQueryDto)
+        if (arg.Source is not RtTransientQueryDto rtTransientQueryDto)
         {
             arg.Errors.Add(new ExecutionError("Invalid query. Query not found.")
                 { Code = Statics.GraphQLErrorCommon });
             return null;
         }
-        
-        if (rtQueryDto.UserContext is not QueryUserContext queryUserContext)
+        if (rtTransientQueryDto.UserContext is not QueryUserContext queryUserContext)
         {
             arg.Errors.Add(new ExecutionError("Invalid query. User context not found.")
                 { Code = Statics.GraphQLErrorCommon });
@@ -67,43 +65,24 @@ internal sealed class RtQueryDtoType: ObjectGraphType<RtQueryDto>
         var offset = arg.GetOffset();
 
         var resultSet = await tenantRepository.GetRtEntitiesByTypeAsync(sessionAccessor.Session,
-            rtQueryDto.AssociatedCkTypeId, queryUserContext.DataQueryOperation, offset, arg.First);
+            rtTransientQueryDto.AssociatedCkTypeId, queryUserContext.DataQueryOperation, offset, arg.First);
 
         Logger.Debug("GraphQL query handling returning data");
         return ConnectionUtils.ToConnection(
             resultSet.Items.Select((entity, _) => RtQueryRowDtoType.CreateRtQueryRowDto(entity, queryUserContext.CkTypeQueryColumns)), arg,
             0, (int)resultSet.TotalCount, resultSet.Grouping);
     }
-
-    public static RtQueryDto CreateRtQueryDto(ConstructionKit.Models.System.Generated.System.v1.RtQuery rtQuery, IReadOnlyList<CkTypeQueryColumn> ckTypeQueryColumns)
+     
+    public static RtTransientQueryDto CreateTransientRtQueryDto(CkId<CkTypeId> ckTypeId, DataQueryOperation dataQueryOperation, IReadOnlyList<CkTypeQueryColumn> ckTypeQueryColumns)
     {
-        DataQueryOperation dataQueryOperation = DataQueryOperation.Create();
-        if (rtQuery.FieldFilter != null)
+        var rtTransientQueryDto = new RtTransientQueryDto
         {
-            foreach (var fieldFilter in rtQuery.FieldFilter)
-            {
-                dataQueryOperation.FieldFilter(fieldFilter.AttributeName.ToPascalCase(),
-                    (FieldFilterOperator)fieldFilter.Operator,
-                    fieldFilter.ComparisonValue);
-            }
-        }
-        if (rtQuery.Sorting != null)
-        {
-            foreach (var sort in rtQuery.Sorting)
-            {
-                dataQueryOperation.SortOrder(sort.AttributeName.ToPascalCase(), (SortOrders)sort.SortOrder);
-            }
-        }
-
-        var rtQueryDto = new RtQueryDto
-        {
-            QueryRtId = rtQuery.RtId,
-            AssociatedCkTypeId = rtQuery.QueryCkTypeId,
+            AssociatedCkTypeId = ckTypeId,
             Columns = ckTypeQueryColumns.Select(RtQueryColumnType.CreateRtQueryColumnDto).ToList(),
             UserContext = new QueryUserContext(dataQueryOperation, ckTypeQueryColumns)
         };
 
-        return rtQueryDto;
+        return rtTransientQueryDto;
     }
 
     private class QueryUserContext(DataQueryOperation dataQueryOperation, IReadOnlyList<CkTypeQueryColumn> ckTypeQueryColumns)

@@ -314,5 +314,11 @@ namespace AssetRepositoryServices.Resources {
                 return ResourceManager.GetString("Graphql_Type_Filter_AttributeNameContainsFilter_Description", resourceCulture);
             }
         }
+        
+        public static string Graphql_RtQueryColumn_Description {
+            get {
+                return ResourceManager.GetString("Graphql_RtQueryColumn_Description", resourceCulture);
+            }
+        }
     }
 }

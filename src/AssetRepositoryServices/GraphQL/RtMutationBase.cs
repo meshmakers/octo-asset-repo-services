@@ -79,7 +79,7 @@ internal abstract class RtMutationBase : ObjectGraphType
         return resultSetComplete.Select(RtEntityDtoType.CreateRtEntityDto);
     }
     
-    protected async Task<IEnumerable<RtQueryRowDto>> GetRtQueryRowResultSet(IOctoSession session, ITenantRepository repository,
+    protected async Task<IEnumerable<RtQueryRowDto>> GetRtQueryRowResultSet(IOctoSession session, ICkCacheService ckCacheService, ITenantRepository repository,
         List<EntityUpdateInfo<RtEntity>> entityUpdateInfos, OctoObjectId queryRtId)
     {
         var rtQuery =
@@ -100,8 +100,16 @@ internal abstract class RtMutationBase : ObjectGraphType
             resultSetComplete.AddRange(resultSet.Items);
         }
 
+        var typeQueryColumnPaths = ckCacheService.GetCkTypeQueryColumnPaths(repository.TenantId, rtQuery.QueryCkTypeId);
+        var invalidColumnPaths = rtQuery.Columns.Where(cp => typeQueryColumnPaths.All(ckTypeQueryColumn => ckTypeQueryColumn.Path != cp)).ToList();
+        if (invalidColumnPaths.Any())
+        {
+            throw OctoGraphQLException.InvalidColumnPaths(invalidColumnPaths);
+        }
 
-        return resultSetComplete.Select((entity, _) => RtQueryRowDtoType.CreateRtQueryRowDto(entity, rtQuery));
+        var selectedTypeQueryColumns = typeQueryColumnPaths.Where(ckTypeQueryColumn => rtQuery.Columns.Contains(ckTypeQueryColumn.Path)).ToList();
+
+        return resultSetComplete.Select((entity, _) => RtQueryRowDtoType.CreateRtQueryRowDto(entity, selectedTypeQueryColumns));
     }
 
 

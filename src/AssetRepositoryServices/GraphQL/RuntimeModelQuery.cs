@@ -38,8 +38,17 @@ internal sealed class RuntimeModelQuery : ObjectGraphType
 
 
         Connection<NonNullGraphType<RtQueryDtoType>>("RuntimeQuery")
-            .Argument<OctoObjectIdType>(Statics.RtIdArg, "The query runtime id.")
+            .Argument<NonNullGraphType<OctoObjectIdType>>(Statics.RtIdArg, "The query runtime id.")
             .ResolveAsync(ResolveRtQueryAsync);
+
+        Connection<NonNullGraphType<RtTransientQueryDtoType>>("TransientRuntimeQuery")
+            .Argument<NonNullGraphType<StringGraphType>>(Statics.CkIdArg, "The construction kit type with the given id.")
+            .Argument<NonNullGraphType<ListGraphType<NonNullGraphType<StringGraphType>>>>(Statics.ColumnPathsArg, "The column paths to include in the result.")
+            .Argument<SearchFilterDtoType>(Statics.SearchFilterArg, "Filters items based on text search")
+            .Argument<ListGraphType<SortDtoType>>(Statics.SortOrderArg, "Sort order for items")
+            .Argument<ListGraphType<FieldFilterDtoType>>(Statics.FieldFilterArg,
+                "Filters items based on field compare")
+            .Resolve(ResolveTransientRtQuery);
 
         foreach (var rtEntityDtoType in graphTypesCache.GetTypes())
         {
@@ -57,6 +66,59 @@ internal sealed class RuntimeModelQuery : ObjectGraphType
                     "Filters items based on field compare")
                 .ResolveAsync(ResolveRtEntitiesQuery);
         }
+    }
+
+    private object? ResolveTransientRtQuery(IResolveConnectionContext<object?> arg)
+    {
+        Logger.Debug("GraphQL query handling for transient runtime query started");
+
+        var sessionAccessor = arg.RequestServices?.GetRequiredService<IOctoSessionAccessor>();
+        if (sessionAccessor?.Session == null)
+        {
+            throw AssetRepositoryException.SessionUnavailable();
+        }
+
+        var ckCacheService = arg.RequestServices?.GetRequiredService<ICkCacheService>();
+        if (ckCacheService == null)
+        {
+            throw AssetRepositoryException.ServiceNotRegistered(typeof(ICkCacheService));
+        }
+
+        var graphQlUserContext = (GraphQlUserContext)arg.UserContext;
+        if (!arg.TryGetArgument(Statics.CkId, out string? ckIdObj))
+        {
+            arg.Errors.Add(new ExecutionError("Invalid query. Missing construction kit id.")
+                { Code = Statics.GraphQLErrorCommon });
+            return null;
+        }
+        CkId<CkTypeId> ckTypeId = new(ckIdObj);
+
+        if (!arg.TryGetArgument(Statics.ColumnPathsArg, out IEnumerable<string>? columnPaths))
+        {
+            arg.Errors.Add(new ExecutionError("Invalid query. Missing column paths.")
+                { Code = Statics.GraphQLErrorCommon });
+            return null;
+        }
+
+        var columnPathList = columnPaths.ToList();
+
+        var typeQueryColumnPaths = ckCacheService.GetCkTypeQueryColumnPaths(graphQlUserContext.TenantId, ckTypeId);
+        var invalidColumnPaths = columnPathList.Where(cp => typeQueryColumnPaths.All(ckTypeQueryColumn => ckTypeQueryColumn.Path != cp)).ToList();
+        if (invalidColumnPaths.Any())
+        {
+            arg.Errors.Add(new ExecutionError($"Invalid query. Invalid column paths: {string.Join(", ", invalidColumnPaths)}")
+                { Code = Statics.GraphQLErrorCommon });
+            return null;
+        }
+
+        var selectedTypeQueryColumns = typeQueryColumnPaths.Where(ckTypeQueryColumn => columnPathList.Contains(ckTypeQueryColumn.Path)).ToList();
+
+        var dataQueryOperation = arg.GetDataQueryOperation();
+
+        Logger.Debug("GraphQL query handling returning data");
+        return ConnectionUtils.ToConnection(
+            [RtTransientQueryDtoType.CreateTransientRtQueryDto(ckTypeId, dataQueryOperation, selectedTypeQueryColumns)], arg,
+            0, 1, null);
     }
 
     private async Task<object?> ResolveRtQueryAsync(IResolveConnectionContext<object?> arg)
@@ -95,11 +157,20 @@ internal sealed class RuntimeModelQuery : ObjectGraphType
             return null;
         }
         
-        var ckTypeGraph = ckCacheService.GetCkType(graphQlUserContext.TenantId, rtQuery.QueryCkTypeId);
+        var typeQueryColumnPaths = ckCacheService.GetCkTypeQueryColumnPaths(graphQlUserContext.TenantId, rtQuery.QueryCkTypeId);
+        var invalidColumnPaths = rtQuery.Columns.Where(cp => typeQueryColumnPaths.All(ckTypeQueryColumn => ckTypeQueryColumn.Path != cp)).ToList();
+        if (invalidColumnPaths.Any())
+        {
+            arg.Errors.Add(new ExecutionError($"Invalid query. Invalid column paths: {string.Join(", ", invalidColumnPaths)}")
+                { Code = Statics.GraphQLErrorCommon });
+            return null;
+        }
+
+        var selectedTypeQueryColumns = typeQueryColumnPaths.Where(ckTypeQueryColumn => rtQuery.Columns.Contains(ckTypeQueryColumn.Path)).ToList();
 
         Logger.Debug("GraphQL query handling returning data");
         return ConnectionUtils.ToConnection(
-            [RtQueryDtoType.CreateRtQueryDto(ckTypeGraph, rtQuery)], arg,
+            [RtQueryDtoType.CreateRtQueryDto(rtQuery, selectedTypeQueryColumns)], arg,
             0, 1, null);
     }
 
@@ -137,7 +208,7 @@ internal sealed class RuntimeModelQuery : ObjectGraphType
             keysList.AddRange(rtIds);
         }
 
-        // if argument defined, but empty array, do not return any data. That mus be a mistake by client (otherwise
+        // if argument defined, but empty array, do not return any data. That must be a mistake by client (otherwise
         // all entities are returned.
         if (!keysList.Any() && (arg.HasArgument(Statics.RtIdArg) || arg.HasArgument(Statics.RtIdsArg)))
         {

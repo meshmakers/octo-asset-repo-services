@@ -83,7 +83,7 @@ internal sealed class CkTypeDtoType : ObjectGraphType<CkTypeDto>
             });
     }
 
-    private object? ResolveAvailableQueryColumns(IResolveConnectionContext<CkTypeDto> arg)
+    private object ResolveAvailableQueryColumns(IResolveConnectionContext<CkTypeDto> arg)
     {
         var ckCacheService = arg.RequestServices?.GetRequiredService<ICkCacheService>();
         if (ckCacheService == null)
@@ -98,51 +98,25 @@ internal sealed class CkTypeDtoType : ObjectGraphType<CkTypeDto>
         arg.TryGetArgument(Statics.AttributeNameContainsFilterArg,
             out string? attributeNameContainsFilter);
 
-        var ckTypeGraph = ckCacheService.GetCkType(graphQlContext.TenantId, arg.Source.CkTypeId);
-
         List<CkTypeQueryColumnDto> resultList =
-            ckTypeGraph.AllAttributes.Values.Select(CreateCkTypeQueryColumnDto).ToList();
-        resultList.Add(new CkTypeQueryColumnDto
-        {
-            AttributeName = nameof(RtEntityDto.RtId).ToCamelCase(),
-            AttributeValueType = AttributeValueTypesDto.String
-        });
-        resultList.Add(new CkTypeQueryColumnDto
-        {
-            AttributeName = nameof(RtEntityDto.RtWellKnownName).ToCamelCase(),
-            AttributeValueType = AttributeValueTypesDto.String
-        });
-        resultList.Add(new CkTypeQueryColumnDto
-        {
-            AttributeName = nameof(RtEntityDto.RtVersion).ToCamelCase(),
-            AttributeValueType = AttributeValueTypesDto.Int64
-        });
-        resultList.Add(new CkTypeQueryColumnDto
-        {
-            AttributeName = nameof(RtEntityDto.RtCreationDateTime).ToCamelCase(),
-            AttributeValueType = AttributeValueTypesDto.DateTime
-        });      
-        resultList.Add(new CkTypeQueryColumnDto
-        {
-            AttributeName = nameof(RtEntityDto.RtChangedDateTime).ToCamelCase(),
-            AttributeValueType = AttributeValueTypesDto.DateTime
-        });    
+            ckCacheService.GetCkTypeQueryColumnPaths(graphQlContext.TenantId, arg.Source.CkTypeId)
+                .Select(CreateCkTypeQueryColumnDto).ToList();
 
         if (filterAttributeNames != null)
         {
             resultList = resultList.Where(a =>
-                filterAttributeNames.Contains(a.AttributeName.ToCamelCase())).ToList();
+                filterAttributeNames.Contains(a.AttributePath.ToCamelCase())).ToList();
         }
 
         if (!string.IsNullOrWhiteSpace(attributeNameContainsFilter))
         {
             resultList =
-                resultList.Where(a => a.AttributeName.ToLower().Contains(attributeNameContainsFilter))
+                resultList.Where(a => a.AttributePath.ToLower().Contains(attributeNameContainsFilter))
                     .ToList();
         }
 
 
-        return ConnectionUtils.ToConnection(resultList.OrderBy(a=> a.AttributeName), arg, null);
+        return ConnectionUtils.ToConnection(resultList.OrderBy(a => a.AttributePath), arg, null);
     }
 
     private object ResolveAttributes(IResolveConnectionContext<CkTypeDto> ctx)
@@ -219,12 +193,12 @@ internal sealed class CkTypeDtoType : ObjectGraphType<CkTypeDto>
         return ckEntityAttributeDto;
     }
 
-    private CkTypeQueryColumnDto CreateCkTypeQueryColumnDto(CkTypeAttributeGraph ckTypeAttributeGraph)
+    private CkTypeQueryColumnDto CreateCkTypeQueryColumnDto(CkTypeQueryColumn ckTypeQueryColumn)
     {
         var ckTypeQueryColumnDto = new CkTypeQueryColumnDto
         {
-            AttributeName = ckTypeAttributeGraph.AttributeName.ToCamelCase(),
-            AttributeValueType = ckTypeAttributeGraph.ValueType,
+            AttributePath = ckTypeQueryColumn.Path,
+            AttributeValueType = ckTypeQueryColumn.ValueType,
         };
         return ckTypeQueryColumnDto;
     }

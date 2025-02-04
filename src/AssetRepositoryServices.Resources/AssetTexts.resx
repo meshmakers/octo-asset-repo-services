@@ -153,4 +153,7 @@
     <data name="Graphql_Type_Filter_AttributeNameContainsFilter_Description" xml:space="preserve">
         <value>Filters for attributes containing the given termin as attribute name.</value>
     </data>
+    <data name="Graphql_RtQueryColumn_Description" xml:space="preserve">
+        <value>Represents a column within a query</value>
+    </data>
 </root>
