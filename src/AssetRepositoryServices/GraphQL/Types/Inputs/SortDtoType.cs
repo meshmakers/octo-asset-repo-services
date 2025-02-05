@@ -10,6 +10,6 @@ internal sealed class SortDtoType : InputObjectGraphType<SortDto>
     {
         Name = "Sort";
         Field(x => x.SortOrder, type: typeof(SortOrdersDtoType));
-        Field(x => x.AttributeName);
+        Field(x => x.AttributePath);
     }
 }

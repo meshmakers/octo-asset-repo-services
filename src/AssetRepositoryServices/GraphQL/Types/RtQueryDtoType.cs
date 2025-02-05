@@ -82,7 +82,7 @@ internal sealed class RtQueryDtoType: ObjectGraphType<RtQueryDto>
         {
             foreach (var fieldFilter in rtQuery.FieldFilter)
             {
-                dataQueryOperation.FieldFilter(fieldFilter.AttributeName.ToPascalCase(),
+                dataQueryOperation.FieldFilter(fieldFilter.AttributePath.ToPascalCase(),
                     (FieldFilterOperator)fieldFilter.Operator,
                     fieldFilter.ComparisonValue);
             }
@@ -91,7 +91,7 @@ internal sealed class RtQueryDtoType: ObjectGraphType<RtQueryDto>
         {
             foreach (var sort in rtQuery.Sorting)
             {
-                dataQueryOperation.SortOrder(sort.AttributeName.ToPascalCase(), (SortOrders)sort.SortOrder);
+                dataQueryOperation.SortOrder(sort.AttributePath.ToPascalCase(), (SortOrders)sort.SortOrder);
             }
         }
 

@@ -10,7 +10,7 @@ internal sealed class FieldFilterDtoType : InputObjectGraphType<FieldFilterDto>
     public FieldFilterDtoType()
     {
         Name = "FieldFilter";
-        Field(x => x.AttributeName);
+        Field(x => x.AttributePath);
         Field(x => x.Operator, type: typeof(NonNullGraphType<FieldFilterOperatorDtoType>));
         Field(x => x.ComparisonValue, type: typeof(SimpleScalarType));
     }

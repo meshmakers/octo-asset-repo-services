@@ -59,10 +59,10 @@ internal static class ResolveConnectionContextExtensions
                     dataQueryOperation = dataQueryOperation.TextSearch(filterDto.SearchTerm);
                 }
             }
-            else if (filterDto.AttributeNames != null && filterDto.SearchTerm != null)
+            else if (filterDto.AttributePaths != null && filterDto.SearchTerm != null)
             {
                 dataQueryOperation =
-                    dataQueryOperation.AttributeSearch(filterDto.AttributeNames.Select(TransformAttributeName), filterDto.SearchTerm);
+                    dataQueryOperation.AttributeSearch(filterDto.AttributePaths.Select(TransformAttributeName), filterDto.SearchTerm);
             }
         }
 
@@ -70,7 +70,7 @@ internal static class ResolveConnectionContextExtensions
         {
             foreach (var fieldFilterDto in fieldFilterDtoList)
             {
-                dataQueryOperation = dataQueryOperation.FieldFilter(TransformAttributeName(fieldFilterDto.AttributeName),
+                dataQueryOperation = dataQueryOperation.FieldFilter(TransformAttributeName(fieldFilterDto.AttributePath),
                     (FieldFilterOperator)fieldFilterDto.Operator, fieldFilterDto.ComparisonValue);
             }
         }
@@ -79,7 +79,7 @@ internal static class ResolveConnectionContextExtensions
         {
             foreach (var sortDto in sortDtos)
             {
-                dataQueryOperation = dataQueryOperation.SortOrder(TransformAttributeName(sortDto.AttributeName),
+                dataQueryOperation = dataQueryOperation.SortOrder(TransformAttributeName(sortDto.AttributePath),
                     (SortOrders)sortDto.SortOrder);
             }
         }

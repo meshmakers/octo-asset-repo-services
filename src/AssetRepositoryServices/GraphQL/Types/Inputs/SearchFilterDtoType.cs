@@ -12,6 +12,6 @@ internal sealed class SearchFilterDtoType : InputObjectGraphType<SearchFilterDto
         Field(x => x.Language, true);
         Field(x => x.SearchTerm, false);
         Field(x => x.Type, typeof(SearchFilterTypesDtoType));
-        Field(x => x.AttributeNames, typeof(ListGraphType<StringGraphType>));
+        Field(x => x.AttributePaths, typeof(ListGraphType<StringGraphType>));
     }
 }
