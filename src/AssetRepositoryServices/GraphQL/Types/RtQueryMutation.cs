@@ -81,12 +81,12 @@ internal sealed class RtQueryMutation : RtMutationBase
                     if (message.MessageLevel == MessageLevel.Error)
                     {
                         context.Errors.Add(new ExecutionError(message.MessageText)
-                            { Code = string.Format(Statics.GraphQLOperationError, message.MessageNumber) });
+                            { Code = string.Format(Statics.GraphQlOperationError, message.MessageNumber) });
                     }
                     else if (message.MessageLevel == MessageLevel.FatalError)
                     {
                         context.Errors.Add(new ExecutionError(message.MessageText)
-                            { Code = string.Format(Statics.GraphQLOperationFatalError, message.MessageNumber) });
+                            { Code = string.Format(Statics.GraphQlOperationFatalError, message.MessageNumber) });
                     }
                 }
 
@@ -97,13 +97,13 @@ internal sealed class RtQueryMutation : RtMutationBase
         }
         catch (PersistenceException e)
         {
-            context.Errors.Add(new ExecutionError(e.Message, e) { Code = Statics.GraphQLErrorDataStore });
+            context.Errors.Add(new ExecutionError(e.Message, e) { Code = Statics.GraphQlErrorDataStore });
             return null;
         }
         catch (Exception e)
         {
             context.Errors.Add(new ExecutionError("A general error occurred", e)
-                { Code = Statics.GraphQLErrorCommon });
+                { Code = Statics.GraphQlErrorCommon });
             return null;
         }
     }
@@ -140,13 +140,13 @@ internal sealed class RtQueryMutation : RtMutationBase
         }
         catch (OperationFailedException e)
         {
-            context.Errors.Add(new ExecutionError(e.Message, e) { Code = Statics.GraphQLErrorDataStore });
+            context.Errors.Add(new ExecutionError(e.Message, e) { Code = Statics.GraphQlErrorDataStore });
             return false;
         }
         catch (Exception e)
         {
             context.Errors.Add(new ExecutionError("A general error occurred", e)
-                { Code = Statics.GraphQLErrorCommon });
+                { Code = Statics.GraphQlErrorCommon });
             return false;
         }
     }
@@ -206,12 +206,12 @@ internal sealed class RtQueryMutation : RtMutationBase
                     if (message.MessageLevel == MessageLevel.Error)
                     {
                         context.Errors.Add(new ExecutionError(message.MessageText)
-                            { Code = string.Format(Statics.GraphQLOperationError, message.MessageNumber) });
+                            { Code = string.Format(Statics.GraphQlOperationError, message.MessageNumber) });
                     }
                     else if (message.MessageLevel == MessageLevel.FatalError)
                     {
                         context.Errors.Add(new ExecutionError(message.MessageText)
-                            { Code = string.Format(Statics.GraphQLOperationFatalError, message.MessageNumber) });
+                            { Code = string.Format(Statics.GraphQlOperationFatalError, message.MessageNumber) });
                     }
                 }
 
@@ -222,13 +222,13 @@ internal sealed class RtQueryMutation : RtMutationBase
         }
         catch (OperationFailedException e)
         {
-            context.Errors.Add(new ExecutionError(e.Message, e) { Code = Statics.GraphQLErrorDataStore });
+            context.Errors.Add(new ExecutionError(e.Message, e) { Code = Statics.GraphQlErrorDataStore });
             return null;
         }
         catch (Exception e)
         {
             context.Errors.Add(new ExecutionError("A general error occurred", e)
-                { Code = Statics.GraphQLErrorCommon });
+                { Code = Statics.GraphQlErrorCommon });
             return null;
         }
     }

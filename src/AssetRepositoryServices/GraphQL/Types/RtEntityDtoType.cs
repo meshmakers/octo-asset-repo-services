@@ -155,7 +155,7 @@ internal sealed class RtEntityDtoType : ObjectGraphType<RtEntityDto>
         if (!arg.TryGetArgument(Statics.CkId, out string? ckIdObj))
         {
             arg.Errors.Add(new ExecutionError("Invalid query. Missing construction kit id.")
-                { Code = Statics.GraphQLErrorCommon });
+                { Code = Statics.GraphQlErrorCommon });
             return null;
         }
         

@@ -50,11 +50,11 @@ internal static class Statics
     public const string GraphQLErrorNotFound = "OCTO1000";
     public const string GraphQLErrorConflict = "OCTO1001";
     public const string GraphQLErrorInvalidType = "OCTO1002";
-    public const string GraphQLErrorDataStore = "OCTO1003";
-    public const string GraphQLErrorCommon = "OCTO1004";
-    public const string GraphQLDeleteOperationsNotSupported = "OCTO1005";
-    public const string GraphQLOperationError = "OCTO1006_{0}";
-    public const string GraphQLOperationFatalError = "OCTO1007_{0}";
+    public const string GraphQlErrorDataStore = "OCTO1003";
+    public const string GraphQlErrorCommon = "OCTO1004";
+    public const string GraphQlDeleteOperationsNotSupported = "OCTO1005";
+    public const string GraphQlOperationError = "OCTO1006_{0}";
+    public const string GraphQlOperationFatalError = "OCTO1007_{0}";
 
     public const string GraphQlStreamDataQueryError = "OCT01008";
 

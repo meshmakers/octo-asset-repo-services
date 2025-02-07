@@ -8,6 +8,7 @@ using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Utils;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
 using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.ConstructionKit.Contracts.DependencyGraph;
+using Meshmakers.Octo.Runtime.Contracts.MongoDb;
 using Meshmakers.Octo.Runtime.Contracts.Repositories.Query;
 using NLog;
 
@@ -50,13 +51,13 @@ internal sealed class RtTransientQueryDtoType: ObjectGraphType<RtTransientQueryD
         if (arg.Source is not RtTransientQueryDto rtTransientQueryDto)
         {
             arg.Errors.Add(new ExecutionError("Invalid query. Query not found.")
-                { Code = Statics.GraphQLErrorCommon });
+                { Code = Statics.GraphQlErrorCommon });
             return null;
         }
         if (rtTransientQueryDto.UserContext is not QueryUserContext queryUserContext)
         {
             arg.Errors.Add(new ExecutionError("Invalid query. User context not found.")
-                { Code = Statics.GraphQLErrorCommon });
+                { Code = Statics.GraphQlErrorCommon });
             return null;
         }
 
@@ -64,13 +65,22 @@ internal sealed class RtTransientQueryDtoType: ObjectGraphType<RtTransientQueryD
 
         var offset = arg.GetOffset();
 
-        var resultSet = await tenantRepository.GetRtEntitiesByTypeAsync(sessionAccessor.Session,
-            rtTransientQueryDto.AssociatedCkTypeId, queryUserContext.DataQueryOperation, offset, arg.First);
+        try
+        {
+            var resultSet = await tenantRepository.GetRtEntitiesByTypeAsync(sessionAccessor.Session,
+                rtTransientQueryDto.AssociatedCkTypeId, queryUserContext.DataQueryOperation, offset, arg.First);
 
-        Logger.Debug("GraphQL query handling returning data");
-        return ConnectionUtils.ToConnection(
-            resultSet.Items.Select((entity, _) => RtQueryRowDtoType.CreateRtQueryRowDto(entity, queryUserContext.CkTypeQueryColumns)), arg,
-            0, (int)resultSet.TotalCount, resultSet.Grouping);
+            Logger.Debug("GraphQL query handling returning data");
+            return ConnectionUtils.ToConnection(
+                resultSet.Items.Select((entity, _) => RtQueryRowDtoType.CreateRtQueryRowDto(entity, queryUserContext.CkTypeQueryColumns)), arg,
+                0, (int)resultSet.TotalCount, resultSet.Grouping);
+        }
+        catch (OperationFailedException e)
+        {
+            arg.Errors.Add(new ExecutionError(e.Message)
+                { Code = Statics.GraphQlErrorCommon });
+            return null;
+        }
     }
      
     public static RtTransientQueryDto CreateTransientRtQueryDto(CkId<CkTypeId> ckTypeId, DataQueryOperation dataQueryOperation, IReadOnlyList<CkTypeQueryColumn> ckTypeQueryColumns)

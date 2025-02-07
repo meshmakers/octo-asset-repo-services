@@ -8,6 +8,7 @@ using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Utils;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
 using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.ConstructionKit.Contracts.DependencyGraph;
+using Meshmakers.Octo.Runtime.Contracts.MongoDb;
 using Meshmakers.Octo.Runtime.Contracts.Repositories.Query;
 using NLog;
 
@@ -17,7 +18,7 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
 ///     Implements the GraphQL type for <see cref="RtQueryDto"/>.
 /// </summary>
 // ReSharper disable once ClassNeverInstantiated.Global
-internal sealed class RtQueryDtoType: ObjectGraphType<RtQueryDto>
+internal sealed class RtQueryDtoType : ObjectGraphType<RtQueryDto>
 {
     private static readonly Logger Logger = LogManager.GetCurrentClassLogger();
 
@@ -35,8 +36,8 @@ internal sealed class RtQueryDtoType: ObjectGraphType<RtQueryDto>
         Connection<NonNullGraphType<RtQueryRowDtoType>>("Rows")
             .ResolveAsync(ResolveRtQueryRowsAsync);
     }
-    
-     private async Task<object?> ResolveRtQueryRowsAsync(IResolveConnectionContext<object?> arg)
+
+    private async Task<object?> ResolveRtQueryRowsAsync(IResolveConnectionContext<object?> arg)
     {
         Logger.Debug("GraphQL query handling for runtime rows started");
 
@@ -47,18 +48,18 @@ internal sealed class RtQueryDtoType: ObjectGraphType<RtQueryDto>
         }
 
         var graphQlUserContext = (GraphQlUserContext)arg.UserContext;
-        
+
         if (arg.Source is not RtQueryDto rtQueryDto)
         {
             arg.Errors.Add(new ExecutionError("Invalid query. Query not found.")
-                { Code = Statics.GraphQLErrorCommon });
+                { Code = Statics.GraphQlErrorCommon });
             return null;
         }
-        
+
         if (rtQueryDto.UserContext is not QueryUserContext queryUserContext)
         {
             arg.Errors.Add(new ExecutionError("Invalid query. User context not found.")
-                { Code = Statics.GraphQLErrorCommon });
+                { Code = Statics.GraphQlErrorCommon });
             return null;
         }
 
@@ -69,13 +70,24 @@ internal sealed class RtQueryDtoType: ObjectGraphType<RtQueryDto>
         var resultSet = await tenantRepository.GetRtEntitiesByTypeAsync(sessionAccessor.Session,
             rtQueryDto.AssociatedCkTypeId, queryUserContext.DataQueryOperation, offset, arg.First);
 
-        Logger.Debug("GraphQL query handling returning data");
-        return ConnectionUtils.ToConnection(
-            resultSet.Items.Select((entity, _) => RtQueryRowDtoType.CreateRtQueryRowDto(entity, queryUserContext.CkTypeQueryColumns)), arg,
-            0, (int)resultSet.TotalCount, resultSet.Grouping);
+        try
+        {
+            Logger.Debug("GraphQL query handling returning data");
+            return ConnectionUtils.ToConnection(
+                resultSet.Items.Select((entity, _) =>
+                    RtQueryRowDtoType.CreateRtQueryRowDto(entity, queryUserContext.CkTypeQueryColumns)), arg,
+                0, (int)resultSet.TotalCount, resultSet.Grouping);
+        }
+        catch (OperationFailedException e)
+        {
+            arg.Errors.Add(new ExecutionError(e.Message)
+                { Code = Statics.GraphQlErrorCommon });
+            return null;
+        }
     }
 
-    public static RtQueryDto CreateRtQueryDto(ConstructionKit.Models.System.Generated.System.v1.RtQuery rtQuery, IReadOnlyList<CkTypeQueryColumn> ckTypeQueryColumns)
+    public static RtQueryDto CreateRtQueryDto(ConstructionKit.Models.System.Generated.System.v1.RtQuery rtQuery,
+        IReadOnlyList<CkTypeQueryColumn> ckTypeQueryColumns)
     {
         DataQueryOperation dataQueryOperation = DataQueryOperation.Create();
         if (rtQuery.FieldFilter != null)
@@ -87,6 +99,7 @@ internal sealed class RtQueryDtoType: ObjectGraphType<RtQueryDto>
                     fieldFilter.ComparisonValue);
             }
         }
+
         if (rtQuery.Sorting != null)
         {
             foreach (var sort in rtQuery.Sorting)
@@ -106,7 +119,9 @@ internal sealed class RtQueryDtoType: ObjectGraphType<RtQueryDto>
         return rtQueryDto;
     }
 
-    private class QueryUserContext(DataQueryOperation dataQueryOperation, IReadOnlyList<CkTypeQueryColumn> ckTypeQueryColumns)
+    private class QueryUserContext(
+        DataQueryOperation dataQueryOperation,
+        IReadOnlyList<CkTypeQueryColumn> ckTypeQueryColumns)
     {
         public DataQueryOperation DataQueryOperation { get; } = dataQueryOperation;
         public IReadOnlyList<CkTypeQueryColumn> CkTypeQueryColumns { get; } = ckTypeQueryColumns;

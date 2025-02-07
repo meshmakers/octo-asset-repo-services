@@ -88,7 +88,7 @@ internal sealed class RuntimeModelQuery : ObjectGraphType
         if (!arg.TryGetArgument(Statics.CkId, out string? ckIdObj))
         {
             arg.Errors.Add(new ExecutionError("Invalid query. Missing construction kit id.")
-                { Code = Statics.GraphQLErrorCommon });
+                { Code = Statics.GraphQlErrorCommon });
             return null;
         }
         CkId<CkTypeId> ckTypeId = new(ckIdObj);
@@ -96,7 +96,7 @@ internal sealed class RuntimeModelQuery : ObjectGraphType
         if (!arg.TryGetArgument(Statics.ColumnPathsArg, out IEnumerable<string>? columnPaths))
         {
             arg.Errors.Add(new ExecutionError("Invalid query. Missing column paths.")
-                { Code = Statics.GraphQLErrorCommon });
+                { Code = Statics.GraphQlErrorCommon });
             return null;
         }
 
@@ -107,7 +107,7 @@ internal sealed class RuntimeModelQuery : ObjectGraphType
         if (invalidColumnPaths.Any())
         {
             arg.Errors.Add(new ExecutionError($"Invalid query. Invalid column paths: {string.Join(", ", invalidColumnPaths)}")
-                { Code = Statics.GraphQLErrorCommon });
+                { Code = Statics.GraphQlErrorCommon });
             return null;
         }
 
@@ -141,7 +141,7 @@ internal sealed class RuntimeModelQuery : ObjectGraphType
         if (!arg.TryGetArgument(Statics.RtIdArg, out OctoObjectId? queryRtId))
         {
             arg.Errors.Add(new ExecutionError("Invalid query. Missing runtime id.")
-                { Code = Statics.GraphQLErrorCommon });
+                { Code = Statics.GraphQlErrorCommon });
             return null;
         }
 
@@ -153,7 +153,7 @@ internal sealed class RuntimeModelQuery : ObjectGraphType
         if (rtQuery == null)
         {
             arg.Errors.Add(new ExecutionError("Invalid query. Query not found.")
-                { Code = Statics.GraphQLErrorCommon });
+                { Code = Statics.GraphQlErrorCommon });
             return null;
         }
         
@@ -162,7 +162,7 @@ internal sealed class RuntimeModelQuery : ObjectGraphType
         if (invalidColumnPaths.Any())
         {
             arg.Errors.Add(new ExecutionError($"Invalid query. Invalid column paths: {string.Join(", ", invalidColumnPaths)}")
-                { Code = Statics.GraphQLErrorCommon });
+                { Code = Statics.GraphQlErrorCommon });
             return null;
         }
 
@@ -188,7 +188,7 @@ internal sealed class RuntimeModelQuery : ObjectGraphType
         if (!arg.TryGetArgument(Statics.CkId, out string? ckIdObj))
         {
             arg.Errors.Add(new ExecutionError("Invalid query. Missing construction kit id.")
-                { Code = Statics.GraphQLErrorCommon });
+                { Code = Statics.GraphQlErrorCommon });
             return null;
         }
 
@@ -252,14 +252,14 @@ internal sealed class RuntimeModelQuery : ObjectGraphType
         if (!arg.FieldDefinition.Metadata.TryGetValue(Statics.CkId, out var ckIdObj))
         {
             arg.Errors.Add(new ExecutionError("Invalid query. Missing construction kit id.")
-                { Code = Statics.GraphQLErrorCommon });
+                { Code = Statics.GraphQlErrorCommon });
             return null;
         }
 
         if (ckIdObj is not CkId<CkTypeId> ckTypeId)
         {
             arg.Errors.Add(new ExecutionError("Invalid query. Invalid construction kit id.")
-                { Code = Statics.GraphQLErrorCommon });
+                { Code = Statics.GraphQlErrorCommon });
             return null;
         }
 

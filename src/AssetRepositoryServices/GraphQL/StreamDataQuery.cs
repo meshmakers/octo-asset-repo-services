@@ -73,7 +73,7 @@ internal sealed class StreamDataQuery : ObjectGraphType
             if(entityTimeFilter.From is null || entityTimeFilter.To is null || entityTimeFilter.Limit is null)
             {
                 arg.Errors.Add(new ExecutionError("Invalid query. From, To and Limit must be set for downsampling.")
-                    { Code = Statics.GraphQLErrorCommon });
+                    { Code = Statics.GraphQlErrorCommon });
                 return null;
             }
             
@@ -246,14 +246,14 @@ internal sealed class StreamDataQuery : ObjectGraphType
         if (!arg.FieldDefinition.Metadata.TryGetValue(Statics.CkId, out var ckIdObj))
         {
             arg.Errors.Add(new ExecutionError("Invalid query. Missing construction kit id.")
-                { Code = Statics.GraphQLErrorCommon });
+                { Code = Statics.GraphQlErrorCommon });
             return null;
         }
 
         if (ckIdObj is not CkId<CkTypeId> ckTypeId)
         {
             arg.Errors.Add(new ExecutionError("Invalid query. Invalid construction kit id.")
-                { Code = Statics.GraphQLErrorCommon });
+                { Code = Statics.GraphQlErrorCommon });
             return null;
         }
 

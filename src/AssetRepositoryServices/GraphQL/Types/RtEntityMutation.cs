@@ -72,14 +72,14 @@ internal class RtEntityMutation : RtMutationBase
         if (!arg.FieldDefinition.Metadata.TryGetValue(Statics.CkId, out var ckIdObj))
         {
             arg.Errors.Add(new ExecutionError("Invalid query. Missing construction kit id.")
-                { Code = Statics.GraphQLErrorCommon });
+                { Code = Statics.GraphQlErrorCommon });
             return null;
         }
 
         if (ckIdObj is not CkId<CkTypeId> ckTypeId)
         {
             arg.Errors.Add(new ExecutionError("Invalid query. Invalid construction kit id.")
-                { Code = Statics.GraphQLErrorCommon });
+                { Code = Statics.GraphQlErrorCommon });
             return null;
         }
 
@@ -101,7 +101,7 @@ internal class RtEntityMutation : RtMutationBase
             if (deleteAssociations.Any())
             {
                 arg.Errors.Add(new ExecutionError("Delete operations during creation are supported")
-                    { Code = Statics.GraphQLDeleteOperationsNotSupported });
+                    { Code = Statics.GraphQlDeleteOperationsNotSupported });
                 return null;
             }
 
@@ -115,12 +115,12 @@ internal class RtEntityMutation : RtMutationBase
                     if (message.MessageLevel == MessageLevel.Error)
                     {
                         arg.Errors.Add(new ExecutionError(message.MessageText)
-                            { Code = string.Format(Statics.GraphQLOperationError, message.MessageNumber) });
+                            { Code = string.Format(Statics.GraphQlOperationError, message.MessageNumber) });
                     }
                     else if (message.MessageLevel == MessageLevel.FatalError)
                     {
                         arg.Errors.Add(new ExecutionError(message.MessageText)
-                            { Code = string.Format(Statics.GraphQLOperationFatalError, message.MessageNumber) });
+                            { Code = string.Format(Statics.GraphQlOperationFatalError, message.MessageNumber) });
                     }
                 }
 
@@ -131,13 +131,13 @@ internal class RtEntityMutation : RtMutationBase
         }
         catch (PersistenceException e)
         {
-            arg.Errors.Add(new ExecutionError(e.Message, e) { Code = Statics.GraphQLErrorDataStore });
+            arg.Errors.Add(new ExecutionError(e.Message, e) { Code = Statics.GraphQlErrorDataStore });
             return null;
         }
         catch (Exception e)
         {
             arg.Errors.Add(new ExecutionError("A general error occurred", e)
-                { Code = Statics.GraphQLErrorCommon });
+                { Code = Statics.GraphQlErrorCommon });
             return null;
         }
     }
@@ -157,14 +157,14 @@ internal class RtEntityMutation : RtMutationBase
         if (!arg.FieldDefinition.Metadata.TryGetValue(Statics.CkId, out var ckIdObj))
         {
             arg.Errors.Add(new ExecutionError("Invalid query. Missing construction kit id.")
-                { Code = Statics.GraphQLErrorCommon });
+                { Code = Statics.GraphQlErrorCommon });
             return null;
         }
 
         if (ckIdObj is not CkId<CkTypeId> ckTypeId)
         {
             arg.Errors.Add(new ExecutionError("Invalid query. Invalid construction kit id.")
-                { Code = Statics.GraphQLErrorCommon });
+                { Code = Statics.GraphQlErrorCommon });
             return null;
         }
 
@@ -189,13 +189,13 @@ internal class RtEntityMutation : RtMutationBase
         }
         catch (OperationFailedException e)
         {
-            arg.Errors.Add(new ExecutionError(e.Message, e) { Code = Statics.GraphQLErrorDataStore });
+            arg.Errors.Add(new ExecutionError(e.Message, e) { Code = Statics.GraphQlErrorDataStore });
             return false;
         }
         catch (Exception e)
         {
             arg.Errors.Add(new ExecutionError("A general error occurred", e)
-                { Code = Statics.GraphQLErrorCommon });
+                { Code = Statics.GraphQlErrorCommon });
             return false;
         }
     }
@@ -221,14 +221,14 @@ internal class RtEntityMutation : RtMutationBase
         if (!arg.FieldDefinition.Metadata.TryGetValue(Statics.CkId, out var ckIdObj))
         {
             arg.Errors.Add(new ExecutionError("Invalid query. Missing construction kit id.")
-                { Code = Statics.GraphQLErrorCommon });
+                { Code = Statics.GraphQlErrorCommon });
             return null;
         }
 
         if (ckIdObj is not CkId<CkTypeId> ckTypeId)
         {
             arg.Errors.Add(new ExecutionError("Invalid query. Invalid construction kit id.")
-                { Code = Statics.GraphQLErrorCommon });
+                { Code = Statics.GraphQlErrorCommon });
             return null;
         }
 
@@ -264,12 +264,12 @@ internal class RtEntityMutation : RtMutationBase
                     if (message.MessageLevel == MessageLevel.Error)
                     {
                         arg.Errors.Add(new ExecutionError(message.MessageText)
-                            { Code = string.Format(Statics.GraphQLOperationError, message.MessageNumber) });
+                            { Code = string.Format(Statics.GraphQlOperationError, message.MessageNumber) });
                     }
                     else if (message.MessageLevel == MessageLevel.FatalError)
                     {
                         arg.Errors.Add(new ExecutionError(message.MessageText)
-                            { Code = string.Format(Statics.GraphQLOperationFatalError, message.MessageNumber) });
+                            { Code = string.Format(Statics.GraphQlOperationFatalError, message.MessageNumber) });
                     }
                 }
 
@@ -280,13 +280,13 @@ internal class RtEntityMutation : RtMutationBase
         }
         catch (OperationFailedException e)
         {
-            arg.Errors.Add(new ExecutionError(e.Message, e) { Code = Statics.GraphQLErrorDataStore });
+            arg.Errors.Add(new ExecutionError(e.Message, e) { Code = Statics.GraphQlErrorDataStore });
             return null;
         }
         catch (Exception e)
         {
             arg.Errors.Add(new ExecutionError("A general error occurred", e)
-                { Code = Statics.GraphQLErrorCommon });
+                { Code = Statics.GraphQlErrorCommon });
             return null;
         }
     }
