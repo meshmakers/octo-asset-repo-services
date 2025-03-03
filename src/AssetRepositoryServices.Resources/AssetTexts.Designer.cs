@@ -320,5 +320,23 @@ namespace AssetRepositoryServices.Resources {
                 return ResourceManager.GetString("Graphql_RtQueryColumn_Description", resourceCulture);
             }
         }
+        
+        public static string Graphql_Type_Filter_IgnoreAbstractTypes_Description {
+            get {
+                return ResourceManager.GetString("Graphql_Type_Filter_IgnoreAbstractTypes_Description", resourceCulture);
+            }
+        }
+        
+        public static string Graphql_Type_DirectAndIndirectDerivedTypes_Description {
+            get {
+                return ResourceManager.GetString("Graphql_Type_DirectAndIndirectDerivedTypes_Description", resourceCulture);
+            }
+        }
+        
+        public static string Graphql_Type_Filter_IncludeSelfArgs_Description {
+            get {
+                return ResourceManager.GetString("Graphql_Type_Filter_IncludeSelfArgs_Description", resourceCulture);
+            }
+        }
     }
 }

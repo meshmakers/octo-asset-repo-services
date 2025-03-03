@@ -45,6 +45,8 @@ internal sealed class CkTypeDtoType : ObjectGraphType<CkTypeDto>
 
         Connection<CkTypeDtoType>("derivedTypes")
             .Description(AssetTexts.Graphql_Type_DerivedTypes_Description)
+            .Argument<BooleanGraphType>(Statics.IgnoreAbstractTypesArg,
+                AssetTexts.Graphql_Type_Filter_IgnoreAbstractTypes_Description)
             .Resolve(ctx =>
                 {
                     var ckCacheService = ctx.RequestServices?.GetRequiredService<ICkCacheService>();
@@ -55,8 +57,50 @@ internal sealed class CkTypeDtoType : ObjectGraphType<CkTypeDto>
 
                     var graphQlContext = (GraphQlUserContext)ctx.UserContext;
 
+                    if (!ctx.TryGetArgument(Statics.IgnoreAbstractTypesArg,
+                            out bool? ignoreAbstractTypes))
+                    {
+                        ignoreAbstractTypes = false;
+                    }
+
                     var result = ckCacheService.GetCkType(graphQlContext.TenantId, ctx.Source.CkTypeId).DerivedTypes
-                        .Select(k => ckCacheService.GetCkType(graphQlContext.TenantId, k.InheritorCkTypeId));
+                        .Select(k => ckCacheService.GetCkType(graphQlContext.TenantId, k.InheritorCkTypeId))
+                        .Where(t=> !t.IsAbstract || !ignoreAbstractTypes.Value);
+                    return ConnectionUtils.ToConnection(result.Select(CreateCkTypeDto), ctx, null);
+                }
+            );
+
+        Connection<CkTypeDtoType>("directAndIndirectDerivedTypes")
+            .Description(AssetTexts.Graphql_Type_DirectAndIndirectDerivedTypes_Description)
+            .Argument<BooleanGraphType>(Statics.IgnoreAbstractTypesArg,
+                AssetTexts.Graphql_Type_Filter_IgnoreAbstractTypes_Description)
+            .Argument<BooleanGraphType>(Statics.IncludeSelfArgs,
+                AssetTexts.Graphql_Type_Filter_IncludeSelfArgs_Description)
+            .Resolve(ctx =>
+                {
+                    var ckCacheService = ctx.RequestServices?.GetRequiredService<ICkCacheService>();
+                    if (ckCacheService == null)
+                    {
+                        throw AssetRepositoryException.ServiceNotRegistered(typeof(ICkCacheService));
+                    }
+
+                    var graphQlContext = (GraphQlUserContext)ctx.UserContext;
+
+                    if (!ctx.TryGetArgument(Statics.IgnoreAbstractTypesArg,
+                            out bool? ignoreAbstractTypes))
+                    {
+                        ignoreAbstractTypes = false;
+                    }
+
+                    if (!ctx.TryGetArgument(Statics.IncludeSelfArgs,
+                            out bool? includeSelf))
+                    {
+                        includeSelf = false;
+                    }
+
+                    var result = ckCacheService.GetCkType(graphQlContext.TenantId, ctx.Source.CkTypeId).GetAllDerivedTypes(includeSelf.Value)
+                        .Select(derivedCkTypeId => ckCacheService.GetCkType(graphQlContext.TenantId, derivedCkTypeId))
+                        .Where(t=> !t.IsAbstract || !ignoreAbstractTypes.Value);
                     return ConnectionUtils.ToConnection(result.Select(CreateCkTypeDto), ctx, null);
                 }
             );

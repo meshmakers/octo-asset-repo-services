@@ -156,4 +156,13 @@
     <data name="Graphql_RtQueryColumn_Description" xml:space="preserve">
         <value>Represents a column within a query</value>
     </data>
+    <data name="Graphql_Type_Filter_IgnoreAbstractTypes_Description" xml:space="preserve">
+        <value>When true, abstract constrution kit types are not returned in result set.</value>
+    </data>
+    <data name="Graphql_Type_DirectAndIndirectDerivedTypes_Description" xml:space="preserve">
+        <value>Lists types that are derived directly or indirectly from the current construction kit type.</value>
+    </data>
+    <data name="Graphql_Type_Filter_IncludeSelfArgs_Description" xml:space="preserve">
+        <value>When true, the current construction kit type is included in the result set.</value>
+    </data>
 </root>
