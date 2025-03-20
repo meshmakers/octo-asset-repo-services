@@ -18,9 +18,11 @@ internal class DefaultConfigurationCreatorService(
     IDiagnosticsService diagnosticsService,
     IOptions<OctoAssetRepositoryServicesOptions> options,
     ISystemContext systemContext,
-    ICommandClient<CreateIdentityDataCommandRequest> commandClient,
+    ICommandClient<CreateIdentityDataCommandRequest> createIdentityDataCommandClient,
     OctoAssetRepositoryServicesOptions octoAssetRepositoryServicesOptions)
-    : DefaultConfigurationCreatorServiceBase(logger)
+    : DefaultConfigurationCreatorServiceStandardized(logger, systemContext, createIdentityDataCommandClient,
+        AssetRepositoryServiceConstants.AssetServiceIdentityDataVersionKey,
+        AssetRepositoryServiceConstants.AssetServiceIdentityDataVersionValue)
 {
     public override async Task InitializeAsync()
     {
@@ -30,73 +32,7 @@ internal class DefaultConfigurationCreatorService(
         await base.InitializeAsync();
     }
 
-    protected override async Task SetupTenantAsync(string tenantId)
-    {
-        if (tenantId != systemContext.TenantId)
-        {
-            // Currently we only support the system tenant.
-            return;
-        }
-
-        // Do nothing if the system tenant is not existing.
-        // Identity Service is creating the system tenant currently.
-        if (!await systemContext.IsSystemTenantExistingAsync())
-        {
-            return;
-        }
-
-        // That means that the system tenant database is existing but (currently) not valid.
-        // We wait for a PosTenantCreated event to create the default configuration.
-        if (!await systemContext.IsCkModelExistingAsync(SystemCkIds.ModelId))
-        {
-            return;
-        }
-
-        logger.LogInformation("Setting up default configuration for tenant '{TenantId}'", tenantId);
-
-        using var session = await systemContext.GetAdminSessionAsync();
-        session.StartTransaction();
-
-        var assetRepConfiguration =
-            await systemContext.GetConfigurationAsync(session,
-                AssetRepositoryServiceConstants.AssetServiceSchemaVersionKey,
-                new DefaultConfigurationVersion { Version = -1 });
-        if (assetRepConfiguration == null || assetRepConfiguration.Version <
-            AssetRepositoryServiceConstants.AssetServiceSchemaVersionValue)
-        {
-            CreateIdentityDataCommandRequest createIdentityDataCommandRequest = new(tenantId);
-            CreateApiScopes(createIdentityDataCommandRequest);
-            CreateApiResources(createIdentityDataCommandRequest);
-            CreateClients(createIdentityDataCommandRequest);
-
-            logger.LogInformation("Creating identity data for tenant '{TenantId}'", tenantId);
-            // We retry 5 times to create identity data. This is important because the identity service might not be ready yet.
-            var r = await commandClient.GetResponseWithRetry<EnumCommandResponse<CreateIdentityDataResult>>(
-                createIdentityDataCommandRequest);
-            logger.LogInformation("Create identity data response: {Response}", r.Response);
-            if (r.Response == CreateIdentityDataResult.Success)
-            {
-                await systemContext.SetConfigurationAsync(session,
-                    AssetRepositoryServiceConstants.AssetServiceSchemaVersionKey,
-                    new DefaultConfigurationVersion
-                        { Version = AssetRepositoryServiceConstants.AssetServiceSchemaVersionValue });
-            }
-            else if (r.Response != CreateIdentityDataResult.FailedTenantHasNoIdentityCk)
-            {
-                logger.LogInformation("The tenant '{TenantId}' has no identity CK, skipped to create identity data",
-                    tenantId);
-            }
-            else
-            {
-                logger.LogError("The tenant '{TenantId}' has no identity CK, skipped to create identity data",
-                    tenantId);
-            }
-        }
-
-        await session.CommitTransactionAsync();
-    }
-
-    private void CreateApiScopes(CreateIdentityDataCommandRequest createIdentityDataCommandRequest)
+    protected override void CreateApiScopes(CreateIdentityDataCommandRequest createIdentityDataCommandRequest)
     {
         createIdentityDataCommandRequest.ApiScopes = new List<DistApiScopeDto>
         {
@@ -107,7 +43,7 @@ internal class DefaultConfigurationCreatorService(
         };
     }
 
-    private void CreateApiResources(CreateIdentityDataCommandRequest createIdentityDataCommandRequest)
+    protected override void CreateApiResources(CreateIdentityDataCommandRequest createIdentityDataCommandRequest)
     {
         createIdentityDataCommandRequest.ApiResources = new List<DistApiResourcesDto>
         {
@@ -124,7 +60,7 @@ internal class DefaultConfigurationCreatorService(
         };
     }
 
-    private void CreateClients(CreateIdentityDataCommandRequest createIdentityDataCommandRequest)
+    protected override void CreateClients(CreateIdentityDataCommandRequest createIdentityDataCommandRequest)
     {
         createIdentityDataCommandRequest.Clients = new List<DistClientDto>
         {

@@ -11,14 +11,14 @@ public static class AssetRepositoryServiceConstants
     internal const string TenantApiReadWritePolicy = "TenantApiReadWritePolicy";
 
     /// <summary>
-    ///     Name of key of database schema
+    /// Name of the key for identity data version
     /// </summary>
-    public const string AssetServiceSchemaVersionKey = "AssetServices";
+    public const string AssetServiceIdentityDataVersionKey = "AssetServicesIdentityData";
 
     /// <summary>
-    ///     Version of database schema for core service specific data
+    /// Expected version of identity data
     /// </summary>
-    public const int AssetServiceSchemaVersionValue = 1;
+    public const int AssetServiceIdentityDataVersionValue = 1;
 
     /// <summary>
     ///     The name of the cookie of cookie-based auth
