@@ -1,5 +1,5 @@
 ﻿using Meshmakers.Octo.Backend.AssetRepositoryServices.Configuration.DependencyInjection.Options;
-using Meshmakers.Octo.Services.Common.StreamData.Configuration;
+using Meshmakers.Octo.StreamData.Configuration;
 using Microsoft.Extensions.Options;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.Configuration;

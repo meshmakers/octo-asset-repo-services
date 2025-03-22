@@ -10,9 +10,9 @@ using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
 using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.ConstructionKit.Contracts.DependencyGraph;
 using Meshmakers.Octo.ConstructionKit.Contracts.Services;
-using Meshmakers.Octo.Services.Common.StreamData;
-using Meshmakers.Octo.Services.Common.StreamData.Dtos;
-using Meshmakers.Octo.Services.Common.StreamData.QueryBuilder;
+using Meshmakers.Octo.StreamData;
+using Meshmakers.Octo.StreamData.Dtos;
+using Meshmakers.Octo.StreamData.QueryBuilder;
 using NLog;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL;

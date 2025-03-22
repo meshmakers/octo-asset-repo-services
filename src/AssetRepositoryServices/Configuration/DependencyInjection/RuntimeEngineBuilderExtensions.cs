@@ -17,9 +17,9 @@ using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
 using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb.Configuration;
 using Meshmakers.Octo.Runtime.Engine.Configuration.DependencyInjection;
-using Meshmakers.Octo.Services.Common;
-using Meshmakers.Octo.Services.Common.DistributionEventHub.Commands;
-using Meshmakers.Octo.Services.Common.DistributionEventHub.Messages;
+using Meshmakers.Octo.Services.Contracts.DistributionEventHub.Commands;
+using Meshmakers.Octo.Services.Contracts.DistributionEventHub.Messages;
+using Meshmakers.Octo.Services.Infrastructure;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
@@ -48,14 +48,14 @@ public static class RuntimeEngineBuilderExtensions
         builder.Services.AddAuthentication(authenticationOptions =>
             {
                 authenticationOptions.DefaultScheme = CookieAuthenticationDefaults.AuthenticationScheme;
-                authenticationOptions.DefaultChallengeScheme = BackendCommon.OidcAuthenticationScheme;
+                authenticationOptions.DefaultChallengeScheme = InfrastructureCommon.OidcAuthenticationScheme;
             })
             .AddCookie(options =>
             {
                 options.ExpireTimeSpan = AssetRepositoryServiceConstants.CookieExpireTimeSpan;
                 options.Cookie.Name = AssetRepositoryServiceConstants.CookieName;
             })
-            .AddOpenIdConnect(BackendCommon.OidcAuthenticationScheme, options =>
+            .AddOpenIdConnect(InfrastructureCommon.OidcAuthenticationScheme, options =>
             {
                 var octoOptions = builder.Services.BuildServiceProvider()
                     .GetRequiredService<OctoAssetRepositoryServicesOptions>();
@@ -99,14 +99,14 @@ public static class RuntimeEngineBuilderExtensions
             options.AddPolicy(AssetRepositoryServiceConstants.SystemApiReadOnlyPolicy, authorizationPolicyBuilder =>
             {
                 // require SystemApiFullAccess or SystemApiReadOnly
-                authorizationPolicyBuilder.RequireClaim(BackendCommon.ClaimScope, CommonConstants.SystemApiFullAccess,
+                authorizationPolicyBuilder.RequireClaim(InfrastructureCommon.ClaimScope, CommonConstants.SystemApiFullAccess,
                     CommonConstants.SystemApiReadOnly);
             });
 
             options.AddPolicy(AssetRepositoryServiceConstants.SystemApiReadWritePolicy, authorizationPolicyBuilder =>
             {
                 // require SystemApiFullAccess
-                authorizationPolicyBuilder.RequireClaim(BackendCommon.ClaimScope, CommonConstants.SystemApiFullAccess);
+                authorizationPolicyBuilder.RequireClaim(InfrastructureCommon.ClaimScope, CommonConstants.SystemApiFullAccess);
             });
 
             options.AddPolicy(AssetRepositoryServiceConstants.TenantApiReadWritePolicy, authorizationPolicyBuilder =>

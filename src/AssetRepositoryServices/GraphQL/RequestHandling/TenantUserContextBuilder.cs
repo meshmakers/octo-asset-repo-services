@@ -2,8 +2,7 @@ using GraphQL.Server.Transports.AspNetCore;
 using Meshmakers.Common.Shared;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Utils;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.Services;
-using Meshmakers.Octo.Runtime.Contracts.MongoDb;
-using Meshmakers.Octo.Services.Common;
+using Meshmakers.Octo.Services.Infrastructure;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.RequestHandling;
 

@@ -3,10 +3,9 @@ using Meshmakers.Octo.Backend.AssetRepositoryServices.Routing;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.Services;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.StreamData;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb.Extensions;
-using Meshmakers.Octo.Services.Common.Cors;
-using Meshmakers.Octo.Services.Common.StreamData.Extensions;
 using Meshmakers.Octo.Services.Infrastructure.Services;
 using Meshmakers.Octo.Services.Observability;
+using Meshmakers.Octo.StreamData.Extensions;
 using Microsoft.AspNetCore.Cors.Infrastructure;
 using NLog;
 using NLog.Web;
@@ -42,8 +41,6 @@ try
         .AddUserSecrets(typeof(Program).Assembly, true);
 
     builder.Services.AddTransient<IDefaultConfigurationCreatorService, DefaultConfigurationCreatorService>();
-    builder.Services.AddSingleton<CorsPolicyProvider>();
-    builder.Services.AddSingleton<ICorsPolicyProvider>(p => p.GetRequiredService<CorsPolicyProvider>());
     builder.Services.AddCors();
 
     builder.Services.Configure<RouteOptions>(options =>
