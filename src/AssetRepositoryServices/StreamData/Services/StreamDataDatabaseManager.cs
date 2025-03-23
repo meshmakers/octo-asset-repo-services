@@ -1,5 +1,5 @@
 ﻿
-using Meshmakers.Octo.StreamData;
+using Meshmakers.Octo.Services.StreamData;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.StreamData.Services;
 

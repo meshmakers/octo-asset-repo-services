@@ -1,5 +1,5 @@
 ﻿using GraphQL.Types;
-using Meshmakers.Octo.StreamData.Dtos;
+using Meshmakers.Octo.Services.StreamData.Dtos;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Inputs;
 
