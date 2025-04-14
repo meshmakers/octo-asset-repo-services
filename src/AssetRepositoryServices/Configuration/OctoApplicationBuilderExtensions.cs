@@ -1,5 +1,6 @@
 using GraphQL.Server.Ui.Altair;
 using Meshmakers.Octo.Backend.AssetRepositoryServices;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Middleware;
 using Meshmakers.Octo.Services.Swagger.Configuration;
 using Microsoft.AspNetCore.HttpOverrides;
@@ -61,7 +62,9 @@ public static class OctoApplicationBuilderExtensions
                 GraphQLEndPoint = "/tenants/{tenantId}/graphQl"
             }, "tenants/{tenantId:tenantId}/graphQl/playground")
             .RequireAuthorization(AssetRepositoryServiceConstants.AuthenticatedUserPolicy);
-        app.MapGraphQL<GraphQlTenantMiddleware>(
-            "tenants/{tenantId:tenantId}/graphQl"); //.RequireAuthorization(AssetRepositoryServiceConstants.TenantApiReadWritePolicy);// TODO enable again!
+        app.MapGraphQL<OctoSchema>("tenants/{tenantId:tenantId}/graphQl", c =>
+        {
+            c.ReadFormOnPost = true;
+        }); //.RequireAuthorization(AssetRepositoryServiceConstants.TenantApiReadWritePolicy);// TODO enable again!
     }
 }
