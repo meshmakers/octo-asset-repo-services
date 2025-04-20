@@ -1,13 +1,12 @@
 ﻿using GraphQL;
-using GraphQL.DataLoader;
 using GraphQL.Types;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.Configuration.DependencyInjection.Options;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Caches;
-using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.RequestHandling;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
 using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.ConstructionKit.Contracts.DependencyGraph;
-using Meshmakers.Octo.ConstructionKit.Contracts.Services;
 using Meshmakers.Octo.Runtime.Contracts.RepositoryEntities;
+using Microsoft.Extensions.Options;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
 
@@ -41,13 +40,14 @@ internal sealed class RtRecordDtoType : ObjectGraphType<RtRecordDto>
     public CkId<CkRecordId> CkRecordId { get; }
 
 
-    internal void Populate(ICkCacheService ckCacheService, string tenantId, IGraphTypesCache graphTypesCache, CkRecordGraph entityCacheItem)
+    internal void Populate(IOptions<OctoAssetRepositoryServicesOptions> options, IGraphTypesCache graphTypesCache, CkRecordGraph ckRecordGraph)
     {
-        AddConstructionKit(entityCacheItem);
+        AddConstructionKit(ckRecordGraph);
 
-        foreach (var attribute in entityCacheItem.AllAttributes.Values)
+        var builder = OctoBuilder<RtRecordDto>.Create(this, options);
+        foreach (var attribute in ckRecordGraph.AllAttributes.Values)
         {
-            Helpers.AddAttribute(this, graphTypesCache, attribute, false);
+            builder.Attribute(graphTypesCache, attribute, false);
         }
     }
 
@@ -60,9 +60,8 @@ internal sealed class RtRecordDtoType : ObjectGraphType<RtRecordDto>
 
     private object ResolveCkEntity(IResolveFieldContext<RtRecordDto> arg)
     {
-        // TODO: Fix save cast to CkTypeGraph
-        var entityCacheItem = (CkTypeGraph)arg.FieldDefinition.Metadata[Statics.TypeGraphType]!;
-        return CkTypeDtoType.CreateCkTypeDto(entityCacheItem);
+        var ckTypeGraph = (CkTypeGraph)arg.FieldDefinition.Metadata[Statics.TypeGraphType]!;
+        return CkTypeDtoType.CreateCkTypeDto(ckTypeGraph);
     }
 
     internal static RtRecordDto CreateRtRecordDto(RtRecord rtEntity)

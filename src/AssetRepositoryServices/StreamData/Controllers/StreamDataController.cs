@@ -36,7 +36,7 @@ public class StreamDataController : ControllerBase
     /// <param name="tenantId"></param>
     /// <returns></returns>
     [HttpPost("enable")]
-    [Authorize(AssetRepositoryServiceConstants.SystemApiReadWritePolicy)]
+    [Authorize(AssetRepositoryServiceConstants.SystemAssetApiReadWritePolicy)]
     public async Task<IActionResult> Enable([Required] string tenantId)
     {
         try
@@ -56,7 +56,7 @@ public class StreamDataController : ControllerBase
     /// <param name="tenantId"></param>
     /// <returns></returns>
     [HttpPost("disable")]
-    [Authorize(AssetRepositoryServiceConstants.SystemApiReadWritePolicy)]
+    [Authorize(AssetRepositoryServiceConstants.SystemAssetApiReadWritePolicy)]
     public async Task<IActionResult> Disable([Required] string tenantId)
     {
         try

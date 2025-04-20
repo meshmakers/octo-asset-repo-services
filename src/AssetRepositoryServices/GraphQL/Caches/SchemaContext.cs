@@ -59,7 +59,7 @@ internal class SchemaContext(
                 entry.SetSize(1);
                 entry.SlidingExpiration = TimeSpan.FromDays(1);
 
-                var graphTypesCache = new GraphTypesCache(ckCacheService, octoService, tenantId);
+                var graphTypesCache = new GraphTypesCache(ckCacheService, octoService, options, tenantId);
                 await graphTypesCache.PopulateAsync();
 
                 var query = new OctoQuery(options, graphTypesCache);

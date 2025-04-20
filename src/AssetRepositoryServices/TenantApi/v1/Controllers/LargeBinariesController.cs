@@ -1,21 +1,22 @@
 using Asp.Versioning;
 using IdentityModel;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.Services;
+using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
 using Meshmakers.Octo.ConstructionKit.Contracts;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
-namespace Meshmakers.Octo.Backend.AssetRepositoryServices.SystemApi.v1.Controllers;
+namespace Meshmakers.Octo.Backend.AssetRepositoryServices.TenantApi.v1.Controllers;
 
 /// <summary>
-///     REST Controller for management of large binaries
+///     REST Controller for tenant-specific access to large binaries
 /// </summary>
 [Authorize(AuthenticationSchemes = OidcConstants.AuthenticationSchemes.AuthorizationHeaderBearer)]
-[Route("system/v{version:apiVersion}/[controller]")]
+[Route("{tenantId:tenantId}/v{version:apiVersion}/[controller]")]
 [ApiController]
 [ApiVersion("1.0")]
 // ReSharper disable once ClassNeverInstantiated.Global
-public class LargeBinariesController
+public class LargeBinariesController : ControllerBase
 {
     private readonly IOctoService _octoService;
 
@@ -28,20 +29,25 @@ public class LargeBinariesController
         _octoService = octoService;
     }
 
-    // GET system/v1/largeBinaries
+    // GET {tenantId}/v1/largeBinaries
     /// <summary>
     ///     Downloads are large binary with given tenantId and large binary id
     /// </summary>
     /// <returns></returns>
     [HttpGet]
-    [Authorize(AssetRepositoryServiceConstants.SystemApiReadOnlyPolicy)]
+    [Authorize(AssetRepositoryServiceConstants.TenantAssetApiReadOnlyPolicy)]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
-    public async Task<IActionResult> Get([FromQuery] string tenantId, [FromQuery] string largeBinaryId)
+    public async Task<IActionResult> Get( [FromQuery] string largeBinaryId)
     {
-        var tenantContext = await _octoService.SystemContext.GetChildTenantContextAsync(tenantId);
-        var repository = tenantContext.GetTenantRepository();
-        var streamHandler = await repository.DownloadLargeBinaryAsync(OctoObjectId.Parse(largeBinaryId));
+        var tenantId = HttpContext.GetTenantId();
+        if (string.IsNullOrEmpty(tenantId))
+        {
+            return NotFound(new ErrorResponse { ErrorMessage = "TenantId is null or empty"});
+        }
+
+        var tenantRepository = await _octoService.SystemContext.FindTenantRepositoryAsync(tenantId);
+        var streamHandler = await tenantRepository.DownloadLargeBinaryAsync(OctoObjectId.Parse(largeBinaryId));
 
         return new FileStreamResult(streamHandler.Stream, streamHandler.ContentType);
     }

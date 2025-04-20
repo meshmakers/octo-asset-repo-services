@@ -96,26 +96,35 @@ public static class RuntimeEngineBuilderExtensions
             options.AddPolicy(AssetRepositoryServiceConstants.AuthenticatedUserPolicy,
                 policyBuilder => policyBuilder.RequireAuthenticatedUser());
 
-            options.AddPolicy(AssetRepositoryServiceConstants.SystemApiReadOnlyPolicy, authorizationPolicyBuilder =>
+            options.AddPolicy(AssetRepositoryServiceConstants.SystemAssetApiReadOnlyPolicy, authorizationPolicyBuilder =>
             {
                 // require SystemApiFullAccess or SystemApiReadOnly
-                authorizationPolicyBuilder.RequireClaim(InfrastructureCommon.ClaimScope, CommonConstants.SystemApiFullAccess,
-                    CommonConstants.SystemApiReadOnly);
+                authorizationPolicyBuilder.RequireClaim(InfrastructureCommon.ClaimScope,
+                    CommonConstants.AssetSystemApiFullAccess,
+                    CommonConstants.AssetSystemApiReadOnly);
             });
 
-            options.AddPolicy(AssetRepositoryServiceConstants.SystemApiReadWritePolicy, authorizationPolicyBuilder =>
+            options.AddPolicy(AssetRepositoryServiceConstants.SystemAssetApiReadWritePolicy, authorizationPolicyBuilder =>
             {
                 // require SystemApiFullAccess
-                authorizationPolicyBuilder.RequireClaim(InfrastructureCommon.ClaimScope, CommonConstants.SystemApiFullAccess);
+                authorizationPolicyBuilder.RequireClaim(InfrastructureCommon.ClaimScope,
+                    CommonConstants.AssetSystemApiFullAccess);
             });
 
-            options.AddPolicy(AssetRepositoryServiceConstants.TenantApiReadWritePolicy, authorizationPolicyBuilder =>
+            options.AddPolicy(AssetRepositoryServiceConstants.TenantAssetApiReadWritePolicy, authorizationPolicyBuilder =>
             {
-                authorizationPolicyBuilder.AuthenticationSchemes.Add(CookieAuthenticationDefaults.AuthenticationScheme);
-                authorizationPolicyBuilder.AuthenticationSchemes.Add(OidcConstants.AuthenticationSchemes
-                    .AuthorizationHeaderBearer);
-                authorizationPolicyBuilder.RequireAuthenticatedUser();
+                authorizationPolicyBuilder.RequireClaim(InfrastructureCommon.ClaimScope,
+                    CommonConstants.AssetTenantApiFullAccess);
             });
+
+            options.AddPolicy(AssetRepositoryServiceConstants.TenantAssetApiReadOnlyPolicy,
+                authorizationPolicyBuilder =>
+                {
+                    authorizationPolicyBuilder.RequireClaim(InfrastructureCommon.ClaimScope,
+                        CommonConstants.AssetTenantApiFullAccess,
+                        CommonConstants.AssetTenantApiReadOnly);
+
+                });
         });
 
         builder.Services.AddMvcCore().AddAuthorization();
@@ -125,24 +134,40 @@ public static class RuntimeEngineBuilderExtensions
             options.Scopes = new Dictionary<string, string>
             {
                 {
-                    CommonConstants.SystemApiFullAccess,
-                    AssetTexts.Backend_AssetServices_Api_FullAccess
+                    CommonConstants.AssetSystemApiFullAccess,
+                    AssetTexts.Backend_AssetServices_Api_SystemFullAccess
                 },
                 {
-                    CommonConstants.SystemApiReadOnly,
-                    AssetTexts.Backend_AssetServices_Api_ReadOnlyAccess
+                    CommonConstants.AssetSystemApiReadOnly,
+                    AssetTexts.Backend_AssetServices_Api_SystemReadOnlyAccess
+                },
+                {
+                    CommonConstants.AssetTenantApiFullAccess,
+                    AssetTexts.Backend_AssetServices_Api_TenantFullAccess
+                },
+                {
+                    CommonConstants.AssetTenantApiReadOnly,
+                    AssetTexts.Backend_AssetServices_Api_TenantReadOnlyAccess
                 }
             };
-            
+
             options.PolicyScopeMapping = new Dictionary<string, IEnumerable<string>>
             {
                 {
-                    AssetRepositoryServiceConstants.SystemApiReadOnlyPolicy,
-                    new List<string> {CommonConstants.SystemApiReadOnly}
+                    AssetRepositoryServiceConstants.SystemAssetApiReadOnlyPolicy,
+                    new List<string> { CommonConstants.AssetSystemApiReadOnly }
                 },
                 {
-                    AssetRepositoryServiceConstants.SystemApiReadWritePolicy,
-                    new List<string> {CommonConstants.SystemApiFullAccess}
+                    AssetRepositoryServiceConstants.SystemAssetApiReadWritePolicy,
+                    new List<string> { CommonConstants.AssetSystemApiFullAccess }
+                },
+                {
+                    AssetRepositoryServiceConstants.TenantAssetApiReadOnlyPolicy,
+                    new List<string> { CommonConstants.AssetTenantApiReadOnly }
+                },
+                {
+                    AssetRepositoryServiceConstants.TenantAssetApiReadWritePolicy,
+                    new List<string> { CommonConstants.AssetTenantApiFullAccess }
                 }
             };
 
@@ -156,8 +181,8 @@ public static class RuntimeEngineBuilderExtensions
                 typeof(Program).Assembly
             ];
 
-            options.ApiTitle = "Octo Asset API";
-            options.ApiDescription = "Octo Asset Repository Services.";
+            options.ApiTitle = AssetTexts.Api_Title;
+            options.ApiDescription = AssetTexts.Api_Description;
 
             options.ClientId = CommonConstants.AsserRepositoryServicesSwaggerClientId;
             options.AppName = AssetTexts.Backend_AssetServices_UserSchema_Swagger_DisplayName;
@@ -188,7 +213,7 @@ public static class RuntimeEngineBuilderExtensions
             .AddDocumentListener<OctoSessionListener>()
             .Services.Register<IOctoSessionAccessor, OctoSessionAccessor>(GraphQL.DI.ServiceLifetime.Singleton)
         );
-        
+
         builder.Services.AddSingleton<IDocumentExecuter<OctoSchema>, TenantDocumentExecutor>();
 
         return builder;
@@ -230,8 +255,8 @@ public static class RuntimeEngineBuilderExtensions
 
         // GraphQL custom services
         builder.Services.AddSingleton<ISchemaContext, SchemaContext>();
-        
-        
+
+
         builder.Services.AddOctoServiceInfrastructure("AssetRepositoryService", c =>
         {
             c.AddCommandClient<CreateIdentityDataCommandRequest>(QueueNames.CreateIdentityDataCommand);

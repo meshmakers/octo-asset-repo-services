@@ -57,15 +57,27 @@ namespace AssetRepositoryServices.Resources {
             }
         }
         
-        public static string Backend_AssetServices_Api_FullAccess {
+        public static string Backend_AssetServices_Api_SystemFullAccess {
             get {
-                return ResourceManager.GetString("Backend_AssetServices_Api_FullAccess", resourceCulture);
+                return ResourceManager.GetString("Backend_AssetServices_Api_SystemFullAccess", resourceCulture);
             }
         }
         
-        public static string Backend_AssetServices_Api_ReadOnlyAccess {
+        public static string Backend_AssetServices_Api_SystemReadOnlyAccess {
             get {
-                return ResourceManager.GetString("Backend_AssetServices_Api_ReadOnlyAccess", resourceCulture);
+                return ResourceManager.GetString("Backend_AssetServices_Api_SystemReadOnlyAccess", resourceCulture);
+            }
+        }
+        
+        public static string Backend_AssetServices_Api_TenantFullAccess {
+            get {
+                return ResourceManager.GetString("Backend_AssetServices_Api_TenantFullAccess", resourceCulture);
+            }
+        }
+        
+        public static string Backend_AssetServices_Api_TenantReadOnlyAccess {
+            get {
+                return ResourceManager.GetString("Backend_AssetServices_Api_TenantReadOnlyAccess", resourceCulture);
             }
         }
         
@@ -336,6 +348,18 @@ namespace AssetRepositoryServices.Resources {
         public static string Graphql_Type_Filter_IncludeSelfArgs_Description {
             get {
                 return ResourceManager.GetString("Graphql_Type_Filter_IncludeSelfArgs_Description", resourceCulture);
+            }
+        }
+        
+        public static string Api_Title {
+            get {
+                return ResourceManager.GetString("Api_Title", resourceCulture);
+            }
+        }
+        
+        public static string Api_Description {
+            get {
+                return ResourceManager.GetString("Api_Description", resourceCulture);
             }
         }
     }

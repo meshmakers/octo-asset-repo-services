@@ -37,7 +37,7 @@ public class DiagnosticsController: ControllerBase
     /// <param name="minLogLevel">The minimal log level to be logged.</param>
     /// <returns></returns>
     [HttpPost("reconfigureLogLevel")]
-    [Authorize(AssetRepositoryServiceConstants.SystemApiReadWritePolicy)]
+    [Authorize(AssetRepositoryServiceConstants.SystemAssetApiReadWritePolicy)]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> Enable([Required] LogLevelDto minLogLevel)

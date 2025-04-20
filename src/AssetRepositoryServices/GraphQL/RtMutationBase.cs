@@ -15,7 +15,7 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL;
 
 internal abstract class RtMutationBase : ObjectGraphType
 {
-    protected void RtEntityFromInputObject(ICkCacheService ckCacheService, string tenantId, RtEntity rtEntity,
+    protected async Task RtEntityFromInputObjectAsync(ITenantRepository tenantRepository, ICkCacheService ckCacheService, string tenantId, RtEntity rtEntity,
         RtEntityDto rtEntityDto,
         List<AssociationUpdateInfo> associations)
     {
@@ -28,7 +28,7 @@ internal abstract class RtMutationBase : ObjectGraphType
         {
             foreach (var item in rtEntityDto.Attributes)
             {
-                if (TryHandleAttribute(ckCacheService, tenantId, rtEntity, ckTypeGraph,
+                if (await TryHandleAttributeAsync(tenantRepository, ckCacheService, tenantId, rtEntity, ckTypeGraph,
                         item.AttributeName.ToPascalCase(), item.Value))
                 {
                     continue;
@@ -44,7 +44,7 @@ internal abstract class RtMutationBase : ObjectGraphType
         }
     }
     
-    protected void RtEntityFromInputObject(ICkCacheService ckCacheService, string tenantId, RtEntity rtEntity,
+    protected async Task RtEntityFromInputObjectAsync(ITenantRepository tenantRepository, ICkCacheService ckCacheService, string tenantId, RtEntity rtEntity,
         RtQueryRowDto rtQueryRowDto)
     {
         var ckTypeGraph =
@@ -56,7 +56,7 @@ internal abstract class RtMutationBase : ObjectGraphType
         {
             foreach (var cellDto in rtQueryRowDto.Cells)
             {
-                TryHandleAttribute(ckCacheService, tenantId, rtEntity, ckTypeGraph, 
+                await TryHandleAttributeAsync(tenantRepository, ckCacheService, tenantId, rtEntity, ckTypeGraph,
                     cellDto.AttributePath.ToPascalCase(), cellDto.Value);
             }
         }
@@ -113,7 +113,7 @@ internal abstract class RtMutationBase : ObjectGraphType
     }
 
 
-    private bool TryHandleAttribute(ICkCacheService ckCacheService, string tenantId,
+    private async Task<bool> TryHandleAttributeAsync(ITenantRepository tenantRepository, ICkCacheService ckCacheService, string tenantId,
         RtTypeWithAttributes rtTypeWithAttributes,
         CkTypeWithAttributesGraph ckTypeWithAttributesGraph, string attributeName,
         object? value)
@@ -136,7 +136,7 @@ internal abstract class RtMutationBase : ObjectGraphType
                     }
 
                     var rtRecordDto = (RtRecordDto)value;
-                    var rtRecord = HandleRecord(ckCacheService, tenantId, ckTypeAttributeGraph.ValueCkRecordId,
+                    var rtRecord = HandleRecordAsync(tenantRepository, ckCacheService, tenantId, ckTypeAttributeGraph.ValueCkRecordId,
                         rtRecordDto);
                     rtTypeWithAttributes.SetAttributeValue(ckTypeAttributeGraph.AttributeName,
                         ckTypeAttributeGraph.ValueType, rtRecord);
@@ -159,13 +159,22 @@ internal abstract class RtMutationBase : ObjectGraphType
                     AttributeRecordValueList<RtRecord> rtRecords = new();
                     foreach (RtRecordDto rtRecordDtoItem in rtRecordList)
                     {
-                        var rtRecordItem = HandleRecord(ckCacheService, tenantId, ckTypeAttributeGraph.ValueCkRecordId,
+                        var rtRecordItem = await HandleRecordAsync(tenantRepository, ckCacheService, tenantId, ckTypeAttributeGraph.ValueCkRecordId,
                             rtRecordDtoItem);
                         rtRecords.Add(rtRecordItem);
                     }
 
                     rtTypeWithAttributes.SetAttributeValue(ckTypeAttributeGraph.AttributeName,
                         ckTypeAttributeGraph.ValueType, rtRecords);
+                    return true;
+                case AttributeValueTypesDto.BinaryLinked:
+                    if (value is IFormFile file)
+                    {
+                        Dictionary<string, object> metadata = new();
+                        var largeBinaryId = await tenantRepository.UploadLargeBinaryAsync(file.FileName, file.ContentType, file.OpenReadStream(), metadata, CancellationToken.None);
+                        rtTypeWithAttributes.SetAttributeValue(ckTypeAttributeGraph.AttributeName,
+                            ckTypeAttributeGraph.ValueType, largeBinaryId);
+                    }
                     return true;
                 default:
                     rtTypeWithAttributes.SetAttributeValue(ckTypeAttributeGraph.AttributeName,
@@ -177,7 +186,7 @@ internal abstract class RtMutationBase : ObjectGraphType
         return false;
     }
 
-    private RtRecord HandleRecord(ICkCacheService ckCacheService, string tenantId, CkId<CkRecordId> ckRecordId,
+    private async Task<RtRecord> HandleRecordAsync(ITenantRepository tenantRepository, ICkCacheService ckCacheService, string tenantId, CkId<CkRecordId> ckRecordId,
         RtRecordDto rtRecordDto)
     {
         var ckRecordGraph = ckCacheService.GetCkRecord(tenantId, ckRecordId);
@@ -191,7 +200,7 @@ internal abstract class RtMutationBase : ObjectGraphType
         {
             foreach (var recordAttributeItem in rtRecordDto.Attributes)
             {
-                TryHandleAttribute(ckCacheService, tenantId, rtRecord, ckRecordGraph, 
+                await TryHandleAttributeAsync(tenantRepository, ckCacheService, tenantId, rtRecord, ckRecordGraph,
                     recordAttributeItem.AttributeName.ToPascalCase(), recordAttributeItem.Value);
             }
         }

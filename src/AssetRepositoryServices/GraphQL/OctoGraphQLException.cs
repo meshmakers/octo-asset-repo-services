@@ -95,4 +95,9 @@ public class OctoGraphQLException : Exception
         return new OctoGraphQLException(
             $"Invalid column paths: {string.Join(", ", invalidColumnPaths)}");
     }
+
+    public static Exception LargeBinaryNotFound(OctoObjectId binaryId)
+    {
+        return new OctoGraphQLException($"Large binary with ID {binaryId} not found.");
+    }
 }

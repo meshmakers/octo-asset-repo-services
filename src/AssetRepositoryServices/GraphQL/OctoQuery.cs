@@ -42,43 +42,5 @@ internal sealed class OctoQuery : ObjectGraphType
             Field("StreamData", new StreamDataQuery(graphTypesCache))
                 .Resolve(_ => new StreamDataEntityDto());
         }
-
-        Connection<LargeBinaryInfoDtoType>("sysLargeBinaries")
-            .Argument<OctoObjectIdType>(Statics.LargeBinaryIdArg, "ID of large binary that is requested.")
-            .ResolveAsync(ResolveLargeBinariesQuery);
-    }
-
-    private async Task<object?> ResolveLargeBinariesQuery(IResolveConnectionContext<object?> context)
-    {
-        Logger.Debug("GraphQL query handling of large binaries started");
-
-        context.TryGetArgument(Statics.LargeBinaryIdArg, out OctoObjectId key);
-
-
-        var tenantContext = Helpers.GetTenantContext(context.UserContext);
-
-        var tenantRepository = tenantContext.GetTenantRepository();
-        var downloadInfo = await tenantRepository.GetLargeBinaryAsync(key);
-        if (downloadInfo == null)
-        {
-            Logger.Warn("GraphQL query handling of large binaries failed: Large binary not found");
-            return ConnectionUtils.ToConnection(Array.Empty<LargeBinaryInfoDto>(), context, 0, 0, null);
-        }
-
-        return ConnectionUtils.ToConnection(
-            new[]
-            {
-                new LargeBinaryInfoDto
-                {
-                    ContentType = downloadInfo.ContentType,
-                    BinaryId = downloadInfo.BinaryId,
-                    Filename = downloadInfo.Filename,
-                    Length = downloadInfo.Length,
-                    UploadDateTime = downloadInfo.UploadDateTime,
-                    DownloadUri = new Uri(_options.Value.PublicUrl.EnsureEndsWith(
-                        $"/system/v1/largeBinaries?tenantId={tenantContext.TenantId}&largeBinaryId={downloadInfo.BinaryId}"))
-                }
-            }, context,
-            0, 1, null);
     }
 }

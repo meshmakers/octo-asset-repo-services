@@ -1,6 +1,7 @@
 ﻿using GraphQL;
 using GraphQL.Builders;
 using GraphQL.Types;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.Configuration.DependencyInjection.Options;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Caches;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.RequestHandling;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Enums;
@@ -12,6 +13,7 @@ using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.ConstructionKit.Contracts.DependencyGraph;
 using Meshmakers.Octo.ConstructionKit.Contracts.Services;
 using Meshmakers.Octo.Runtime.Contracts.RepositoryEntities;
+using Microsoft.Extensions.Options;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
 
@@ -58,14 +60,15 @@ internal sealed class RtEntityDtoType : ObjectGraphType<RtEntityDto>
     /// </summary>
     public bool IsAbstract => _ckTypeGraph.IsAbstract;
 
-    internal void Populate(ICkCacheService ckCacheService, string tenantId, IGraphTypesCache graphTypesCache)
+    internal void Populate(IOptions<OctoAssetRepositoryServicesOptions> options, ICkCacheService ckCacheService, string tenantId, IGraphTypesCache graphTypesCache)
     {
         AddConstructionKit();
         AddGenericAssociations();
 
+        var builder = OctoBuilder<RtEntityDto>.Create(this, options);
         foreach (var attribute in _ckTypeGraph.AllAttributes.Values)
         {
-            Helpers.AddAttribute(this, graphTypesCache, attribute, false);
+            builder.Attribute(graphTypesCache, attribute, false);
         }
 
         foreach (var ckTypeAssociationGraph in _ckTypeGraph.Associations.Out.All.GroupBy(x => x.NavigationPropertyName))
@@ -75,7 +78,7 @@ internal sealed class RtEntityDtoType : ObjectGraphType<RtEntityDto>
                 .ToList();
             if (!allowedTypes.Any())
             {
-                continue; // All Ck entities are abstract for that associations
+                continue; // All Ck types are abstract for that association
             }
 
             this.AssociationField(graphTypesCache, ckTypeAssociationGraph.Key,
@@ -90,7 +93,7 @@ internal sealed class RtEntityDtoType : ObjectGraphType<RtEntityDto>
                 .ToList();
             if (!allowedTypes.Any())
             {
-                continue; // All Ck entities are abstract for that associations
+                continue; // All Ck types are abstract for that association
             }
 
             this.AssociationField(graphTypesCache, ckTypeAssociationGraph.Key,
@@ -102,7 +105,7 @@ internal sealed class RtEntityDtoType : ObjectGraphType<RtEntityDto>
     private void AddConstructionKit()
     {
         Field<CkTypeDtoType>("ConstructionKitType")
-            .Resolve(ResolveCkEntity);
+            .Resolve(ResolveCkType);
     }
 
     private void AddGenericAssociations()
@@ -166,7 +169,7 @@ internal sealed class RtEntityDtoType : ObjectGraphType<RtEntityDto>
         if (indirectAssociations.Value)
         {
             var result = await tenantRepository.GetIndirectRtAssociationTargetsAsync(
-                sessionAccessor.Session, new[] { arg.Source.RtId }, CkTypeId, new CkId<CkAssociationRoleId>(roleId),
+                sessionAccessor.Session, [arg.Source.RtId], CkTypeId, new CkId<CkAssociationRoleId>(roleId),
                 direction.Value,
                 null, targetCkId, dataQueryOperation, offset, arg.First);
 
@@ -175,7 +178,7 @@ internal sealed class RtEntityDtoType : ObjectGraphType<RtEntityDto>
         else
         {
             var result = await tenantRepository.GetRtAssociationTargetsAsync(
-                sessionAccessor.Session, new[] { arg.Source.RtId }, CkTypeId, new CkId<CkAssociationRoleId>(roleId),
+                sessionAccessor.Session, [arg.Source.RtId], CkTypeId, new CkId<CkAssociationRoleId>(roleId),
                 targetCkId, direction.Value,
                 null, dataQueryOperation, offset, arg.First);
 
@@ -183,7 +186,7 @@ internal sealed class RtEntityDtoType : ObjectGraphType<RtEntityDto>
         }
     }
 
-    private object ResolveCkEntity(IResolveFieldContext<RtEntityDto> arg)
+    private object ResolveCkType(IResolveFieldContext<RtEntityDto> arg)
     {
         var ckCacheService = arg.RequestServices?.GetRequiredService<ICkCacheService>();
         if (ckCacheService == null)

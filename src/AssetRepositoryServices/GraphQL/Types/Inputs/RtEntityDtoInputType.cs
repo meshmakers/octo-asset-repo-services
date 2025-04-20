@@ -1,11 +1,13 @@
 using System.Linq.Expressions;
 using GraphQL;
 using GraphQL.Types;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.Configuration.DependencyInjection.Options;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Caches;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
 using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.ConstructionKit.Contracts.DependencyGraph;
 using Meshmakers.Octo.ConstructionKit.Contracts.Services;
+using Microsoft.Extensions.Options;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Inputs;
 
@@ -60,13 +62,15 @@ internal sealed class RtEntityDtoInputType : InputObjectGraphType<RtEntityDto>
     /// <param name="tenantId"></param>
     /// <param name="graphTypesCache"></param>
     /// <param name="typeGraph">The cache item</param>
+    /// <param name="options"></param>
     /// <param name="ckCacheService"></param>
-    public void Populate(ICkCacheService ckCacheService, string tenantId, IGraphTypesCache graphTypesCache,
+    public void Populate(IOptions<OctoAssetRepositoryServicesOptions> options, ICkCacheService ckCacheService, string tenantId, IGraphTypesCache graphTypesCache,
         CkTypeGraph typeGraph)
     {
+        var builder = OctoBuilder<RtEntityDto>.Create(this, options);
         foreach (var attribute in typeGraph.AllAttributes.Values)
         {
-            Helpers.AddAttribute(this, graphTypesCache, attribute, true);
+            builder.Attribute(graphTypesCache, attribute, true);
         }
 
         foreach (var ckTypeAssociationGraph in typeGraph.Associations.Out.All.GroupBy(x => x.NavigationPropertyName))

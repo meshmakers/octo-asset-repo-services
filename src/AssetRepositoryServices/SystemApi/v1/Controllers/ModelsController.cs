@@ -55,7 +55,7 @@ public class ModelsController : ControllerBase
     /// <returns></returns>
     [HttpPost]
     [Route("ExportRtByQuery")]
-    [Authorize(AssetRepositoryServiceConstants.SystemApiReadOnlyPolicy)]
+    [Authorize(AssetRepositoryServiceConstants.SystemAssetApiReadOnlyPolicy)]
     [ProducesResponseType(typeof(string), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> ExportRtByQueryAsync([Required] string tenantId,
@@ -83,7 +83,7 @@ public class ModelsController : ControllerBase
     /// <returns></returns>
     [HttpPost]
     [Route("ExportRtByDeepGraph")]
-    [Authorize(AssetRepositoryServiceConstants.SystemApiReadOnlyPolicy)]
+    [Authorize(AssetRepositoryServiceConstants.SystemAssetApiReadOnlyPolicy)]
     [ProducesResponseType(typeof(string), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> ExportRtByDeepGraphAsync([Required] string tenantId,
@@ -114,7 +114,7 @@ public class ModelsController : ControllerBase
     [HttpPost]
     [RequestSizeLimit(300_000_000)]
     [Route("ImportRt")]
-    [Authorize(AssetRepositoryServiceConstants.SystemApiReadWritePolicy)]
+    [Authorize(AssetRepositoryServiceConstants.SystemAssetApiReadWritePolicy)]
     [ProducesResponseType(typeof(string), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> ImportRt([Required] string tenantId, IFormFile file)
@@ -143,7 +143,7 @@ public class ModelsController : ControllerBase
     [HttpPost]
     //[Consumes("application/zip", "application/zip")]
     [Route("ImportCk")]
-    [Authorize(AssetRepositoryServiceConstants.SystemApiReadWritePolicy)]
+    [Authorize(AssetRepositoryServiceConstants.SystemAssetApiReadWritePolicy)]
     [ProducesResponseType(typeof(string), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> ImportCk([Required] string tenantId, IFormFile file)

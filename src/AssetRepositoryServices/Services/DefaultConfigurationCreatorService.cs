@@ -35,10 +35,14 @@ internal class DefaultConfigurationCreatorService(
     {
         createIdentityDataCommandRequest.ApiScopes = new List<DistApiScopeDto>
         {
-            new(CommonConstants.SystemApiFullAccess,
-                CommonConstants.SystemApiFullAccessDisplayName),
-            new(CommonConstants.SystemApiReadOnly,
-                CommonConstants.SystemApiReadOnlyDisplayName)
+            new(CommonConstants.AssetSystemApiFullAccess,
+                CommonConstants.AssetSystemApiFullAccessDisplayName),
+            new(CommonConstants.AssetSystemApiReadOnly,
+                CommonConstants.AssetSystemApiReadOnlyDisplayName),
+            new(CommonConstants.AssetTenantApiFullAccess,
+            CommonConstants.AssetTenantApiFullAccessDisplayName),
+            new(CommonConstants.AssetTenantApiReadOnly,
+                CommonConstants.AssetTenantApiReadOnlyDisplayName)
         };
     }
 
@@ -46,14 +50,24 @@ internal class DefaultConfigurationCreatorService(
     {
         createIdentityDataCommandRequest.ApiResources = new List<DistApiResourcesDto>
         {
-            new(CommonConstants.SystemApi, CommonConstants.SystemApiDisplayName)
+            new(CommonConstants.AssetSystemApi, CommonConstants.AssetSystemApiDisplayName)
             {
-                Description = CommonConstants.SystemApiDescription,
+                Description = CommonConstants.AssetSystemApiDescription,
                 IsEnabled = true,
                 Scopes = new List<string>
                 {
-                    CommonConstants.SystemApiFullAccess,
-                    CommonConstants.SystemApiReadOnly
+                    CommonConstants.AssetSystemApiFullAccess,
+                    CommonConstants.AssetSystemApiReadOnly
+                }
+            },
+            new(CommonConstants.AssetTenantApi, CommonConstants.AssetTenantApiDisplayName)
+            {
+                Description = CommonConstants.AssetTenantApiDescription,
+                IsEnabled = true,
+                Scopes = new List<string>
+                {
+                    CommonConstants.AssetTenantApiFullAccess,
+                    CommonConstants.AssetTenantApiReadOnly
                 }
             }
         };
@@ -103,8 +117,10 @@ internal class DefaultConfigurationCreatorService(
                     CommonConstants.Scopes.Profile,
                     CommonConstants.Scopes.Email,
                     JwtClaimTypes.Role,
-                    CommonConstants.SystemApiFullAccess,
-                    CommonConstants.SystemApiReadOnly
+                    CommonConstants.AssetSystemApiFullAccess,
+                    CommonConstants.AssetSystemApiReadOnly,
+                    CommonConstants.AssetTenantApiFullAccess,
+                    CommonConstants.AssetTenantApiReadOnly
                 ]
             }
         };

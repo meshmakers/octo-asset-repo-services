@@ -86,17 +86,17 @@ internal sealed class CkRecordDtoType : ObjectGraphType<CkRecordDto>
         ctx.TryGetArgument(Statics.AttributeNamesFilterArg,
             out IEnumerable<string>? filterAttributeNames);
 
-        var entityCacheItem = ckCacheService.GetCkRecord(graphQlContext.TenantId, ctx.Source.CkRecordId);
+        var ckRecordGraph = ckCacheService.GetCkRecord(graphQlContext.TenantId, ctx.Source.CkRecordId);
 
         IEnumerable<CkTypeAttributeGraph> resultList;
         if (filterAttributeNames == null)
         {
-            resultList = entityCacheItem.AllAttributes.Values;
+            resultList = ckRecordGraph.AllAttributes.Values;
         }
         else
         {
             resultList =
-                entityCacheItem.AllAttributes.Values.Where(a =>
+                ckRecordGraph.AllAttributes.Values.Where(a =>
                     filterAttributeNames.Contains(a.AttributeName.ToCamelCase()));
         }
 

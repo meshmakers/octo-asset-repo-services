@@ -24,11 +24,17 @@
     <data name="Backend_AssetServices_UserSchema_Swagger_DisplayName" xml:space="preserve">
         <value>Asset Repository Service Swagger UI</value>
     </data>
-    <data name="Backend_AssetServices_Api_FullAccess" xml:space="preserve">
-        <value>Full access to system API</value>
+    <data name="Backend_AssetServices_Api_SystemFullAccess" xml:space="preserve">
+        <value>Full access to Asset Repository Service system API</value>
     </data>
-    <data name="Backend_AssetServices_Api_ReadOnlyAccess" xml:space="preserve">
-        <value>Readonly access to system API</value>
+    <data name="Backend_AssetServices_Api_SystemReadOnlyAccess" xml:space="preserve">
+        <value>Readonly access to Asset Repository Service system API</value>
+    </data>
+    <data name="Backend_AssetServices_Api_TenantFullAccess" xml:space="preserve">
+        <value>Full access to Asset Repository Service tenant API</value>
+    </data>
+    <data name="Backend_AssetServices_Api_TenantReadOnlyAccess" xml:space="preserve">
+        <value>Readonly access to Asset Repository Service tenant API</value>
     </data>
     <data name="Graphql_Type_IsFinal_Description" xml:space="preserve">
         <value>Indicates if the type is final.</value>
@@ -164,5 +170,11 @@
     </data>
     <data name="Graphql_Type_Filter_IncludeSelfArgs_Description" xml:space="preserve">
         <value>When true, the current construction kit type is included in the result set.</value>
+    </data>
+    <data name="Api_Title" xml:space="preserve">
+        <value>Asset Repository Services API</value>
+    </data>
+    <data name="Api_Description" xml:space="preserve">
+        <value>Asset Repository Services</value>
     </data>
 </root>
