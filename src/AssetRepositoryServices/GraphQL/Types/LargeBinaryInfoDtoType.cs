@@ -21,10 +21,8 @@ internal sealed class LargeBinaryInfoDtoType : ObjectGraphType<LargeBinaryInfoDt
             .Description("Returns the content type of the binary");
         Field(x => x.Filename, type: typeof(NonNullGraphType<StringGraphType>))
             .Description("Returns the filename of the binary");
-        Field(x => x.UploadDateTime, type: typeof(NonNullGraphType<DateTimeGraphType>))
-            .Description("Returns the uploaded date time of the binary");
-        Field(x => x.Length, type: typeof(NonNullGraphType<BigIntGraphType>))
-            .Description("Returns the lengths of the binary");
+        Field(x => x.Size, type: typeof(NonNullGraphType<BigIntGraphType>))
+            .Description("Returns the size of the binary");
         Field(x => x.DownloadUri, type: typeof(NonNullGraphType<UriGraphType>))
             .Description("Returns the download link of the binary");
     }

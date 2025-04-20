@@ -55,7 +55,7 @@ internal class OctoBuilder<TSourceType>(
         builder = builder.Metadata(Statics.AttributeGraphType, typeAttributeGraph);
         if (!isInputType)
         {
-            builder.ResolveAsync(ResolveAttributeValueAsync);
+            builder.Resolve(ResolveAttributeValue);
         }
 
         return this;
@@ -140,10 +140,9 @@ internal class OctoBuilder<TSourceType>(
         }
     }
 
-    private async Task<object?> ResolveAttributeValueAsync(IResolveFieldContext<TSourceType> context)
+    private object? ResolveAttributeValue(IResolveFieldContext<TSourceType> context)
     {
         var tenantContext = Helpers.GetTenantContext(context.UserContext);
-        var tenantRepository = tenantContext.GetTenantRepository();
         var rtTypeWithAttributes = context.Source.UserContext as RtTypeWithAttributes;
         var typeAttributeGraph = context.FieldDefinition.GetMetadata<CkTypeAttributeGraph>(Statics.AttributeGraphType);
 
@@ -151,22 +150,15 @@ internal class OctoBuilder<TSourceType>(
         switch (typeAttributeGraph.ValueType)
         {
             case AttributeValueTypesDto.BinaryLinked:
-                if (r is OctoObjectId binaryId)
+                if (r is EntityBinaryInfo entityBinaryInfo)
                 {
-                    var downloadInfo = await tenantRepository.GetLargeBinaryAsync(binaryId);
-                    if (downloadInfo == null)
-                    {
-                        throw OctoGraphQLException.LargeBinaryNotFound(binaryId);
-                    }
-
                     return new LargeBinaryInfoDto
                     {
-                        ContentType = downloadInfo.ContentType,
-                        BinaryId = downloadInfo.BinaryId,
-                        Filename = downloadInfo.Filename,
-                        Length = downloadInfo.Length,
-                        UploadDateTime = downloadInfo.UploadDateTime,
-                        DownloadUri = new Uri(options.Value.PublicUrl.EnsureEndsWith($"/{tenantContext.TenantId}/v1/largeBinaries?largeBinaryId={downloadInfo.BinaryId}"))
+                        ContentType = entityBinaryInfo.ContentType,
+                        BinaryId = entityBinaryInfo.BinaryId,
+                        Filename = entityBinaryInfo.Filename,
+                        Size = entityBinaryInfo.Size,
+                        DownloadUri = new Uri(options.Value.PublicUrl.EnsureEndsWith($"/{tenantContext.TenantId}/v1/largeBinaries?largeBinaryId={entityBinaryInfo.BinaryId}"))
                     };
                 }
 

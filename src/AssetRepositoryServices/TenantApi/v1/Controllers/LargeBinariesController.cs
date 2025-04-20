@@ -47,7 +47,13 @@ public class LargeBinariesController : ControllerBase
         }
 
         var tenantRepository = await _octoService.SystemContext.FindTenantRepositoryAsync(tenantId);
-        var streamHandler = await tenantRepository.DownloadLargeBinaryAsync(OctoObjectId.Parse(largeBinaryId));
+
+        using var session = await tenantRepository.GetSessionAsync().ConfigureAwait(false);
+        session.StartTransaction();
+
+        var streamHandler = await tenantRepository.DownloadLargeBinaryAsync(session, OctoObjectId.Parse(largeBinaryId));
+
+        await session.CommitTransactionAsync().ConfigureAwait(false);
 
         return new FileStreamResult(streamHandler.Stream, streamHandler.ContentType);
     }

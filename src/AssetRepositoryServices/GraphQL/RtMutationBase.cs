@@ -28,7 +28,7 @@ internal abstract class RtMutationBase : ObjectGraphType
         {
             foreach (var item in rtEntityDto.Attributes)
             {
-                if (await TryHandleAttributeAsync(tenantRepository, ckCacheService, tenantId, rtEntity, ckTypeGraph,
+                if (await TryHandleAttributeAsync(ckCacheService, tenantId, rtEntity, ckTypeGraph,
                         item.AttributeName.ToPascalCase(), item.Value))
                 {
                     continue;
@@ -56,7 +56,7 @@ internal abstract class RtMutationBase : ObjectGraphType
         {
             foreach (var cellDto in rtQueryRowDto.Cells)
             {
-                await TryHandleAttributeAsync(tenantRepository, ckCacheService, tenantId, rtEntity, ckTypeGraph,
+                await TryHandleAttributeAsync(ckCacheService, tenantId, rtEntity, ckTypeGraph,
                     cellDto.AttributePath.ToPascalCase(), cellDto.Value);
             }
         }
@@ -113,7 +113,7 @@ internal abstract class RtMutationBase : ObjectGraphType
     }
 
 
-    private async Task<bool> TryHandleAttributeAsync(ITenantRepository tenantRepository, ICkCacheService ckCacheService, string tenantId,
+    private async Task<bool> TryHandleAttributeAsync(ICkCacheService ckCacheService, string tenantId,
         RtTypeWithAttributes rtTypeWithAttributes,
         CkTypeWithAttributesGraph ckTypeWithAttributesGraph, string attributeName,
         object? value)
@@ -136,7 +136,7 @@ internal abstract class RtMutationBase : ObjectGraphType
                     }
 
                     var rtRecordDto = (RtRecordDto)value;
-                    var rtRecord = HandleRecordAsync(tenantRepository, ckCacheService, tenantId, ckTypeAttributeGraph.ValueCkRecordId,
+                    var rtRecord = HandleRecordAsync(ckCacheService, tenantId, ckTypeAttributeGraph.ValueCkRecordId,
                         rtRecordDto);
                     rtTypeWithAttributes.SetAttributeValue(ckTypeAttributeGraph.AttributeName,
                         ckTypeAttributeGraph.ValueType, rtRecord);
@@ -159,7 +159,7 @@ internal abstract class RtMutationBase : ObjectGraphType
                     AttributeRecordValueList<RtRecord> rtRecords = new();
                     foreach (RtRecordDto rtRecordDtoItem in rtRecordList)
                     {
-                        var rtRecordItem = await HandleRecordAsync(tenantRepository, ckCacheService, tenantId, ckTypeAttributeGraph.ValueCkRecordId,
+                        var rtRecordItem = await HandleRecordAsync(ckCacheService, tenantId, ckTypeAttributeGraph.ValueCkRecordId,
                             rtRecordDtoItem);
                         rtRecords.Add(rtRecordItem);
                     }
@@ -170,10 +170,15 @@ internal abstract class RtMutationBase : ObjectGraphType
                 case AttributeValueTypesDto.BinaryLinked:
                     if (value is IFormFile file)
                     {
-                        Dictionary<string, object> metadata = new();
-                        var largeBinaryId = await tenantRepository.UploadLargeBinaryAsync(file.FileName, file.ContentType, file.OpenReadStream(), metadata, CancellationToken.None);
+                        var entityBinaryInfo = new EntityBinaryInfo
+                        {
+                            ContentType = file.ContentType,
+                            Filename = file.FileName,
+                            Size = file.Length,
+                            Stream = file.OpenReadStream()
+                        };
                         rtTypeWithAttributes.SetAttributeValue(ckTypeAttributeGraph.AttributeName,
-                            ckTypeAttributeGraph.ValueType, largeBinaryId);
+                            ckTypeAttributeGraph.ValueType, entityBinaryInfo);
                     }
                     return true;
                 default:
@@ -186,7 +191,7 @@ internal abstract class RtMutationBase : ObjectGraphType
         return false;
     }
 
-    private async Task<RtRecord> HandleRecordAsync(ITenantRepository tenantRepository, ICkCacheService ckCacheService, string tenantId, CkId<CkRecordId> ckRecordId,
+    private async Task<RtRecord> HandleRecordAsync(ICkCacheService ckCacheService, string tenantId, CkId<CkRecordId> ckRecordId,
         RtRecordDto rtRecordDto)
     {
         var ckRecordGraph = ckCacheService.GetCkRecord(tenantId, ckRecordId);
@@ -200,7 +205,7 @@ internal abstract class RtMutationBase : ObjectGraphType
         {
             foreach (var recordAttributeItem in rtRecordDto.Attributes)
             {
-                await TryHandleAttributeAsync(tenantRepository, ckCacheService, tenantId, rtRecord, ckRecordGraph,
+                await TryHandleAttributeAsync(ckCacheService, tenantId, rtRecord, ckRecordGraph,
                     recordAttributeItem.AttributeName.ToPascalCase(), recordAttributeItem.Value);
             }
         }
