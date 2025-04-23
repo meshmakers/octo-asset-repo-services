@@ -20,6 +20,7 @@ using Meshmakers.Octo.Runtime.Engine.Configuration.DependencyInjection;
 using Meshmakers.Octo.Services.Contracts.DistributionEventHub.Commands;
 using Meshmakers.Octo.Services.Contracts.DistributionEventHub.Messages;
 using Meshmakers.Octo.Services.Infrastructure;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
@@ -62,6 +63,7 @@ public static class RuntimeEngineBuilderExtensions
 
                 options.Authority = octoOptions.Authority;
                 //options.RequireHttpsMetadata = false;
+                options.ResponseType = "code";
 
                 options.ClientId = CommonConstants.AssetRepositoryServicesClientId;
 
@@ -70,15 +72,15 @@ public static class RuntimeEngineBuilderExtensions
                 options.Scope.Add(CommonConstants.Scopes.Profile);
                 options.Scope.Add(CommonConstants.Scopes.Email);
                 options.Scope.Add(CommonConstants.Scopes.Role);
+                options.Scope.Add(CommonConstants.AssetTenantApiFullAccess);
 
                 options.SaveTokens = true;
-                options.SignInScheme = CookieAuthenticationDefaults.AuthenticationScheme;
 
-                options.TokenValidationParameters = new TokenValidationParameters
-                {
-                    NameClaimType = JwtClaimTypes.Name,
-                    RoleClaimType = JwtClaimTypes.Role
-                };
+                options.ClaimActions.MapJsonKey("email_verified", "email_verified");
+                options.GetClaimsFromUserInfoEndpoint = true;
+
+                options.MapInboundClaims = false; // Don't rename claim types
+                options.SaveTokens = true;
             })
             .AddJwtBearer(options =>
             {

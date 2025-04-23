@@ -40,7 +40,7 @@ internal class DefaultConfigurationCreatorService(
             new(CommonConstants.AssetSystemApiReadOnly,
                 CommonConstants.AssetSystemApiReadOnlyDisplayName),
             new(CommonConstants.AssetTenantApiFullAccess,
-            CommonConstants.AssetTenantApiFullAccessDisplayName),
+                CommonConstants.AssetTenantApiFullAccessDisplayName),
             new(CommonConstants.AssetTenantApiReadOnly,
                 CommonConstants.AssetTenantApiReadOnlyDisplayName)
         };
@@ -81,7 +81,7 @@ internal class DefaultConfigurationCreatorService(
                 AssetTexts.Backend_AssetServices_UserSchema_AssetServices_DisplayName,
                 octoAssetRepositoryServicesOptions.PublicUrl)
             {
-                AllowedGrantTypes = [OidcConstants.GrantTypes.Implicit],
+                AllowedGrantTypes = [OidcConstants.GrantTypes.AuthorizationCode],
 
                 RedirectUris =
                 [
@@ -95,7 +95,9 @@ internal class DefaultConfigurationCreatorService(
                     CommonConstants.Scopes.OpenId,
                     CommonConstants.Scopes.Profile,
                     CommonConstants.Scopes.Email,
-                    JwtClaimTypes.Role
+                    JwtClaimTypes.Role,
+                    CommonConstants.AssetSystemApiFullAccess,
+                    CommonConstants.AssetTenantApiFullAccess,
                 ]
             },
             new(CommonConstants.AsserRepositoryServicesSwaggerClientId,

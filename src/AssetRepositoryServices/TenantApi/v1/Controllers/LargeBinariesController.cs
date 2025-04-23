@@ -3,6 +3,8 @@ using IdentityModel;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.Services;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
 using Meshmakers.Octo.ConstructionKit.Contracts;
+using Meshmakers.Octo.Services.Infrastructure;
+using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -35,15 +37,15 @@ public class LargeBinariesController : ControllerBase
     /// </summary>
     /// <returns></returns>
     [HttpGet]
-    [Authorize(AssetRepositoryServiceConstants.TenantAssetApiReadOnlyPolicy)]
+    [Authorize(AuthenticationSchemes = InfrastructureCommon.OidcAuthenticationScheme)]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
-    public async Task<IActionResult> Get( [FromQuery] string largeBinaryId)
+    public async Task<IActionResult> Get([FromQuery] string largeBinaryId)
     {
         var tenantId = HttpContext.GetTenantId();
         if (string.IsNullOrEmpty(tenantId))
         {
-            return NotFound(new ErrorResponse { ErrorMessage = "TenantId is null or empty"});
+            return NotFound(new ErrorResponse { ErrorMessage = "TenantId is null or empty" });
         }
 
         var tenantRepository = await _octoService.SystemContext.FindTenantRepositoryAsync(tenantId);
