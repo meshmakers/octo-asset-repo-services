@@ -73,7 +73,7 @@ internal sealed class RtTransientQueryDtoType: ObjectGraphType<RtTransientQueryD
             Logger.Debug("GraphQL query handling returning data");
             return ConnectionUtils.ToConnection(
                 resultSet.Items.Select((entity, _) => RtQueryRowDtoType.CreateRtQueryRowDto(entity, queryUserContext.CkTypeQueryColumns)), arg,
-                0, (int)resultSet.TotalCount, resultSet.Grouping);
+                resultSet.TotalCount > 0 ? offset.GetValueOrDefault(0) : 0, (int)resultSet.TotalCount, resultSet.Grouping);
         }
         catch (OperationFailedException e)
         {
