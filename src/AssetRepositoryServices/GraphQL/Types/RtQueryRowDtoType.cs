@@ -64,17 +64,17 @@ internal sealed class RtQueryRowDtoType : ObjectGraphType<RtQueryRowDto>
         }
 */
         return ConnectionUtils.ToConnection(
-            rtQueryRowUserContext.CkTypeQueryColumns.Select(item => CreateRtQueryCellDto(rtQueryRowUserContext.RtEntity, item)),
+            rtQueryRowUserContext.CkTypeQueryColumns.Select(item => CreateRtQueryCellDto(rtQueryRowUserContext.RtEntity, item, ckCacheService, graphQlContext.TenantId)),
             context, null);
     }
 
     private RtQueryCellDto CreateRtQueryCellDto(RtEntity rtEntity,
-        CkTypeQueryColumn ckTypeQueryColumn)
+        CkTypeQueryColumn ckTypeQueryColumn, ICkCacheService ckCacheService, string tenantId)
     {
         var cellDto = new RtQueryCellDto
         {
             AttributePath = ckTypeQueryColumn.Path,
-            Value = rtEntity.GetAttributeValueByAccessPath(ckTypeQueryColumn.AccessPathList)
+            Value = rtEntity.GetAttributeValueByAccessPath(ckCacheService, tenantId, ckTypeQueryColumn.AccessPathList)
         };
         return cellDto;
     }
