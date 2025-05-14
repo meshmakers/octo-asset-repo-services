@@ -8,7 +8,10 @@ using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Utils;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
 using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.ConstructionKit.Contracts.DependencyGraph;
+using Meshmakers.Octo.ConstructionKit.Contracts.Services;
+using Meshmakers.Octo.Runtime.Contracts;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb;
+using Meshmakers.Octo.Runtime.Contracts.Repositories;
 using Meshmakers.Octo.Runtime.Contracts.Repositories.Query;
 using NLog;
 
@@ -37,50 +40,65 @@ internal sealed class RtQueryDtoType : ObjectGraphType<RtQueryDto>
             .ResolveAsync(ResolveRtQueryRowsAsync);
     }
 
-    private async Task<object?> ResolveRtQueryRowsAsync(IResolveConnectionContext<object?> arg)
+    private async Task<object?> ResolveRtQueryRowsAsync(IResolveConnectionContext<object?> context)
     {
         Logger.Debug("GraphQL query handling for runtime rows started");
 
-        var sessionAccessor = arg.RequestServices?.GetRequiredService<IOctoSessionAccessor>();
+        var ckCacheService = context.RequestServices?.GetRequiredService<ICkCacheService>();
+        if (ckCacheService == null)
+        {
+            throw AssetRepositoryException.ServiceNotRegistered(typeof(ICkCacheService));
+        }
+
+        var sessionAccessor = context.RequestServices?.GetRequiredService<IOctoSessionAccessor>();
         if (sessionAccessor?.Session == null)
         {
             throw AssetRepositoryException.SessionUnavailable();
         }
 
-        var graphQlUserContext = (GraphQlUserContext)arg.UserContext;
+        var graphQlUserContext = (GraphQlUserContext)context.UserContext;
 
-        if (arg.Source is not RtQueryDto rtQueryDto)
+        if (context.Source is not RtQueryDto rtQueryDto)
         {
-            arg.Errors.Add(new ExecutionError("Invalid query. Query not found.")
+            context.Errors.Add(new ExecutionError("Invalid query. Query not found.")
                 { Code = Statics.GraphQlErrorCommon });
             return null;
         }
 
         if (rtQueryDto.UserContext is not QueryUserContext queryUserContext)
         {
-            arg.Errors.Add(new ExecutionError("Invalid query. User context not found.")
+            context.Errors.Add(new ExecutionError("Invalid query. User context not found.")
                 { Code = Statics.GraphQlErrorCommon });
             return null;
         }
 
         var tenantRepository = graphQlUserContext.TenantContext.GetTenantRepository();
 
-        var offset = arg.GetOffset();
+        var offset = context.GetOffset();
 
-        var resultSet = await tenantRepository.GetRtEntitiesByTypeAsync(sessionAccessor.Session,
-            rtQueryDto.AssociatedCkTypeId, queryUserContext.DataQueryOperation, offset, arg.First);
+        var list = new List<NavigationPair>();
+        foreach (var column in rtQueryDto.Columns)
+        {
+            var navigationPairs = RtPathEvaluator.TokenizeAndGetNavigationPairs(ckCacheService,
+                tenantRepository.TenantId, rtQueryDto.AssociatedCkTypeId, column.AttributePath);
+            list.AddRange(navigationPairs);
+        }
+
+        var resultSet = await tenantRepository.GetRtEntitiesGraphByTypeAsync(sessionAccessor.Session,
+            rtQueryDto.AssociatedCkTypeId, queryUserContext.DataQueryOperation, list, offset, context.First);
 
         try
         {
             Logger.Debug("GraphQL query handling returning data");
             return ConnectionUtils.ToConnection(
                 resultSet.Items.Select((entity, _) =>
-                    RtQueryRowDtoType.CreateRtQueryRowDto(entity, queryUserContext.CkTypeQueryColumns)), arg,
+                    RtQueryRowDtoType.CreateRtQueryRowDto(tenantRepository.TenantId, entity,
+                        queryUserContext.CkTypeQueryColumns)), context,
                 0, (int)resultSet.TotalCount, resultSet.Grouping);
         }
         catch (OperationFailedException e)
         {
-            arg.Errors.Add(new ExecutionError(e.Message)
+            context.Errors.Add(new ExecutionError(e.Message)
                 { Code = Statics.GraphQlErrorCommon });
             return null;
         }

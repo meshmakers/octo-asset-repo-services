@@ -1,5 +1,4 @@
 using AssetRepositoryServices.Resources;
-using GraphQL;
 using GraphQL.Builders;
 using GraphQL.Types;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Scalars;
@@ -8,7 +7,8 @@ using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
 using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.ConstructionKit.Contracts.DependencyGraph;
 using Meshmakers.Octo.ConstructionKit.Contracts.Services;
-using Meshmakers.Octo.Runtime.Contracts.RepositoryEntities;
+using Meshmakers.Octo.Runtime.Contracts;
+using Meshmakers.Octo.Runtime.Contracts.Repositories;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
 
@@ -46,30 +46,18 @@ internal sealed class RtQueryRowDtoType : ObjectGraphType<RtQueryRowDto>
             throw AssetRepositoryException.ServiceNotRegistered(typeof(ICkCacheService));
         }
 
-        var graphQlContext = (GraphQlUserContext)context.UserContext;
-
         var rtQueryRowUserContext = (RtQueryRowUserContext)context.Source.UserContext!;
-        var ckTypeGraph = ckCacheService.GetCkType(graphQlContext.TenantId, context.Source.CkTypeId);
-        
-    //    var selectedColumns = rtQueryRowUserContext.CkTypeQueryColumns.Select(c => c.ToPascalCase());
-     //   var resultList = ckTypeGraph.AllAttributes.Values.Where(a => selectedColumns.Contains(a.AttributeName));
-/*
-        if (context.HasArgument(Statics.AttributeNamesFilterArg))
-        {
-            var filterAttributeNames = context.GetArgument<IEnumerable<string>>(Statics.AttributeNamesFilterArg);
 
-            resultList =
-                resultList.Where(a =>
-                    filterAttributeNames.Contains(a.AttributeName.ToCamelCase()));
-        }
-*/
         return ConnectionUtils.ToConnection(
-            rtQueryRowUserContext.CkTypeQueryColumns.Select(item => CreateRtQueryCellDto(rtQueryRowUserContext.RtEntity, item, ckCacheService, graphQlContext.TenantId)),
+            rtQueryRowUserContext.CkTypeQueryColumns.Select(item =>
+                CreateRtQueryCellDto(ckCacheService, rtQueryRowUserContext.TenantId, rtQueryRowUserContext.RtEntity,
+                    item)),
             context, null);
     }
 
-    private RtQueryCellDto CreateRtQueryCellDto(RtEntity rtEntity,
-        CkTypeQueryColumn ckTypeQueryColumn, ICkCacheService ckCacheService, string tenantId)
+    private RtQueryCellDto CreateRtQueryCellDto(ICkCacheService ckCacheService, string tenantId,
+        RtEntityGraphItem rtEntity,
+        CkTypeQueryColumn ckTypeQueryColumn)
     {
         var cellDto = new RtQueryCellDto
         {
@@ -79,26 +67,32 @@ internal sealed class RtQueryRowDtoType : ObjectGraphType<RtQueryRowDto>
         return cellDto;
     }
 
-    public static RtQueryRowDto CreateRtQueryRowDto(RtEntity rtEntity, IReadOnlyList<CkTypeQueryColumn> ckTypeQueryColumns)
+    public static RtQueryRowDto CreateRtQueryRowDto(string tenantId, RtEntityGraphItem rtEntityGraphItem,
+        IReadOnlyList<CkTypeQueryColumn> ckTypeQueryColumns)
     {
         var rtQueryRowDto = new RtQueryRowDto
         {
-            RtId = rtEntity.RtId,
-            CkTypeId = rtEntity.CkTypeId ?? throw OctoGraphQLException.CkTypeIdUndefined(),
-            RtCreationDateTime = rtEntity.RtCreationDateTime,
-            RtChangedDateTime = rtEntity.RtChangedDateTime,
-            RtWellKnownName = rtEntity.RtWellKnownName,
-            RtVersion = rtEntity.RtVersion,
-            UserContext = new RtQueryRowUserContext(rtEntity, ckTypeQueryColumns)
+            RtId = rtEntityGraphItem.RtId,
+            CkTypeId = rtEntityGraphItem.CkTypeId ?? throw OctoGraphQLException.CkTypeIdUndefined(),
+            RtCreationDateTime = rtEntityGraphItem.RtCreationDateTime,
+            RtChangedDateTime = rtEntityGraphItem.RtChangedDateTime,
+            RtWellKnownName = rtEntityGraphItem.RtWellKnownName,
+            RtVersion = rtEntityGraphItem.RtVersion,
+            UserContext = new RtQueryRowUserContext(tenantId, rtEntityGraphItem, ckTypeQueryColumns)
         };
 
         return rtQueryRowDto;
     }
 }
 
-internal class RtQueryRowUserContext(RtEntity rtEntity, IReadOnlyList<CkTypeQueryColumn> ckTypeQueryColumns)
+internal class RtQueryRowUserContext(
+    string tenantId,
+    RtEntityGraphItem rtEntity,
+    IReadOnlyList<CkTypeQueryColumn> ckTypeQueryColumns)
 {
+    public string TenantId { get; } = tenantId;
+
     public IReadOnlyList<CkTypeQueryColumn> CkTypeQueryColumns { get; } = ckTypeQueryColumns;
 
-    public RtEntity RtEntity { get; } = rtEntity;
+    public RtEntityGraphItem RtEntity { get; } = rtEntity;
 }

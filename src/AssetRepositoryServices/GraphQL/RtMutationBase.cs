@@ -8,6 +8,7 @@ using Meshmakers.Octo.ConstructionKit.Contracts.DependencyGraph;
 using Meshmakers.Octo.ConstructionKit.Contracts.Services;
 using Meshmakers.Octo.Runtime.Contracts;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb.Repositories;
+using Meshmakers.Octo.Runtime.Contracts.Repositories;
 using Meshmakers.Octo.Runtime.Contracts.Repositories.Query;
 using Meshmakers.Octo.Runtime.Contracts.RepositoryEntities;
 
@@ -15,7 +16,7 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL;
 
 internal abstract class RtMutationBase : ObjectGraphType
 {
-    protected async Task RtEntityFromInputObjectAsync(ITenantRepository tenantRepository, ICkCacheService ckCacheService, string tenantId, RtEntity rtEntity,
+    protected async Task RtEntityFromInputObjectAsync(ICkCacheService ckCacheService, string tenantId, RtEntity rtEntity,
         RtEntityDto rtEntityDto,
         List<AssociationUpdateInfo> associations)
     {
@@ -43,8 +44,8 @@ internal abstract class RtMutationBase : ObjectGraphType
             }
         }
     }
-    
-    protected async Task RtEntityFromInputObjectAsync(ITenantRepository tenantRepository, ICkCacheService ckCacheService, string tenantId, RtEntity rtEntity,
+
+    protected async Task RtEntityFromInputObjectAsync(ICkCacheService ckCacheService, string tenantId, RtEntity rtEntity,
         RtQueryRowDto rtQueryRowDto)
     {
         var ckTypeGraph =
@@ -78,8 +79,9 @@ internal abstract class RtMutationBase : ObjectGraphType
 
         return resultSetComplete.Select(RtEntityDtoType.CreateRtEntityDto);
     }
-    
-    protected async Task<IEnumerable<RtQueryRowDto>> GetRtQueryRowResultSet(IOctoSession session, ICkCacheService ckCacheService, ITenantRepository repository,
+
+    protected async Task<IEnumerable<RtQueryRowDto>> GetRtQueryRowResultSet(IOctoSession session,
+        ICkCacheService ckCacheService, ITenantRepository repository,
         List<EntityUpdateInfo<RtEntity>> entityUpdateInfos, OctoObjectId queryRtId)
     {
         var rtQuery =
@@ -89,27 +91,30 @@ internal abstract class RtMutationBase : ObjectGraphType
         {
             throw OctoGraphQLException.RtQueryNotFound(queryRtId);
         }
-        
-        var resultSetComplete = new List<RtEntity>();
+
+        var resultSetComplete = new List<RtEntityGraphItem>();
         foreach (var grouping in entityUpdateInfos.GroupBy(x => x.CkTypeId))
         {
-            var resultSet = await repository.GetRtEntitiesByIdAsync(session, grouping.Key,
+            var resultSet = await repository.GetRtEntitiesGraphByIdAsync(session, grouping.Key,
                 entityUpdateInfos.Select(x => x.RtId ?? throw OctoGraphQLException.RtIdUndefined()
-                ).ToList(), DataQueryOperation.Create());
+                ).ToList(), DataQueryOperation.Create(), new List<NavigationPair>());
 
             resultSetComplete.AddRange(resultSet.Items);
         }
 
         var typeQueryColumnPaths = ckCacheService.GetCkTypeQueryColumnPaths(repository.TenantId, rtQuery.QueryCkTypeId);
-        var invalidColumnPaths = rtQuery.Columns.Where(cp => typeQueryColumnPaths.All(ckTypeQueryColumn => ckTypeQueryColumn.Path != cp)).ToList();
+        var invalidColumnPaths = rtQuery.Columns
+            .Where(cp => typeQueryColumnPaths.All(ckTypeQueryColumn => ckTypeQueryColumn.Path != cp)).ToList();
         if (invalidColumnPaths.Any())
         {
             throw OctoGraphQLException.InvalidColumnPaths(invalidColumnPaths);
         }
 
-        var selectedTypeQueryColumns = typeQueryColumnPaths.Where(ckTypeQueryColumn => rtQuery.Columns.Contains(ckTypeQueryColumn.Path)).ToList();
+        var selectedTypeQueryColumns = typeQueryColumnPaths
+            .Where(ckTypeQueryColumn => rtQuery.Columns.Contains(ckTypeQueryColumn.Path)).ToList();
 
-        return resultSetComplete.Select((entity, _) => RtQueryRowDtoType.CreateRtQueryRowDto(entity, selectedTypeQueryColumns));
+        return resultSetComplete.Select((entity, _) =>
+            RtQueryRowDtoType.CreateRtQueryRowDto(repository.TenantId, entity, selectedTypeQueryColumns));
     }
 
 
@@ -159,7 +164,8 @@ internal abstract class RtMutationBase : ObjectGraphType
                     AttributeRecordValueList<RtRecord> rtRecords = new();
                     foreach (RtRecordDto rtRecordDtoItem in rtRecordList)
                     {
-                        var rtRecordItem = await HandleRecordAsync(ckCacheService, tenantId, ckTypeAttributeGraph.ValueCkRecordId,
+                        var rtRecordItem = await HandleRecordAsync(ckCacheService, tenantId,
+                            ckTypeAttributeGraph.ValueCkRecordId,
                             rtRecordDtoItem);
                         rtRecords.Add(rtRecordItem);
                     }
@@ -180,6 +186,7 @@ internal abstract class RtMutationBase : ObjectGraphType
                         rtTypeWithAttributes.SetAttributeValue(ckTypeAttributeGraph.AttributeName,
                             ckTypeAttributeGraph.ValueType, entityBinaryInfo);
                     }
+
                     return true;
                 default:
                     rtTypeWithAttributes.SetAttributeValue(ckTypeAttributeGraph.AttributeName,
@@ -191,7 +198,8 @@ internal abstract class RtMutationBase : ObjectGraphType
         return false;
     }
 
-    private async Task<RtRecord> HandleRecordAsync(ICkCacheService ckCacheService, string tenantId, CkId<CkRecordId> ckRecordId,
+    private async Task<RtRecord> HandleRecordAsync(ICkCacheService ckCacheService, string tenantId,
+        CkId<CkRecordId> ckRecordId,
         RtRecordDto rtRecordDto)
     {
         var ckRecordGraph = ckCacheService.GetCkRecord(tenantId, ckRecordId);

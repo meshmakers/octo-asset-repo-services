@@ -9,6 +9,7 @@ using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
 using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.ConstructionKit.Contracts.DependencyGraph;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb;
+using Meshmakers.Octo.Runtime.Contracts.Repositories;
 using Meshmakers.Octo.Runtime.Contracts.Repositories.Query;
 using NLog;
 
@@ -18,7 +19,7 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
 ///     Implements the GraphQL type for <see cref="RtTransientQueryDto"/>.
 /// </summary>
 // ReSharper disable once ClassNeverInstantiated.Global
-internal sealed class RtTransientQueryDtoType: ObjectGraphType<RtTransientQueryDto>
+internal sealed class RtTransientQueryDtoType : ObjectGraphType<RtTransientQueryDto>
 {
     private static readonly Logger Logger = LogManager.GetCurrentClassLogger();
 
@@ -35,8 +36,8 @@ internal sealed class RtTransientQueryDtoType: ObjectGraphType<RtTransientQueryD
         Connection<NonNullGraphType<RtQueryRowDtoType>>("Rows")
             .ResolveAsync(ResolveRtQueryRowsAsync);
     }
-    
-     private async Task<object?> ResolveRtQueryRowsAsync(IResolveConnectionContext<object?> arg)
+
+    private async Task<object?> ResolveRtQueryRowsAsync(IResolveConnectionContext<object?> arg)
     {
         Logger.Debug("GraphQL query handling for runtime rows started");
 
@@ -47,13 +48,14 @@ internal sealed class RtTransientQueryDtoType: ObjectGraphType<RtTransientQueryD
         }
 
         var graphQlUserContext = (GraphQlUserContext)arg.UserContext;
-        
+
         if (arg.Source is not RtTransientQueryDto rtTransientQueryDto)
         {
             arg.Errors.Add(new ExecutionError("Invalid query. Query not found.")
                 { Code = Statics.GraphQlErrorCommon });
             return null;
         }
+
         if (rtTransientQueryDto.UserContext is not QueryUserContext queryUserContext)
         {
             arg.Errors.Add(new ExecutionError("Invalid query. User context not found.")
@@ -67,13 +69,17 @@ internal sealed class RtTransientQueryDtoType: ObjectGraphType<RtTransientQueryD
 
         try
         {
-            var resultSet = await tenantRepository.GetRtEntitiesByTypeAsync(sessionAccessor.Session,
-                rtTransientQueryDto.AssociatedCkTypeId, queryUserContext.DataQueryOperation, offset, arg.First);
+            var resultSet = await tenantRepository.GetRtEntitiesGraphByTypeAsync(sessionAccessor.Session,
+                rtTransientQueryDto.AssociatedCkTypeId, queryUserContext.DataQueryOperation,
+                new List<NavigationPair>(), offset, arg.First);
 
             Logger.Debug("GraphQL query handling returning data");
             return ConnectionUtils.ToConnection(
-                resultSet.Items.Select((entity, _) => RtQueryRowDtoType.CreateRtQueryRowDto(entity, queryUserContext.CkTypeQueryColumns)), arg,
-                resultSet.TotalCount > 0 ? offset.GetValueOrDefault(0) : 0, (int)resultSet.TotalCount, resultSet.Grouping);
+                resultSet.Items.Select((entity, _) =>
+                    RtQueryRowDtoType.CreateRtQueryRowDto(tenantRepository.TenantId, entity,
+                        queryUserContext.CkTypeQueryColumns)), arg,
+                resultSet.TotalCount > 0 ? offset.GetValueOrDefault(0) : 0, (int)resultSet.TotalCount,
+                resultSet.Grouping);
         }
         catch (OperationFailedException e)
         {
@@ -82,8 +88,9 @@ internal sealed class RtTransientQueryDtoType: ObjectGraphType<RtTransientQueryD
             return null;
         }
     }
-     
-    public static RtTransientQueryDto CreateTransientRtQueryDto(CkId<CkTypeId> ckTypeId, DataQueryOperation dataQueryOperation, IReadOnlyList<CkTypeQueryColumn> ckTypeQueryColumns)
+
+    public static RtTransientQueryDto CreateTransientRtQueryDto(CkId<CkTypeId> ckTypeId,
+        DataQueryOperation dataQueryOperation, IReadOnlyList<CkTypeQueryColumn> ckTypeQueryColumns)
     {
         var rtTransientQueryDto = new RtTransientQueryDto
         {
@@ -95,7 +102,9 @@ internal sealed class RtTransientQueryDtoType: ObjectGraphType<RtTransientQueryD
         return rtTransientQueryDto;
     }
 
-    private class QueryUserContext(DataQueryOperation dataQueryOperation, IReadOnlyList<CkTypeQueryColumn> ckTypeQueryColumns)
+    private class QueryUserContext(
+        DataQueryOperation dataQueryOperation,
+        IReadOnlyList<CkTypeQueryColumn> ckTypeQueryColumns)
     {
         public DataQueryOperation DataQueryOperation { get; } = dataQueryOperation;
         public IReadOnlyList<CkTypeQueryColumn> CkTypeQueryColumns { get; } = ckTypeQueryColumns;

@@ -92,7 +92,7 @@ internal class RtEntityMutation : RtMutationBase
             foreach (var rtEntityDto in inputObjects)
             {
                 var rtEntity = await tenantRepository.CreateTransientRtEntityAsync(ckTypeId);
-                await RtEntityFromInputObjectAsync(tenantRepository, ckCacheService, graphQlUserContext.TenantId, rtEntity, rtEntityDto, associationUpdateInfoList);
+                await RtEntityFromInputObjectAsync(ckCacheService, graphQlUserContext.TenantId, rtEntity, rtEntityDto, associationUpdateInfoList);
                 entityUpdateInfos.Add(EntityUpdateInfo<RtEntity>.CreateInsert(rtEntity));
             }
 
@@ -247,7 +247,7 @@ internal class RtEntityMutation : RtMutationBase
                     CkTypeId = ckTypeId
                 };
 
-                await RtEntityFromInputObjectAsync(tenantRepository, ckCacheService, graphQlUserContext.TenantId, document, mutationDto.Item, associationUpdateInfoList);
+                await RtEntityFromInputObjectAsync(ckCacheService, graphQlUserContext.TenantId, document, mutationDto.Item, associationUpdateInfoList);
                 if (document.Attributes.Any())
                 {
                     entityUpdateInfos.Add(EntityUpdateInfo<RtEntity>.CreateUpdate(rtEntityId, document));
