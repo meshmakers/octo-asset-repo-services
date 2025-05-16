@@ -141,7 +141,7 @@ internal abstract class RtMutationBase : ObjectGraphType
                     }
 
                     var rtRecordDto = (RtRecordDto)value;
-                    var rtRecord = HandleRecordAsync(ckCacheService, tenantId, ckTypeAttributeGraph.ValueCkRecordId,
+                    var rtRecord = await HandleRecordAsync(ckCacheService, tenantId, ckTypeAttributeGraph.ValueCkRecordId,
                         rtRecordDto);
                     rtTypeWithAttributes.SetAttributeValue(ckTypeAttributeGraph.AttributeName,
                         ckTypeAttributeGraph.ValueType, rtRecord);
