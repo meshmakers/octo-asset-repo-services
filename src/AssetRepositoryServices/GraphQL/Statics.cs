@@ -20,6 +20,7 @@ internal static class Statics
 
     internal const string UpdateTypesArg = "updateTypes";
     internal const string SearchFilterArg = "searchFilter";
+    internal const string AttributePathContainsFilterArg = "attributePathContains";
     internal const string AttributeNameContainsFilterArg = "attributeNameContains";
     internal const string IgnoreAbstractTypesArg = "ignoreAbstractTypes";
     internal const string IncludeSelfArgs = "includeSelf";

@@ -362,5 +362,17 @@ namespace AssetRepositoryServices.Resources {
                 return ResourceManager.GetString("Api_Description", resourceCulture);
             }
         }
+        
+        public static string Graphql_Type_Filter_AttributePathContainsFilter_Description {
+            get {
+                return ResourceManager.GetString("Graphql_Type_Filter_AttributePathContainsFilter_Description", resourceCulture);
+            }
+        }
+        
+        public static string Graphql_Type_Filter_AttributePaths_Description {
+            get {
+                return ResourceManager.GetString("Graphql_Type_Filter_AttributePaths_Description", resourceCulture);
+            }
+        }
     }
 }

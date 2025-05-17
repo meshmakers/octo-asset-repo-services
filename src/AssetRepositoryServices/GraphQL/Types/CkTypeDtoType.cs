@@ -37,10 +37,10 @@ internal sealed class CkTypeDtoType : ObjectGraphType<CkTypeDto>
             .Resolve(ResolveAttributes);
 
         Connection<CkTypeQueryColumnDtoType>("availableQueryColumns")
-            .Argument<StringGraphType>(Statics.AttributeNameContainsFilterArg,
-                AssetTexts.Graphql_Type_Filter_AttributeNameContainsFilter_Description)
-            .Argument<ListGraphType<StringGraphType>>(Statics.AttributeNamesFilterArg,
-                AssetTexts.Graphql_Type_Filter_Attributes_Description)
+            .Argument<StringGraphType>(Statics.AttributePathContainsFilterArg,
+                AssetTexts.Graphql_Type_Filter_AttributePathContainsFilter_Description)
+            .Argument<ListGraphType<StringGraphType>>(Statics.AttributePathsFilterArg,
+                AssetTexts.Graphql_Type_Filter_AttributePaths_Description)
             .Resolve(ResolveAvailableQueryColumns);
 
         Connection<CkTypeDtoType>("derivedTypes")
@@ -137,25 +137,25 @@ internal sealed class CkTypeDtoType : ObjectGraphType<CkTypeDto>
 
         var graphQlContext = (GraphQlUserContext)arg.UserContext;
 
-        arg.TryGetArgument(Statics.AttributeNamesFilterArg,
-            out IEnumerable<string>? filterAttributeNames);
-        arg.TryGetArgument(Statics.AttributeNameContainsFilterArg,
-            out string? attributeNameContainsFilter);
+        arg.TryGetArgument(Statics.AttributePathsFilterArg,
+            out IEnumerable<string>? filterAttributePaths);
+        arg.TryGetArgument(Statics.AttributePathContainsFilterArg,
+            out string? attributePathContainsFilter);
 
         List<CkTypeQueryColumnDto> resultList =
             ckCacheService.GetCkTypeQueryColumnPaths(graphQlContext.TenantId, arg.Source.CkTypeId)
                 .Select(CreateCkTypeQueryColumnDto).ToList();
 
-        if (filterAttributeNames != null)
+        if (filterAttributePaths != null)
         {
             resultList = resultList.Where(a =>
-                filterAttributeNames.Contains(a.AttributePath.ToCamelCase())).ToList();
+                filterAttributePaths.Select(f => f.ToLower()).Contains(a.AttributePath.ToLower())).ToList();
         }
 
-        if (!string.IsNullOrWhiteSpace(attributeNameContainsFilter))
+        if (!string.IsNullOrWhiteSpace(attributePathContainsFilter))
         {
             resultList =
-                resultList.Where(a => a.AttributePath.ToLower().Contains(attributeNameContainsFilter.ToLower()))
+                resultList.Where(a => a.AttributePath.ToLower().Contains(attributePathContainsFilter.ToLower()))
                     .ToList();
         }
 

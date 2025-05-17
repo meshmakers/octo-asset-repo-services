@@ -157,7 +157,7 @@
         <value>Represents a runtime query exection.</value>
     </data>
     <data name="Graphql_Type_Filter_AttributeNameContainsFilter_Description" xml:space="preserve">
-        <value>Filters for attributes containing the given termin as attribute name.</value>
+        <value>Filters for attributes containing the given term in an attribute name.</value>
     </data>
     <data name="Graphql_RtQueryColumn_Description" xml:space="preserve">
         <value>Represents a column within a query</value>
@@ -176,5 +176,11 @@
     </data>
     <data name="Api_Description" xml:space="preserve">
         <value>Asset Repository Services</value>
+    </data>
+    <data name="Graphql_Type_Filter_AttributePathContainsFilter_Description" xml:space="preserve">
+        <value>Filters for attributes containing the given term in an attribute path.</value>
+    </data>
+    <data name="Graphql_Type_Filter_AttributePaths_Description" xml:space="preserve">
+        <value>Allows to filter for specific attribute paths within construction kit types.</value>
     </data>
 </root>
