@@ -79,9 +79,12 @@ internal sealed class RtTransientQueryDtoType : ObjectGraphType<RtTransientQuery
         var roleIdDirectionPairs = new List<NavigationPair>();
         foreach (var column in rtTransientQueryDto.Columns)
         {
-            var navigationPairs = RtPathEvaluator.TokenizeAndGetNavigationPairs(ckCacheService,
+            var navigationPair = RtPathEvaluator.TokenizeAndGetNavigationPairs(ckCacheService,
                 tenantRepository.TenantId, rtTransientQueryDto.AssociatedCkTypeId, column.AttributePath);
-            roleIdDirectionPairs.AddRange(navigationPairs);
+            if (navigationPair != null)
+            {
+                roleIdDirectionPairs.Add(navigationPair);
+            }
         }
 
         try
