@@ -155,7 +155,7 @@ internal sealed class CkTypeDtoType : ObjectGraphType<CkTypeDto>
         if (!string.IsNullOrWhiteSpace(attributeNameContainsFilter))
         {
             resultList =
-                resultList.Where(a => a.AttributePath.ToLower().Contains(attributeNameContainsFilter))
+                resultList.Where(a => a.AttributePath.ToLower().Contains(attributeNameContainsFilter.ToLower()))
                     .ToList();
         }
 
