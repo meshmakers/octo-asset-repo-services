@@ -76,16 +76,9 @@ internal sealed class RtQueryDtoType : ObjectGraphType<RtQueryDto>
 
         var offset = context.GetOffset();
 
-        var roleIdDirectionPairs = new List<NavigationPair>();
-        foreach (var column in rtQueryDto.Columns)
-        {
-            var navigationPair = RtPathEvaluator.TokenizeAndGetNavigationPairs(ckCacheService,
-                tenantRepository.TenantId, rtQueryDto.AssociatedCkTypeId, column.AttributePath);
-            if (navigationPair != null)
-            {
-                roleIdDirectionPairs.Add(navigationPair);
-            }
-        }
+        var roleIdDirectionPairs = RtPathEvaluator.TokenizeAndGetNavigationPairs(ckCacheService,
+            tenantRepository.TenantId, rtQueryDto.AssociatedCkTypeId,
+            rtQueryDto.Columns.Select(column => column.AttributePath));
 
         var resultSet = await tenantRepository.GetRtEntitiesGraphByTypeAsync(sessionAccessor.Session,
             rtQueryDto.AssociatedCkTypeId, queryUserContext.DataQueryOperation, roleIdDirectionPairs, offset, context.First);

@@ -76,16 +76,9 @@ internal sealed class RtTransientQueryDtoType : ObjectGraphType<RtTransientQuery
 
         var offset = context.GetOffset();
 
-        var roleIdDirectionPairs = new List<NavigationPair>();
-        foreach (var column in rtTransientQueryDto.Columns)
-        {
-            var navigationPair = RtPathEvaluator.TokenizeAndGetNavigationPairs(ckCacheService,
-                tenantRepository.TenantId, rtTransientQueryDto.AssociatedCkTypeId, column.AttributePath);
-            if (navigationPair != null)
-            {
-                roleIdDirectionPairs.Add(navigationPair);
-            }
-        }
+        var roleIdDirectionPairs = RtPathEvaluator.TokenizeAndGetNavigationPairs(ckCacheService,
+            tenantRepository.TenantId, rtTransientQueryDto.AssociatedCkTypeId,
+            rtTransientQueryDto.Columns.Select(column => column.AttributePath));
 
         try
         {
