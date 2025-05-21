@@ -16,7 +16,8 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL;
 
 internal abstract class RtMutationBase : ObjectGraphType
 {
-    protected async Task RtEntityFromInputObjectAsync(ICkCacheService ckCacheService, string tenantId, RtEntity rtEntity,
+    protected async Task RtEntityFromInputObjectAsync(ICkCacheService ckCacheService, string tenantId,
+        RtEntity rtEntity,
         RtEntityDto rtEntityDto,
         List<AssociationUpdateInfo> associations)
     {
@@ -45,20 +46,24 @@ internal abstract class RtMutationBase : ObjectGraphType
         }
     }
 
-    protected async Task RtEntityFromInputObjectAsync(ICkCacheService ckCacheService, string tenantId, RtEntity rtEntity,
+    protected void RtEntityFromInputObject(ICkCacheService ckCacheService, string tenantId, RtEntity rtEntity,
         RtQueryRowDto rtQueryRowDto)
     {
-        var ckTypeGraph =
-            ckCacheService.GetCkType(tenantId, rtEntity.CkTypeId ?? throw OctoGraphQLException.CkTypeIdUndefined());
-
         rtEntity.RtWellKnownName = rtQueryRowDto.RtWellKnownName;
 
         if (rtQueryRowDto.Cells != null)
         {
             foreach (var cellDto in rtQueryRowDto.Cells)
             {
-                await TryHandleAttributeAsync(ckCacheService, tenantId, rtEntity, ckTypeGraph,
-                    cellDto.AttributePath.ToPascalCase(), cellDto.Value);
+                // Ignore attribute paths that are navigation properties
+                var navigationPair = RtPathEvaluator.TokenizeAndGetNavigationPair(ckCacheService, tenantId,
+                    rtEntity.CkTypeId ?? throw OctoGraphQLException.CkTypeIdUndefined(), cellDto.AttributePath);
+                if (navigationPair != null)
+                {
+                    continue;
+                }
+
+                RtPathEvaluator.SetValue(ckCacheService, tenantId, rtEntity, cellDto.AttributePath, cellDto.Value);
             }
         }
     }
@@ -95,9 +100,13 @@ internal abstract class RtMutationBase : ObjectGraphType
         var resultSetComplete = new List<RtEntityGraphItem>();
         foreach (var grouping in entityUpdateInfos.GroupBy(x => x.CkTypeId))
         {
+            var roleIdDirectionPairs = RtPathEvaluator.TokenizeAndGetNavigationPairs(ckCacheService,
+                repository.TenantId, rtQuery.QueryCkTypeId,
+                rtQuery.Columns.Select(column => column));
+
             var resultSet = await repository.GetRtEntitiesGraphByIdAsync(session, grouping.Key,
                 entityUpdateInfos.Select(x => x.RtId ?? throw OctoGraphQLException.RtIdUndefined()
-                ).ToList(), DataQueryOperation.Create(), new List<NavigationPair>());
+                ).ToList(), DataQueryOperation.Create(), roleIdDirectionPairs);
 
             resultSetComplete.AddRange(resultSet.Items);
         }
@@ -141,7 +150,8 @@ internal abstract class RtMutationBase : ObjectGraphType
                     }
 
                     var rtRecordDto = (RtRecordDto)value;
-                    var rtRecord = await HandleRecordAsync(ckCacheService, tenantId, ckTypeAttributeGraph.ValueCkRecordId,
+                    var rtRecord = await HandleRecordAsync(ckCacheService, tenantId,
+                        ckTypeAttributeGraph.ValueCkRecordId,
                         rtRecordDto);
                     rtTypeWithAttributes.SetAttributeValue(ckTypeAttributeGraph.AttributeName,
                         ckTypeAttributeGraph.ValueType, rtRecord);

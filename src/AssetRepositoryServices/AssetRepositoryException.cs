@@ -1,3 +1,5 @@
+using Meshmakers.Octo.ConstructionKit.Contracts;
+
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices;
 
 internal class AssetRepositoryException : Exception
@@ -28,7 +30,7 @@ internal class AssetRepositoryException : Exception
     {
         return new AssetRepositoryException("DataLoaderContext is not available");
     }
-    
+
     internal static Exception SessionUnavailable()
     {
         return new AssetRepositoryException("Session is not available");
@@ -51,11 +53,28 @@ internal class AssetRepositoryException : Exception
 
     public static Exception ParentUnavailable()
     {
-       return new AssetRepositoryException("Parent is not available");
+        return new AssetRepositoryException("Parent is not available");
     }
 
     public static Exception ArgumentMissing(string valuesArg)
     {
         return new AssetRepositoryException($"Argument {valuesArg} is missing");
+    }
+
+    public static Exception QueryNotFound(OctoObjectId queryRtId)
+    {
+        return new AssetRepositoryException($"Query with id '{queryRtId}' not found");
+    }
+
+    public static Exception AttributeNotFound(string attributePath, CkId<CkTypeId> ckTypeId)
+    {
+        return new AssetRepositoryException($"Attribute '{attributePath}' not found in type '{ckTypeId}'");
+    }
+
+    public static Exception NavigationWithoutRestrictionNotAllowed(CkId<CkAssociationRoleId> navigationPairCkRoleId,
+        GraphDirections navigationPairDirection, CkId<CkTypeId> navigationPairTargetCkTypeId)
+    {
+        return new AssetRepositoryException(
+            $"Navigation without restriction is not allowed for role id '{navigationPairCkRoleId}' in direction '{navigationPairDirection}' to '{navigationPairTargetCkTypeId}'");
     }
 }

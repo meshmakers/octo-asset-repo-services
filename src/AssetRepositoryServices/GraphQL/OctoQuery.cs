@@ -1,17 +1,7 @@
 ﻿using GraphQL;
-using GraphQL.Builders;
-using GraphQL.DataLoader;
 using GraphQL.Types;
-using Meshmakers.Common.Shared;
-using Meshmakers.Octo.Backend.AssetRepositoryServices.Configuration.DependencyInjection.Options;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Caches;
-using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
-using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Scalars;
-using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Utils;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
-using Meshmakers.Octo.ConstructionKit.Contracts;
-using Microsoft.Extensions.Options;
-using NLog;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL;
 
@@ -21,12 +11,8 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL;
 [DoNotRegister]
 internal sealed class OctoQuery : ObjectGraphType
 {
-    private static readonly Logger Logger = LogManager.GetCurrentClassLogger();
-    private readonly IOptions<OctoAssetRepositoryServicesOptions> _options;
-
-    public OctoQuery(IOptions<OctoAssetRepositoryServicesOptions> options, IGraphTypesCache graphTypesCache)
+    public OctoQuery(IGraphTypesCache graphTypesCache)
     {
-        _options = options;
         Name = "OctoQuery";
 
         Field<CkQuery>("ConstructionKit")
