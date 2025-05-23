@@ -77,4 +77,14 @@ internal class AssetRepositoryException : Exception
         return new AssetRepositoryException(
             $"Navigation without restriction is not allowed for role id '{navigationPairCkRoleId}' in direction '{navigationPairDirection}' to '{navigationPairTargetCkTypeId}'");
     }
+
+    public static Exception CannotConvertValue(object o, Type type)
+    {
+        return new AssetRepositoryException($"Cannot convert value '{o}' to type '{type}'");
+    }
+
+    public static Exception CannotConvertValueToString(object o)
+    {
+        return CannotConvertValue(o, typeof(string));
+    }
 }

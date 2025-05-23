@@ -61,21 +61,47 @@ internal sealed class RtQueryMutation : RtMutationBase
                 var subAttributePath = RtPathEvaluator.GetPath(enumerable);
 
                 var values = inputObjects.SelectMany(t =>
-                    t.Cells?.Where(c => c.AttributePath == attributePath).Select(c => c.Value) ?? []).Distinct();
+                        t.Cells?.Where(c => c.AttributePath == attributePath)
+                            .Select(c => c.Value) ?? [])
+                    .Where(v => v != null).Cast<object>()
+                    .Distinct();
 
                 var targetCkTypeGraph =
                     ckCacheService.GetCkType(tenantRepository.TenantId, navigationPair.TargetCkTypeId);
                 targetCkTypeGraph.AllAttributesByName.TryGetValue(subAttributePath.ToPascalCase(),
                     out var attributeGraph);
-                if (attributeGraph == null)
+                var attributeValueType = attributeGraph?.ValueType;
+                if (attributeValueType == null)
                 {
-                    throw AssetRepositoryException.AttributeNotFound(subAttributePath.ToPascalCase(),
-                        navigationPair.TargetCkTypeId);
+                    switch (subAttributePath.ToPascalCase())
+                    {
+                        case nameof(RtEntity.RtId):
+                            values = values
+                                .Select(v =>
+                                    (object)OctoObjectId.Parse(v.ToString() ??
+                                                               throw AssetRepositoryException
+                                                                   .CannotConvertValueToString(v)));
+                            break;
+                        case nameof(RtEntity.RtWellKnownName):
+                            break;
+                        case nameof(RtEntity.RtCreationDateTime):
+                        case nameof(RtEntity.RtChangedDateTime):
+                            attributeValueType = AttributeValueTypesDto.DateTime;
+                            break;
+                        case nameof(RtEntity.RtVersion):
+                            attributeValueType = AttributeValueTypesDto.Int64;
+                            break;
+                        default:
+                            throw AssetRepositoryException.AttributeNotFound(subAttributePath.ToPascalCase(),
+                                navigationPair.TargetCkTypeId);
+                    }
                 }
 
-                values = attributeGraph.ValueType == AttributeValueTypesDto.String
-                    ? values.Where(v => v != null).Select(v => v!.ToString()).ToList()
-                    : values.Where(v => v != null);
+                if (attributeGraph != null && attributeValueType == AttributeValueTypesDto.String)
+                {
+                    values = values.Select(v => v.ToString() ?? throw AssetRepositoryException
+                        .CannotConvertValueToString(v));
+                }
 
                 navigationPair.FieldIn(subAttributePath, values);
             }
