@@ -87,7 +87,7 @@ internal class TenantManager : ITenantManager
         {
             var tenantContext = await _systemContext.FindTenantContextAsync(tenantId);
 
-            var session = await tenantContext.GetAdminSessionAsync();
+            using var session = await tenantContext.GetAdminSessionAsync();
             session.StartTransaction();
 
             await tenantContext.SetConfigurationAsync(session, Constants.StreamDataEnabledKey,
