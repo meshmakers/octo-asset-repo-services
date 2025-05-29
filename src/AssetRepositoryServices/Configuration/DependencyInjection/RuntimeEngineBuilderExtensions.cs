@@ -3,7 +3,6 @@ using AssetRepositoryServices.Resources;
 using GraphQL;
 using GraphQL.Server.Transports.AspNetCore;
 using GraphQL.Types.Relay;
-using IdentityModel;
 using Meshmakers.Octo.Backend.AssetRepositoryServices;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.Configuration;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.Configuration.DependencyInjection.Options;
@@ -22,8 +21,8 @@ using Meshmakers.Octo.Services.Contracts.DistributionEventHub.Messages;
 using Meshmakers.Octo.Services.Infrastructure;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.Extensions.Options;
-using Microsoft.IdentityModel.Tokens;
 
 // ReSharper disable once CheckNamespace
 namespace Microsoft.Extensions.DependencyInjection;
@@ -95,8 +94,11 @@ public static class RuntimeEngineBuilderExtensions
 
         builder.Services.AddAuthorization(options =>
         {
-            options.AddPolicy(AssetRepositoryServiceConstants.AuthenticatedUserPolicy,
-                policyBuilder => policyBuilder.RequireAuthenticatedUser());
+            options.AddPolicy(AssetRepositoryServiceConstants.AuthenticatedUserPolicy, policy =>
+            {
+                policy.AddAuthenticationSchemes(JwtBearerDefaults.AuthenticationScheme, CookieAuthenticationDefaults.AuthenticationScheme);
+                policy.RequireAuthenticatedUser();
+            });
 
             options.AddPolicy(AssetRepositoryServiceConstants.SystemAssetApiReadOnlyPolicy, authorizationPolicyBuilder =>
             {
