@@ -33,6 +33,11 @@ namespace Microsoft.Extensions.DependencyInjection;
 // ReSharper disable once UnusedMember.Global
 public static class RuntimeEngineBuilderExtensions
 {
+    private static bool IsAjaxRequest(HttpRequest request)
+    {
+        return request.Headers["X-Requested-With"] == "XMLHttpRequest";
+    }
+
     /// <summary>
     ///     Creates a builder.
     /// </summary>
@@ -52,9 +57,38 @@ public static class RuntimeEngineBuilderExtensions
             })
             .AddCookie(options =>
             {
-
                 options.ExpireTimeSpan = AssetRepositoryServiceConstants.CookieExpireTimeSpan;
                 options.Cookie.Name = AssetRepositoryServiceConstants.CookieName;
+
+                options.Events = new CookieAuthenticationEvents
+                {
+                    OnRedirectToLogin = ctx =>
+                    {
+                        // If the request is an API request or an AJAX request, return 401 Unauthorized
+                        if (!ctx.Request.Path.Value?.ToLower().Contains("graphql/playground",
+                                StringComparison.CurrentCultureIgnoreCase) ?? true)
+                        {
+                            ctx.Response.StatusCode = StatusCodes.Status401Unauthorized;
+                            return Task.CompletedTask;
+                        }
+
+                        ctx.Response.Redirect(ctx.RedirectUri);
+                        return Task.CompletedTask;
+                    },
+                    OnRedirectToAccessDenied = ctx =>
+                    {
+                        // If the request is an API request or an AJAX request, return 403 Forbidden
+                        if (!ctx.Request.Path.Value?.ToLower().Contains("graphql/playground",
+                                StringComparison.CurrentCultureIgnoreCase) ?? true)
+                        {
+                            ctx.Response.StatusCode = StatusCodes.Status403Forbidden;
+                            return Task.CompletedTask;
+                        }
+
+                        ctx.Response.Redirect(ctx.RedirectUri);
+                        return Task.CompletedTask;
+                    }
+                };
             })
             .AddOpenIdConnect(InfrastructureCommon.OidcAuthenticationScheme, options =>
             {
@@ -97,35 +131,37 @@ public static class RuntimeEngineBuilderExtensions
         {
             options.AddPolicy(AssetRepositoryServiceConstants.AuthenticatedUserPolicyGraphApi, policy =>
             {
-                policy.AddAuthenticationSchemes(JwtBearerDefaults.AuthenticationScheme, CookieAuthenticationDefaults.AuthenticationScheme);
+                policy.AddAuthenticationSchemes(JwtBearerDefaults.AuthenticationScheme,
+                    CookieAuthenticationDefaults.AuthenticationScheme);
                 policy.RequireAuthenticatedUser();
             });
 
-            options.AddPolicy(AssetRepositoryServiceConstants.AuthenticatedUserPolicy, policy =>
-            {
-                policy.RequireAuthenticatedUser();
-            });
+            options.AddPolicy(AssetRepositoryServiceConstants.AuthenticatedUserPolicy,
+                policy => { policy.RequireAuthenticatedUser(); });
 
-            options.AddPolicy(AssetRepositoryServiceConstants.SystemAssetApiReadOnlyPolicy, authorizationPolicyBuilder =>
-            {
-                // require SystemApiFullAccess or SystemApiReadOnly
-                authorizationPolicyBuilder.RequireClaim(InfrastructureCommon.ClaimScope,
-                    CommonConstants.AssetSystemApiFullAccess,
-                    CommonConstants.AssetSystemApiReadOnly);
-            });
+            options.AddPolicy(AssetRepositoryServiceConstants.SystemAssetApiReadOnlyPolicy,
+                authorizationPolicyBuilder =>
+                {
+                    // require SystemApiFullAccess or SystemApiReadOnly
+                    authorizationPolicyBuilder.RequireClaim(InfrastructureCommon.ClaimScope,
+                        CommonConstants.AssetSystemApiFullAccess,
+                        CommonConstants.AssetSystemApiReadOnly);
+                });
 
-            options.AddPolicy(AssetRepositoryServiceConstants.SystemAssetApiReadWritePolicy, authorizationPolicyBuilder =>
-            {
-                // require SystemApiFullAccess
-                authorizationPolicyBuilder.RequireClaim(InfrastructureCommon.ClaimScope,
-                    CommonConstants.AssetSystemApiFullAccess);
-            });
+            options.AddPolicy(AssetRepositoryServiceConstants.SystemAssetApiReadWritePolicy,
+                authorizationPolicyBuilder =>
+                {
+                    // require SystemApiFullAccess
+                    authorizationPolicyBuilder.RequireClaim(InfrastructureCommon.ClaimScope,
+                        CommonConstants.AssetSystemApiFullAccess);
+                });
 
-            options.AddPolicy(AssetRepositoryServiceConstants.TenantAssetApiReadWritePolicy, authorizationPolicyBuilder =>
-            {
-                authorizationPolicyBuilder.RequireClaim(InfrastructureCommon.ClaimScope,
-                    CommonConstants.AssetTenantApiFullAccess);
-            });
+            options.AddPolicy(AssetRepositoryServiceConstants.TenantAssetApiReadWritePolicy,
+                authorizationPolicyBuilder =>
+                {
+                    authorizationPolicyBuilder.RequireClaim(InfrastructureCommon.ClaimScope,
+                        CommonConstants.AssetTenantApiFullAccess);
+                });
 
             options.AddPolicy(AssetRepositoryServiceConstants.TenantAssetApiReadOnlyPolicy,
                 authorizationPolicyBuilder =>
@@ -133,7 +169,6 @@ public static class RuntimeEngineBuilderExtensions
                     authorizationPolicyBuilder.RequireClaim(InfrastructureCommon.ClaimScope,
                         CommonConstants.AssetTenantApiFullAccess,
                         CommonConstants.AssetTenantApiReadOnly);
-
                 });
         });
 
@@ -250,10 +285,10 @@ public static class RuntimeEngineBuilderExtensions
     private static void AddServices(IRuntimeEngineBuilder builder)
     {
         builder.Services.AddOptions();
-        builder.Services.AddSingleton(
-            resolver => resolver.GetRequiredService<IOptions<OctoAssetRepositoryServicesOptions>>().Value);
-        builder.Services.AddSingleton(
-            resolver => resolver.GetRequiredService<IOptions<OctoSystemConfiguration>>().Value);
+        builder.Services.AddSingleton(resolver =>
+            resolver.GetRequiredService<IOptions<OctoAssetRepositoryServicesOptions>>().Value);
+        builder.Services.AddSingleton(resolver =>
+            resolver.GetRequiredService<IOptions<OctoSystemConfiguration>>().Value);
         builder.Services.AddSingleton<GraphQLHttpMiddlewareOptions>();
         builder.Services.ConfigureOptions<ConfigureOctoOpenApiOptions>();
         builder.Services.ConfigureOptions<ConfigureDistributionEventHubOptions>();
