@@ -14,6 +14,14 @@ public static class AssetRepositoryServiceConstants
     internal const string TenantAssetApiReadWritePolicy = "TenantAssetApiReadWritePolicy";
 
 
+    /// <summary>
+    /// Policy used for Graph API to allow authenticated users
+    /// </summary>
+    internal const string AuthenticatedUserPolicyGraphApi = "AuthenticatedUserPolicyGraphAPI";
+
+    /// <summary>
+    /// Policy used to allow authenticated users with redirect to the login page for Playground
+    /// </summary>
     internal const string AuthenticatedUserPolicy = "AuthenticatedUserPolicy";
 
     /// <summary>

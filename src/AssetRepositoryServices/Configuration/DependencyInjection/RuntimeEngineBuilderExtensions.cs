@@ -52,6 +52,7 @@ public static class RuntimeEngineBuilderExtensions
             })
             .AddCookie(options =>
             {
+
                 options.ExpireTimeSpan = AssetRepositoryServiceConstants.CookieExpireTimeSpan;
                 options.Cookie.Name = AssetRepositoryServiceConstants.CookieName;
             })
@@ -94,9 +95,14 @@ public static class RuntimeEngineBuilderExtensions
 
         builder.Services.AddAuthorization(options =>
         {
-            options.AddPolicy(AssetRepositoryServiceConstants.AuthenticatedUserPolicy, policy =>
+            options.AddPolicy(AssetRepositoryServiceConstants.AuthenticatedUserPolicyGraphApi, policy =>
             {
                 policy.AddAuthenticationSchemes(JwtBearerDefaults.AuthenticationScheme, CookieAuthenticationDefaults.AuthenticationScheme);
+                policy.RequireAuthenticatedUser();
+            });
+
+            options.AddPolicy(AssetRepositoryServiceConstants.AuthenticatedUserPolicy, policy =>
+            {
                 policy.RequireAuthenticatedUser();
             });
 

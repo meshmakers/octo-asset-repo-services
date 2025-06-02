@@ -65,6 +65,6 @@ public static class OctoApplicationBuilderExtensions
         app.MapGraphQL<OctoSchema>("tenants/{tenantId:tenantId}/graphQl", c =>
         {
             c.ReadFormOnPost = true;
-        }).RequireAuthorization(AssetRepositoryServiceConstants.AuthenticatedUserPolicy);
+        }).RequireAuthorization(AssetRepositoryServiceConstants.AuthenticatedUserPolicyGraphApi);
     }
 }
