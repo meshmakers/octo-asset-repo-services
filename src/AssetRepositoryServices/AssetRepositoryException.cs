@@ -1,3 +1,4 @@
+using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
 using Meshmakers.Octo.ConstructionKit.Contracts;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices;
@@ -86,5 +87,18 @@ internal class AssetRepositoryException : Exception
     public static Exception CannotConvertValueToString(object o)
     {
         return CannotConvertValue(o, typeof(string));
+    }
+
+    public static Exception NoMatchFound(RtQueryRowDto queryRowDto)
+    {
+        var queryRowDtoJson = System.Text.Json.JsonSerializer.Serialize(queryRowDto);
+        return new AssetRepositoryException($"No match found for query row: {queryRowDtoJson}");
+    }
+
+    public static Exception MultipleCandidatesFound(RtQueryRowDto queryRowDto, CkId<CkAssociationRoleId> keyCkRoleId, GraphDirections keyDirection, CkId<CkTypeId> keyTargetCkTypeId)
+    {
+        var queryRowDtoJson = System.Text.Json.JsonSerializer.Serialize(queryRowDto);
+       return new AssetRepositoryException(
+            $"Multiple candidates found for query row: {queryRowDtoJson}, role id: {keyCkRoleId}, direction: {keyDirection}, target type id: {keyTargetCkTypeId}");
     }
 }
