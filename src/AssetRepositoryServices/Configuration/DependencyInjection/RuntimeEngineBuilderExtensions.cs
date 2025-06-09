@@ -33,11 +33,6 @@ namespace Microsoft.Extensions.DependencyInjection;
 // ReSharper disable once UnusedMember.Global
 public static class RuntimeEngineBuilderExtensions
 {
-    private static bool IsAjaxRequest(HttpRequest request)
-    {
-        return request.Headers["X-Requested-With"] == "XMLHttpRequest";
-    }
-
     /// <summary>
     ///     Creates a builder.
     /// </summary>
