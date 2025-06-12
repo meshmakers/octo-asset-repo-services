@@ -45,12 +45,13 @@ public static class OctoApplicationBuilderExtensions
 
         // Because we are behind a load balancer using HTTP, it is necessary to use XForwardProto to ensure
         // that requests are sent by HTTPS (e.g., Authentication to Identity Server)
-        app.UseForwardedHeaders(new ForwardedHeadersOptions
+        var forwardedHeadersOptions = new ForwardedHeadersOptions
         {
             ForwardedHeaders = ForwardedHeaders.XForwardedProto,
-            KnownNetworks = {},
-            KnownProxies = {},
-        });
+        };
+        forwardedHeadersOptions.KnownNetworks.Clear();
+        forwardedHeadersOptions.KnownProxies.Clear();
+        app.UseForwardedHeaders(forwardedHeadersOptions);
 
         app.MapControllers();
         app.MapGraphQlTenantPlayground(new AltairOptions
