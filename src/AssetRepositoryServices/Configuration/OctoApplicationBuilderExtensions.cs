@@ -35,11 +35,6 @@ public static class OctoApplicationBuilderExtensions
     {
         app.UseOctoApiVersioningAndDocumentation();
 
-        app.UseForwardedHeaders(new ForwardedHeadersOptions
-        {
-            ForwardedHeaders = ForwardedHeaders.XForwardedProto
-        });
-
         app.UseRouting();
 
         app.UseAuthentication();
