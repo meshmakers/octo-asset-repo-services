@@ -43,11 +43,13 @@ public static class OctoApplicationBuilderExtensions
         // this is required for websockets support
         app.UseWebSockets();
 
-        // Because we are behind a load balancer using HTTP it is needed to use XForwardProto to ensure
-        // that requests are send by HTTPS (e. g. Authentication to Identity Server)
+        // Because we are behind a load balancer using HTTP, it is necessary to use XForwardProto to ensure
+        // that requests are sent by HTTPS (e.g., Authentication to Identity Server)
         app.UseForwardedHeaders(new ForwardedHeadersOptions
         {
-            ForwardedHeaders = ForwardedHeaders.XForwardedProto
+            ForwardedHeaders = ForwardedHeaders.XForwardedProto,
+            KnownNetworks = {},
+            KnownProxies = {},
         });
 
         app.MapControllers();
