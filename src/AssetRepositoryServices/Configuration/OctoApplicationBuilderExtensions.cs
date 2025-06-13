@@ -35,14 +35,6 @@ public static class OctoApplicationBuilderExtensions
     {
         app.UseOctoApiVersioningAndDocumentation();
 
-        app.UseRouting();
-
-        app.UseAuthentication();
-        app.UseAuthorization();
-
-        // this is required for websockets support
-        app.UseWebSockets();
-
         // Because we are behind a load balancer using HTTP, it is necessary to use XForwardProto to ensure
         // that requests are sent by HTTPS (e.g., Authentication to Identity Server)
         var forwardedHeadersOptions = new ForwardedHeadersOptions
@@ -52,6 +44,14 @@ public static class OctoApplicationBuilderExtensions
         forwardedHeadersOptions.KnownNetworks.Clear();
         forwardedHeadersOptions.KnownProxies.Clear();
         app.UseForwardedHeaders(forwardedHeadersOptions);
+
+        app.UseRouting();
+
+        app.UseAuthentication();
+        app.UseAuthorization();
+
+        // this is required for websockets support
+        app.UseWebSockets();
 
         app.MapControllers();
         app.MapGraphQlTenantPlayground(new AltairOptions
