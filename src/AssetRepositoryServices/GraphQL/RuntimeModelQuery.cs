@@ -208,8 +208,8 @@ internal sealed class RuntimeModelQuery : ObjectGraphType
             keysList.AddRange(rtIds);
         }
 
-        // if argument defined, but empty array, do not return any data. That must be a mistake by client (otherwise
-        // all entities are returned.
+        // If argument defined, but empty array, do not return any data.
+        // That must be a mistake by client (otherwise all entities are returned).
         if (!keysList.Any() && (arg.HasArgument(Statics.RtIdArg) || arg.HasArgument(Statics.RtIdsArg)))
         {
             return ConnectionUtils.ToConnection(new List<RtEntityDto>(), arg, null);
@@ -277,8 +277,8 @@ internal sealed class RuntimeModelQuery : ObjectGraphType
             keysList.AddRange(rtIds);
         }
 
-        // if argument defined, but empty array, do not return any data. That mus be a mistake by client (otherwise
-        // all entities are returned.
+        // If argument defined, but empty array, do not return any data.
+        // That must be a mistake by client (otherwise all entities are returned)
         if (!keysList.Any() && (arg.HasArgument(Statics.RtIdArg) || arg.HasArgument(Statics.RtIdsArg)))
         {
             return ConnectionUtils.ToConnection(new List<RtEntityDto>(), arg, null);
