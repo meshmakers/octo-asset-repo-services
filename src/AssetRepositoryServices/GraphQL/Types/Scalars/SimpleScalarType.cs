@@ -1,3 +1,4 @@
+using System.Globalization;
 using GraphQL.Types;
 using GraphQLParser.AST;
 
@@ -37,11 +38,11 @@ internal class SimpleScalarType : ScalarGraphType
                 }
                 else if (item is GraphQLIntValue intItem)
                 {
-                    items.Add(intItem.Value);
+                    items.Add(int.Parse(intItem.Value));
                 }
                 else if (item is GraphQLFloatValue floatItem)
                 {
-                    items.Add(floatItem.Value);
+                    items.Add(double.Parse(floatItem.Value, NumberStyles.Float, CultureInfo.InvariantCulture));
                 }
                 else if (item is GraphQLBooleanValue boolItem)
                 {
