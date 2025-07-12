@@ -16,7 +16,7 @@ internal sealed class StatisticsResultType : ObjectGraphType<StatisticsResult>
     {
         Name = "statistics";
         Description = "Statistics of items result";
-        Field(x => x.AttributeName, type: typeof(StringGraphType)).Description("Attribute name of the statistic");
+        Field(x => x.AttributePath, type: typeof(StringGraphType)).Description("Attribute path of the statistic");
         Field(x => x.Value, type: typeof(SimpleScalarType)).Description("Statistic value");
     }
 }

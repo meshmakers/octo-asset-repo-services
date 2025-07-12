@@ -7,9 +7,14 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
 internal class OctoConnection<TNode, TEdge> : Connection<TNode, TEdge> where TEdge : Edge<TNode>
 {
     /// <summary>
-    ///     The result when a grouping is requested.
+    ///     The result for aggregations of the items in this connection.
     /// </summary>
-    public IEnumerable<GroupingResult>? Groupings { get; set; }
+    public AggregationResult? Aggregation { get; set; }
+
+    /// <summary>
+    ///     The result for field aggregations of the items in this connection.
+    /// </summary>
+    public IEnumerable<FieldAggregationResult>? FieldAggregations { get; set; }
 }
 
 /// <inheritdoc />

@@ -374,5 +374,11 @@ namespace AssetRepositoryServices.Resources {
                 return ResourceManager.GetString("Graphql_Type_Filter_AttributePaths_Description", resourceCulture);
             }
         }
+        
+        public static string Graphql_Type_Filter_Aggregations_Description {
+            get {
+                return ResourceManager.GetString("Graphql_Type_Filter_Aggregations_Description", resourceCulture);
+            }
+        }
     }
 }

@@ -46,7 +46,7 @@ internal sealed class CkRecordDtoType : ObjectGraphType<CkRecordDto>
                     var result = ckCacheService.GetCkRecord(graphQlContext.TenantId, ctx.Source.CkRecordId)
                         .DerivedRecords
                         .Select(k => ckCacheService.GetCkRecord(graphQlContext.TenantId, k.InheritorCkRecordId));
-                    return ConnectionUtils.ToConnection(result.Select(CreateCkRecordDto), ctx, null);
+                    return ConnectionUtils.ToConnection(result.Select(CreateCkRecordDto), ctx);
                 }
             );
 
@@ -100,7 +100,7 @@ internal sealed class CkRecordDtoType : ObjectGraphType<CkRecordDto>
                     filterAttributeNames.Contains(a.AttributeName.ToCamelCase()));
         }
 
-        return ConnectionUtils.ToConnection(resultList.Select(CreateCkTypeAttributeDto), ctx, null);
+        return ConnectionUtils.ToConnection(resultList.Select(CreateCkTypeAttributeDto), ctx);
     }
 
     internal static CkRecordDto CreateCkRecordDto(CkRecordGraph ckRecord)

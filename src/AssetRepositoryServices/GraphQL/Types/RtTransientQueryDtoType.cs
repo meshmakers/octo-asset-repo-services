@@ -92,7 +92,7 @@ internal sealed class RtTransientQueryDtoType : ObjectGraphType<RtTransientQuery
                     RtQueryRowDtoType.CreateRtQueryRowDto(tenantRepository.TenantId, entity,
                         queryUserContext.CkTypeQueryColumns)), context,
                 resultSet.TotalCount > 0 ? offset.GetValueOrDefault(0) : 0, (int)resultSet.TotalCount,
-                resultSet.Grouping);
+                resultSet.AggregationResult, resultSet.FieldAggregationResult);
         }
         catch (OperationFailedException e)
         {

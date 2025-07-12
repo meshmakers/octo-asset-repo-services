@@ -66,7 +66,7 @@ internal sealed class CkTypeDtoType : ObjectGraphType<CkTypeDto>
                     var result = ckCacheService.GetCkType(graphQlContext.TenantId, ctx.Source.CkTypeId).DerivedTypes
                         .Select(k => ckCacheService.GetCkType(graphQlContext.TenantId, k.InheritorCkTypeId))
                         .Where(t=> !t.IsAbstract || !ignoreAbstractTypes.Value);
-                    return ConnectionUtils.ToConnection(result.Select(CreateCkTypeDto), ctx, null);
+                    return ConnectionUtils.ToConnection(result.Select(CreateCkTypeDto), ctx);
                 }
             );
 
@@ -101,7 +101,7 @@ internal sealed class CkTypeDtoType : ObjectGraphType<CkTypeDto>
                     var result = ckCacheService.GetCkType(graphQlContext.TenantId, ctx.Source.CkTypeId).GetAllDerivedTypes(includeSelf.Value)
                         .Select(derivedCkTypeId => ckCacheService.GetCkType(graphQlContext.TenantId, derivedCkTypeId))
                         .Where(t=> !t.IsAbstract || !ignoreAbstractTypes.Value);
-                    return ConnectionUtils.ToConnection(result.Select(CreateCkTypeDto), ctx, null);
+                    return ConnectionUtils.ToConnection(result.Select(CreateCkTypeDto), ctx);
                 }
             );
 
@@ -160,7 +160,7 @@ internal sealed class CkTypeDtoType : ObjectGraphType<CkTypeDto>
         }
 
 
-        return ConnectionUtils.ToConnection(resultList.OrderBy(a => a.AttributePath), arg, null);
+        return ConnectionUtils.ToConnection(resultList.OrderBy(a => a.AttributePath), arg);
     }
 
     private object ResolveAttributes(IResolveConnectionContext<CkTypeDto> ctx)
@@ -195,7 +195,7 @@ internal sealed class CkTypeDtoType : ObjectGraphType<CkTypeDto>
         }
 
 
-        return ConnectionUtils.ToConnection(resultList.Select(CreateCkTypeAttributeDto), ctx, null);
+        return ConnectionUtils.ToConnection(resultList.Select(CreateCkTypeAttributeDto), ctx);
     }
 
     internal static CkTypeDto CreateCkTypeDto(CkTypeGraph ckTypeGraph)

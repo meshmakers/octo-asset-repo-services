@@ -52,7 +52,7 @@ internal sealed class RtQueryRowDtoType : ObjectGraphType<RtQueryRowDto>
             rtQueryRowUserContext.CkTypeQueryColumns.Select(item =>
                 CreateRtQueryCellDto(ckCacheService, rtQueryRowUserContext.TenantId, rtQueryRowUserContext.RtEntity,
                     item)),
-            context, null);
+            context);
     }
 
     private RtQueryCellDto CreateRtQueryCellDto(ICkCacheService ckCacheService, string tenantId,

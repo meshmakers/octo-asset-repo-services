@@ -4,27 +4,29 @@ using Meshmakers.Octo.Runtime.Contracts.Repositories.Query;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
 
-internal sealed class GroupingResultType : ObjectGraphType<GroupingResult>
+internal sealed class FieldAggregationResultType : ObjectGraphType<FieldAggregationResult>
 {
     /// <summary>
     ///     Constructor
     /// </summary>
-    public GroupingResultType()
+    public FieldAggregationResultType()
     {
-        Name = "grouping";
-        Description = "Grouping of items result";
-        Field<NonNullGraphType<ListGraphType<StringGraphType>>>("groupByAttributeNames")
-            .Description("A list of attributes the items are grouped by.");
+        Name = "fieldAggregation";
+        Description = "Field aggregation result of items";
+        Field<NonNullGraphType<ListGraphType<StringGraphType>>>("groupByAttributePaths")
+            .Description("A list of attributes paths the items are grouped by.");
 
         Field(x => x.Keys, type: typeof(NonNullGraphType<ListGraphType<SimpleScalarType>>)).Description("The key value of the group.");
         Field(x => x.Count, type: typeof(NonNullGraphType<IntGraphType>)).Description("The count of entities in the group.");
         Field(x => x.CountStatistics, type: typeof(ListGraphType<StatisticsResultType>))
-            .Description("The count of value of the given attribute names that are not null.");
+            .Description("The count of value of the given attribute paths that are not null.");
         Field(x => x.MinStatistics, type: typeof(ListGraphType<StatisticsResultType>))
-            .Description("The minimum value of the given attribute names.");
+            .Description("The minimum value of the given attribute paths.");
         Field(x => x.MaxStatistics, type: typeof(ListGraphType<StatisticsResultType>))
-            .Description("The maximum value of the given attribute names.");
+            .Description("The maximum value of the given attribute paths.");
         Field(x => x.AvgStatistics, type: typeof(ListGraphType<StatisticsResultType>))
-            .Description("The average value of the given attribute names.");
+            .Description("The average value of the given attribute paths.");
+        Field(x => x.SumStatistics, type: typeof(ListGraphType<StatisticsResultType>))
+            .Description("The sum value of the given attribute paths.");
     }
 }

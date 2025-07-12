@@ -183,4 +183,7 @@
     <data name="Graphql_Type_Filter_AttributePaths_Description" xml:space="preserve">
         <value>Allows to filter for specific attribute paths within construction kit types.</value>
     </data>
+    <data name="Graphql_Type_Filter_Aggregations_Description" xml:space="preserve">
+        <value>Allows to define aggregations (min, max, sum, count, avg, ..) for a result set or a grouping of fields.</value>
+    </data>
 </root>

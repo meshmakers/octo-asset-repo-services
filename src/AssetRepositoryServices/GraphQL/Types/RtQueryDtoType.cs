@@ -81,7 +81,8 @@ internal sealed class RtQueryDtoType : ObjectGraphType<RtQueryDto>
             rtQueryDto.Columns.Select(column => column.AttributePath));
 
         var resultSet = await tenantRepository.GetRtEntitiesGraphByTypeAsync(sessionAccessor.Session,
-            rtQueryDto.AssociatedCkTypeId, queryUserContext.DataQueryOperation, roleIdDirectionPairs, offset, context.First);
+            rtQueryDto.AssociatedCkTypeId, queryUserContext.DataQueryOperation, roleIdDirectionPairs, offset,
+            context.First);
 
         try
         {
@@ -90,7 +91,7 @@ internal sealed class RtQueryDtoType : ObjectGraphType<RtQueryDto>
                 resultSet.Items.Select((entity, _) =>
                     RtQueryRowDtoType.CreateRtQueryRowDto(tenantRepository.TenantId, entity,
                         queryUserContext.CkTypeQueryColumns)), context,
-                0, (int)resultSet.TotalCount, resultSet.Grouping);
+                0, (int)resultSet.TotalCount, resultSet.AggregationResult, resultSet.FieldAggregationResult);
         }
         catch (OperationFailedException e)
         {

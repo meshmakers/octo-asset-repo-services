@@ -95,7 +95,7 @@ internal sealed class StreamDataQuery : ObjectGraphType
         if (!HandleRequestedRtIds(arg, q))
         {
             // we got an empty array of rtIds so we return a empty connection
-            return ConnectionUtils.ToConnection(new List<RtEntityDto>(), arg, null);
+            return ConnectionUtils.ToConnection(new List<RtEntityDto>(), arg);
         }
 
         var comp = new CrateQueryCompiler();
@@ -119,13 +119,13 @@ internal sealed class StreamDataQuery : ObjectGraphType
         }
 
 
-        Logger.Debug("SQL query executed. Got {0} rows", data.Count());
+        Logger.Debug("SQL query executed. Got {0} rows", data.Count);
 
         var result = data.Select(StreamDataEntityDtoType.CreateStreamDataEntityDto).ToList();
 
         var offset = arg.GetOffset();
         return ConnectionUtils.ToConnection(result, arg, result.Count != 0 ? offset.GetValueOrDefault(0) : 0,
-            result.Count, []);
+            result.Count);
     }
 
     private bool HandleRequestedRtIds(IResolveConnectionContext<object?> arg, CrateQueryBuilder q)

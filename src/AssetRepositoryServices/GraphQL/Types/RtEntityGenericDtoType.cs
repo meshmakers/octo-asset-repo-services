@@ -1,3 +1,4 @@
+using AssetRepositoryServices.Resources;
 using GraphQL;
 using GraphQL.Builders;
 using GraphQL.Types;
@@ -45,7 +46,7 @@ internal sealed class RtEntityGenericDtoType : ObjectGraphType<RtEntityDto>
             .Argument<NonNullGraphType<StringGraphType>>(Statics.CkIdArg,
                 "The construction kit type with the given id.")
             .Argument<SearchFilterDtoType>(Statics.SearchFilterArg, "Filters items based on text search")
-            .Argument<FieldGroupByType>(Statics.GroupByArg, "Groups items based on attributes")
+            .Argument<ResultAggregationInputDtoType>(Statics.AggregationsArg, AssetTexts.Graphql_Type_Filter_Aggregations_Description)
             .Argument<ListGraphType<SortDtoType>>(Statics.SortOrderArg, "Sort order for items")
             .Argument<ListGraphType<FieldFilterDtoType>>(Statics.FieldFilterArg,
                 "Filters items based on field compare")
@@ -81,7 +82,7 @@ internal sealed class RtEntityGenericDtoType : ObjectGraphType<RtEntityDto>
 
         return ConnectionUtils.ToConnection(
             resultList.Select(item => CreateRtEntityAttributeDto((RtEntity)context.Source.UserContext!, item)),
-            context, null);
+            context);
     }
 
     private async Task<object?> ResolveGenericRtAssociationsQuery(IResolveConnectionContext<RtEntityDto> arg)
@@ -131,7 +132,7 @@ internal sealed class RtEntityGenericDtoType : ObjectGraphType<RtEntityDto>
                 direction.Value,
                 null, targetCkId, dataQueryOperation, offset, arg.First);
 
-            return ConnectionUtils.ToConnection(result.First().Value.Items.Select(RtEntityDtoType.CreateRtEntityDto), arg, null);
+            return ConnectionUtils.ToConnection(result.First().Value.Items.Select(RtEntityDtoType.CreateRtEntityDto), arg);
         }
         else
         {
@@ -141,7 +142,7 @@ internal sealed class RtEntityGenericDtoType : ObjectGraphType<RtEntityDto>
                 targetCkId, direction.Value,
                 null, dataQueryOperation, offset, arg.First);
 
-            return ConnectionUtils.ToConnection(result.First().Value.Items.Select(RtEntityDtoType.CreateRtEntityDto), arg, null);
+            return ConnectionUtils.ToConnection(result.First().Value.Items.Select(RtEntityDtoType.CreateRtEntityDto), arg);
         }
     }
 

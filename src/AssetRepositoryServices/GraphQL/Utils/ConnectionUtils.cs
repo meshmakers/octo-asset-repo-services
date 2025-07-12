@@ -13,12 +13,13 @@ internal static class ConnectionUtils
     public static OctoConnection<TSource> ToConnection<TSource, TParent>(
         IEnumerable<TSource> items,
         IResolveConnectionContext<TParent> context,
-        IEnumerable<GroupingResult>? groupings,
+        AggregationResult? aggregationResult = null,
+        IEnumerable<FieldAggregationResult>? fieldAggregationResults = null,
         bool strictCheck = true
     )
     {
         var list = items.ToList();
-        return ToConnection(list, context, 0, list.Count, groupings, strictCheck);
+        return ToConnection(list, context, 0, list.Count, aggregationResult, fieldAggregationResults, strictCheck);
     }
 
     public static OctoConnection<TSource> ToConnection<TSource, TParent>(
@@ -26,7 +27,8 @@ internal static class ConnectionUtils
         IResolveConnectionContext<TParent> context,
         int sliceStartIndex,
         int totalCount,
-        IEnumerable<GroupingResult>? groupings,
+        AggregationResult? aggregationResult = null,
+        IEnumerable<FieldAggregationResult>? fieldAggregationResults = null,
         bool strictCheck = true
     )
     {
@@ -52,7 +54,8 @@ internal static class ConnectionUtils
 
         return new OctoConnection<TSource>
         {
-            Groupings = groupings,
+            Aggregation = aggregationResult,
+            FieldAggregations = fieldAggregationResults,
             Edges = edges,
             TotalCount = totalCount,
             PageInfo = new PageInfo

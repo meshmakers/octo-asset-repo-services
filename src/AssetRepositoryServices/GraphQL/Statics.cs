@@ -36,10 +36,8 @@ internal static class Statics
     internal const string StreamDataAttributeArgument = "arg";
     internal const string ItemsQueryArg = "items";
 
-    internal const string LargeBinaryIdArg = "largeBinaryId";
-    internal const string LargeBinaryDataArg = "binaryData";
-    internal const string GroupByArg = "groupBy";
-    
+    internal const string AggregationsArg = "aggregations";
+
     public const string GraphQlConnectionSuffix = "Connection";
     public const string GraphQlEdgeSuffix = "Edge";
     public const string GraphQlUnionSuffix = "Union";

@@ -1,3 +1,4 @@
+using AssetRepositoryServices.Resources;
 using GraphQL;
 using GraphQL.Builders;
 using GraphQL.DataLoader;
@@ -48,7 +49,8 @@ internal class RtEntityAssociationType : ObjectGraphType
                 .Argument<ListGraphType<SortDtoType>>(Statics.SortOrderArg, "Sort order for items")
                 .Argument<ListGraphType<FieldFilterDtoType>>(Statics.FieldFilterArg,
                     "Filters items based on field compare")
-                .Argument<FieldGroupByType>(Statics.GroupByArg, "Groups items based on attributes")
+                .Argument<ResultAggregationInputDtoType>(Statics.AggregationsArg,
+                    AssetTexts.Graphql_Type_Filter_AttributeNameContainsFilter_Description)
                 .Resolve(ResolveRtEntitiesQuery);
         }
     }
@@ -97,6 +99,6 @@ internal class RtEntityAssociationType : ObjectGraphType
 
         return dataLoaderResult.Then(resultSet => ConnectionUtils.ToConnection(
             resultSet.Items.Select(RtEntityDtoType.CreateRtEntityDto), ctx,
-            resultSet.TotalCount > 0 ? offset.GetValueOrDefault(0) : 0, (int)resultSet.TotalCount, null));
+            resultSet.TotalCount > 0 ? offset.GetValueOrDefault(0) : 0, (int)resultSet.TotalCount));
     }
 }
