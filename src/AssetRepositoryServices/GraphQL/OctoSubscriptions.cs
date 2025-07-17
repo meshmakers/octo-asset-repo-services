@@ -37,8 +37,8 @@ internal class OctoSubscriptions : ObjectGraphType<object>
                     new QueryArgument<OctoObjectIdType> { Name = Statics.RtIdArg },
                     new QueryArgument<NonNullGraphType<ListGraphType<UpdateTypesDtoType>>>
                         { Name = Statics.UpdateTypesArg },
-                    new QueryArgument<ListGraphType<FieldFilterDtoType>>{ Name = Statics.FieldBeforeFilterArg},
-                    new QueryArgument<ListGraphType<FieldFilterDtoType>>{ Name = Statics.FieldFilterArg}
+                    new QueryArgument<ListGraphType<FieldFilterDtoType>> { Name = Statics.FieldBeforeFilterArg },
+                    new QueryArgument<ListGraphType<FieldFilterDtoType>> { Name = Statics.FieldFilterArg }
                 ),
                 ResolvedType =
                     new DynamicUpdateMessageDtoType<RtEntityUpdateItemDto>(
@@ -58,7 +58,8 @@ internal class OctoSubscriptions : ObjectGraphType<object>
 
         ICollection<FieldFilter>? beforeFieldFilters = null;
         ICollection<FieldFilter>? fieldFilters = null;
-        if (context.TryGetArgument(Statics.FieldBeforeFilterArg, out IEnumerable<FieldFilterDto>? beforeFieldFilterDtoList))
+        if (context.TryGetArgument(Statics.FieldBeforeFilterArg,
+                out IEnumerable<FieldFilterDto>? beforeFieldFilterDtoList))
         {
             beforeFieldFilters = new List<FieldFilter>();
             foreach (var beforeFieldFilterDto in beforeFieldFilterDtoList)
@@ -68,6 +69,7 @@ internal class OctoSubscriptions : ObjectGraphType<object>
                         (FieldFilterOperator)beforeFieldFilterDto.Operator, beforeFieldFilterDto.ComparisonValue));
             }
         }
+
         if (context.TryGetArgument(Statics.FieldFilterArg, out IEnumerable<FieldFilterDto>? fieldFilterDtoList))
         {
             fieldFilters = new List<FieldFilter>();
@@ -90,8 +92,12 @@ internal class OctoSubscriptions : ObjectGraphType<object>
         {
             UpdateTypes = updateType,
             RtId = rtId,
-            BeforeFieldFilters = beforeFieldFilters,
-            FieldFilters = fieldFilters,
+            BeforeFieldFilterCriteria = beforeFieldFilters != null
+                ? FieldFilterCriteria.Create().Fields(beforeFieldFilters)
+                : null,
+            FieldFilterCriteria = fieldFilters != null
+                ? FieldFilterCriteria.Create().Fields(fieldFilters)
+                : null,
         };
 
         var tenantRepository = tenantContext.GetTenantRepository();
