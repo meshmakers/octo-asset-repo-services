@@ -26,6 +26,7 @@ internal class ConfigureDistributionEventHubOptions : IConfigureNamedOptions<Dis
 
     public void Configure(string? name, DistributionEventHubOptions options)
     {
+        options.InstancePrefix = _assetRepoServiceOptions.Value.InstancePrefix;
         options.BrokerHost = _assetRepoServiceOptions.Value.BrokerHost;
         options.BrokerUser = _assetRepoServiceOptions.Value.BrokerUser;
         options.BrokerPassword = _assetRepoServiceOptions.Value.BrokerPassword;
