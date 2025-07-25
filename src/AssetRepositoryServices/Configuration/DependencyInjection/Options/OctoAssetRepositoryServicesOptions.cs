@@ -31,6 +31,11 @@ public class OctoAssetRepositoryServicesOptions
     }
 
     /// <summary>
+    ///     Gets or sets the prefix for the OctoMesh installation instance.
+    /// </summary>
+    public string? InstancePrefix { get; set; }
+
+    /// <summary>
     ///     Gets or sets the RabbitMq host name
     /// </summary>
     public string BrokerHost { get; set; }
