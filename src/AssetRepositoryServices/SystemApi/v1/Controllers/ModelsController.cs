@@ -3,7 +3,7 @@ using Asp.Versioning;
 using IdentityModel;
 using Meshmakers.Octo.Common.DistributionEventHub.Services;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
-using Meshmakers.Octo.Services.Contracts.ApiErrors;
+using Meshmakers.Octo.Communication.Contracts.DataTransferObjects.ApiErrors;
 using Meshmakers.Octo.Services.Contracts.DistributionEventHub.Commands;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -56,8 +56,9 @@ public class ModelsController : ControllerBase
     [HttpPost]
     [Route("ExportRtByQuery")]
     [Authorize(AssetRepositoryServiceConstants.SystemAssetApiReadOnlyPolicy)]
-    [ProducesResponseType(typeof(string), StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ExportModelResponseDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(InternalServerErrorDto), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(InternalServerErrorDto), StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> ExportRtByQueryAsync([Required] string tenantId,
         [FromBody] ExportModelRequestByQueryDto exportModelRequestByQueryDto)
     {
@@ -70,7 +71,11 @@ public class ModelsController : ControllerBase
         }
         catch (InvalidOperationException e)
         {
-            return BadRequest(new InternalServerError(e.Message));
+            return BadRequest(new InternalServerErrorDto(e.Message));
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(StatusCodes.Status500InternalServerError, new InternalServerErrorDto(ex.Message));
         }
     }
     
@@ -84,8 +89,9 @@ public class ModelsController : ControllerBase
     [HttpPost]
     [Route("ExportRtByDeepGraph")]
     [Authorize(AssetRepositoryServiceConstants.SystemAssetApiReadOnlyPolicy)]
-    [ProducesResponseType(typeof(string), StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ExportModelResponseDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(InternalServerErrorDto), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(InternalServerErrorDto), StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> ExportRtByDeepGraphAsync([Required] string tenantId,
         [FromBody] ExportModelRequestByDeepGraphDto exportModelRequestByDeepGraphDto)
     {
@@ -100,7 +106,11 @@ public class ModelsController : ControllerBase
         }
         catch (InvalidOperationException e)
         {
-            return BadRequest(new InternalServerError(e.Message));
+            return BadRequest(new InternalServerErrorDto(e.Message));
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(StatusCodes.Status500InternalServerError, new InternalServerErrorDto(ex.Message));
         }
     }
 
@@ -115,8 +125,9 @@ public class ModelsController : ControllerBase
     [RequestSizeLimit(300_000_000)]
     [Route("ImportRt")]
     [Authorize(AssetRepositoryServiceConstants.SystemAssetApiReadWritePolicy)]
-    [ProducesResponseType(typeof(string), StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ExportModelResponseDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(InternalServerErrorDto), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(InternalServerErrorDto), StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> ImportRt([Required] string tenantId, IFormFile file)
     {
         try
@@ -129,7 +140,11 @@ public class ModelsController : ControllerBase
         }
         catch (InvalidOperationException e)
         {
-            return BadRequest(new InternalServerError(e.Message));
+            return BadRequest(new InternalServerErrorDto(e.Message));
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(StatusCodes.Status500InternalServerError, new InternalServerErrorDto(ex.Message));
         }
     }
 
@@ -145,7 +160,8 @@ public class ModelsController : ControllerBase
     [Route("ImportCk")]
     [Authorize(AssetRepositoryServiceConstants.SystemAssetApiReadWritePolicy)]
     [ProducesResponseType(typeof(string), StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(InternalServerErrorDto), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(InternalServerErrorDto), StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> ImportCk([Required] string tenantId, IFormFile file)
     {
         try
@@ -158,16 +174,27 @@ public class ModelsController : ControllerBase
         }
         catch (InvalidOperationException e)
         {
-            return BadRequest(new InternalServerError(e.Message));
+            return BadRequest(new InternalServerErrorDto(e.Message));
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(StatusCodes.Status500InternalServerError, new InternalServerErrorDto(ex.Message));
         }
     }
 
     private async Task<string> AddFileToCache(string tenantId, IFormFile file)
     {
-        await using var memoryStream = new MemoryStream();
-        await file.CopyToAsync(memoryStream);
-        memoryStream.Position = 0;
-        var key = await _distributedCache.CreateStreamAsync(tenantId, memoryStream, file.ContentType, file.FileName, TimeSpan.FromHours(1));
-        return key;
+        try
+        {
+            await using var memoryStream = new MemoryStream();
+            await file.CopyToAsync(memoryStream);
+            memoryStream.Position = 0;
+            var key = await _distributedCache.CreateStreamAsync(tenantId, memoryStream, file.ContentType, file.FileName, TimeSpan.FromHours(1));
+            return key;
+        }
+        catch (Exception)
+        {
+            throw;
+        }
     }
 }

@@ -2,6 +2,7 @@ using System.ComponentModel.DataAnnotations;
 using Asp.Versioning;
 using IdentityModel;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
+using Meshmakers.Octo.Communication.Contracts.DataTransferObjects.ApiErrors;
 using Meshmakers.Octo.Services.Infrastructure.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -39,7 +40,8 @@ public class DiagnosticsController: ControllerBase
     [HttpPost("reconfigureLogLevel")]
     [Authorize(AssetRepositoryServiceConstants.SystemAssetApiReadWritePolicy)]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
-    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(InternalServerErrorDto), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(InternalServerErrorDto), StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> Enable([Required] LogLevelDto minLogLevel)
     {
         try
@@ -48,9 +50,13 @@ public class DiagnosticsController: ControllerBase
             await _diagnosticsService.ReconfigureLogLevelAsync(minLogLevel);
             return NoContent();
         }
-        catch (Exception e)
+        catch (ArgumentException ex)
         {
-            return BadRequest(e.Message);
+            return BadRequest(new InternalServerErrorDto(ex.Message));
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(StatusCodes.Status500InternalServerError, new InternalServerErrorDto(ex.Message));
         }
     }
 }

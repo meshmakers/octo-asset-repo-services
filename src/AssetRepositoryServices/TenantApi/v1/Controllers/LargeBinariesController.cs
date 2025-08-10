@@ -2,6 +2,7 @@ using Asp.Versioning;
 using IdentityModel;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.Services;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
+using Meshmakers.Octo.Communication.Contracts.DataTransferObjects.ApiErrors;
 using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.Services.Infrastructure;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
@@ -38,25 +39,51 @@ public class LargeBinariesController : ControllerBase
     /// <returns></returns>
     [HttpGet]
     [Authorize(AuthenticationSchemes = InfrastructureCommon.OidcAuthenticationScheme)]
-    [ProducesResponseType(StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(FileStreamResult), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(InternalServerErrorDto), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(InternalServerErrorDto), StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> Get([FromQuery] string largeBinaryId)
     {
-        var tenantId = HttpContext.GetTenantId();
-        if (string.IsNullOrEmpty(tenantId))
+        try
         {
-            return NotFound(new ErrorResponse { ErrorMessage = "TenantId is null or empty" });
+            var tenantId = HttpContext.GetTenantId();
+            if (string.IsNullOrEmpty(tenantId))
+            {
+                return NotFound(new ErrorResponse { ErrorMessage = "TenantId is null or empty" });
+            }
+
+            if (string.IsNullOrEmpty(largeBinaryId))
+            {
+                return BadRequest(new InternalServerErrorDto("LargeBinaryId is required"));
+            }
+
+            var tenantRepository = await _octoService.SystemContext.FindTenantRepositoryAsync(tenantId);
+
+            using var session = await tenantRepository.GetSessionAsync().ConfigureAwait(false);
+            session.StartTransaction();
+
+            var streamHandler = await tenantRepository.DownloadLargeBinaryAsync(session, OctoObjectId.Parse(largeBinaryId));
+            if (streamHandler.Stream == null)
+            {
+                return NotFound(new ErrorResponse { ErrorMessage = "Large binary not found" });
+            }
+
+            await session.CommitTransactionAsync().ConfigureAwait(false);
+
+            return new FileStreamResult(streamHandler.Stream, streamHandler.ContentType);
         }
-
-        var tenantRepository = await _octoService.SystemContext.FindTenantRepositoryAsync(tenantId);
-
-        using var session = await tenantRepository.GetSessionAsync().ConfigureAwait(false);
-        session.StartTransaction();
-
-        var streamHandler = await tenantRepository.DownloadLargeBinaryAsync(session, OctoObjectId.Parse(largeBinaryId));
-
-        await session.CommitTransactionAsync().ConfigureAwait(false);
-
-        return new FileStreamResult(streamHandler.Stream, streamHandler.ContentType);
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new InternalServerErrorDto(ex.Message));
+        }
+        catch (FormatException ex)
+        {
+            return BadRequest(new InternalServerErrorDto($"Invalid largeBinaryId format: {ex.Message}"));
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(StatusCodes.Status500InternalServerError, new InternalServerErrorDto(ex.Message));
+        }
     }
 }

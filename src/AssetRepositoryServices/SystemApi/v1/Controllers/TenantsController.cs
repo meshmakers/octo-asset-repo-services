@@ -4,6 +4,7 @@ using IdentityModel;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.Services;
 using Meshmakers.Octo.Common.DistributionEventHub.Services;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
+using Meshmakers.Octo.Communication.Contracts.DataTransferObjects.ApiErrors;
 using Meshmakers.Octo.Runtime.Contracts;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb;
 using Meshmakers.Octo.Services.Contracts.DistributionEventHub.Messages;
@@ -44,28 +45,35 @@ public class TenantsController : ControllerBase
     [HttpGet]
     [Authorize(AssetRepositoryServiceConstants.SystemAssetApiReadOnlyPolicy)]
     [ProducesResponseType(typeof(IEnumerable<TenantDto>), StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(InternalServerErrorDto), StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> Get([FromQuery] PagingParams? pagingParams)
     {
-        using var session = await _octoService.SystemContext.GetAdminSessionAsync();
-        session.StartTransaction();
-
-        var result =
-            await _octoService.SystemContext.GetChildTenantsAsync(session, pagingParams?.Skip, pagingParams?.Take);
-
-        if (pagingParams != null)
+        try
         {
-            var pagedResult = new PagedResult<TenantDto>(result.Items.Select(CreateTenantDto),
-                pagingParams.Skip, pagingParams.Take, result.TotalCount);
+            using var session = await _octoService.SystemContext.GetAdminSessionAsync();
+            session.StartTransaction();
 
-            Response.Headers.Append("X-Pagination", pagedResult.GetHeader().ToJson());
+            var result =
+                await _octoService.SystemContext.GetChildTenantsAsync(session, pagingParams?.Skip, pagingParams?.Take);
 
-            return Ok(pagedResult);
+            if (pagingParams != null)
+            {
+                var pagedResult = new PagedResult<TenantDto>(result.Items.Select(CreateTenantDto),
+                    pagingParams.Skip, pagingParams.Take, result.TotalCount);
+
+                Response.Headers.Append("X-Pagination", pagedResult.GetHeader().ToJson());
+
+                return Ok(pagedResult);
+            }
+
+            await session.CommitTransactionAsync();
+
+            return Ok(result.Items.Select(CreateTenantDto));
         }
-
-        await session.CommitTransactionAsync();
-
-        return Ok(result.Items.Select(CreateTenantDto));
+        catch (Exception ex)
+        {
+            return StatusCode(StatusCodes.Status500InternalServerError, new InternalServerErrorDto(ex.Message));
+        }
     }
 
     // GET system/v1/tenants/{id}
@@ -78,19 +86,27 @@ public class TenantsController : ControllerBase
     [Authorize(AssetRepositoryServiceConstants.SystemAssetApiReadOnlyPolicy)]
     [ProducesResponseType(typeof(TenantDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(InternalServerErrorDto), StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> Get([Required] string id)
     {
-        using var session = await _octoService.SystemContext.GetAdminSessionAsync();
-        session.StartTransaction();
-
-        if (!await _octoService.SystemContext.IsChildTenantExistingAsync(session, id))
+        try
         {
-            return NotFound();
-        }
+            using var session = await _octoService.SystemContext.GetAdminSessionAsync();
+            session.StartTransaction();
 
-        var octoTenant = await _octoService.SystemContext.GetChildTenantAsync(session, id);
-        await session.CommitTransactionAsync();
-        return Ok(CreateTenantDto(octoTenant));
+            if (!await _octoService.SystemContext.IsChildTenantExistingAsync(session, id))
+            {
+                return NotFound();
+            }
+
+            var octoTenant = await _octoService.SystemContext.GetChildTenantAsync(session, id);
+            await session.CommitTransactionAsync();
+            return Ok(CreateTenantDto(octoTenant));
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(StatusCodes.Status500InternalServerError, new InternalServerErrorDto(ex.Message));
+        }
     }
 
     // POST: system/v1/tenants?tenantId=abc&databaseName=xyz
@@ -98,26 +114,31 @@ public class TenantsController : ControllerBase
     ///     Creates new tenants
     /// </summary>
     /// <param name="tenantId">ID of tenant</param>
-    /// <param name="databaseName">Name of database</param>
+    /// <param name="databaseName">Name of the database</param>
     /// <returns></returns>
     [HttpPost]
     [Authorize(AssetRepositoryServiceConstants.SystemAssetApiReadWritePolicy)]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
-    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    [ProducesResponseType(typeof(OperationFailedErrorDto), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(InternalServerErrorDto), StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> Post([Required] string tenantId, [Required] string databaseName)
     {
-        using var session = await _octoService.SystemContext.GetAdminSessionAsync();
-        session.StartTransaction();
-
         try
         {
+            using var session = await _octoService.SystemContext.GetAdminSessionAsync();
+            session.StartTransaction();
+
             await _octoService.SystemContext.CreateChildTenantAsync(session, databaseName, tenantId);
             await session.CommitTransactionAsync();
             return NoContent();
         }
         catch (PersistenceException e)
         {
-            return Conflict(e.Message);
+            return BadRequest(new OperationFailedErrorDto(e.Message));
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(StatusCodes.Status500InternalServerError, new InternalServerErrorDto(ex.Message));
         }
     }
 
@@ -126,26 +147,31 @@ public class TenantsController : ControllerBase
     ///     Appends an existing database as tenant
     /// </summary>
     /// <param name="tenantId">ID tenant</param>
-    /// <param name="databaseName">Name of database (have to exist)</param>
+    /// <param name="databaseName">Name of the database (have to exist)</param>
     /// <returns></returns>
     [HttpPost("attach")]
     [Authorize(AssetRepositoryServiceConstants.SystemAssetApiReadWritePolicy)]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
-    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    [ProducesResponseType(typeof(OperationFailedErrorDto), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(InternalServerErrorDto), StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> Attach([Required] string tenantId, [Required] string databaseName)
     {
-        using var session = await _octoService.SystemContext.GetAdminSessionAsync();
-        session.StartTransaction();
-
         try
         {
+            using var session = await _octoService.SystemContext.GetAdminSessionAsync();
+            session.StartTransaction();
+
             await _octoService.SystemContext.AttachChildTenantAsync(session, databaseName, tenantId);
             await session.CommitTransactionAsync();
             return NoContent();
         }
         catch (PersistenceException e)
         {
-            return Conflict(e.Message);
+            return BadRequest(new OperationFailedErrorDto(e.Message));
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(StatusCodes.Status500InternalServerError, new InternalServerErrorDto(ex.Message));
         }
     }
 
@@ -153,24 +179,31 @@ public class TenantsController : ControllerBase
     /// <summary>
     ///     Appends an existing database as tenant
     /// </summary>
-    /// <param name="tenantId">Id of tenant</param>
+    /// <param name="tenantId">ID of tenant</param>
     /// <returns></returns>
     [HttpPost("detach")]
     [Authorize(AssetRepositoryServiceConstants.SystemAssetApiReadWritePolicy)]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(typeof(OperationFailedErrorDto), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(InternalServerErrorDto), StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> Detach([Required] string tenantId)
     {
-        using var session = await _octoService.SystemContext.GetAdminSessionAsync();
-        session.StartTransaction();
-
         try
         {
+            using var session = await _octoService.SystemContext.GetAdminSessionAsync();
+            session.StartTransaction();
+
             await _octoService.SystemContext.DetachChildTenantAsync(session, tenantId);
             await session.CommitTransactionAsync();
             return NoContent();
         }
         catch (PersistenceException e)
         {
-            return Conflict(e.Message);
+            return BadRequest(new OperationFailedErrorDto(e.Message));
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(StatusCodes.Status500InternalServerError, new InternalServerErrorDto(ex.Message));
         }
     }
 
@@ -183,21 +216,26 @@ public class TenantsController : ControllerBase
     [HttpPut("clear")]
     [Authorize(AssetRepositoryServiceConstants.SystemAssetApiReadWritePolicy)]
     [ProducesResponseType(StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    [ProducesResponseType(typeof(OperationFailedErrorDto), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(InternalServerErrorDto), StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> Clear([Required] string tenantId)
     {
-        using var session = await _octoService.SystemContext.GetAdminSessionAsync();
-        session.StartTransaction();
-
         try
         {
+            using var session = await _octoService.SystemContext.GetAdminSessionAsync();
+            session.StartTransaction();
+
             await _octoService.SystemContext.ClearChildTenantAsync(session, tenantId);
             await session.CommitTransactionAsync();
             return Ok();
         }
         catch (TenantException e)
         {
-            return Conflict(e.Message);
+            return BadRequest(new OperationFailedErrorDto(e.Message));
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(StatusCodes.Status500InternalServerError, new InternalServerErrorDto(ex.Message));
         }
     }
 
@@ -210,14 +248,15 @@ public class TenantsController : ControllerBase
     [HttpPut("update")]
     [Authorize(AssetRepositoryServiceConstants.SystemAssetApiReadWritePolicy)]
     [ProducesResponseType(StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    [ProducesResponseType(typeof(OperationFailedErrorDto), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(InternalServerErrorDto), StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> Update([Required] string tenantId)
     {
-        using var session = await _octoService.SystemContext.GetAdminSessionAsync();
-        session.StartTransaction();
-
         try
         {
+            using var session = await _octoService.SystemContext.GetAdminSessionAsync();
+            session.StartTransaction();
+
             // TODO: Implement dispose
             // await _octoService.SystemContext.UpdateTenantSystemCkModelAsync(session, tenantId);
             await session.CommitTransactionAsync();
@@ -225,7 +264,11 @@ public class TenantsController : ControllerBase
         }
         catch (TenantException e)
         {
-            return Conflict(e.Message);
+            return BadRequest(new OperationFailedErrorDto(e.Message));
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(StatusCodes.Status500InternalServerError, new InternalServerErrorDto(ex.Message));
         }
     }
 
@@ -238,7 +281,8 @@ public class TenantsController : ControllerBase
     [HttpPut("clearCache")]
     [Authorize(AssetRepositoryServiceConstants.SystemAssetApiReadWritePolicy)]
     [ProducesResponseType(StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    [ProducesResponseType(typeof(OperationFailedErrorDto), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(InternalServerErrorDto), StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> ClearCache([Required] string tenantId)
     {
         try
@@ -250,9 +294,9 @@ public class TenantsController : ControllerBase
 
             return Ok("Cache cleared");
         }
-        catch (Exception e)
+        catch (Exception ex)
         {
-            return Conflict(e.Message);
+            return StatusCode(StatusCodes.Status500InternalServerError, new InternalServerErrorDto(ex.Message));
         }
     }
 
@@ -266,13 +310,14 @@ public class TenantsController : ControllerBase
     [Authorize(AssetRepositoryServiceConstants.SystemAssetApiReadWritePolicy)]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(InternalServerErrorDto), StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> Delete([Required] string tenantId)
     {
-        using var session = await _octoService.SystemContext.GetAdminSessionAsync();
-        session.StartTransaction();
-
         try
         {
+            using var session = await _octoService.SystemContext.GetAdminSessionAsync();
+            session.StartTransaction();
+
             await _octoService.SystemContext.DropChildTenantAsync(session, tenantId);
             await session.CommitTransactionAsync();
             return Ok();
@@ -280,6 +325,10 @@ public class TenantsController : ControllerBase
         catch (TenantException e)
         {
             return NotFound(e.Message);
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(StatusCodes.Status500InternalServerError, new InternalServerErrorDto(ex.Message));
         }
     }
 
