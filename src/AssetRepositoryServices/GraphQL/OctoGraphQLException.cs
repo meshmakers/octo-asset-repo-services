@@ -100,4 +100,9 @@ public class OctoGraphQLException : Exception
     {
         return new OctoGraphQLException($"Large binary with ID {binaryId} not found.");
     }
+
+    public static Exception CkAssociationRoleIdUndefined()
+    {
+        return new OctoGraphQLException("CkAssociationRoleId is undefined.");
+    }
 }

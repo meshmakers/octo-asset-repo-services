@@ -28,32 +28,20 @@ internal sealed class RtEntityGenericDtoType : ObjectGraphType<RtEntityDto>
     public RtEntityGenericDtoType()
     {
         Name = "RtEntity";
-        Description = "A runtime entity type of Octo";
+        Description = "A runtime entity type of OctoMesh";
         Field(d => d.RtId, type: typeof(OctoObjectIdType));
         Field(d => d.CkTypeId, type: typeof(CkIdTypeGraph<CkTypeId>));
         Field(x => x.RtCreationDateTime, true);
         Field(x => x.RtChangedDateTime, true);
         Field(x => x.RtWellKnownName, true);
         Field(x => x.RtVersion, true);
+        Field("associations", type: typeof(RtEntityGenericAssociationType)).Description(
+                "A list of associations of this entity. The association role id is used to filter the associations.")
+            .Resolve(ctx => new RtEntityGenericAssociation(ctx.Source));
 
         Connection<RtEntityAttributeDtoType>("attributes")
             .Argument<ListGraphType<StringGraphType>>(Statics.AttributeNamesFilterArg, "Filter of attribute names")
             .Resolve(ResolveAttributes);
-        Connection<RtEntityGenericDtoType>("Associations")
-            .Argument<NonNullGraphType<StringGraphType>>(Statics.RoleIdArg, "The role id of the association.")
-            .Argument<BooleanGraphType>(Statics.IncludeIndirectArg,
-                "Include indirect associations, otherwise direct associations are returned.")
-            .Argument<NonNullGraphType<GraphDirectionsDtoType>>(Statics.DirectionArg,
-                "The direction of the association.")
-            .Argument<NonNullGraphType<StringGraphType>>(Statics.CkIdArg,
-                "The construction kit type with the given id.")
-            .Argument<SearchFilterDtoType>(Statics.SearchFilterArg, "Filters items based on text search")
-            .Argument<ResultAggregationInputDtoType>(Statics.AggregationsArg,
-                AssetTexts.Graphql_Type_Filter_Aggregations_Description)
-            .Argument<ListGraphType<SortDtoType>>(Statics.SortOrderArg, "Sort order for items")
-            .Argument<ListGraphType<FieldFilterDtoType>>(Statics.FieldFilterArg,
-                "Filters items based on field compare")
-            .Resolve(ResolveGenericRtAssociationsQuery);
     }
 
     private object ResolveAttributes(IResolveConnectionContext<RtEntityDto> context)
@@ -86,85 +74,6 @@ internal sealed class RtEntityGenericDtoType : ObjectGraphType<RtEntityDto>
         return ConnectionUtils.ToConnection(
             resultList.Select(item => CreateRtEntityAttributeDto((RtEntity)context.Source.UserContext!, item)),
             context);
-    }
-
-    private object? ResolveGenericRtAssociationsQuery(IResolveConnectionContext<RtEntityDto> ctx)
-    {
-        var sessionAccessor = ctx.RequestServices?.GetRequiredService<IOctoSessionAccessor>();
-        if (sessionAccessor?.Session == null)
-        {
-            throw AssetRepositoryException.SessionUnavailable();
-        }
-
-        var dataLoaderAccessor = ctx.RequestServices?.GetRequiredService<IDataLoaderContextAccessor>();
-        if (dataLoaderAccessor?.Context == null)
-        {
-            throw AssetRepositoryException.DataLoaderContextUnavailable();
-        }
-
-        var graphQlUserContext = (GraphQlUserContext)ctx.UserContext;
-
-        var offset = ctx.GetOffset();
-        var dataQueryOperation = ctx.GetDataQueryOperation();
-
-        if (!ctx.TryGetArgument(Statics.RoleIdArg, out string? roleId))
-        {
-            throw AssetRepositoryException.RoleIdMissing();
-        }
-
-        if (!ctx.TryGetArgument(Statics.IncludeIndirectArg, out bool? indirectAssociations))
-        {
-            indirectAssociations = false;
-        }
-
-        if (!ctx.TryGetArgument(Statics.DirectionArg, out GraphDirections? direction))
-        {
-            throw AssetRepositoryException.DirectionMissing();
-        }
-
-        if (!ctx.TryGetArgument(Statics.CkId, out string? ckIdObj))
-        {
-            ctx.Errors.Add(new ExecutionError("Invalid query. Missing construction kit id.")
-                { Code = Statics.GraphQlErrorCommon });
-            return null;
-        }
-
-        CkId<CkTypeId> targetCkId = new(ckIdObj);
-
-        var tenantRepository = graphQlUserContext.TenantContext.GetTenantRepository();
-
-        if (indirectAssociations.Value)
-        {
-            var loader = dataLoaderAccessor.Context.GetOrAddBatchLoader<OctoObjectId, IResultSet<RtEntity>>(
-                $"Get{ctx.Source.CkTypeId}_{targetCkId}_{roleId}_{direction.Value}", async rtIds =>
-                    await tenantRepository.GetIndirectRtAssociationTargetsAsync(
-                        sessionAccessor.Session, rtIds, ctx.Source.CkTypeId,
-                        new CkId<CkAssociationRoleId>(roleId),
-                        direction.Value,
-                        null, targetCkId, dataQueryOperation, offset, ctx.First));
-
-            var dataLoaderResult = loader.LoadAsync(ctx.Source.RtId);
-
-            return dataLoaderResult.Then(resultSet => ConnectionUtils.ToConnection(
-                resultSet.Items.Select(RtEntityDtoType.CreateRtEntityDto), ctx,
-                resultSet.TotalCount > 0 ? offset.GetValueOrDefault(0) : 0, (int)resultSet.TotalCount));
-        }
-        else
-        {
-            var loader = dataLoaderAccessor.Context.GetOrAddBatchLoader<OctoObjectId, IResultSet<RtEntity>>(
-                $"Get{ctx.Source.CkTypeId}_{targetCkId}_{roleId}_{direction.Value}", async rtIds =>
-                    await tenantRepository.GetRtAssociationTargetsAsync(
-                        sessionAccessor.Session, rtIds, ctx.Source.CkTypeId,
-                        new CkId<CkAssociationRoleId>(roleId),
-                        targetCkId, direction.Value,
-                        null, dataQueryOperation, offset, ctx.First));
-
-            var dataLoaderResult = loader.LoadAsync(ctx.Source.RtId);
-
-            return dataLoaderResult.Then(resultSet => ConnectionUtils.ToConnection(
-                resultSet.Items.Select(RtEntityDtoType.CreateRtEntityDto), ctx,
-                resultSet.TotalCount > 0 ? offset.GetValueOrDefault(0) : 0, (int)resultSet.TotalCount));
-        }
     }
 
     private RtEntityAttributeDto CreateRtEntityAttributeDto(RtEntity rtEntity,
