@@ -3,6 +3,7 @@ using GraphQL;
 using GraphQL.Builders;
 using GraphQL.Types;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.RequestHandling;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Inputs;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Scalars;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Utils;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
@@ -35,8 +36,89 @@ internal sealed class RtTransientQueryDtoType : ObjectGraphType<RtTransientQuery
         Field(d => d.AssociatedCkTypeId, type: typeof(NonNullGraphType<CkIdTypeGraph<CkTypeId>>));
         Field(d => d.Columns, type: typeof(NonNullGraphType<ListGraphType<NonNullGraphType<RtQueryColumnType>>>));
 
+        Connection<NonNullGraphType<QueryAggregationResultType>>("Aggregations")
+            .Argument<NonNullGraphType<ResultAggregationInputDtoType>>(Statics.AggregationsArg,
+                AssetTexts.Graphql_Type_Filter_Aggregations_Description)
+            .ResolveAsync(ResolveRtQueryAggregationAsync);
         Connection<NonNullGraphType<RtQueryRowDtoType>>("Rows")
             .ResolveAsync(ResolveRtQueryRowsAsync);
+    }
+
+    private async Task<object?> ResolveRtQueryAggregationAsync(IResolveConnectionContext<object?> context)
+    {
+        Logger.Debug("GraphQL query handling for runtime aggregation started");
+        var ckCacheService = context.RequestServices?.GetRequiredService<ICkCacheService>();
+        if (ckCacheService == null)
+        {
+            throw AssetRepositoryException.ServiceNotRegistered(typeof(ICkCacheService));
+        }
+
+
+        var sessionAccessor = context.RequestServices?.GetRequiredService<IOctoSessionAccessor>();
+        if (sessionAccessor?.Session == null)
+        {
+            throw AssetRepositoryException.SessionUnavailable();
+        }
+
+        var graphQlUserContext = (GraphQlUserContext)context.UserContext;
+
+        if (context.Source is not RtTransientQueryDto rtTransientQueryDto)
+        {
+            context.Errors.Add(new ExecutionError("Invalid query. Query not found.")
+                { Code = Statics.GraphQlErrorCommon });
+            return null;
+        }
+
+        if (rtTransientQueryDto.UserContext is not QueryUserContext queryUserContext)
+        {
+            context.Errors.Add(new ExecutionError("Invalid query. User context not found.")
+                { Code = Statics.GraphQlErrorCommon });
+            return null;
+        }
+
+        var tenantRepository = graphQlUserContext.TenantContext.GetTenantRepository();
+
+        var offset = context.GetOffset();
+        var dataQueryOperation = context.GetDataQueryOperation(queryUserContext.DataQueryOperation);
+
+        var roleIdDirectionPairs = RtPathEvaluator.TokenizeAndGetNavigationPairs(ckCacheService,
+            tenantRepository.TenantId, rtTransientQueryDto.AssociatedCkTypeId,
+            rtTransientQueryDto.Columns.Select(column => column.AttributePath));
+
+        var resultSet = await tenantRepository.GetRtEntitiesGraphByTypeAsync(sessionAccessor.Session,
+            rtTransientQueryDto.AssociatedCkTypeId, dataQueryOperation,
+            roleIdDirectionPairs, offset, context.First);
+
+        if (resultSet.AggregationResult == null)
+        {
+            context.Errors.Add(new ExecutionError("Invalid query. Aggregation result not found.")
+                { Code = Statics.GraphQlErrorCommon });
+            return null;
+        }
+
+        try
+        {
+            Logger.Debug("GraphQL query handling returning data");
+            return ConnectionUtils.ToConnection([
+                    new QueryAggregationResult(
+                        resultSet.TotalCount,
+                        resultSet.AggregationResult.CountStatistics,
+                        resultSet.AggregationResult.MinStatistics,
+                        resultSet.AggregationResult.MaxStatistics,
+                        resultSet.AggregationResult.AvgStatistics,
+                        resultSet.AggregationResult.SumStatistics,
+                        resultSet.FieldAggregationResult)
+                ]
+                , context,
+                0, 1, resultSet.AggregationResult,
+                resultSet.FieldAggregationResult);
+        }
+        catch (OperationFailedException e)
+        {
+            context.Errors.Add(new ExecutionError(e.Message)
+                { Code = Statics.GraphQlErrorCommon });
+            return null;
+        }
     }
 
     private async Task<object?> ResolveRtQueryRowsAsync(IResolveConnectionContext<object?> context)

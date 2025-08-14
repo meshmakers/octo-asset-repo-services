@@ -43,9 +43,9 @@ internal static class ResolveConnectionContextExtensions
         return false;
     }
 
-    internal static DataQueryOperation GetDataQueryOperation<TEntity>(this IResolveConnectionContext<TEntity> ctx)
+    internal static DataQueryOperation GetDataQueryOperation<TEntity>(this IResolveConnectionContext<TEntity> ctx, DataQueryOperation? operation = null)
     {
-        var dataQueryOperation = DataQueryOperation.Create();
+        var dataQueryOperation = operation ?? DataQueryOperation.Create();
 
         if (ctx.TryGetArgument(Statics.SearchFilterArg, out SearchFilterDto? filterDto))
         {
