@@ -4,6 +4,7 @@ using IdentityModel;
 using Meshmakers.Octo.Common.DistributionEventHub.Services;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects.ApiErrors;
+using Meshmakers.Octo.Runtime.Contracts.Exchange;
 using Meshmakers.Octo.Services.Contracts.DistributionEventHub.Commands;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -119,6 +120,7 @@ public class ModelsController : ControllerBase
     ///     Imports a runtime model
     /// </summary>
     /// <param name="tenantId">ID of tenant the request relies on to</param>
+    /// <param name="importStrategy">The import strategy to use for the import</param>
     /// <param name="file">The file with the RT model definition</param>
     /// <returns></returns>
     [HttpPost]
@@ -128,12 +130,18 @@ public class ModelsController : ControllerBase
     [ProducesResponseType(typeof(ExportModelResponseDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(InternalServerErrorDto), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(InternalServerErrorDto), StatusCodes.Status500InternalServerError)]
-    public async Task<IActionResult> ImportRt([Required] string tenantId, IFormFile file)
+    public async Task<IActionResult> ImportRt([Required] string tenantId, [Required] ImportStrategyDto importStrategy, [Required] IFormFile file)
     {
         try
         {
+            var insertStrategy = importStrategy switch
+            {
+                ImportStrategyDto.InsertOnly => ImportStrategy.Insert,
+                ImportStrategyDto.Upsert => ImportStrategy.Upsert,
+                _ => throw new ArgumentOutOfRangeException(nameof(importStrategy), importStrategy, null)
+            };
             var cacheKey = await AddFileToCache(tenantId, file);
-            var args = new ImportRtCommandRequest(tenantId, cacheKey);
+            var args = new ImportRtCommandRequest(tenantId, insertStrategy, cacheKey);
             var r =
                 await _importRtCommandClient.GetResponse<JobCreatedResponse>(args);
             return Ok(new ExportModelResponseDto(r.JobId));
