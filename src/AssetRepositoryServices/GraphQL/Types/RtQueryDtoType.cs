@@ -166,7 +166,7 @@ internal sealed class RtQueryDtoType : ObjectGraphType<RtQueryDto>
                 resultSet.Items.Select((entity, _) =>
                     RtQueryRowDtoType.CreateRtQueryRowDto(tenantRepository.TenantId, entity,
                         queryUserContext.CkTypeQueryColumns)), context,
-                0, (int)resultSet.TotalCount, resultSet.AggregationResult, resultSet.FieldAggregationResult);
+                resultSet.TotalCount > 0 ? offset.GetValueOrDefault(0) : 0, (int)resultSet.TotalCount, resultSet.AggregationResult, resultSet.FieldAggregationResult);
         }
         catch (OperationFailedException e)
         {
