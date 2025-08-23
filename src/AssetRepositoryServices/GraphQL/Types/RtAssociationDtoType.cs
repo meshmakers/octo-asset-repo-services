@@ -24,11 +24,11 @@ public sealed class RtAssociationDtoType : ObjectGraphType<RtAssociationDto>
         Name = "RtAssociation";
         Description = "A runtime association type of OctoMesh";
 
-        Field(x => x.CkAssociationRoleId, type: typeof(NonNullGraphType<CkIdTypeGraph<CkAssociationRoleId>>));
+        Field(x => x.CkAssociationRoleId, type: typeof(NonNullGraphType<CkIdGraph<CkAssociationRoleId>>));
         Field(x => x.TargetRtId, type: typeof(NonNullGraphType<OctoObjectIdType>));
-        Field(x => x.TargetCkTypeId, type: typeof(NonNullGraphType<CkIdTypeGraph<CkTypeId>>));
+        Field(x => x.TargetCkTypeId, type: typeof(NonNullGraphType<CkIdGraph<CkTypeId>>));
         Field(x => x.OriginRtId, type: typeof(NonNullGraphType<OctoObjectIdType>));
-        Field(x => x.OriginCkTypeId, type: typeof(NonNullGraphType<CkIdTypeGraph<CkTypeId>>));
+        Field(x => x.OriginCkTypeId, type: typeof(NonNullGraphType<CkIdGraph<CkTypeId>>));
 
         Connection<RtEntityAttributeDtoType>("attributes")
             .Argument<ListGraphType<StringGraphType>>(Statics.AttributeNamesFilterArg, "Filter of attribute names")

@@ -25,6 +25,7 @@ internal static class Statics
     internal const string IgnoreAbstractTypesArg = "ignoreAbstractTypes";
     internal const string IncludeSelfArgs = "includeSelf";
     internal const string AttributeNamesFilterArg = "attributeNames";
+    internal const string ResolveEnumValuesToNames = "resolveEnumValuesToNames";
     internal const string AttributePathsFilterArg = "attributePaths";
     internal const string FieldBeforeFilterArg = "beforeFieldFilter";
     internal const string FieldFilterArg = "fieldFilter";

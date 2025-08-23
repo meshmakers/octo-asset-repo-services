@@ -1,4 +1,5 @@
 ﻿using System.IdentityModel.Tokens.Jwt;
+using System.Text.Json;
 using AssetRepositoryServices.Resources;
 using GraphQL;
 using GraphQL.Server.Transports.AspNetCore;
@@ -245,7 +246,7 @@ public static class RuntimeEngineBuilderExtensions
                 }
             })
             // Add required services for GraphQL request/response de/serialization
-            .AddSystemTextJson() // For .NET Core 3+
+            .AddSystemTextJson(c=> c.PropertyNamingPolicy = JsonNamingPolicy.CamelCase) // For .NET Core 3+
             .AddErrorInfoProvider(opt => opt.ExposeExceptionDetails = true)
             .AddDataLoader() // Add required services for DataLoader support
             .AddUserContextBuilder<TenantUserContextBuilder>()

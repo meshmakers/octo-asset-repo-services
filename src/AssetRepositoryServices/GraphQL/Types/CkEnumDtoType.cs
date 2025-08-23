@@ -15,7 +15,7 @@ internal sealed class CkEnumDtoType : ObjectGraphType<CkEnumDto>
         Name = "CkEnum";
         Description = AssetTexts.Graphql_Enum_Description;
 
-        Field(x => x.CkEnumId, type: typeof(NonNullGraphType<CkIdTypeGraph<CkEnumId>>))
+        Field(x => x.CkEnumId, type: typeof(NonNullGraphType<CkIdGraph<CkEnumId>>))
             .Description(AssetTexts.Graphql_Enum_CkEnumId_Description);
         Field(x => x.Description, nullable: true)
             .Description(AssetTexts.Graphql_Enum_Description_Description);

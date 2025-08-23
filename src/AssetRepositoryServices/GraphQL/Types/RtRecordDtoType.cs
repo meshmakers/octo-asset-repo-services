@@ -2,9 +2,11 @@
 using GraphQL.Types;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.Configuration.DependencyInjection.Options;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Caches;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Utils;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
 using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.ConstructionKit.Contracts.DependencyGraph;
+using Meshmakers.Octo.ConstructionKit.Contracts.Services;
 using Meshmakers.Octo.Runtime.Contracts.RepositoryEntities;
 using Microsoft.Extensions.Options;
 
@@ -40,7 +42,8 @@ internal sealed class RtRecordDtoType : ObjectGraphType<RtRecordDto>
     public CkId<CkRecordId> CkRecordId { get; }
 
 
-    internal void Populate(IOptions<OctoAssetRepositoryServicesOptions> options, IGraphTypesCache graphTypesCache, CkRecordGraph ckRecordGraph)
+    internal void Populate(IOptions<OctoAssetRepositoryServicesOptions> options, IGraphTypesCache graphTypesCache,
+        CkRecordGraph ckRecordGraph)
     {
         AddConstructionKit(ckRecordGraph);
 
@@ -69,8 +72,39 @@ internal sealed class RtRecordDtoType : ObjectGraphType<RtRecordDto>
         var rtRecordDto = new RtRecordDto
         {
             CkRecordId = rtEntity.CkRecordId,
-            UserContext = rtEntity
+            UserContext = rtEntity,
         };
+        return rtRecordDto;
+    }
+
+    internal static RtRecordDto CreateRtRecordDtoWithAttributes(ICkCacheService ckCacheService, string tenantId,
+        RtRecord rtRecord, bool resolveEnumValuesToNames, ICollection<string>? filterAttributeNames = null)
+    {
+        var rtRecordDto = new RtRecordDto
+        {
+            CkRecordId = rtRecord.CkRecordId,
+            UserContext = rtRecord,
+        };
+
+        var ckTypeGraph = ckCacheService.GetCkRecord(tenantId, rtRecord.CkRecordId);
+
+        IEnumerable<CkTypeAttributeGraph> resultList;
+        if (filterAttributeNames != null && filterAttributeNames.Any())
+        {
+            resultList =
+                ckTypeGraph.AllAttributes.Values.Where(a =>
+                    filterAttributeNames.Contains(a.AttributeName.ToCamelCase()));
+        }
+        else
+        {
+            resultList = ckTypeGraph.AllAttributes.Values;
+        }
+
+        var attributeDtos =
+            resultList.Select(item =>
+                RtEntityGenericDtoType.CreateRtEntityAttributeDto(ckCacheService, tenantId, rtRecord, item,
+                    resolveEnumValuesToNames, filterAttributeNames));
+        rtRecordDto.Attributes = attributeDtos.ToList();
         return rtRecordDto;
     }
 }

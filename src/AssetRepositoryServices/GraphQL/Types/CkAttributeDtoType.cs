@@ -23,7 +23,7 @@ internal sealed class CkAttributeDtoType : ObjectGraphType<CkAttributeDto>
         Name = "CkAttribute";
         Description = "Construction kit attribute definitions";
 
-        Field(x => x.CkAttributeId, type: typeof(NonNullGraphType<CkIdTypeGraph<CkAttributeId>>))
+        Field(x => x.CkAttributeId, type: typeof(NonNullGraphType<CkIdGraph<CkAttributeId>>))
             .Description("Construction kit attribute id.");
         Field(x => x.AttributeValueType, type: typeof(NonNullGraphType<AttributeValueTypesDtoType>))
             .Description("Value type of the attribute.");

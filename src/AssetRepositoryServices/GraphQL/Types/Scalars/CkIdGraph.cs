@@ -3,15 +3,15 @@ using Meshmakers.Octo.ConstructionKit.Contracts;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Scalars;
 
-internal class CkIdTypeGraph<TCkKey> : ScalarGraphType where TCkKey: IComparable<TCkKey>, ICkKey
+internal class CkIdGraph<TCkKey> : ScalarGraphType where TCkKey: IComparable<TCkKey>, ICkKey
 {
-    public CkIdTypeGraph()
+    public CkIdGraph()
     {
         Name = typeof(TCkKey).Name;
-        Description = "A construction kit id of type " + typeof(TCkKey).Name + ".";
+        Description = "A construction kit id of " + typeof(TCkKey).Name + ".";
     }
 
-    public override object? ParseValue(object? value) => value switch
+    public override object ParseValue(object? value) => value switch
     {
         string s => new CkId<TCkKey>(s),
         CkId<TCkKey> _ => value,
