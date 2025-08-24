@@ -17,7 +17,10 @@ internal sealed class RtMutation : ObjectGraphType
         Field<RtQueryMutation>("RuntimeQuery")
             .Argument<NonNullGraphType<OctoObjectIdType>>(Statics.RtIdArg, "The query runtime id.")
             .Resolve(_ => new RtEntityDto());
-        
+
+        Field<RtEntityMutationGeneric>("RuntimeEntities")
+            .Resolve(_ => new RtEntityDto());
+
         foreach (var rtEntityDtoType in graphTypesCache.GetTypes())
         {
             if (rtEntityDtoType.IsAbstract)

@@ -22,6 +22,7 @@ internal class RtEntityMutation : RtMutationBase
     {
         Name = rtEntityDtoType.CkTypeId.GetGraphQlPascalCaseName() + "Mutations";
 
+
         var inputType = graphTypesCache.GetInputType(rtEntityDtoType.CkTypeId);
         var outputType = graphTypesCache.GetType(rtEntityDtoType.CkTypeId);
 
@@ -30,9 +31,6 @@ internal class RtEntityMutation : RtMutationBase
         var updateArgument =
             new QueryArgument(
                     new NonNullGraphType(new ListGraphType(new UpdateMutationDtoType<RtEntityDto>(inputType))))
-                { Name = Statics.EntitiesArg };
-        var deleteArgument =
-            new QueryArgument(new NonNullGraphType(new ListGraphType(new OctoObjectIdType())))
                 { Name = Statics.EntitiesArg };
 
         this.FieldAsync($"create", $"Creates new entities of type '{outputType.Name}'.",
@@ -44,11 +42,6 @@ internal class RtEntityMutation : RtMutationBase
                 new ListGraphType(outputType),
                 new QueryArguments(updateArgument), ResolveUpdate)
             .AddMetadata(Statics.CkId, rtEntityDtoType.CkTypeId);
-
-        this.FieldAsync($"delete", $"Deletes an entity of type '{outputType.Name}'.",
-                new BooleanGraphType(),
-                new QueryArguments(deleteArgument), ResolveDelete)
-            .AddMetadata(Statics.CkId, rtEntityDtoType.CkTypeId);
     }
 
     private async ValueTask<object?> ResolveCreate(IResolveFieldContext<object?> arg)
@@ -58,7 +51,7 @@ internal class RtEntityMutation : RtMutationBase
         {
             throw AssetRepositoryException.ServiceNotRegistered(typeof(ICkCacheService));
         }
-        
+
         var sessionAccessor = arg.RequestServices?.GetRequiredService<IOctoSessionAccessor>();
         if (sessionAccessor?.Session == null)
         {
@@ -92,7 +85,8 @@ internal class RtEntityMutation : RtMutationBase
             foreach (var rtEntityDto in inputObjects)
             {
                 var rtEntity = await tenantRepository.CreateTransientRtEntityAsync(ckTypeId);
-                await RtEntityFromInputObjectAsync(ckCacheService, graphQlUserContext.TenantId, rtEntity, rtEntityDto, associationUpdateInfoList);
+                await RtEntityFromInputObjectAsync(ckCacheService, graphQlUserContext.TenantId, rtEntity, rtEntityDto,
+                    associationUpdateInfoList);
                 entityUpdateInfos.Add(EntityUpdateInfo<RtEntity>.CreateInsert(rtEntity));
             }
 
@@ -142,64 +136,6 @@ internal class RtEntityMutation : RtMutationBase
         }
     }
 
-
-    private async ValueTask<object?> ResolveDelete(IResolveFieldContext<object?> arg)
-    {
-        var tenantContext = Helpers.GetTenantContext(arg.UserContext);
-        var tenantRepository = tenantContext.GetTenantRepository();
-        
-        var sessionAccessor = arg.RequestServices?.GetRequiredService<IOctoSessionAccessor>();
-        if (sessionAccessor?.Session == null)
-        {
-            throw AssetRepositoryException.SessionUnavailable();
-        }
-
-        if (!arg.FieldDefinition.Metadata.TryGetValue(Statics.CkId, out var ckIdObj))
-        {
-            arg.Errors.Add(new ExecutionError("Invalid query. Missing construction kit id.")
-                { Code = Statics.GraphQlErrorCommon });
-            return null;
-        }
-
-        if (ckIdObj is not CkId<CkTypeId> ckTypeId)
-        {
-            arg.Errors.Add(new ExecutionError("Invalid query. Invalid construction kit id.")
-                { Code = Statics.GraphQlErrorCommon });
-            return null;
-        }
-
-        var inputObjects = arg.GetArgument<List<OctoObjectId>>(Statics.EntitiesArg);
-
-        try
-        {
-            var entityUpdateInfos = new List<EntityUpdateInfo<RtEntity>>();
-            foreach (var rtId in inputObjects)
-            {
-                entityUpdateInfos.Add(EntityUpdateInfo<RtEntity>.CreateDelete(new RtEntityId(ckTypeId, rtId)));
-            }
-
-            OperationResult operationResult = new();
-            await tenantRepository.ApplyChangesAsync(sessionAccessor.Session, entityUpdateInfos, operationResult);
-            if (operationResult.HasErrors || operationResult.HasFatalErrors)
-            {
-                return false;
-            }
-
-            return true;
-        }
-        catch (OperationFailedException e)
-        {
-            arg.Errors.Add(new ExecutionError(e.Message, e) { Code = Statics.GraphQlErrorDataStore });
-            return false;
-        }
-        catch (Exception e)
-        {
-            arg.Errors.Add(new ExecutionError("A general error occurred", e)
-                { Code = Statics.GraphQlErrorCommon });
-            return false;
-        }
-    }
-
     private async ValueTask<object?> ResolveUpdate(IResolveFieldContext<object?> arg)
     {
         var ckCacheService = arg.RequestServices?.GetRequiredService<ICkCacheService>();
@@ -207,7 +143,7 @@ internal class RtEntityMutation : RtMutationBase
         {
             throw AssetRepositoryException.ServiceNotRegistered(typeof(ICkCacheService));
         }
-                
+
         var sessionAccessor = arg.RequestServices?.GetRequiredService<IOctoSessionAccessor>();
         if (sessionAccessor?.Session == null)
         {
@@ -247,7 +183,8 @@ internal class RtEntityMutation : RtMutationBase
                     CkTypeId = ckTypeId
                 };
 
-                await RtEntityFromInputObjectAsync(ckCacheService, graphQlUserContext.TenantId, document, mutationDto.Item, associationUpdateInfoList);
+                await RtEntityFromInputObjectAsync(ckCacheService, graphQlUserContext.TenantId, document,
+                    mutationDto.Item, associationUpdateInfoList);
                 if (document.Attributes.Any())
                 {
                     entityUpdateInfos.Add(EntityUpdateInfo<RtEntity>.CreateUpdate(rtEntityId, document));
@@ -290,5 +227,4 @@ internal class RtEntityMutation : RtMutationBase
             return null;
         }
     }
-
 }
