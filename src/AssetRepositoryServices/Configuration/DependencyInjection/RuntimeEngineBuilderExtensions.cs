@@ -15,6 +15,7 @@ using Meshmakers.Octo.Backend.AssetRepositoryServices.Services;
 using Meshmakers.Octo.Communication.Contracts;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
 using Meshmakers.Octo.ConstructionKit.Contracts;
+using Meshmakers.Octo.ConstructionKit.Contracts.Serialization;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb.Configuration;
 using Meshmakers.Octo.Runtime.Engine.Configuration.DependencyInjection;
 using Meshmakers.Octo.Services.Contracts.DistributionEventHub.Commands;
@@ -246,7 +247,17 @@ public static class RuntimeEngineBuilderExtensions
                 }
             })
             // Add required services for GraphQL request/response de/serialization
-            .AddSystemTextJson(c=> c.PropertyNamingPolicy = JsonNamingPolicy.CamelCase) // For .NET Core 3+
+            .AddSystemTextJson(c=>
+            {
+                c.Converters.Add(new CkIdAttributeIdConverter());
+                c.Converters.Add(new CkIdAssociationRoleIdConverter());
+                c.Converters.Add(new CkIdTypeIdConverter());
+                c.Converters.Add(new CkIdRecordIdConverter());
+                c.Converters.Add(new CkIdEnumIdConverter());
+                c.Converters.Add(new CkModelIdConverter());
+
+                c.PropertyNamingPolicy = JsonNamingPolicy.CamelCase;
+            }) // For .NET Core 3+
             .AddErrorInfoProvider(opt => opt.ExposeExceptionDetails = true)
             .AddDataLoader() // Add required services for DataLoader support
             .AddUserContextBuilder<TenantUserContextBuilder>()
