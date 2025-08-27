@@ -62,12 +62,14 @@ internal sealed class RtQueryRowDtoType : ObjectGraphType<RtQueryRowDto>
         var cellDto = new RtQueryCellDto
         {
             AttributePath = ckTypeQueryColumn.Path,
-            Value = rtEntity.GetAttributeValueByAccessPath(ckCacheService, tenantId, ckTypeQueryColumn.AccessPathList)
+            Value = rtEntity.GetAttributeValueByAccessPath(ckCacheService, tenantId, ckTypeQueryColumn.AccessPathList,
+                AttributeValueResolveFlags.ResolveEnumsToNames)
         };
         if (cellDto.Value is CkId<CkTypeId> ckTypeId)
         {
             cellDto.Value = ckTypeId.SemanticVersionedFullName;
         }
+
         return cellDto;
     }
 
