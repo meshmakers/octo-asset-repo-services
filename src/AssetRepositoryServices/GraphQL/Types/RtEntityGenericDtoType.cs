@@ -90,14 +90,22 @@ internal sealed class RtEntityGenericDtoType : ObjectGraphType<RtEntityDto>
 
         if (value is RtRecord rtRecord)
         {
-            value = RtRecordDtoType.CreateRtRecordDtoWithAttributes(ckCacheService, tenantId, rtRecord, resolveEnumValuesToNames,
+            value = RtRecordDtoType.CreateRtRecordDtoWithAttributes(ckCacheService, tenantId, rtRecord,
+                resolveEnumValuesToNames,
                 filterAttributeNames?.ToArray());
         }
-        else if (value is IEnumerable<object> rtRecords)
+        else if (value is IEnumerable<object> rtRecordCandidates)
         {
-            value = rtRecords.Select(rtRecordValue =>
-                RtRecordDtoType.CreateRtRecordDtoWithAttributes(ckCacheService, tenantId, (RtRecord)rtRecordValue,
-                    resolveEnumValuesToNames, filterAttributeNames?.ToArray())).ToList();
+            value = rtRecordCandidates.Select(listValue =>
+            {
+                if (listValue is RtRecord rtRecord2)
+                {
+                    return RtRecordDtoType.CreateRtRecordDtoWithAttributes(ckCacheService, tenantId, rtRecord2,
+                        resolveEnumValuesToNames, filterAttributeNames?.ToArray());
+                }
+
+                return listValue;
+            });
         }
 
         if (resolveEnumValuesToNames)
