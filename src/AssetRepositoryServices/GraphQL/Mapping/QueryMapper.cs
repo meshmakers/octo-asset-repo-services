@@ -155,7 +155,7 @@ internal class QueryMapper(
                 mappingResult.Errors.Add(new NavigationPairMappingError
                 {
                     Comparision = compareValues, ErrorId = "MAPPING001", NavigationPair = navigationPair,
-                    ErrorMessage = "No suitable candidate is found, but a candidate is required.",
+                    ErrorMessage = "No suitable candidate is found, but a candidate is required",
                     Candidates = candidates
                 });
             }
@@ -165,7 +165,7 @@ internal class QueryMapper(
                 {
                     Comparision = compareValues, ErrorId = "MAPPING002", NavigationPair = navigationPair,
                     ErrorMessage =
-                        "Several suitable candidates are found, but only one candidate can be present for the assignment.",
+                        "Several suitable candidates are found, but only one candidate can be present for the assignment",
                     Candidates = candidates
                 });
             }
