@@ -50,14 +50,11 @@ internal static class Statics
     public const string GraphQlCreationPrefix = "Creation";
 
     public const string GraphQlDetails = "OctoDetails";
-    public const string GraphQlInvalidArguments = "OCTO1000";
-    public const string GraphQlNavigationPropertyError = "OCTO1001";
-    public const string GraphQlErrorDataStore = "OCTO1003";
-    public const string GraphQlErrorCommon = "OCTO1004";
-    public const string GraphQlDeleteOperationsNotSupported = "OCTO1005";
-    public const string GraphQlModelValidationError = "OCTO1006_{0}";
-    public const string GraphQlModelValidationFatalError = "OCTO1006_{0}";
-    public const string GraphQlModelValidationErrors = "OCTO1007";
+    public const string GraphQlInvalidArguments = "ASSET1000";
+    public const string GraphQlErrorDataStore = "ASSET1001";
+    public const string GraphQlErrorCommon = "ASSET1002";
+    public const string GraphQlDeleteOperationsNotSupported = "ASSET1003";
+    public const string GraphQlModelValidationErrors = "ASSET1004";
 
     public static string GetGraphQlPascalCaseName<TKey>(this CkId<TKey> ckKey) where TKey : IComparable<TKey>, ICkKey
     {

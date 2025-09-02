@@ -1,4 +1,5 @@
 using System.Diagnostics.CodeAnalysis;
+using System.Reflection;
 using GraphQL;
 using GraphQL.Builders;
 using Meshmakers.Common.Shared;
@@ -9,6 +10,7 @@ using Meshmakers.Octo.ConstructionKit.Contracts.Messages;
 using Meshmakers.Octo.ConstructionKit.Contracts.Services;
 using Meshmakers.Octo.Runtime.Contracts;
 using Meshmakers.Octo.Runtime.Contracts.Geospatial.Geometry;
+using Meshmakers.Octo.Runtime.Contracts.Repositories;
 using Meshmakers.Octo.Runtime.Contracts.Repositories.Query;
 using Meshmakers.Octo.Services.StreamData;
 
@@ -66,22 +68,48 @@ internal static class ResolveConnectionContextExtensions
 
     internal static object? HandleException(this IResolveFieldContext context, Exception exception)
     {
-        if (exception is PersistenceException persistenceException)
+        if (exception is RuntimeRepositoryException runtimeRepositoryException)
         {
-            context.Errors.Add(new ExecutionError(persistenceException.Message, persistenceException)
-                { Code = Statics.GraphQlErrorDataStore });
-        }
-        else if (exception is NavigationPropertyException navigationPropertyAssignException)
-        {
-            var error = new ExecutionError(navigationPropertyAssignException.Message,
-                navigationPropertyAssignException)
+            var error = new ExecutionError("Execution was aborted due to an error. Please check the details.",
+                runtimeRepositoryException)
             {
-                Code = Statics.GraphQlNavigationPropertyError,
+                Code = Statics.GraphQlModelValidationErrors,
                 Extensions = new Dictionary<string, object?>()
             };
 
-            error.Extensions[Statics.GraphQlDetails] = navigationPropertyAssignException.DetailMessage;
+            var operationResult = runtimeRepositoryException.OperationResult;
+            if (operationResult.HasErrors || operationResult.HasFatalErrors)
+            {
+                List<AssetRepositoryException.DetailMessage> details = new();
+                foreach (var message in operationResult.Messages)
+                {
+                    var detailMessage = new AssetRepositoryException.DetailMessage
+                    {
+                        Message = $"{message.MessageNumber}: {message.MessageText}"
+                    };
+                    details.Add(detailMessage);
+                }
+                error.Extensions[Statics.GraphQlDetails] = details;
+            }
+
             context.Errors.Add(error);
+        }
+        else if (exception is AssetRepositoryException assetRepositoryException)
+        {
+            var error = new ExecutionError(assetRepositoryException.Message,
+                assetRepositoryException)
+            {
+                Code = Statics.GraphQlModelValidationErrors,
+                Extensions = new Dictionary<string, object?>()
+            };
+
+            error.Extensions[Statics.GraphQlDetails] = assetRepositoryException.Details;
+            context.Errors.Add(error);
+        }
+        else if (exception is PersistenceException persistenceException)
+        {
+            context.Errors.Add(new ExecutionError(persistenceException.Message, persistenceException)
+                { Code = Statics.GraphQlErrorDataStore });
         }
         else
         {
@@ -92,26 +120,11 @@ internal static class ResolveConnectionContextExtensions
         return null;
     }
 
-    internal static void ValidateOperationResult(this IResolveFieldContext context, OperationResult operationResult)
+    internal static void ValidateOperationResult(OperationResult operationResult)
     {
         if (operationResult.HasErrors || operationResult.HasFatalErrors)
         {
-            foreach (var message in operationResult.Messages)
-            {
-                if (message.MessageLevel == MessageLevel.Error)
-                {
-                    context.Errors.Add(new ExecutionError(message.MessageText)
-                        { Code = string.Format(Statics.GraphQlModelValidationError, message.MessageNumber) });
-                }
-                else if (message.MessageLevel == MessageLevel.FatalError)
-                {
-                    context.Errors.Add(new ExecutionError(message.MessageText)
-                        { Code = string.Format(Statics.GraphQlModelValidationFatalError, message.MessageNumber) });
-                }
-            }
-
-            throw new ExecutionError("Operation failed. See errors for details.")
-                { Code = Statics.GraphQlModelValidationErrors };
+            throw AssetRepositoryException.OperationResultErrors(operationResult);
         }
     }
 

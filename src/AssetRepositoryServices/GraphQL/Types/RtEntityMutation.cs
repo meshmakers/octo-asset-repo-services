@@ -90,7 +90,7 @@ internal class RtEntityMutation : RtMutationBase
             OperationResult operationResult = new();
             await tenantRepository.ApplyChangesAsync(sessionAccessor.Session, entityUpdateInfos,
                 associationUpdateInfoList, operationResult);
-            arg.ValidateOperationResult(operationResult);
+            ResolveConnectionContextExtensions.ValidateOperationResult(operationResult);
 
             return await GetResultSet(sessionAccessor.Session, tenantRepository, entityUpdateInfos);
         }
@@ -138,7 +138,7 @@ internal class RtEntityMutation : RtMutationBase
             OperationResult operationResult = new();
             await tenantRepository.ApplyChangesAsync(sessionAccessor.Session, entityUpdateInfos,
                 associationUpdateInfoList, operationResult);
-            arg.ValidateOperationResult(operationResult);
+            ResolveConnectionContextExtensions.ValidateOperationResult(operationResult);
 
             return await GetResultSet(sessionAccessor.Session, tenantRepository, entityUpdateInfos);
         }

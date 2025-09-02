@@ -46,7 +46,7 @@ internal sealed class RtEntityMutationGeneric : RtMutationBase
 
             OperationResult operationResult = new();
             await tenantRepository.ApplyChangesAsync(sessionAccessor.Session, entityUpdateInfos, operationResult);
-            arg.ValidateOperationResult(operationResult);
+            ResolveConnectionContextExtensions.ValidateOperationResult(operationResult);
 
             return true;
         }

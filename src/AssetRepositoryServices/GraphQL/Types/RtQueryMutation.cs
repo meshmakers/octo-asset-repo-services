@@ -92,7 +92,7 @@ internal sealed class RtQueryMutation : RtMutationBase
             OperationResult operationResult = new();
             await tenantRepository.ApplyChangesAsync(sessionAccessor.Session, entityUpdateInfos,
                 associationUpdateInfoList, operationResult);
-            context.ValidateOperationResult(operationResult);
+            ResolveConnectionContextExtensions.ValidateOperationResult(operationResult);
 
             return await GetRtQueryRowResultSet(sessionAccessor.Session, ckCacheService, tenantRepository,
                 entityUpdateInfos, queryRtId);
@@ -124,7 +124,7 @@ internal sealed class RtQueryMutation : RtMutationBase
 
             OperationResult operationResult = new();
             await tenantRepository.ApplyChangesAsync(sessionAccessor.Session, entityUpdateInfos, operationResult);
-            context.ValidateOperationResult(operationResult);
+            ResolveConnectionContextExtensions.ValidateOperationResult(operationResult);
 
             return true;
         }
@@ -195,7 +195,7 @@ internal sealed class RtQueryMutation : RtMutationBase
             await tenantRepository.ApplyChangesAsync(sessionAccessor.Session, entityUpdateInfos,
                 associationUpdateInfoList,
                 operationResult);
-            context.ValidateOperationResult(operationResult);
+            ResolveConnectionContextExtensions.ValidateOperationResult(operationResult);
 
             return await GetRtQueryRowResultSet(sessionAccessor.Session, ckCacheService, tenantRepository,
                 entityUpdateInfos, queryRtId);

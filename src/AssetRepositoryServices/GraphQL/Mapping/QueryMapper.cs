@@ -5,7 +5,6 @@ using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.ConstructionKit.Contracts.DataTransferObjects;
 using Meshmakers.Octo.ConstructionKit.Contracts.Services;
 using Meshmakers.Octo.Runtime.Contracts;
-using Meshmakers.Octo.Runtime.Contracts.MongoDb;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb.Repositories;
 using Meshmakers.Octo.Runtime.Contracts.Repositories;
 using Meshmakers.Octo.Runtime.Contracts.Repositories.Query;
@@ -56,9 +55,15 @@ internal class QueryMapper(
                         {
                             foreach (var associationsItem in associations.Items)
                             {
-                                associationUpdateInfoList.Add(AssociationUpdateInfo.CreateDelete(
-                                    rtEntity.ToRtEntityId(), associationsItem.ToRtEntityId(),
-                                    navigationPairToInputObject.Key.CkRoleId));
+                                if (associationsItem.RtId != targetRtEntity.RtId)
+                                {
+                                    associationUpdateInfoList.Add(AssociationUpdateInfo.CreateDelete(
+                                        rtEntity.ToRtEntityId(), associationsItem.ToRtEntityId(),
+                                        navigationPairToInputObject.Key.CkRoleId));
+                                    associationUpdateInfoList.Add(AssociationUpdateInfo.CreateCreate(
+                                        rtEntity.ToRtEntityId(), targetRtEntity.ToRtEntityId(),
+                                        navigationPairToInputObject.Key.CkRoleId));
+                                }
                             }
                         }
                     }
@@ -83,22 +88,27 @@ internal class QueryMapper(
                                 associationUpdateInfoList.Add(AssociationUpdateInfo.CreateDelete(
                                     associationsItem.ToRtEntityId(),rtEntity.ToRtEntityId(),
                                     navigationPairToInputObject.Key.CkRoleId));
+                                associationUpdateInfoList.Add(AssociationUpdateInfo.CreateCreate(
+                                    targetRtEntity.ToRtEntityId(), rtEntity.ToRtEntityId(),
+                                    navigationPairToInputObject.Key.CkRoleId));
                             }
                         }
                     }
                 }
-
-                if (navigationPairToInputObject.Key.Direction == GraphDirections.Inbound)
+                else // On creation, add the association
                 {
-                    associationUpdateInfoList.Add(AssociationUpdateInfo.CreateCreate(
-                        targetRtEntity.ToRtEntityId(), rtEntity.ToRtEntityId(),
-                        navigationPairToInputObject.Key.CkRoleId));
-                }
-                else if (navigationPairToInputObject.Key.Direction == GraphDirections.Outbound)
-                {
-                    associationUpdateInfoList.Add(AssociationUpdateInfo.CreateCreate(
-                        rtEntity.ToRtEntityId(), targetRtEntity.ToRtEntityId(),
-                        navigationPairToInputObject.Key.CkRoleId));
+                    if (navigationPairToInputObject.Key.Direction == GraphDirections.Outbound)
+                    {
+                        associationUpdateInfoList.Add(AssociationUpdateInfo.CreateCreate(
+                            rtEntity.ToRtEntityId(), targetRtEntity.ToRtEntityId(),
+                            navigationPairToInputObject.Key.CkRoleId));
+                    }
+                    else if (navigationPairToInputObject.Key.Direction == GraphDirections.Inbound)
+                    {
+                        associationUpdateInfoList.Add(AssociationUpdateInfo.CreateCreate(
+                            targetRtEntity.ToRtEntityId(), rtEntity.ToRtEntityId(),
+                            navigationPairToInputObject.Key.CkRoleId));
+                    }
                 }
             }
         }
@@ -205,9 +215,9 @@ internal class QueryMapper(
                         {
                             { cellDto.AttributePath, cellDto.Value }
                         },
-                        ErrorId = "MAPPING0003",
+                        ErrorId = "MAPPING003",
                         ErrorMessage =
-                            $"Enum value '{ex.EnumValue}' not found for attribute path '{cellDto.AttributePath}'"
+                            $"Enum value '{ex.EnumValue}' not found"
                     });
                 }
                 catch (InvalidPathException ex)
@@ -218,7 +228,7 @@ internal class QueryMapper(
                         {
                             { cellDto.AttributePath, cellDto.Value }
                         },
-                        ErrorId = "MAPPING0004",
+                        ErrorId = "MAPPING004",
                         ErrorMessage = ex.Message
                     });
                 }
@@ -230,7 +240,7 @@ internal class QueryMapper(
                         {
                             { cellDto.AttributePath, cellDto.Value }
                         },
-                        ErrorId = "MAPPING0005",
+                        ErrorId = "MAPPING005",
                         ErrorMessage = ex.Message
                     });
                 }

@@ -1,21 +1,39 @@
+using GraphQL;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL;
 using Meshmakers.Octo.ConstructionKit.Contracts;
+using Meshmakers.Octo.ConstructionKit.Contracts.Messages;
 using Meshmakers.Octo.Runtime.Contracts;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices;
 
 internal class AssetRepositoryException : Exception
 {
+    public class DetailMessage
+    {
+        // ReSharper disable once UnusedAutoPropertyAccessor.Global
+        public required string Message { get; init; }
+
+        // ReSharper disable once CollectionNeverQueried.Global
+        public List<string> Details { get; } = new();
+    }
+
     public AssetRepositoryException()
     {
+        Details = new List<DetailMessage>();
     }
 
     public AssetRepositoryException(string message) : base(message)
     {
+        Details = new List<DetailMessage>();
     }
 
     public AssetRepositoryException(string message, Exception inner) : base(message, inner)
     {
+        Details = new List<DetailMessage>();
     }
+
+    // ReSharper disable once CollectionNeverQueried.Global
+    public List<DetailMessage> Details { get; }
 
     internal static Exception ServiceNotRegistered(Type type)
     {
@@ -93,8 +111,18 @@ internal class AssetRepositoryException : Exception
         return new AssetRepositoryException("Invalid query. From, To and Limit must be set for downsampling");
     }
 
-    public static Exception CkEnumValueNotFound(string attributePath, CkId<CkEnumId> ckEnumId, object enumValue, Exception inner)
+    public static Exception OperationResultErrors(OperationResult operationResult)
     {
-        return new AssetRepositoryException($"{ckEnumId} at path {attributePath} does not define value {enumValue}", inner);
+        var ex = new AssetRepositoryException("Execution was aborted due to an error. Please check the details.");
+        foreach (var message in operationResult.Messages)
+        {
+            var detailMessage = new DetailMessage
+            {
+                Message = $"{message.MessageNumber}: {message.MessageText}"
+            };
+            ex.Details.Add(detailMessage);
+        }
+
+        return ex;
     }
 }
