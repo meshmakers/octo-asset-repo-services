@@ -109,140 +109,175 @@ internal sealed class CkModelDtoType : ObjectGraphType<CkModelDto>
 
     private async Task<object?> ResolveCkModelDependenciesQuery(IResolveFieldContext<CkModelDto> arg)
     {
-        _logger.LogDebug("GraphQL query handling of construction kit model dependencies started");
-
-        if (arg.RequestServices == null)
+        try
         {
-            throw AssetRepositoryException.RequestServicesNotAvailable();
+            _logger.LogDebug("GraphQL query handling of construction kit model dependencies started");
+
+            if (arg.RequestServices == null)
+            {
+                throw AssetRepositoryException.RequestServicesNotAvailable();
+            }
+
+            var sessionAccessor = arg.GetSessionAccessor();
+            var graphQlUserContext = (GraphQlUserContext)arg.UserContext;
+            var dataQueryOperation = DataQueryOperation.Create();
+
+            var tenantRepository = graphQlUserContext.TenantContext.GetTenantRepository();
+            var resultSet =
+                await tenantRepository.GetCkModelsAsync(sessionAccessor.Session,
+                    new List<CkModelId> { arg.Source.Id }, dataQueryOperation, 0, 1);
+
+            if (resultSet.Items.Any() && resultSet.Items.First().Dependencies != null)
+            {
+                return resultSet.Items.First().Dependencies!.ToList();
+            }
+
+            return new List<CkModelId>();
         }
-
-        var sessionAccessor = arg.GetSessionAccessor();
-        var graphQlUserContext = (GraphQlUserContext)arg.UserContext;
-        var dataQueryOperation = DataQueryOperation.Create();
-
-        var tenantRepository = graphQlUserContext.TenantContext.GetTenantRepository();
-        var resultSet =
-            await tenantRepository.GetCkModelsAsync(sessionAccessor.Session,
-                new List<CkModelId> { arg.Source.Id }, dataQueryOperation, 0, 1);
-
-        if (resultSet.Items.Any() && resultSet.Items.First().Dependencies != null)
+        catch (Exception e)
         {
-            return resultSet.Items.First().Dependencies!.ToList();
+            return arg.HandleException(e);
         }
-
-        return new List<CkModelId>();
     }
 
     private async Task<object?> ResolveCkTypesQuery(IResolveConnectionContext<CkModelDto> arg)
     {
-        _logger.LogDebug("GraphQL query handling of construction kit types started");
-
-        if (!GetParameter<CkTypeId>(arg, out var sessionAccessor, out var graphQlUserContext, out var offset,
-                out var dataQueryOperation, out var keysList))
+        try
         {
-            return ConnectionUtils.ToConnection(new List<CkTypeDto>(), arg);
-        }
+            _logger.LogDebug("GraphQL query handling of construction kit types started");
 
-        if (sessionAccessor.Session == null)
+            if (!GetParameter<CkTypeId>(arg, out var sessionAccessor, out var graphQlUserContext, out var offset,
+                    out var dataQueryOperation, out var keysList))
+            {
+                return ConnectionUtils.ToConnection(new List<CkTypeDto>(), arg);
+            }
+
+            if (sessionAccessor.Session == null)
+            {
+                throw AssetRepositoryException.SessionUnavailable();
+            }
+
+            dataQueryOperation.FieldEquals(nameof(CkType.CkModelId), arg.Source.Id);
+
+            var tenantRepository = graphQlUserContext.TenantContext.GetTenantRepository();
+            var resultSet =
+                await tenantRepository.GetCkTypeAsync(sessionAccessor.Session, null,
+                    keysList, dataQueryOperation, offset, arg.First);
+
+            _logger.LogDebug("GraphQL query handling returning data for construction kit types");
+            return ConnectionUtils.ToConnection(resultSet.Items.Select(CkTypeDtoType.CreateCkTypeDto), arg,
+                resultSet.TotalCount > 0 ? offset.GetValueOrDefault(0) : 0, (int)resultSet.TotalCount,
+                resultSet.AggregationResult, resultSet.FieldAggregationResult);
+        }
+        catch (Exception e)
         {
-            throw AssetRepositoryException.SessionUnavailable();
+            return arg.HandleException(e);
         }
-
-        dataQueryOperation.FieldEquals(nameof(CkType.CkModelId), arg.Source.Id);
-
-        var tenantRepository = graphQlUserContext.TenantContext.GetTenantRepository();
-        var resultSet =
-            await tenantRepository.GetCkTypeAsync(sessionAccessor.Session, null,
-                keysList, dataQueryOperation, offset, arg.First);
-
-        _logger.LogDebug("GraphQL query handling returning data for construction kit types");
-        return ConnectionUtils.ToConnection(resultSet.Items.Select(CkTypeDtoType.CreateCkTypeDto), arg,
-            resultSet.TotalCount > 0 ? offset.GetValueOrDefault(0) : 0, (int)resultSet.TotalCount,
-            resultSet.AggregationResult, resultSet.FieldAggregationResult);
     }
 
     private async Task<object?> ResolveCkAttributesQuery(IResolveConnectionContext<CkModelDto> arg)
     {
-        _logger.LogDebug("GraphQL query handling of construction kit attributes started");
-
-        if (!GetParameter<CkAttributeId>(arg, out var sessionAccessor, out var graphQlUserContext, out var offset,
-                out var dataQueryOperation, out var keysList))
+        try
         {
-            return ConnectionUtils.ToConnection(new List<CkAttributeDto>(), arg);
-        }
+            _logger.LogDebug("GraphQL query handling of construction kit attributes started");
 
-        if (sessionAccessor.Session == null)
+            if (!GetParameter<CkAttributeId>(arg, out var sessionAccessor, out var graphQlUserContext, out var offset,
+                    out var dataQueryOperation, out var keysList))
+            {
+                return ConnectionUtils.ToConnection(new List<CkAttributeDto>(), arg);
+            }
+
+            if (sessionAccessor.Session == null)
+            {
+                throw AssetRepositoryException.SessionUnavailable();
+            }
+
+            dataQueryOperation.FieldEquals(nameof(CkAttribute.CkModelId), arg.Source.Id);
+
+            var tenantRepository = graphQlUserContext.TenantContext.GetTenantRepository();
+            var resultSet =
+                await tenantRepository.GetCkAttributesAsync(sessionAccessor.Session, null,
+                    keysList, dataQueryOperation, offset, arg.First);
+
+            _logger.LogDebug("GraphQL query handling returning data for construction kit attribute");
+            return ConnectionUtils.ToConnection(resultSet.Items.Select(CkAttributeDtoType.CreateCkAttributeDto), arg,
+                resultSet.TotalCount > 0 ? offset.GetValueOrDefault(0) : 0, (int)resultSet.TotalCount,
+                resultSet.AggregationResult, resultSet.FieldAggregationResult);
+        }
+        catch (Exception e)
         {
-            throw AssetRepositoryException.SessionUnavailable();
+            return arg.HandleException(e);
         }
-
-        dataQueryOperation.FieldEquals(nameof(CkAttribute.CkModelId), arg.Source.Id);
-
-        var tenantRepository = graphQlUserContext.TenantContext.GetTenantRepository();
-        var resultSet =
-            await tenantRepository.GetCkAttributesAsync(sessionAccessor.Session, null,
-                keysList, dataQueryOperation, offset, arg.First);
-
-        _logger.LogDebug("GraphQL query handling returning data for construction kit attribute");
-        return ConnectionUtils.ToConnection(resultSet.Items.Select(CkAttributeDtoType.CreateCkAttributeDto), arg,
-            resultSet.TotalCount > 0 ? offset.GetValueOrDefault(0) : 0, (int)resultSet.TotalCount,
-            resultSet.AggregationResult, resultSet.FieldAggregationResult);
     }
 
     private async Task<object?> ResolveCkEnumQuery(IResolveConnectionContext<CkModelDto> arg)
     {
-        _logger.LogDebug("GraphQL query handling of construction kit enums started");
-
-        if (!GetParameter<CkEnumId>(arg, out var sessionAccessor, out var graphQlUserContext, out var offset,
-                out var dataQueryOperation, out var keysList))
+        try
         {
-            return ConnectionUtils.ToConnection(new List<CkEnumDto>(), arg);
-        }
+            _logger.LogDebug("GraphQL query handling of construction kit enums started");
 
-        if (sessionAccessor.Session == null)
+            if (!GetParameter<CkEnumId>(arg, out var sessionAccessor, out var graphQlUserContext, out var offset,
+                    out var dataQueryOperation, out var keysList))
+            {
+                return ConnectionUtils.ToConnection(new List<CkEnumDto>(), arg);
+            }
+
+            if (sessionAccessor.Session == null)
+            {
+                throw AssetRepositoryException.SessionUnavailable();
+            }
+
+            dataQueryOperation.FieldEquals(nameof(CkAttribute.CkModelId), arg.Source.Id);
+
+            var tenantRepository = graphQlUserContext.TenantContext.GetTenantRepository();
+            var resultSet =
+                await tenantRepository.GetCkEnumAsync(sessionAccessor.Session, null,
+                    keysList, dataQueryOperation, offset, arg.First);
+
+            _logger.LogDebug("GraphQL query handling returning data for construction kit enums");
+            return ConnectionUtils.ToConnection(resultSet.Items.Select(CkEnumDtoType.CreateCkEnumDto), arg,
+                resultSet.TotalCount > 0 ? offset.GetValueOrDefault(0) : 0, (int)resultSet.TotalCount,
+                resultSet.AggregationResult, resultSet.FieldAggregationResult);
+        }
+        catch (Exception e)
         {
-            throw AssetRepositoryException.SessionUnavailable();
+            return arg.HandleException(e);
         }
-
-        dataQueryOperation.FieldEquals(nameof(CkAttribute.CkModelId), arg.Source.Id);
-
-        var tenantRepository = graphQlUserContext.TenantContext.GetTenantRepository();
-        var resultSet =
-            await tenantRepository.GetCkEnumAsync(sessionAccessor.Session, null,
-                keysList, dataQueryOperation, offset, arg.First);
-
-        _logger.LogDebug("GraphQL query handling returning data for construction kit enums");
-        return ConnectionUtils.ToConnection(resultSet.Items.Select(CkEnumDtoType.CreateCkEnumDto), arg,
-            resultSet.TotalCount > 0 ? offset.GetValueOrDefault(0) : 0, (int)resultSet.TotalCount,
-            resultSet.AggregationResult, resultSet.FieldAggregationResult);
     }
 
     private async Task<object?> ResolveCkRecordQuery(IResolveConnectionContext<CkModelDto> arg)
     {
-        _logger.LogDebug("GraphQL query handling of construction kit records started");
-
-        if (!GetParameter<CkRecordId>(arg, out var sessionAccessor, out var graphQlUserContext, out var offset,
-                out var dataQueryOperation, out var keysList))
+        try
         {
-            return ConnectionUtils.ToConnection(new List<CkRecordDto>(), arg);
-        }
+            _logger.LogDebug("GraphQL query handling of construction kit records started");
 
-        if (sessionAccessor.Session == null)
+            if (!GetParameter<CkRecordId>(arg, out var sessionAccessor, out var graphQlUserContext, out var offset,
+                    out var dataQueryOperation, out var keysList))
+            {
+                return ConnectionUtils.ToConnection(new List<CkRecordDto>(), arg);
+            }
+
+            if (sessionAccessor.Session == null)
+            {
+                throw AssetRepositoryException.SessionUnavailable();
+            }
+
+            dataQueryOperation.FieldEquals(nameof(CkAttribute.CkModelId), arg.Source.Id);
+
+            var tenantRepository = graphQlUserContext.TenantContext.GetTenantRepository();
+            var resultSet =
+                await tenantRepository.GetCkRecordAsync(sessionAccessor.Session, null,
+                    keysList, dataQueryOperation, offset, arg.First);
+
+            _logger.LogDebug("GraphQL query handling returning data for construction kit records");
+            return ConnectionUtils.ToConnection(resultSet.Items.Select(CkRecordDtoType.CreateCkRecordDto), arg,
+                resultSet.TotalCount > 0 ? offset.GetValueOrDefault(0) : 0, (int)resultSet.TotalCount,
+                resultSet.AggregationResult, resultSet.FieldAggregationResult);
+        }
+        catch (Exception e)
         {
-            throw AssetRepositoryException.SessionUnavailable();
+            return arg.HandleException(e);
         }
-
-        dataQueryOperation.FieldEquals(nameof(CkAttribute.CkModelId), arg.Source.Id);
-
-        var tenantRepository = graphQlUserContext.TenantContext.GetTenantRepository();
-        var resultSet =
-            await tenantRepository.GetCkRecordAsync(sessionAccessor.Session, null,
-                keysList, dataQueryOperation, offset, arg.First);
-
-        _logger.LogDebug("GraphQL query handling returning data for construction kit records");
-        return ConnectionUtils.ToConnection(resultSet.Items.Select(CkRecordDtoType.CreateCkRecordDto), arg,
-            resultSet.TotalCount > 0 ? offset.GetValueOrDefault(0) : 0, (int)resultSet.TotalCount,
-            resultSet.AggregationResult, resultSet.FieldAggregationResult);
     }
 
     public static CkModelDto CreateCkModelDto(CkModel model)

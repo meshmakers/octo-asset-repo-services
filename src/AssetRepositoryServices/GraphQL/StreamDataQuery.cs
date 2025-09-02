@@ -40,76 +40,75 @@ internal sealed class StreamDataQuery : ObjectGraphType
 
     private async Task<object?> ResolveRtEntitiesQuery(IResolveConnectionContext<object?> arg)
     {
-        _logger.LogDebug("GraphQL query handling for specific stream data entity type started");
-
-        var fieldContext = FieldContext.FromContext(arg);
-
-        var ckCacheService = arg.GetCkCacheService();
-        var ckTypeId = arg.GetMetadataValue<CkId<CkTypeId>>(Statics.CkId);
-        var graphQlUserContext = (GraphQlUserContext)arg.UserContext;
-        var tenantId = graphQlUserContext.TenantId;
-        var requestedType = ckCacheService.GetCkType(tenantId, ckTypeId);
-
-        var q = new CrateQueryBuilder(tenantId);
-        q.IncludeDefaultVariables();
-
-        q.WithCkTypeIdFilter(requestedType.CkTypeId.ToString());
-
-        var entityTimeFilter = fieldContext.GetArgument<StreamDataArguments>(Statics.StreamDataArgument);
-
-        if (entityTimeFilter is { QueryMode: QueryModeDto.Downsampling })
-        {
-            if (entityTimeFilter.From is null || entityTimeFilter.To is null || entityTimeFilter.Limit is null)
-            {
-                throw AssetRepositoryException.InvalidStreamDataQueryParams();
-            }
-
-            q.WithDownsampling(entityTimeFilter.Limit.Value, entityTimeFilter.From.Value, entityTimeFilter.To.Value);
-        }
-
-        else if (entityTimeFilter is { From: not null, To: not null })
-        {
-            q.WithTimeFilter(entityTimeFilter.From.Value, entityTimeFilter.To.Value);
-        }
-
-        else if (entityTimeFilter is { Limit: not null })
-        {
-            q.WithLimit(entityTimeFilter.Limit.Value);
-        }
-
-        HandleRequestedAttributes(fieldContext, requestedType, q);
-
-        if (!HandleRequestedRtIds(arg, q))
-            // we got an empty array of rtIds so we return an empty connection
-        {
-            return ConnectionUtils.ToConnection(new List<RtEntityDto>(), arg);
-        }
-
-        var comp = new CrateQueryCompiler();
-        var sql = comp.CompileQuery(q);
-
-        _logger.LogDebug("Executing SQL query: {Sql}", sql);
-
-        var streamDataDatabaseClient = arg.GetStreamDataDatabaseClient();
-
-        List<DataPointDto> data;
         try
         {
-            data = await streamDataDatabaseClient.GetDataAsync(tenantId, sql);
+            _logger.LogDebug("GraphQL query handling for specific stream data entity type started");
+
+            var fieldContext = FieldContext.FromContext(arg);
+
+            var ckCacheService = arg.GetCkCacheService();
+            var ckTypeId = arg.GetMetadataValue<CkId<CkTypeId>>(Statics.CkId);
+            var graphQlUserContext = (GraphQlUserContext)arg.UserContext;
+            var tenantId = graphQlUserContext.TenantId;
+            var requestedType = ckCacheService.GetCkType(tenantId, ckTypeId);
+
+            var q = new CrateQueryBuilder(tenantId);
+            q.IncludeDefaultVariables();
+
+            q.WithCkTypeIdFilter(requestedType.CkTypeId.ToString());
+
+            var entityTimeFilter = fieldContext.GetArgument<StreamDataArguments>(Statics.StreamDataArgument);
+
+            if (entityTimeFilter is { QueryMode: QueryModeDto.Downsampling })
+            {
+                if (entityTimeFilter.From is null || entityTimeFilter.To is null || entityTimeFilter.Limit is null)
+                {
+                    throw AssetRepositoryException.InvalidStreamDataQueryParams();
+                }
+
+                q.WithDownsampling(entityTimeFilter.Limit.Value, entityTimeFilter.From.Value,
+                    entityTimeFilter.To.Value);
+            }
+
+            else if (entityTimeFilter is { From: not null, To: not null })
+            {
+                q.WithTimeFilter(entityTimeFilter.From.Value, entityTimeFilter.To.Value);
+            }
+
+            else if (entityTimeFilter is { Limit: not null })
+            {
+                q.WithLimit(entityTimeFilter.Limit.Value);
+            }
+
+            HandleRequestedAttributes(fieldContext, requestedType, q);
+
+            if (!HandleRequestedRtIds(arg, q))
+                // we got an empty array of rtIds so we return an empty connection
+            {
+                return ConnectionUtils.ToConnection(new List<RtEntityDto>(), arg);
+            }
+
+            var comp = new CrateQueryCompiler();
+            var sql = comp.CompileQuery(q);
+
+            _logger.LogDebug("Executing SQL query: {Sql}", sql);
+
+            var streamDataDatabaseClient = arg.GetStreamDataDatabaseClient();
+
+            var data = await streamDataDatabaseClient.GetDataAsync(tenantId, sql);
+
+            _logger.LogDebug("SQL query executed. Got {Count} rows", data.Count);
+
+            var result = data.Select(StreamDataEntityDtoType.CreateStreamDataEntityDto).ToList();
+
+            var offset = arg.GetOffset();
+            return ConnectionUtils.ToConnection(result, arg, result.Count != 0 ? offset.GetValueOrDefault(0) : 0,
+                result.Count);
         }
-        catch (Exception ex)
+        catch (Exception e)
         {
-            return arg.HandleException(ex);
+            return arg.HandleException(e);
         }
-
-
-        _logger.LogDebug("SQL query executed. Got {Count} rows", data.Count);
-
-        var result = data.Select(StreamDataEntityDtoType.CreateStreamDataEntityDto).ToList();
-
-        var offset = arg.GetOffset();
-        return ConnectionUtils.ToConnection(result, arg, result.Count != 0 ? offset.GetValueOrDefault(0) : 0,
-            result.Count);
     }
 
     private bool HandleRequestedRtIds(IResolveConnectionContext<object?> arg, CrateQueryBuilder q)

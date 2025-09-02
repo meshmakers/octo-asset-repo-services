@@ -44,38 +44,38 @@ internal sealed class RtQueryDtoType : ObjectGraphType<RtQueryDto>
 
     private async Task<object?> ResolveRtQueryAggregationAsync(IResolveConnectionContext<RtQueryDto> context)
     {
-        _logger.LogDebug("GraphQL query handling for runtime aggregation started");
-
-        var ckCacheService = context.GetCkCacheService();
-        var sessionAccessor = context.GetSessionAccessor();
-
-        var graphQlUserContext = (GraphQlUserContext)context.UserContext;
-
-        if (context.Source is not { } rtQueryDto)
-        {
-            throw AssetRepositoryException.SourceNotSet();
-        }
-
-        var tenantRepository = graphQlUserContext.TenantContext.GetTenantRepository();
-
-        var offset = context.GetOffset();
-        var dataQueryOperation = context.GetDataQueryOperation();
-
-        var roleIdDirectionPairs = RtPathEvaluator.TokenizeAndGetNavigationPairs(ckCacheService,
-            tenantRepository.TenantId, rtQueryDto.AssociatedCkTypeId,
-            rtQueryDto.Columns.Select(column => column.AttributePath));
-
-        var resultSet = await tenantRepository.GetRtEntitiesGraphByTypeAsync(sessionAccessor.Session,
-            rtQueryDto.AssociatedCkTypeId, dataQueryOperation, roleIdDirectionPairs, offset,
-            context.First);
-
-        if (resultSet.AggregationResult == null)
-        {
-            throw AssetRepositoryException.AggregationResultNull();
-        }
-
         try
         {
+            _logger.LogDebug("GraphQL query handling for runtime aggregation started");
+
+            var ckCacheService = context.GetCkCacheService();
+            var sessionAccessor = context.GetSessionAccessor();
+
+            var graphQlUserContext = (GraphQlUserContext)context.UserContext;
+
+            if (context.Source is not { } rtQueryDto)
+            {
+                throw AssetRepositoryException.SourceNotSet();
+            }
+
+            var tenantRepository = graphQlUserContext.TenantContext.GetTenantRepository();
+
+            var offset = context.GetOffset();
+            var dataQueryOperation = context.GetDataQueryOperation();
+
+            var roleIdDirectionPairs = RtPathEvaluator.TokenizeAndGetNavigationPairs(ckCacheService,
+                tenantRepository.TenantId, rtQueryDto.AssociatedCkTypeId,
+                rtQueryDto.Columns.Select(column => column.AttributePath));
+
+            var resultSet = await tenantRepository.GetRtEntitiesGraphByTypeAsync(sessionAccessor.Session,
+                rtQueryDto.AssociatedCkTypeId, dataQueryOperation, roleIdDirectionPairs, offset,
+                context.First);
+
+            if (resultSet.AggregationResult == null)
+            {
+                throw AssetRepositoryException.AggregationResultNull();
+            }
+
             _logger.LogDebug("GraphQL query handling returning data");
             return ConnectionUtils.ToConnection([
                     new QueryAggregationResult(
@@ -99,37 +99,37 @@ internal sealed class RtQueryDtoType : ObjectGraphType<RtQueryDto>
 
     private async Task<object?> ResolveRtQueryRowsAsync(IResolveConnectionContext<RtQueryDto?> context)
     {
-        _logger.LogDebug("GraphQL query handling for runtime rows started");
-
-        var ckCacheService = context.GetCkCacheService();
-        var sessionAccessor = context.GetSessionAccessor();
-        var graphQlUserContext = (GraphQlUserContext)context.UserContext;
-
-        if (context.Source is not { } rtQueryDto)
-        {
-            throw AssetRepositoryException.SourceNotSet();
-        }
-
-        if (rtQueryDto.UserContext is not QueryUserContext queryUserContext)
-        {
-            throw AssetRepositoryException.UserContextNotSet();
-        }
-
-        var tenantRepository = graphQlUserContext.TenantContext.GetTenantRepository();
-
-        var offset = context.GetOffset();
-        var dataQueryOperation = context.GetDataQueryOperation();
-
-        var roleIdDirectionPairs = RtPathEvaluator.TokenizeAndGetNavigationPairs(ckCacheService,
-            tenantRepository.TenantId, rtQueryDto.AssociatedCkTypeId,
-            rtQueryDto.Columns.Select(column => column.AttributePath));
-
-        var resultSet = await tenantRepository.GetRtEntitiesGraphByTypeAsync(sessionAccessor.Session,
-            rtQueryDto.AssociatedCkTypeId, dataQueryOperation, roleIdDirectionPairs, offset,
-            context.First);
-
         try
         {
+            _logger.LogDebug("GraphQL query handling for runtime rows started");
+
+            var ckCacheService = context.GetCkCacheService();
+            var sessionAccessor = context.GetSessionAccessor();
+            var graphQlUserContext = (GraphQlUserContext)context.UserContext;
+
+            if (context.Source is not { } rtQueryDto)
+            {
+                throw AssetRepositoryException.SourceNotSet();
+            }
+
+            if (rtQueryDto.UserContext is not QueryUserContext queryUserContext)
+            {
+                throw AssetRepositoryException.UserContextNotSet();
+            }
+
+            var tenantRepository = graphQlUserContext.TenantContext.GetTenantRepository();
+
+            var offset = context.GetOffset();
+            var dataQueryOperation = context.GetDataQueryOperation();
+
+            var roleIdDirectionPairs = RtPathEvaluator.TokenizeAndGetNavigationPairs(ckCacheService,
+                tenantRepository.TenantId, rtQueryDto.AssociatedCkTypeId,
+                rtQueryDto.Columns.Select(column => column.AttributePath));
+
+            var resultSet = await tenantRepository.GetRtEntitiesGraphByTypeAsync(sessionAccessor.Session,
+                rtQueryDto.AssociatedCkTypeId, dataQueryOperation, roleIdDirectionPairs, offset,
+                context.First);
+
             _logger.LogDebug("GraphQL query handling returning data");
             return ConnectionUtils.ToConnection(
                 resultSet.Items.Select((entity, _) =>

@@ -68,7 +68,12 @@ internal static class ResolveConnectionContextExtensions
 
     internal static object? HandleException(this IResolveFieldContext context, Exception exception)
     {
-        if (exception is RuntimeRepositoryException runtimeRepositoryException)
+        if (exception is CkCacheException ckCacheException)
+        {
+            context.Errors.Add(new ExecutionError(ckCacheException.Message, ckCacheException)
+                { Code = Statics.GraphQlErrorCache });
+        }
+        else if (exception is RuntimeRepositoryException runtimeRepositoryException)
         {
             var error = new ExecutionError("Execution was aborted due to an error. Please check the details.",
                 runtimeRepositoryException)

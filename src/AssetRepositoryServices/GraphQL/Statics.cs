@@ -55,6 +55,7 @@ internal static class Statics
     public const string GraphQlErrorCommon = "ASSET1002";
     public const string GraphQlDeleteOperationsNotSupported = "ASSET1003";
     public const string GraphQlModelValidationErrors = "ASSET1004";
+    public const string GraphQlErrorCache = "ASSET1005";
 
     public static string GetGraphQlPascalCaseName<TKey>(this CkId<TKey> ckKey) where TKey : IComparable<TKey>, ICkKey
     {

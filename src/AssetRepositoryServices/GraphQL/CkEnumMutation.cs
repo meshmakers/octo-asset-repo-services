@@ -28,54 +28,61 @@ internal sealed class CkEnumMutation : ObjectGraphType
 
     private async Task<object?> ResolveUpdateValueExtensions(IResolveFieldContext<object?> arg)
     {
-        _logger.LogDebug("ResolveUpdateValueExtensions");
-
-        if (arg.Parent == null)
+        try
         {
-            throw AssetRepositoryException.ParentUnavailable();
+            _logger.LogDebug("ResolveUpdateValueExtensions");
+
+            if (arg.Parent == null)
+            {
+                throw AssetRepositoryException.ParentUnavailable();
+            }
+
+
+            var keysList = new List<CkId<CkEnumId>>();
+            if (arg.Parent.TryGetArgument(Statics.CkIdArg, out string? key))
+            {
+                keysList.Add(new CkId<CkEnumId>(key));
+            }
+
+            if (arg.Parent.TryGetArgument(Statics.CkIdsArg, null, out IEnumerable<string>? keys))
+            {
+                keysList.AddRange(keys.Select(k => new CkId<CkEnumId>(k)));
+            }
+
+            // If argument defined, but empty array, do not return any data. That must be a mistake by client (otherwise
+            // all entities are returned)
+            if (!keysList.Any() && (arg.HasArgument(Statics.CkIdArg) || arg.HasArgument(Statics.CkIdsArg)))
+            {
+                return new List<CkEnumDto>();
+            }
+
+            var enumUpdateDtos = arg.GetArgument<List<CkEnumUpdateDto>>(Statics.ValuesArg);
+            if (enumUpdateDtos == null)
+            {
+                throw AssetRepositoryException.ArgumentMissing(Statics.ValuesArg);
+            }
+
+            var ckEnumUpdates = enumUpdateDtos.Select(CkEnumUpdateDtoType.CreateCkEnumValueDto).ToList();
+
+            var graphQlUserContext = (GraphQlUserContext)arg.UserContext;
+            var tenantContext = graphQlUserContext.TenantContext;
+
+            foreach (var ckEnumId in keysList)
+            {
+                await tenantContext.CustomizeCkEnumAsync(ckEnumId, ckEnumUpdates);
+            }
+
+            var sessionAccessor = arg.GetSessionAccessor();
+
+            var queryOperation = DataQueryOperation.Create();
+            var resultSet = await tenantContext.GetTenantRepository()
+                .GetCkEnumAsync(sessionAccessor.Session, null, keysList, queryOperation);
+
+            return resultSet.Items.Select(CkEnumDtoType.CreateCkEnumDto);
         }
-
-
-        var keysList = new List<CkId<CkEnumId>>();
-        if (arg.Parent.TryGetArgument(Statics.CkIdArg, out string? key))
+        catch (Exception e)
         {
-            keysList.Add(new CkId<CkEnumId>(key));
+            return arg.HandleException(e);
         }
-
-        if (arg.Parent.TryGetArgument(Statics.CkIdsArg, null, out IEnumerable<string>? keys))
-        {
-            keysList.AddRange(keys.Select(k => new CkId<CkEnumId>(k)));
-        }
-
-        // If argument defined, but empty array, do not return any data. That must be a mistake by client (otherwise
-        // all entities are returned)
-        if (!keysList.Any() && (arg.HasArgument(Statics.CkIdArg) || arg.HasArgument(Statics.CkIdsArg)))
-        {
-            return new List<CkEnumDto>();
-        }
-
-        var enumUpdateDtos = arg.GetArgument<List<CkEnumUpdateDto>>(Statics.ValuesArg);
-        if (enumUpdateDtos == null)
-        {
-            throw AssetRepositoryException.ArgumentMissing(Statics.ValuesArg);
-        }
-
-        var ckEnumUpdates = enumUpdateDtos.Select(CkEnumUpdateDtoType.CreateCkEnumValueDto).ToList();
-
-        var graphQlUserContext = (GraphQlUserContext)arg.UserContext;
-        var tenantContext = graphQlUserContext.TenantContext;
-
-        foreach (var ckEnumId in keysList)
-        {
-            await tenantContext.CustomizeCkEnumAsync(ckEnumId, ckEnumUpdates);
-        }
-
-        var sessionAccessor = arg.GetSessionAccessor();
-
-        var queryOperation = DataQueryOperation.Create();
-        var resultSet = await tenantContext.GetTenantRepository()
-            .GetCkEnumAsync(sessionAccessor.Session, null, keysList, queryOperation);
-
-        return resultSet.Items.Select(CkEnumDtoType.CreateCkEnumDto);
     }
 }

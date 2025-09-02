@@ -105,147 +105,168 @@ internal sealed class RuntimeModelQuery : ObjectGraphType
 
     private async Task<object?> ResolveRtQueryAsync(IResolveConnectionContext<object?> arg)
     {
-        _logger.LogDebug("GraphQL query handling for runtime query started");
-
-        var ckCacheService = arg.GetCkCacheService();
-        var sessionAccessor = arg.GetSessionAccessor();
-
-        var graphQlUserContext = (GraphQlUserContext)arg.UserContext;
-        var queryRtId = arg.GetArgument<OctoObjectId>(Statics.RtIdArg);
-
-        var tenantRepository = graphQlUserContext.TenantContext.GetTenantRepository();
-        var rtQuery =
-            await tenantRepository.GetRtEntityByRtIdAsync<RtQuery>(
-                sessionAccessor.Session, queryRtId);
-
-        if (rtQuery == null)
+        try
         {
-            throw AssetRepositoryException.RtQueryNotFound(queryRtId);
-        }
+            _logger.LogDebug("GraphQL query handling for runtime query started");
 
-        var typeQueryColumnPaths =
-            ckCacheService.GetCkTypeQueryColumnPaths(graphQlUserContext.TenantId, rtQuery.QueryCkTypeId);
-        var invalidColumnPaths = rtQuery.Columns
-            .Where(cp => typeQueryColumnPaths.All(ckTypeQueryColumn => ckTypeQueryColumn.Path != cp)).ToList();
-        if (invalidColumnPaths.Any())
+            var ckCacheService = arg.GetCkCacheService();
+            var sessionAccessor = arg.GetSessionAccessor();
+
+            var graphQlUserContext = (GraphQlUserContext)arg.UserContext;
+            var queryRtId = arg.GetArgument<OctoObjectId>(Statics.RtIdArg);
+
+            var tenantRepository = graphQlUserContext.TenantContext.GetTenantRepository();
+            var rtQuery =
+                await tenantRepository.GetRtEntityByRtIdAsync<RtQuery>(
+                    sessionAccessor.Session, queryRtId);
+
+            if (rtQuery == null)
+            {
+                throw AssetRepositoryException.RtQueryNotFound(queryRtId);
+            }
+
+            var typeQueryColumnPaths =
+                ckCacheService.GetCkTypeQueryColumnPaths(graphQlUserContext.TenantId, rtQuery.QueryCkTypeId);
+            var invalidColumnPaths = rtQuery.Columns
+                .Where(cp => typeQueryColumnPaths.All(ckTypeQueryColumn => ckTypeQueryColumn.Path != cp)).ToList();
+            if (invalidColumnPaths.Any())
+            {
+                throw AssetRepositoryException.InvalidColumnPaths(invalidColumnPaths);
+            }
+
+            var selectedTypeQueryColumns = typeQueryColumnPaths
+                .Where(ckTypeQueryColumn => rtQuery.Columns.Contains(ckTypeQueryColumn.Path)).ToList();
+
+            _logger.LogDebug("GraphQL query handling returning data");
+            return ConnectionUtils.ToConnection(
+                [RtQueryDtoType.CreateRtQueryDto(rtQuery, selectedTypeQueryColumns)], arg,
+                0, 1);
+        }
+        catch (Exception e)
         {
-            throw AssetRepositoryException.InvalidColumnPaths(invalidColumnPaths);
+            return arg.HandleException(e);
         }
-
-        var selectedTypeQueryColumns = typeQueryColumnPaths
-            .Where(ckTypeQueryColumn => rtQuery.Columns.Contains(ckTypeQueryColumn.Path)).ToList();
-
-        _logger.LogDebug("GraphQL query handling returning data");
-        return ConnectionUtils.ToConnection(
-            [RtQueryDtoType.CreateRtQueryDto(rtQuery, selectedTypeQueryColumns)], arg,
-            0, 1);
     }
 
     private async Task<object?> ResolveGenericRtEntitiesQuery(IResolveConnectionContext<object?> arg)
     {
-        _logger.LogDebug("GraphQL query handling for generic runtime entity started");
-
-        var sessionAccessor = arg.GetSessionAccessor();
-
-        var graphQlUserContext = (GraphQlUserContext)arg.UserContext;
-        var ckTypeId = arg.GetArgument<CkId<CkTypeId>>(Statics.CkId);
-
-        var offset = arg.GetOffset();
-        var dataQueryOperation = arg.GetDataQueryOperation();
-
-        var keysList = new List<OctoObjectId>();
-        if (arg.TryGetArgument(Statics.RtIdArg, out OctoObjectId? rtId))
+        try
         {
-            keysList.Add(rtId.Value);
-        }
+            _logger.LogDebug("GraphQL query handling for generic runtime entity started");
 
-        if (arg.TryGetArgument(Statics.RtIdsArg, null, out IEnumerable<OctoObjectId>? rtIds))
+            var sessionAccessor = arg.GetSessionAccessor();
+
+            var graphQlUserContext = (GraphQlUserContext)arg.UserContext;
+            var ckTypeId = arg.GetArgument<CkId<CkTypeId>>(Statics.CkId);
+
+            var offset = arg.GetOffset();
+            var dataQueryOperation = arg.GetDataQueryOperation();
+
+            var keysList = new List<OctoObjectId>();
+            if (arg.TryGetArgument(Statics.RtIdArg, out OctoObjectId? rtId))
+            {
+                keysList.Add(rtId.Value);
+            }
+
+            if (arg.TryGetArgument(Statics.RtIdsArg, null, out IEnumerable<OctoObjectId>? rtIds))
+            {
+                keysList.AddRange(rtIds);
+            }
+
+            // If argument defined, but empty array, do not return any data.
+            // That must be a mistake by client (otherwise all entities are returned).
+            if (!keysList.Any() && (arg.HasArgument(Statics.RtIdArg) || arg.HasArgument(Statics.RtIdsArg)))
+            {
+                return ConnectionUtils.ToConnection(new List<RtEntityDto>(), arg);
+            }
+
+            var tenantRepository = graphQlUserContext.TenantContext.GetTenantRepository();
+            if (keysList.Any())
+            {
+                var resultSetIds = await tenantRepository.GetRtEntitiesByIdAsync(
+                    sessionAccessor.Session, ckTypeId, keysList, dataQueryOperation,
+                    offset, arg.First);
+
+                _logger.LogDebug("GraphQL query handling returning data by keys");
+                return ConnectionUtils.ToConnection(resultSetIds.Items.Select(RtEntityDtoType.CreateRtEntityDto), arg,
+                    resultSetIds.TotalCount > 0 ? offset.GetValueOrDefault(0) : 0, (int)resultSetIds.TotalCount,
+                    resultSetIds.AggregationResult, resultSetIds.FieldAggregationResult);
+            }
+
+            var resultSet = await tenantRepository.GetRtEntitiesByTypeAsync(sessionAccessor.Session,
+                ckTypeId, dataQueryOperation, offset,
+                arg.First);
+
+            _logger.LogDebug("GraphQL query handling returning data");
+            return ConnectionUtils.ToConnection(resultSet.Items.Select(RtEntityDtoType.CreateRtEntityDto), arg,
+                resultSet.TotalCount > 0 ? offset.GetValueOrDefault(0) : 0, (int)resultSet.TotalCount,
+                resultSet.AggregationResult, resultSet.FieldAggregationResult);
+        }
+        catch (Exception e)
         {
-            keysList.AddRange(rtIds);
+            return arg.HandleException(e);
         }
-
-        // If argument defined, but empty array, do not return any data.
-        // That must be a mistake by client (otherwise all entities are returned).
-        if (!keysList.Any() && (arg.HasArgument(Statics.RtIdArg) || arg.HasArgument(Statics.RtIdsArg)))
-        {
-            return ConnectionUtils.ToConnection(new List<RtEntityDto>(), arg);
-        }
-
-        var tenantRepository = graphQlUserContext.TenantContext.GetTenantRepository();
-        if (keysList.Any())
-        {
-            var resultSetIds = await tenantRepository.GetRtEntitiesByIdAsync(
-                sessionAccessor.Session, ckTypeId, keysList, dataQueryOperation,
-                offset, arg.First);
-
-            _logger.LogDebug("GraphQL query handling returning data by keys");
-            return ConnectionUtils.ToConnection(resultSetIds.Items.Select(RtEntityDtoType.CreateRtEntityDto), arg,
-                resultSetIds.TotalCount > 0 ? offset.GetValueOrDefault(0) : 0, (int)resultSetIds.TotalCount,
-                resultSetIds.AggregationResult, resultSetIds.FieldAggregationResult);
-        }
-
-        var resultSet = await tenantRepository.GetRtEntitiesByTypeAsync(sessionAccessor.Session,
-            ckTypeId, dataQueryOperation, offset,
-            arg.First);
-
-        _logger.LogDebug("GraphQL query handling returning data");
-        return ConnectionUtils.ToConnection(resultSet.Items.Select(RtEntityDtoType.CreateRtEntityDto), arg,
-            resultSet.TotalCount > 0 ? offset.GetValueOrDefault(0) : 0, (int)resultSet.TotalCount,
-            resultSet.AggregationResult, resultSet.FieldAggregationResult);
     }
 
     private async Task<object?> ResolveRtEntitiesQuery(IResolveConnectionContext<object?> arg)
     {
-        _logger.LogDebug("GraphQL query handling for specific runtime entity type started");
-
-        var sessionAccessor = arg.GetSessionAccessor();
-        var graphQlUserContext = (GraphQlUserContext)arg.UserContext;
-
-        var ckTypeId = arg.GetMetadataValue<CkId<CkTypeId>>(Statics.CkId);
-
-        var offset = arg.GetOffset();
-        var dataQueryOperation = arg.GetDataQueryOperation();
-
-        var keysList = new List<OctoObjectId>();
-        if (arg.TryGetArgument(Statics.RtIdArg, out OctoObjectId? rtId))
+        try
         {
-            keysList.Add(rtId.Value);
-        }
+            _logger.LogDebug("GraphQL query handling for specific runtime entity type started");
 
-        if (arg.TryGetArgument(Statics.RtIdsArg, null, out IEnumerable<OctoObjectId>? rtIds))
+            var sessionAccessor = arg.GetSessionAccessor();
+            var graphQlUserContext = (GraphQlUserContext)arg.UserContext;
+
+            var ckTypeId = arg.GetMetadataValue<CkId<CkTypeId>>(Statics.CkId);
+
+            var offset = arg.GetOffset();
+            var dataQueryOperation = arg.GetDataQueryOperation();
+
+            var keysList = new List<OctoObjectId>();
+            if (arg.TryGetArgument(Statics.RtIdArg, out OctoObjectId? rtId))
+            {
+                keysList.Add(rtId.Value);
+            }
+
+            if (arg.TryGetArgument(Statics.RtIdsArg, null, out IEnumerable<OctoObjectId>? rtIds))
+            {
+                keysList.AddRange(rtIds);
+            }
+
+            // If argument defined, but empty array, do not return any data.
+            // That must be a mistake by client (otherwise all entities are returned)
+            if (!keysList.Any() && (arg.HasArgument(Statics.RtIdArg) || arg.HasArgument(Statics.RtIdsArg)))
+            {
+                return ConnectionUtils.ToConnection(new List<RtEntityDto>(), arg);
+            }
+
+            var tenantRepository = graphQlUserContext.TenantContext.GetTenantRepository();
+            if (keysList.Any())
+            {
+                var resultSetIds =
+                    await tenantRepository.GetRtEntitiesByIdAsync(
+                        sessionAccessor.Session, ckTypeId, keysList, dataQueryOperation,
+                        offset, arg.First);
+
+                _logger.LogDebug("GraphQL query handling returning data by keys");
+                return ConnectionUtils.ToConnection(resultSetIds.Items.Select(RtEntityDtoType.CreateRtEntityDto), arg,
+                    resultSetIds.TotalCount > 0 ? offset.GetValueOrDefault(0) : 0, (int)resultSetIds.TotalCount,
+                    resultSetIds.AggregationResult, resultSetIds.FieldAggregationResult);
+            }
+
+            var resultSet =
+                await tenantRepository.GetRtEntitiesByTypeAsync(sessionAccessor.Session,
+                    ckTypeId, dataQueryOperation, offset,
+                    arg.First);
+
+            _logger.LogDebug("GraphQL query handling returning data");
+            return ConnectionUtils.ToConnection(resultSet.Items.Select(RtEntityDtoType.CreateRtEntityDto), arg,
+                resultSet.TotalCount > 0 ? offset.GetValueOrDefault(0) : 0, (int)resultSet.TotalCount,
+                resultSet.AggregationResult, resultSet.FieldAggregationResult);
+        }
+        catch (Exception e)
         {
-            keysList.AddRange(rtIds);
+            return arg.HandleException(e);
         }
-
-        // If argument defined, but empty array, do not return any data.
-        // That must be a mistake by client (otherwise all entities are returned)
-        if (!keysList.Any() && (arg.HasArgument(Statics.RtIdArg) || arg.HasArgument(Statics.RtIdsArg)))
-        {
-            return ConnectionUtils.ToConnection(new List<RtEntityDto>(), arg);
-        }
-
-        var tenantRepository = graphQlUserContext.TenantContext.GetTenantRepository();
-        if (keysList.Any())
-        {
-            var resultSetIds =
-                await tenantRepository.GetRtEntitiesByIdAsync(
-                    sessionAccessor.Session, ckTypeId, keysList, dataQueryOperation,
-                    offset, arg.First);
-
-            _logger.LogDebug("GraphQL query handling returning data by keys");
-            return ConnectionUtils.ToConnection(resultSetIds.Items.Select(RtEntityDtoType.CreateRtEntityDto), arg,
-                resultSetIds.TotalCount > 0 ? offset.GetValueOrDefault(0) : 0, (int)resultSetIds.TotalCount,
-                resultSetIds.AggregationResult, resultSetIds.FieldAggregationResult);
-        }
-
-        var resultSet =
-            await tenantRepository.GetRtEntitiesByTypeAsync(sessionAccessor.Session,
-                ckTypeId, dataQueryOperation, offset,
-                arg.First);
-
-        _logger.LogDebug("GraphQL query handling returning data");
-        return ConnectionUtils.ToConnection(resultSet.Items.Select(RtEntityDtoType.CreateRtEntityDto), arg,
-            resultSet.TotalCount > 0 ? offset.GetValueOrDefault(0) : 0, (int)resultSet.TotalCount,
-            resultSet.AggregationResult, resultSet.FieldAggregationResult);
     }
 }

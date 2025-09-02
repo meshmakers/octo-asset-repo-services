@@ -130,41 +130,48 @@ internal sealed class RtEntityDtoType : ObjectGraphType<RtEntityDto>
 
     private async Task<object?> ResolveGenericRtAssociationsQuery(IResolveConnectionContext<RtEntityDto> arg)
     {
-        var sessionAccessor = arg.GetSessionAccessor();
-        var graphQlUserContext = (GraphQlUserContext)arg.UserContext;
-
-        var offset = arg.GetOffset();
-        var dataQueryOperation = arg.GetDataQueryOperation();
-
-        if (!arg.TryGetArgument(Statics.IncludeIndirectArg, out bool? indirectAssociations))
+        try
         {
-            indirectAssociations = false;
+            var sessionAccessor = arg.GetSessionAccessor();
+            var graphQlUserContext = (GraphQlUserContext)arg.UserContext;
+
+            var offset = arg.GetOffset();
+            var dataQueryOperation = arg.GetDataQueryOperation();
+
+            if (!arg.TryGetArgument(Statics.IncludeIndirectArg, out bool? indirectAssociations))
+            {
+                indirectAssociations = false;
+            }
+
+
+            var roleId = arg.GetArgument<string>(Statics.RoleIdArg);
+            var direction = arg.GetArgument<GraphDirections>(Statics.DirectionArg);
+            var targetCkId = arg.GetArgument<CkId<CkTypeId>>(Statics.CkId);
+
+            var tenantRepository = graphQlUserContext.TenantContext.GetTenantRepository();
+
+            if (indirectAssociations.Value)
+            {
+                var result = await tenantRepository.GetIndirectRtAssociationTargetsAsync(
+                    sessionAccessor.Session, [arg.Source.RtId], CkTypeId, new CkId<CkAssociationRoleId>(roleId),
+                    direction,
+                    null, targetCkId, dataQueryOperation, offset, arg.First);
+
+                return ConnectionUtils.ToConnection(result.First().Value.Items.Select(CreateRtEntityDto), arg);
+            }
+            else
+            {
+                var result = await tenantRepository.GetRtAssociationTargetsAsync(
+                    sessionAccessor.Session, [arg.Source.RtId], CkTypeId, new CkId<CkAssociationRoleId>(roleId),
+                    targetCkId, direction,
+                    null, dataQueryOperation, offset, arg.First);
+
+                return ConnectionUtils.ToConnection(result.First().Value.Items.Select(CreateRtEntityDto), arg);
+            }
         }
-
-
-        var roleId = arg.GetArgument<string>(Statics.RoleIdArg);
-        var direction = arg.GetArgument<GraphDirections>(Statics.DirectionArg);
-        var targetCkId = arg.GetArgument<CkId<CkTypeId>>(Statics.CkId);
-
-        var tenantRepository = graphQlUserContext.TenantContext.GetTenantRepository();
-
-        if (indirectAssociations.Value)
+        catch (Exception e)
         {
-            var result = await tenantRepository.GetIndirectRtAssociationTargetsAsync(
-                sessionAccessor.Session, [arg.Source.RtId], CkTypeId, new CkId<CkAssociationRoleId>(roleId),
-                direction,
-                null, targetCkId, dataQueryOperation, offset, arg.First);
-
-            return ConnectionUtils.ToConnection(result.First().Value.Items.Select(CreateRtEntityDto), arg);
-        }
-        else
-        {
-            var result = await tenantRepository.GetRtAssociationTargetsAsync(
-                sessionAccessor.Session, [arg.Source.RtId], CkTypeId, new CkId<CkAssociationRoleId>(roleId),
-                targetCkId, direction,
-                null, dataQueryOperation, offset, arg.First);
-
-            return ConnectionUtils.ToConnection(result.First().Value.Items.Select(CreateRtEntityDto), arg);
+            return arg.HandleException(e);
         }
     }
 

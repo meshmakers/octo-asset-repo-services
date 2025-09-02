@@ -41,33 +41,34 @@ internal sealed class RtQueryMutation : RtMutationBase
 
     private async Task<object?> ResolveInsert(IResolveFieldContext<object?> context)
     {
-        var ckCacheService = context.GetCkCacheService();
-        var sessionAccessor = context.GetSessionAccessor();
-
-        if (context.Parent == null)
-        {
-            throw AssetRepositoryException.ParentUnavailable();
-        }
-
-        var tenantContext = Helpers.GetTenantContext(context.UserContext);
-        var tenantRepository = tenantContext.GetTenantRepository();
-        var graphQlUserContext = (GraphQlUserContext)context.UserContext;
-
-        var queryRtId = context.Parent.GetArgument<OctoObjectId>(Statics.RtIdArg);
-        var inputObjects = context.GetArgument<List<RtQueryRowDto>>(Statics.EntitiesArg);
-
-        var rtQuery = await tenantRepository.GetRtEntityByRtIdAsync<RtQuery>(sessionAccessor.Session, queryRtId);
-        if (rtQuery == null)
-        {
-            throw AssetRepositoryException.QueryNotFound(queryRtId);
-        }
-
-        QueryMapperEngine queryMapperEngine = new QueryMapperEngine();
-        var queryMapper = await queryMapperEngine.CreateQueryMapperAsync(ckCacheService, graphQlUserContext,
-            rtQuery, tenantRepository, inputObjects, sessionAccessor);
-
         try
         {
+            var ckCacheService = context.GetCkCacheService();
+            var sessionAccessor = context.GetSessionAccessor();
+
+            if (context.Parent == null)
+            {
+                throw AssetRepositoryException.ParentUnavailable();
+            }
+
+            var tenantContext = Helpers.GetTenantContext(context.UserContext);
+            var tenantRepository = tenantContext.GetTenantRepository();
+            var graphQlUserContext = (GraphQlUserContext)context.UserContext;
+
+            var queryRtId = context.Parent.GetArgument<OctoObjectId>(Statics.RtIdArg);
+            var inputObjects = context.GetArgument<List<RtQueryRowDto>>(Statics.EntitiesArg);
+
+            var rtQuery = await tenantRepository.GetRtEntityByRtIdAsync<RtQuery>(sessionAccessor.Session, queryRtId);
+            if (rtQuery == null)
+            {
+                throw AssetRepositoryException.QueryNotFound(queryRtId);
+            }
+
+            QueryMapperEngine queryMapperEngine = new QueryMapperEngine();
+            var queryMapper = await queryMapperEngine.CreateQueryMapperAsync(ckCacheService, graphQlUserContext,
+                rtQuery, tenantRepository, inputObjects, sessionAccessor);
+
+
             var entityUpdateInfos = new List<EntityUpdateInfo<RtEntity>>();
             var associationUpdateInfoList = new List<AssociationUpdateInfo>();
 
@@ -106,15 +107,15 @@ internal sealed class RtQueryMutation : RtMutationBase
 
     private async Task<object?> ResolveDelete(IResolveFieldContext<object?> context)
     {
-        var tenantContext = Helpers.GetTenantContext(context.UserContext);
-        var tenantRepository = tenantContext.GetTenantRepository();
-
-        var sessionAccessor = context.GetSessionAccessor();
-
-        var inputObjects = context.GetArgument<List<RtEntityIdDto>>(Statics.EntitiesArg);
-
         try
         {
+            var tenantContext = Helpers.GetTenantContext(context.UserContext);
+            var tenantRepository = tenantContext.GetTenantRepository();
+
+            var sessionAccessor = context.GetSessionAccessor();
+
+            var inputObjects = context.GetArgument<List<RtEntityIdDto>>(Statics.EntitiesArg);
+
             var entityUpdateInfos = new List<EntityUpdateInfo<RtEntity>>();
             foreach (var rtEntityId in inputObjects)
             {
@@ -136,35 +137,36 @@ internal sealed class RtQueryMutation : RtMutationBase
 
     private async Task<object?> ResolveUpdate(IResolveFieldContext<object?> context)
     {
-        var ckCacheService = context.GetCkCacheService();
-        var sessionAccessor = context.GetSessionAccessor();
-
-        if (context.Parent == null)
-        {
-            throw AssetRepositoryException.ParentUnavailable();
-        }
-
-        var tenantContext = Helpers.GetTenantContext(context.UserContext);
-        var tenantRepository = tenantContext.GetTenantRepository();
-        var graphQlUserContext = (GraphQlUserContext)context.UserContext;
-
-        var queryRtId = context.Parent.GetArgument<OctoObjectId>(Statics.RtIdArg);
-        var inputObjects = context.GetArgument<List<MutationDto<RtQueryRowDto>>>(Statics.EntitiesArg);
-
-        var rtQuery = await tenantRepository.GetRtEntityByRtIdAsync<RtQuery>(sessionAccessor.Session, queryRtId);
-        if (rtQuery == null)
-        {
-            throw AssetRepositoryException.QueryNotFound(queryRtId);
-        }
-
-        var mappingResult = new MappingResult();
-
-        QueryMapperEngine queryMapperEngine = new QueryMapperEngine();
-        var queryMapper = await queryMapperEngine.CreateQueryMapperAsync(ckCacheService, graphQlUserContext,
-            rtQuery, tenantRepository, inputObjects.Select(i => i.Item).ToList(), sessionAccessor);
-
         try
         {
+            var ckCacheService = context.GetCkCacheService();
+            var sessionAccessor = context.GetSessionAccessor();
+
+            if (context.Parent == null)
+            {
+                throw AssetRepositoryException.ParentUnavailable();
+            }
+
+            var tenantContext = Helpers.GetTenantContext(context.UserContext);
+            var tenantRepository = tenantContext.GetTenantRepository();
+            var graphQlUserContext = (GraphQlUserContext)context.UserContext;
+
+            var queryRtId = context.Parent.GetArgument<OctoObjectId>(Statics.RtIdArg);
+            var inputObjects = context.GetArgument<List<MutationDto<RtQueryRowDto>>>(Statics.EntitiesArg);
+
+            var rtQuery = await tenantRepository.GetRtEntityByRtIdAsync<RtQuery>(sessionAccessor.Session, queryRtId);
+            if (rtQuery == null)
+            {
+                throw AssetRepositoryException.QueryNotFound(queryRtId);
+            }
+
+            var mappingResult = new MappingResult();
+
+            QueryMapperEngine queryMapperEngine = new QueryMapperEngine();
+            var queryMapper = await queryMapperEngine.CreateQueryMapperAsync(ckCacheService, graphQlUserContext,
+                rtQuery, tenantRepository, inputObjects.Select(i => i.Item).ToList(), sessionAccessor);
+
+
             var entityUpdateInfos = new List<EntityUpdateInfo<RtEntity>>();
             var associationUpdateInfoList = new List<AssociationUpdateInfo>();
             foreach (var mutationDto in inputObjects)
