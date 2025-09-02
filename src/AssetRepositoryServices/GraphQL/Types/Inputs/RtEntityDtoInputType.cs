@@ -64,7 +64,8 @@ internal sealed class RtEntityDtoInputType : InputObjectGraphType<RtEntityDto>
     /// <param name="typeGraph">The cache item</param>
     /// <param name="options"></param>
     /// <param name="ckCacheService"></param>
-    public void Populate(IOptions<OctoAssetRepositoryServicesOptions> options, ICkCacheService ckCacheService, string tenantId, IGraphTypesCache graphTypesCache,
+    public void Populate(IOptions<OctoAssetRepositoryServicesOptions> options, ICkCacheService ckCacheService,
+        string tenantId, IGraphTypesCache graphTypesCache,
         CkTypeGraph typeGraph)
     {
         var builder = OctoBuilder<RtEntityDto>.Create(this, options);

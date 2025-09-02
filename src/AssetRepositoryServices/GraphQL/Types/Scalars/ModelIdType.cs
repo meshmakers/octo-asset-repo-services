@@ -11,12 +11,15 @@ internal class ModelIdType : ScalarGraphType
         Description = "Identifies a construction kit model.";
     }
 
-    public override object? ParseValue(object? value) => value switch
+    public override object? ParseValue(object? value)
     {
-        string s => new CkModelId(s),
-        CkModelId _ => value,
-        _ => ThrowValueConversionError(value)
-    };
+        return value switch
+        {
+            string s => new CkModelId(s),
+            CkModelId _ => value,
+            _ => ThrowValueConversionError(value)
+        };
+    }
 
     public override object? Serialize(object? value)
     {

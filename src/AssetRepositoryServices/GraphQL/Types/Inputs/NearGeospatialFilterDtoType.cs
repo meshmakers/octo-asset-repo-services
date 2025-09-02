@@ -1,5 +1,4 @@
-﻿
-using GraphQL.Types;
+﻿using GraphQL.Types;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Inputs;
@@ -10,8 +9,8 @@ internal sealed class NearGeospatialFilterDtoType : InputObjectGraphType<NearGeo
     {
         Name = "NearGeospatialFilter";
         Field(x => x.AttributeName);
-        Field(x => x.Point, type: typeof(NonNullGraphType<PointInputGraphType>));
-        Field(x => x.MinDistance, nullable:true);
-        Field(x => x.MaxDistance, nullable:true);
+        Field(x => x.Point, typeof(NonNullGraphType<PointInputGraphType>));
+        Field(x => x.MinDistance, true);
+        Field(x => x.MaxDistance, true);
     }
 }

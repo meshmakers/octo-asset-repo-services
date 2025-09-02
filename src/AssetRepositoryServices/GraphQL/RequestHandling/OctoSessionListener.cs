@@ -37,20 +37,18 @@ internal class OctoSessionListener : IDocumentExecutionListener
     /// <inheritdoc />
     public async Task AfterExecutionAsync(IExecutionContext context)
     {
-        if (_accessor.Session == null)
+        if (!_accessor.HasSession)
         {
             return;
         }
-        
+
         if (context.Errors.Count == 0)
         {
-            await _accessor.Session.CommitTransactionAsync().ConfigureAwait(false);;
+            await _accessor.CommitAsync().ConfigureAwait(false);
         }
         else
         {
-            await _accessor.Session.AbortTransactionAsync().ConfigureAwait(false);;
+            await _accessor.AbortAsync().ConfigureAwait(false);
         }
-
-        _accessor.Session = null;
     }
 }

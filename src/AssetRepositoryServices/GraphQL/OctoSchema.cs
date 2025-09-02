@@ -13,6 +13,10 @@ internal sealed class OctoSchema : Schema
     static OctoSchema()
     {
         ValueConverter.Register(typeof(string), typeof(OctoObjectId), o => new OctoObjectId((string)o));
+        ValueConverter.Register(typeof(string), typeof(CkId<CkTypeId>), o => new CkId<CkTypeId>((string)o));
+        ValueConverter.Register(typeof(string), typeof(CkId<CkRecordId>), o => new CkId<CkRecordId>((string)o));
+        ValueConverter.Register(typeof(string), typeof(CkId<CkAttributeId>), o => new CkId<CkAttributeId>((string)o));
+        ValueConverter.Register(typeof(string), typeof(CkId<CkAssociationRoleId>), o => new CkId<CkAssociationRoleId>((string)o));
     }
 
     /// <summary>
@@ -22,8 +26,9 @@ internal sealed class OctoSchema : Schema
     /// <param name="octoQuery">The Octo query schema of a given data source</param>
     /// <param name="octoMutation"></param>
     /// <param name="octoSubscriptions"></param>
-    public OctoSchema(IServiceProvider serviceProvider, OctoQuery octoQuery, OctoMutation octoMutation, OctoSubscriptions octoSubscriptions)
-        :base(serviceProvider)
+    public OctoSchema(IServiceProvider serviceProvider, OctoQuery octoQuery, OctoMutation octoMutation,
+        OctoSubscriptions octoSubscriptions)
+        : base(serviceProvider)
     {
         Query = octoQuery;
         Mutation = octoMutation;

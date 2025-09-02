@@ -6,6 +6,7 @@ using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.ConstructionKit.Contracts.DataTransferObjects;
 using Meshmakers.Octo.ConstructionKit.Contracts.DependencyGraph;
 using Meshmakers.Octo.ConstructionKit.Contracts.Services;
+using Meshmakers.Octo.ConstructionKit.Models.System.Generated.System.v1;
 using Meshmakers.Octo.Runtime.Contracts;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb.Repositories;
 using Meshmakers.Octo.Runtime.Contracts.Repositories;
@@ -46,28 +47,6 @@ internal abstract class RtMutationBase : ObjectGraphType
         }
     }
 
-    protected void RtEntityFromInputObject(ICkCacheService ckCacheService, string tenantId, RtEntity rtEntity,
-        RtQueryRowDto rtQueryRowDto)
-    {
-        rtEntity.RtWellKnownName = rtQueryRowDto.RtWellKnownName;
-
-        if (rtQueryRowDto.Cells != null)
-        {
-            foreach (var cellDto in rtQueryRowDto.Cells)
-            {
-                // Ignore attribute paths that are navigation properties
-                var navigationPair = RtPathEvaluator.TokenizeAndGetNavigationPair(ckCacheService, tenantId,
-                    rtEntity.CkTypeId ?? throw OctoGraphQLException.CkTypeIdUndefined(), cellDto.AttributePath);
-                if (navigationPair != null)
-                {
-                    continue;
-                }
-
-                RtPathEvaluator.SetValue(ckCacheService, tenantId, rtEntity, cellDto.AttributePath, cellDto.Value);
-            }
-        }
-    }
-
     protected async Task<IEnumerable<RtEntityDto>> GetResultSet(IOctoSession session, ITenantRepository repository,
         List<EntityUpdateInfo<RtEntity>> entityUpdateInfos)
     {
@@ -90,7 +69,7 @@ internal abstract class RtMutationBase : ObjectGraphType
         List<EntityUpdateInfo<RtEntity>> entityUpdateInfos, OctoObjectId queryRtId)
     {
         var rtQuery =
-            await repository.GetRtEntityByRtIdAsync<ConstructionKit.Models.System.Generated.System.v1.RtQuery>(session,
+            await repository.GetRtEntityByRtIdAsync<RtQuery>(session,
                 queryRtId);
         if (rtQuery == null)
         {

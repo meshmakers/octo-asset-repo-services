@@ -3,7 +3,7 @@ using Meshmakers.Octo.ConstructionKit.Contracts;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Scalars;
 
-internal class CkIdGraph<TCkKey> : ScalarGraphType where TCkKey: IComparable<TCkKey>, ICkKey
+internal class CkIdGraph<TCkKey> : ScalarGraphType where TCkKey : IComparable<TCkKey>, ICkKey
 {
     public CkIdGraph()
     {
@@ -11,12 +11,15 @@ internal class CkIdGraph<TCkKey> : ScalarGraphType where TCkKey: IComparable<TCk
         Description = "A construction kit id of " + typeof(TCkKey).Name + ".";
     }
 
-    public override object ParseValue(object? value) => value switch
+    public override object ParseValue(object? value)
     {
-        string s => new CkId<TCkKey>(s),
-        CkId<TCkKey> _ => value,
-        _ => ThrowValueConversionError(value)
-    };
+        return value switch
+        {
+            string s => new CkId<TCkKey>(s),
+            CkId<TCkKey> _ => value,
+            _ => ThrowValueConversionError(value)
+        };
+    }
 
     public override object? Serialize(object? value)
     {

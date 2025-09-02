@@ -3,7 +3,6 @@ using GraphQL;
 using GraphQL.Builders;
 using GraphQL.DataLoader;
 using GraphQL.Types;
-using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.RequestHandling;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Enums;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Inputs;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Utils;
@@ -15,12 +14,12 @@ using Meshmakers.Octo.Runtime.Contracts.RepositoryEntities;
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
 
 /// <summary>
-/// Represents a GraphQL type for a runtime entity generic association in Octo.
+///     Represents a GraphQL type for a runtime entity generic association in Octo.
 /// </summary>
 public sealed class RtEntityGenericAssociationType : ObjectGraphType<RtEntityGenericAssociation>
 {
     /// <summary>
-    /// Initializes a new instance of the <see cref="RtEntityGenericAssociationType"/> class
+    ///     Initializes a new instance of the <see cref="RtEntityGenericAssociationType" /> class
     /// </summary>
     public RtEntityGenericAssociationType()
     {
@@ -50,13 +49,9 @@ public sealed class RtEntityGenericAssociationType : ObjectGraphType<RtEntityGen
             .Resolve(ResolveGenericRtAssociationsQuery);
     }
 
-    private object? ResolveGenericRtAssociationsQuery(IResolveConnectionContext<RtEntityGenericAssociation> ctx)
+    private object ResolveGenericRtAssociationsQuery(IResolveConnectionContext<RtEntityGenericAssociation> ctx)
     {
-        var sessionAccessor = ctx.RequestServices?.GetRequiredService<IOctoSessionAccessor>();
-        if (sessionAccessor?.Session == null)
-        {
-            throw AssetRepositoryException.SessionUnavailable();
-        }
+        var sessionAccessor = ctx.GetSessionAccessor();
 
         var dataLoaderAccessor = ctx.RequestServices?.GetRequiredService<IDataLoaderContextAccessor>();
         if (dataLoaderAccessor?.Context == null)
@@ -64,24 +59,8 @@ public sealed class RtEntityGenericAssociationType : ObjectGraphType<RtEntityGen
             throw AssetRepositoryException.DataLoaderContextUnavailable();
         }
 
-        if (!ctx.TryGetArgument(Statics.DirectionArg, out GraphDirections? direction))
-        {
-            throw AssetRepositoryException.DirectionMissing();
-        }
-
-        CkId<CkAssociationRoleId>? ckAssociationRoleId = null;
-        if (ctx.TryGetArgument(Statics.RoleIdArg, out string? roleId))
-        {
-            // Validate roleId if provided
-            if (string.IsNullOrEmpty(roleId))
-            {
-                ctx.Errors.Add(new ExecutionError("Invalid query. Missing role id.")
-                    { Code = Statics.GraphQlErrorCommon });
-                return null;
-            }
-
-            ckAssociationRoleId = new CkId<CkAssociationRoleId>(roleId);
-        }
+        var direction = ctx.GetArgument<GraphDirections>(Statics.DirectionArg);
+        var ckAssociationRoleId = ctx.GetArgument<CkId<CkAssociationRoleId>?>(Statics.RoleIdArg);
 
         var graphQlUserContext = (GraphQlUserContext)ctx.UserContext;
         var tenantRepository = graphQlUserContext.TenantContext.GetTenantRepository();
@@ -90,10 +69,10 @@ public sealed class RtEntityGenericAssociationType : ObjectGraphType<RtEntityGen
         if (ckAssociationRoleId != null)
         {
             var loader = dataLoaderAccessor.Context.GetOrAddBatchLoader<RtEntityId, IResultSet<RtAssociation>>(
-                $"Get{ctx.Source.RtEntityDto.CkTypeId}_{direction.Value}", async rtEntityIds =>
+                $"Get{ctx.Source.RtEntityDto.CkTypeId}_{direction}", async rtEntityIds =>
                     await tenantRepository.GetRtAssociationsAsync(
                         sessionAccessor.Session, rtEntityIds,
-                        direction.Value, ckAssociationRoleId, offset, ctx.First));
+                        direction, ckAssociationRoleId, offset, ctx.First));
             var dataLoaderResult = loader.LoadAsync(ctx.Source.RtEntityDto.ToRtEntityId());
 
             return dataLoaderResult.Then(resultSet => ConnectionUtils.ToConnection(
@@ -103,10 +82,10 @@ public sealed class RtEntityGenericAssociationType : ObjectGraphType<RtEntityGen
         else
         {
             var loader = dataLoaderAccessor.Context.GetOrAddBatchLoader<RtEntityId, IResultSet<RtAssociation>>(
-                $"Get{ctx.Source.RtEntityDto.CkTypeId}_{direction.Value}", async rtEntityIds =>
+                $"Get{ctx.Source.RtEntityDto.CkTypeId}_{direction}", async rtEntityIds =>
                     await tenantRepository.GetRtAssociationsAsync(
                         sessionAccessor.Session, rtEntityIds,
-                        direction.Value, offset, ctx.First));
+                        direction, offset, ctx.First));
             var dataLoaderResult = loader.LoadAsync(ctx.Source.RtEntityDto.ToRtEntityId());
 
             return dataLoaderResult.Then(resultSet => ConnectionUtils.ToConnection(
@@ -115,13 +94,9 @@ public sealed class RtEntityGenericAssociationType : ObjectGraphType<RtEntityGen
         }
     }
 
-    private object? ResolveGenericRtAssociationTargetsQuery(IResolveConnectionContext<RtEntityGenericAssociation> ctx)
+    private object ResolveGenericRtAssociationTargetsQuery(IResolveConnectionContext<RtEntityGenericAssociation> ctx)
     {
-        var sessionAccessor = ctx.RequestServices?.GetRequiredService<IOctoSessionAccessor>();
-        if (sessionAccessor?.Session == null)
-        {
-            throw AssetRepositoryException.SessionUnavailable();
-        }
+        var sessionAccessor = ctx.GetSessionAccessor();
 
         var dataLoaderAccessor = ctx.RequestServices?.GetRequiredService<IDataLoaderContextAccessor>();
         if (dataLoaderAccessor?.Context == null)
@@ -134,40 +109,25 @@ public sealed class RtEntityGenericAssociationType : ObjectGraphType<RtEntityGen
         var offset = ctx.GetOffset();
         var dataQueryOperation = ctx.GetDataQueryOperation();
 
-        if (!ctx.TryGetArgument(Statics.RoleIdArg, out string? roleId))
-        {
-            throw AssetRepositoryException.RoleIdMissing();
-        }
-
         if (!ctx.TryGetArgument(Statics.IncludeIndirectArg, out bool? indirectAssociations))
         {
             indirectAssociations = false;
         }
 
-        if (!ctx.TryGetArgument(Statics.DirectionArg, out GraphDirections? direction))
-        {
-            throw AssetRepositoryException.DirectionMissing();
-        }
-
-        if (!ctx.TryGetArgument(Statics.CkId, out string? ckIdObj))
-        {
-            ctx.Errors.Add(new ExecutionError("Invalid query. Missing construction kit id.")
-                { Code = Statics.GraphQlErrorCommon });
-            return null;
-        }
-
-        CkId<CkTypeId> targetCkId = new(ckIdObj);
+        var roleId = ctx.GetArgument<string>(Statics.RoleIdArg);
+        var direction = ctx.GetArgument<GraphDirections>(Statics.DirectionArg);
+        var targetCkId = ctx.GetArgument<CkId<CkTypeId>>(Statics.CkId);
 
         var tenantRepository = graphQlUserContext.TenantContext.GetTenantRepository();
 
         if (indirectAssociations.Value)
         {
             var loader = dataLoaderAccessor.Context.GetOrAddBatchLoader<RtEntityId, IResultSet<RtEntity>>(
-                $"Get{ctx.Source.RtEntityDto.CkTypeId}_{targetCkId}_{roleId}_{direction.Value}", async rtEntityIds =>
+                $"Get{ctx.Source.RtEntityDto.CkTypeId}_{targetCkId}_{roleId}_{direction}", async rtEntityIds =>
                     await tenantRepository.GetIndirectRtAssociationTargetsAsync(
                         sessionAccessor.Session, rtEntityIds.Select(x => x.RtId), ctx.Source.RtEntityDto.CkTypeId,
                         new CkId<CkAssociationRoleId>(roleId),
-                        direction.Value,
+                        direction,
                         null, targetCkId, dataQueryOperation, offset, ctx.First));
 
             var dataLoaderResult = loader.LoadAsync(ctx.Source.RtEntityDto.ToRtEntityId());
@@ -179,11 +139,11 @@ public sealed class RtEntityGenericAssociationType : ObjectGraphType<RtEntityGen
         else
         {
             var loader = dataLoaderAccessor.Context.GetOrAddBatchLoader<RtEntityId, IResultSet<RtEntity>>(
-                $"Get{ctx.Source.RtEntityDto.CkTypeId}_{targetCkId}_{roleId}_{direction.Value}", async rtEntityIds =>
+                $"Get{ctx.Source.RtEntityDto.CkTypeId}_{targetCkId}_{roleId}_{direction}", async rtEntityIds =>
                     await tenantRepository.GetRtAssociationTargetsAsync(
                         sessionAccessor.Session, rtEntityIds.Select(x => x.RtId), ctx.Source.RtEntityDto.CkTypeId,
                         new CkId<CkAssociationRoleId>(roleId),
-                        targetCkId, direction.Value,
+                        targetCkId, direction,
                         null, dataQueryOperation, offset, ctx.First));
 
             var dataLoaderResult = loader.LoadAsync(ctx.Source.RtEntityDto.ToRtEntityId());

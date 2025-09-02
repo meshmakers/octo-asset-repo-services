@@ -11,21 +11,21 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL;
 [DoNotRegister]
 internal sealed class OctoQuery : ObjectGraphType
 {
-    public OctoQuery(IGraphTypesCache graphTypesCache)
+    public OctoQuery(ILoggerFactory loggerFactory, IGraphTypesCache graphTypesCache)
     {
         Name = "OctoQuery";
 
         Field<CkQuery>("ConstructionKit")
             .Resolve(_ => new object());
 
-        Field("Runtime", new RuntimeModelQuery(graphTypesCache))
+        Field("Runtime", new RuntimeModelQuery(loggerFactory.CreateLogger<RuntimeModelQuery>(), graphTypesCache))
             .Resolve(_ => new RtEntityDto());
 
-        
+
         if (graphTypesCache.GetStreamTypes().Length != 0)
-        {
             // make sure to only add the stream data field if there are stream types.
-            Field("StreamData", new StreamDataQuery(graphTypesCache))
+        {
+            Field("StreamData", new StreamDataQuery(loggerFactory.CreateLogger<StreamDataQuery>(), graphTypesCache))
                 .Resolve(_ => new StreamDataEntityDto());
         }
     }

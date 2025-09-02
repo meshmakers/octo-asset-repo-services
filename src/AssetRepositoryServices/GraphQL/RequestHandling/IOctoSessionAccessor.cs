@@ -8,7 +8,22 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.RequestHandlin
 public interface IOctoSessionAccessor
 {
     /// <summary>
-    ///     Returns the session object of Octo
+    ///     Returns the session object of OctoMesh
     /// </summary>
-    IOctoSession? Session { get; set; }
+    IOctoSession Session { get; set; }
+
+    /// <summary>
+    ///     Returns true if there is a session available, false otherwise
+    /// </summary>
+    bool HasSession { get; }
+
+    /// <summary>
+    ///     Aborts the current transaction if there is a session available
+    /// </summary>
+    Task AbortAsync();
+
+    /// <summary>
+    /// Commits the current transaction if there is a session available
+    /// </summary>
+    Task CommitAsync();
 }

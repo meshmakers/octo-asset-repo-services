@@ -6,12 +6,12 @@ using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Inputs;
 
-internal sealed class RtQueryRowDtoUpdateType: InputObjectGraphType<MutationDto<RtQueryRowDto>>
+internal sealed class RtQueryRowDtoUpdateType : InputObjectGraphType<MutationDto<RtQueryRowDto>>
 {
     public RtQueryRowDtoUpdateType()
     {
         Name = $"RtQueryRow{Statics.GraphQlUpdatePrefix}".ToPascalCase();
-        Field(x => x.RtId, type: typeof(OctoObjectIdType));
+        Field(x => x.RtId, typeof(OctoObjectIdType));
         Field<RtQueryRowDtoInputType>("item").Description(AssetTexts.Graphql_RtQueryRowUpdate_Item_Description);
     }
 }

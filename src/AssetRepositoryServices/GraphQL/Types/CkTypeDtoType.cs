@@ -6,9 +6,7 @@ using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Scalars;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Utils;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
 using Meshmakers.Octo.ConstructionKit.Contracts;
-using Meshmakers.Octo.ConstructionKit.Contracts.DataTransferObjects;
 using Meshmakers.Octo.ConstructionKit.Contracts.DependencyGraph;
-using Meshmakers.Octo.ConstructionKit.Contracts.Services;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb.Repositories.Entities;
 using CkTypeAttributeDto = Meshmakers.Octo.Communication.Contracts.DataTransferObjects.CkTypeAttributeDto;
 using CkTypeDto = Meshmakers.Octo.Communication.Contracts.DataTransferObjects.CkTypeDto;
@@ -23,11 +21,11 @@ internal sealed class CkTypeDtoType : ObjectGraphType<CkTypeDto>
         Name = "CkType";
         Description = AssetTexts.Graphql_Type_Description;
 
-        Field(x => x.CkTypeId, type: typeof(NonNullGraphType<CkIdGraph<CkTypeId>>))
+        Field(x => x.CkTypeId, typeof(NonNullGraphType<CkIdGraph<CkTypeId>>))
             .Description(AssetTexts.Graphql_Type_CkTypeId_Description);
         Field(x => x.IsAbstract).Description(AssetTexts.Graphql_Type_IsAbstract_Description);
         Field(x => x.IsFinal).Description(AssetTexts.Graphql_Type_IsFinal_Description);
-        Field(x => x.Description, nullable: true).Description(AssetTexts.Graphql_Type_Description_Description);
+        Field(x => x.Description, true).Description(AssetTexts.Graphql_Type_Description_Description);
 
         Connection<CkTypeAttributeDtoType>("attributes")
             .Argument<StringGraphType>(Statics.AttributeNameContainsFilterArg,
@@ -49,12 +47,7 @@ internal sealed class CkTypeDtoType : ObjectGraphType<CkTypeDto>
                 AssetTexts.Graphql_Type_Filter_IgnoreAbstractTypes_Description)
             .Resolve(ctx =>
                 {
-                    var ckCacheService = ctx.RequestServices?.GetRequiredService<ICkCacheService>();
-                    if (ckCacheService == null)
-                    {
-                        throw AssetRepositoryException.ServiceNotRegistered(typeof(ICkCacheService));
-                    }
-
+                    var ckCacheService = ctx.GetCkCacheService();
                     var graphQlContext = (GraphQlUserContext)ctx.UserContext;
 
                     if (!ctx.TryGetArgument(Statics.IgnoreAbstractTypesArg,
@@ -65,7 +58,7 @@ internal sealed class CkTypeDtoType : ObjectGraphType<CkTypeDto>
 
                     var result = ckCacheService.GetCkType(graphQlContext.TenantId, ctx.Source.CkTypeId).DerivedTypes
                         .Select(k => ckCacheService.GetCkType(graphQlContext.TenantId, k.InheritorCkTypeId))
-                        .Where(t=> !t.IsAbstract || !ignoreAbstractTypes.Value);
+                        .Where(t => !t.IsAbstract || !ignoreAbstractTypes.Value);
                     return ConnectionUtils.ToConnection(result.Select(CreateCkTypeDto), ctx);
                 }
             );
@@ -78,12 +71,7 @@ internal sealed class CkTypeDtoType : ObjectGraphType<CkTypeDto>
                 AssetTexts.Graphql_Type_Filter_IncludeSelfArgs_Description)
             .Resolve(ctx =>
                 {
-                    var ckCacheService = ctx.RequestServices?.GetRequiredService<ICkCacheService>();
-                    if (ckCacheService == null)
-                    {
-                        throw AssetRepositoryException.ServiceNotRegistered(typeof(ICkCacheService));
-                    }
-
+                    var ckCacheService = ctx.GetCkCacheService();
                     var graphQlContext = (GraphQlUserContext)ctx.UserContext;
 
                     if (!ctx.TryGetArgument(Statics.IgnoreAbstractTypesArg,
@@ -98,9 +86,10 @@ internal sealed class CkTypeDtoType : ObjectGraphType<CkTypeDto>
                         includeSelf = false;
                     }
 
-                    var result = ckCacheService.GetCkType(graphQlContext.TenantId, ctx.Source.CkTypeId).GetAllDerivedTypes(includeSelf.Value)
+                    var result = ckCacheService.GetCkType(graphQlContext.TenantId, ctx.Source.CkTypeId)
+                        .GetAllDerivedTypes(includeSelf.Value)
                         .Select(derivedCkTypeId => ckCacheService.GetCkType(graphQlContext.TenantId, derivedCkTypeId))
-                        .Where(t=> !t.IsAbstract || !ignoreAbstractTypes.Value);
+                        .Where(t => !t.IsAbstract || !ignoreAbstractTypes.Value);
                     return ConnectionUtils.ToConnection(result.Select(CreateCkTypeDto), ctx);
                 }
             );
@@ -109,12 +98,7 @@ internal sealed class CkTypeDtoType : ObjectGraphType<CkTypeDto>
             .Description(AssetTexts.Graphql_Type_BaseType_Description)
             .Resolve(ctx =>
             {
-                var ckCacheService = ctx.RequestServices?.GetRequiredService<ICkCacheService>();
-                if (ckCacheService == null)
-                {
-                    throw AssetRepositoryException.ServiceNotRegistered(typeof(ICkCacheService));
-                }
-
+                var ckCacheService = ctx.GetCkCacheService();
                 var graphQlContext = (GraphQlUserContext)ctx.UserContext;
 
                 var result = ckCacheService.GetCkType(graphQlContext.TenantId, ctx.Source.CkTypeId).DerivedFromCkTypeId;
@@ -129,12 +113,7 @@ internal sealed class CkTypeDtoType : ObjectGraphType<CkTypeDto>
 
     private object ResolveAvailableQueryColumns(IResolveConnectionContext<CkTypeDto> arg)
     {
-        var ckCacheService = arg.RequestServices?.GetRequiredService<ICkCacheService>();
-        if (ckCacheService == null)
-        {
-            throw AssetRepositoryException.ServiceNotRegistered(typeof(ICkCacheService));
-        }
-
+        var ckCacheService = arg.GetCkCacheService();
         var graphQlContext = (GraphQlUserContext)arg.UserContext;
 
         arg.TryGetArgument(Statics.AttributePathsFilterArg,
@@ -142,7 +121,7 @@ internal sealed class CkTypeDtoType : ObjectGraphType<CkTypeDto>
         arg.TryGetArgument(Statics.AttributePathContainsFilterArg,
             out string? attributePathContainsFilter);
 
-        List<CkTypeQueryColumnDto> resultList =
+        var resultList =
             ckCacheService.GetCkTypeQueryColumnPaths(graphQlContext.TenantId, arg.Source.CkTypeId)
                 .Select(CreateCkTypeQueryColumnDto).ToList();
 
@@ -165,12 +144,7 @@ internal sealed class CkTypeDtoType : ObjectGraphType<CkTypeDto>
 
     private object ResolveAttributes(IResolveConnectionContext<CkTypeDto> ctx)
     {
-        var ckCacheService = ctx.RequestServices?.GetRequiredService<ICkCacheService>();
-        if (ckCacheService == null)
-        {
-            throw AssetRepositoryException.ServiceNotRegistered(typeof(ICkCacheService));
-        }
-
+        var ckCacheService = ctx.GetCkCacheService();
         var graphQlContext = (GraphQlUserContext)ctx.UserContext;
 
         ctx.TryGetArgument(Statics.AttributeNamesFilterArg,
@@ -180,7 +154,7 @@ internal sealed class CkTypeDtoType : ObjectGraphType<CkTypeDto>
 
         var ckTypeGraph = ckCacheService.GetCkType(graphQlContext.TenantId, ctx.Source.CkTypeId);
 
-        List<CkTypeAttributeGraph> resultList = ckTypeGraph.AllAttributes.Values.ToList();
+        var resultList = ckTypeGraph.AllAttributes.Values.ToList();
         if (filterAttributeNames != null)
         {
             resultList = resultList.Where(a =>
@@ -242,7 +216,7 @@ internal sealed class CkTypeDtoType : ObjectGraphType<CkTypeDto>
         var ckTypeQueryColumnDto = new CkTypeQueryColumnDto
         {
             AttributePath = ckTypeQueryColumn.Path,
-            AttributeValueType = ckTypeQueryColumn.ValueType,
+            AttributeValueType = ckTypeQueryColumn.ValueType
         };
         return ckTypeQueryColumnDto;
     }

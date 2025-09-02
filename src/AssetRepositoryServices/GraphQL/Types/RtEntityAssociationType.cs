@@ -5,7 +5,6 @@ using GraphQL.DataLoader;
 using GraphQL.Types;
 using Meshmakers.Common.Shared;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Caches;
-using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.RequestHandling;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Inputs;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Scalars;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Utils;
@@ -57,12 +56,7 @@ internal class RtEntityAssociationType : ObjectGraphType
 
     private object ResolveRtEntitiesQuery(IResolveConnectionContext<RtEntityDto> ctx)
     {
-        var targetCkId = (CkId<CkTypeId>?)ctx.FieldDefinition.Metadata[Statics.CkId];
-        if (targetCkId == null)
-        {
-            throw AssetRepositoryException.CkIdMetadataMissing();
-        }
-
+        var targetCkId = ctx.GetMetadataValue<CkId<CkTypeId>>(Statics.CkId);
         var offset = ctx.GetOffset();
         var dataQueryOperation = ctx.GetDataQueryOperation();
 
@@ -75,12 +69,8 @@ internal class RtEntityAssociationType : ObjectGraphType
             keysList.Add(key.Value);
         }
 
-        var sessionAccessor = ctx.RequestServices?.GetRequiredService<IOctoSessionAccessor>();
-        if (sessionAccessor?.Session == null)
-        {
-            throw AssetRepositoryException.SessionUnavailable();
-        }
-        
+        var sessionAccessor = ctx.GetSessionAccessor();
+
         var dataLoaderAccessor = ctx.RequestServices?.GetRequiredService<IDataLoaderContextAccessor>();
         if (dataLoaderAccessor?.Context == null)
         {
@@ -92,7 +82,8 @@ internal class RtEntityAssociationType : ObjectGraphType
         var loader = dataLoaderAccessor.Context.GetOrAddBatchLoader<RtEntityId, IResultSet<RtEntity>>(
             $"Get{_originCkId}_{targetCkId}_{_roleId}_{_graphDirection}", async rtIds =>
                 await tenantRepository.GetRtAssociationTargetsAsync(sessionAccessor.Session,
-                    rtIds.Select(x=> x.RtId), _originCkId, _roleId, targetCkId, _graphDirection, keysList, dataQueryOperation, offset, ctx.First)
+                    rtIds.Select(x => x.RtId), _originCkId, _roleId, targetCkId, _graphDirection, keysList,
+                    dataQueryOperation, offset, ctx.First)
         );
 
         var dataLoaderResult = loader.LoadAsync(ctx.Source.ToRtEntityId());

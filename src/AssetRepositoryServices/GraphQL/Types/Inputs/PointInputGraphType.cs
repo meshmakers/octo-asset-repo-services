@@ -7,6 +7,6 @@ internal sealed class PointInputGraphType : InputObjectGraphType<PointDto>
 {
     public PointInputGraphType()
     {
-        Field(x => x.Coordinates, type:typeof(NonNullGraphType<PositionInputGraphType>));
+        Field(x => x.Coordinates, typeof(NonNullGraphType<PositionInputGraphType>));
     }
 }

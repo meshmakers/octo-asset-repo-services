@@ -37,7 +37,8 @@ internal sealed class DynamicConnectionType : ObjectGraphType
             listType);
 
         Field<AggregationResultType>("aggregation").Description("Result of aggregating the items of the result set.");
-        Field<ListGraphType<FieldAggregationResultType>>("fieldAggregations").Description("Result of aggregating the items by fields.");
+        Field<ListGraphType<FieldAggregationResultType>>("fieldAggregations")
+            .Description("Result of aggregating the items by fields.");
 
         var edgeListType = new ListGraphType(edgeType);
         this.Field("edges", "Information to aid in pagination.", edgeListType);

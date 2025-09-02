@@ -10,7 +10,6 @@ using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
 using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.ConstructionKit.Contracts.DataTransferObjects;
 using Meshmakers.Octo.ConstructionKit.Contracts.DependencyGraph;
-using Meshmakers.Octo.ConstructionKit.Contracts.Services;
 using Meshmakers.Octo.Runtime.Contracts.RepositoryEntities;
 using Meshmakers.Octo.Services.StreamData.Dtos;
 
@@ -23,8 +22,6 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
 internal sealed class StreamDataEntityDtoType : ObjectGraphType<StreamDataEntityDto>
 {
     private readonly CkTypeGraph _ckTypeGraph;
-
-    public string ConnectionName { get; }
 
     /// <inheritdoc />
     public StreamDataEntityDtoType(CkTypeGraph ckTypeGraph)
@@ -62,15 +59,17 @@ internal sealed class StreamDataEntityDtoType : ObjectGraphType<StreamDataEntity
             return false;
         };
 
-        Field(d => d.RtId, type: typeof(NonNullGraphType<OctoObjectIdType>));
-        Field(d => d.CkTypeId, type: typeof(NonNullGraphType<CkIdGraph<CkTypeId>>));
-        Field(d => d.TimeStamp, type: typeof(DateTimeGraphType));
-        Field(d => d.RtWellKnownName, type: typeof(StringGraphType));
-        Field(d => d.RtCreationDateTime, type: typeof(DateTimeGraphType));
-        Field(d => d.RtChangedDateTime, type: typeof(DateTimeGraphType))
+        Field(d => d.RtId, typeof(NonNullGraphType<OctoObjectIdType>));
+        Field(d => d.CkTypeId, typeof(NonNullGraphType<CkIdGraph<CkTypeId>>));
+        Field(d => d.TimeStamp, typeof(DateTimeGraphType));
+        Field(d => d.RtWellKnownName, typeof(StringGraphType));
+        Field(d => d.RtCreationDateTime, typeof(DateTimeGraphType));
+        Field(d => d.RtChangedDateTime, typeof(DateTimeGraphType))
             .Argument<AttributeTsArgumentGraphType>(Statics.StreamDataAttributeArgument,
-            "Arguments for stream data.");
+                "Arguments for stream data.");
     }
+
+    public string ConnectionName { get; }
 
 
     public CkId<CkTypeId> CkTypeId => _ckTypeGraph.CkTypeId;
@@ -178,8 +177,8 @@ internal sealed class StreamDataEntityDtoType : ObjectGraphType<StreamDataEntity
 
         if (context.TryGetArgument(Statics.StreamDataAttributeArgument, out AttributeTsArgumentDto? argument)
             && argument.AggregationType is not null)
-        {
             //When we queried an attribute with an aggregation, we do as if it is a normal attribute
+        {
             attributeName = $"{argument.AggregationType.ToString()}_{attributeName}";
         }
 
@@ -220,11 +219,7 @@ internal sealed class StreamDataEntityDtoType : ObjectGraphType<StreamDataEntity
 
     private object ResolveCkEntity(IResolveFieldContext<StreamDataEntityDto> arg)
     {
-        var ckCacheService = arg.RequestServices?.GetRequiredService<ICkCacheService>();
-        if (ckCacheService == null)
-        {
-            throw AssetRepositoryException.ServiceNotRegistered(typeof(ICkCacheService));
-        }
+        var ckCacheService = arg.GetCkCacheService();
 
         var graphQlUserContext = (GraphQlUserContext)arg.UserContext;
 

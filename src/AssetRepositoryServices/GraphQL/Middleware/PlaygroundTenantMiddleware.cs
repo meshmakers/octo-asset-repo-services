@@ -5,7 +5,6 @@ using Meshmakers.Common.Shared;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.Configuration.DependencyInjection.Options;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.RequestHandling;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.Services;
-using Meshmakers.Octo.Services.Infrastructure;
 using Microsoft.Extensions.Options;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Middleware;
@@ -63,7 +62,7 @@ public class PlaygroundTenantMiddleware
             await httpContext.Response.WriteAsync("Missing tenant");
             return;
         }
-        
+
         using var systemSession = await _octoService.SystemContext.GetAdminSessionAsync();
         systemSession.StartTransaction();
 
@@ -82,12 +81,12 @@ public class PlaygroundTenantMiddleware
 
     private async Task InvokePlayground(HttpResponse httpResponse, string? tenantId)
     {
-        
         if (string.Compare(tenantId, _lastTenantId, StringComparison.OrdinalIgnoreCase) != 0)
         {
             _lastTenantId = tenantId;
             _pageModel =
-                new AltairPageModel(_assetOptions.Value.PublicUrl.EnsureEndsWith("/"), _options.GraphQLEndPoint.Replace("{tenantId}", tenantId),
+                new AltairPageModel(_assetOptions.Value.PublicUrl.EnsureEndsWith("/"),
+                    _options.GraphQLEndPoint.Replace("{tenantId}", tenantId),
                     _options);
         }
 

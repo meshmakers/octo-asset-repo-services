@@ -9,26 +9,26 @@ using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Utils;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
 using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.ConstructionKit.Contracts.DependencyGraph;
-using Meshmakers.Octo.ConstructionKit.Contracts.Services;
 using Meshmakers.Octo.Services.StreamData;
 using Meshmakers.Octo.Services.StreamData.Dtos;
 using Meshmakers.Octo.Services.StreamData.QueryBuilder;
-using NLog;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL;
 
 [DoNotRegister]
 internal sealed class StreamDataQuery : ObjectGraphType
 {
-    private static readonly Logger Logger = LogManager.GetCurrentClassLogger();
+    private readonly ILogger<StreamDataQuery> _logger;
 
-    public StreamDataQuery(IGraphTypesCache graphTypesCache)
+    public StreamDataQuery(ILogger<StreamDataQuery> logger, IGraphTypesCache graphTypesCache)
     {
+        _logger = logger;
         Name = "StreamDataModelQuery";
 
         foreach (var rtEntityDtoType in graphTypesCache.GetStreamTypes())
         {
-            this.Connection<object?, IGraphType, StreamDataEntityDto>(graphTypesCache, rtEntityDtoType, rtEntityDtoType.ConnectionName)
+            this.Connection<object?, IGraphType, StreamDataEntityDto>(graphTypesCache, rtEntityDtoType,
+                    rtEntityDtoType.ConnectionName)
                 .AddMetadata(Statics.CkId, rtEntityDtoType.CkTypeId)
                 .Argument<OctoObjectIdType>(Statics.RtIdArg, "Returns the entity with the given rtId.")
                 .Argument<ListGraphType<OctoObjectIdType>>(Statics.RtIdsArg, "Returns entities with the given rtIds.")
@@ -40,26 +40,15 @@ internal sealed class StreamDataQuery : ObjectGraphType
 
     private async Task<object?> ResolveRtEntitiesQuery(IResolveConnectionContext<object?> arg)
     {
-        Logger.Debug("GraphQL query handling for specific stream data entity type started");
+        _logger.LogDebug("GraphQL query handling for specific stream data entity type started");
 
         var fieldContext = FieldContext.FromContext(arg);
 
-        var services = arg.RequestServices;
-        if (services == null)
-        {
-            throw AssetRepositoryException.ServiceNotRegistered(typeof(IServiceProvider));
-        }
-
-        var typeCache = services.GetRequiredService<ICkCacheService>();
-        var ckTypeId = TryGetCkTypeId(arg);
-        if (ckTypeId == null)
-        {
-            throw AssetRepositoryException.CkIdMetadataMissing();
-        }
-
+        var ckCacheService = arg.GetCkCacheService();
+        var ckTypeId = arg.GetMetadataValue<CkId<CkTypeId>>(Statics.CkId);
         var graphQlUserContext = (GraphQlUserContext)arg.UserContext;
         var tenantId = graphQlUserContext.TenantId;
-        var requestedType = typeCache.GetCkType(tenantId, ckTypeId);
+        var requestedType = ckCacheService.GetCkType(tenantId, ckTypeId);
 
         var q = new CrateQueryBuilder(tenantId);
         q.IncludeDefaultVariables();
@@ -70,13 +59,11 @@ internal sealed class StreamDataQuery : ObjectGraphType
 
         if (entityTimeFilter is { QueryMode: QueryModeDto.Downsampling })
         {
-            if(entityTimeFilter.From is null || entityTimeFilter.To is null || entityTimeFilter.Limit is null)
+            if (entityTimeFilter.From is null || entityTimeFilter.To is null || entityTimeFilter.Limit is null)
             {
-                arg.Errors.Add(new ExecutionError("Invalid query. From, To and Limit must be set for downsampling.")
-                    { Code = Statics.GraphQlErrorCommon });
-                return null;
+                throw AssetRepositoryException.InvalidStreamDataQueryParams();
             }
-            
+
             q.WithDownsampling(entityTimeFilter.Limit.Value, entityTimeFilter.From.Value, entityTimeFilter.To.Value);
         }
 
@@ -93,33 +80,30 @@ internal sealed class StreamDataQuery : ObjectGraphType
         HandleRequestedAttributes(fieldContext, requestedType, q);
 
         if (!HandleRequestedRtIds(arg, q))
+            // we got an empty array of rtIds so we return an empty connection
         {
-            // we got an empty array of rtIds so we return a empty connection
             return ConnectionUtils.ToConnection(new List<RtEntityDto>(), arg);
         }
 
         var comp = new CrateQueryCompiler();
         var sql = comp.CompileQuery(q);
 
-        Logger.Debug("Executing SQL query: {0}", sql);
+        _logger.LogDebug("Executing SQL query: {Sql}", sql);
 
-        var tsClient = services.GetRequiredService<IStreamDataDatabaseClient>();
+        var streamDataDatabaseClient = arg.GetStreamDataDatabaseClient();
 
         List<DataPointDto> data;
         try
         {
-            data = await tsClient.GetDataAsync(tenantId, sql);
+            data = await streamDataDatabaseClient.GetDataAsync(tenantId, sql);
         }
         catch (Exception ex)
         {
-            Logger.Debug(ex, "Error while executing query: {0}", ex.Message);
-            arg.Errors.Add(new ExecutionError($"Error while executing query '{ex.Message}'")
-                { Code = Statics.GraphQlStreamDataQueryError });
-            return null;
+            return arg.HandleException(ex);
         }
 
 
-        Logger.Debug("SQL query executed. Got {0} rows", data.Count);
+        _logger.LogDebug("SQL query executed. Got {Count} rows", data.Count);
 
         var result = data.Select(StreamDataEntityDtoType.CreateStreamDataEntityDto).ToList();
 
@@ -153,8 +137,7 @@ internal sealed class StreamDataQuery : ObjectGraphType
             var rtIdStrings = rtIdList.Select(x => x.ToString());
             q.AddWhereIn("RtId", rtIdStrings.ToArray());
             // arg.Errors.Add(new ExecutionError("Filtering by RtIds is not yet supported")
-                // { Code = Statics.GraphQlStreamDataQueryError });
-            return true;
+            // { Code = Statics.GraphQlStreamDataQueryError });
         }
 
         return true;
@@ -176,8 +159,10 @@ internal sealed class StreamDataQuery : ObjectGraphType
             var dataStreamAttributes = requestedType.AllAttributes.Where(x => x.Value.IsDataStream);
             var argument = field.GetArgument<AttributeTsArgumentDto>(Statics.StreamDataAttributeArgument);
 
-            bool ContainsField(KeyValuePair<CkId<CkAttributeId>, CkTypeAttributeGraph> x) =>
-                string.Equals(x.Value.AttributeName, field.Name, StringComparison.InvariantCultureIgnoreCase);
+            bool ContainsField(KeyValuePair<CkId<CkAttributeId>, CkTypeAttributeGraph> x)
+            {
+                return string.Equals(x.Value.AttributeName, field.Name, StringComparison.InvariantCultureIgnoreCase);
+            }
 
             var (_, requestedAttribute) = dataStreamAttributes
                 .FirstOrDefault(ContainsField);
@@ -197,11 +182,12 @@ internal sealed class StreamDataQuery : ObjectGraphType
 
             var standardField = Constants.DefaultStreamDataFields.FirstOrDefault(x =>
                 string.Equals(x, field.Name, StringComparison.InvariantCultureIgnoreCase));
-            
+
             if (standardField == null)
             {
                 continue;
             }
+
             if (argument?.SortPriority != null)
             {
                 orderQueue.Enqueue(
@@ -239,24 +225,5 @@ internal sealed class StreamDataQuery : ObjectGraphType
                 q.AddVariable(name, name, null, isDataVariable);
             }
         }
-    }
-
-    private static CkId<CkTypeId>? TryGetCkTypeId(IResolveConnectionContext<object?> arg)
-    {
-        if (!arg.FieldDefinition.Metadata.TryGetValue(Statics.CkId, out var ckIdObj))
-        {
-            arg.Errors.Add(new ExecutionError("Invalid query. Missing construction kit id.")
-                { Code = Statics.GraphQlErrorCommon });
-            return null;
-        }
-
-        if (ckIdObj is not CkId<CkTypeId> ckTypeId)
-        {
-            arg.Errors.Add(new ExecutionError("Invalid query. Invalid construction kit id.")
-                { Code = Statics.GraphQlErrorCommon });
-            return null;
-        }
-
-        return ckTypeId;
     }
 }

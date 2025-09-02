@@ -11,7 +11,7 @@ internal sealed class UpdateMutationDtoType<TItemType> : InputObjectGraphType<Mu
     public UpdateMutationDtoType(IGraphType itemType)
     {
         Name = $"{itemType.Name}{Statics.GraphQlUpdatePrefix}".ToPascalCase();
-        Field(x => x.RtId, type: typeof(OctoObjectIdType));
+        Field(x => x.RtId, typeof(OctoObjectIdType));
         this.Field("item",
             "Item to update",
             new NonNullGraphType(itemType));

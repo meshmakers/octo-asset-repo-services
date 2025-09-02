@@ -8,10 +8,10 @@ using ExecutionContext = GraphQL.Execution.ExecutionContext;
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Utils;
 
 /// <summary>
-/// Helper class that parses the AST of sub fields. We need this for stream data queries to get the
-/// all information of sub fields WHILE resolving the parent field.
-/// Imagine the following query:
-/// <code>
+///     Helper class that parses the AST of sub fields. We need this for stream data queries to get the
+///     all information of sub fields WHILE resolving the parent field.
+///     Imagine the following query:
+///     <code>
 /// query {
 /// streamData {
 ///     tsIndustryEnergyEnergyMeter(first: 3) {
@@ -27,7 +27,7 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Utils;
 /// }
 /// }
 /// </code>
-/// When tsIndustryEnergyEnergyMeter is resolved, we need to know that the field voltage has the arguments.
+///     When tsIndustryEnergyEnergyMeter is resolved, we need to know that the field voltage has the arguments.
 /// </summary>
 /// <param name="ExecutionContext"></param>
 /// <param name="FiledDefinition"></param>
@@ -43,8 +43,11 @@ internal record FieldContext(
     public string Name => FieldAst.Name.StringValue;
     public string AliasOrName => FieldAst.Alias?.Name.StringValue ?? Name;
 
+
+    public IEnumerable<FieldContext> Fields => GetFields();
+
     /// <summary>
-    /// Factory method to create a <see cref="FieldContext"/> from a <see cref="IResolveFieldContext"/>
+    ///     Factory method to create a <see cref="FieldContext" /> from a <see cref="IResolveFieldContext" />
     /// </summary>
     /// <param name="context"></param>
     /// <returns></returns>
@@ -97,9 +100,6 @@ internal record FieldContext(
         }
     }
 
-
-    public IEnumerable<FieldContext> Fields => GetFields();
-
     public object? GetArgumentObject(string name)
     {
         var field = FieldAst.Arguments?.FirstOrDefault(a => a.Name == name);
@@ -131,13 +131,15 @@ internal record FieldContext(
         }
     }
 
-    private IGraphType ResolveType(IGraphType type) =>
-        type switch
+    private IGraphType ResolveType(IGraphType type)
+    {
+        return type switch
         {
             NonNullGraphType nullType => ResolveType(nullType.ResolvedType!),
             ListGraphType listType => ResolveType(listType.ResolvedType!),
             _ => type
         };
+    }
 
 
     private static Dictionary<string, (GraphQLField field, FieldType fieldType)>? GetSubFields(ExecutionContext context,
@@ -158,8 +160,8 @@ internal record FieldContext(
     }
 
     /// <summary>
-    /// Helper class that sole purpose is to get access to protected functions <see cref="ExecutionStrategy"/>
-    /// We need this, because the execution strategy already parses the AST and we don't want to do this again.s
+    ///     Helper class that sole purpose is to get access to protected functions <see cref="ExecutionStrategy" />
+    ///     We need this, because the execution strategy already parses the AST and we don't want to do this again.s
     /// </summary>
     private class GetAroundProtectedFunctions : ExecutionStrategy
     {
@@ -186,11 +188,17 @@ internal record FieldContext(
 internal static class FieldContextStructExtensions
 {
     public static T? GetArgument<T>(this FieldContext con, string name)
-        where T : struct => ValueConverter.ConvertTo<T?>(con.GetArgumentObject(name));
+        where T : struct
+    {
+        return ValueConverter.ConvertTo<T?>(con.GetArgumentObject(name));
+    }
 }
 
 internal static class FieldContextClassExtensions
 {
     public static T? GetArgument<T>(this FieldContext con, string name)
-        where T : class => ValueConverter.ConvertTo<T?>(con.GetArgumentObject(name));
+        where T : class
+    {
+        return ValueConverter.ConvertTo<T?>(con.GetArgumentObject(name));
+    }
 }

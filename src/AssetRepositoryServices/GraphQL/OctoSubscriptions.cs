@@ -65,7 +65,7 @@ internal class OctoSubscriptions : ObjectGraphType<object>
             foreach (var beforeFieldFilterDto in beforeFieldFilterDtoList)
             {
                 beforeFieldFilters.Add(
-                    new(beforeFieldFilterDto.AttributePath.ToPascalCase(),
+                    new FieldFilter(beforeFieldFilterDto.AttributePath.ToPascalCase(),
                         (FieldFilterOperator)beforeFieldFilterDto.Operator, beforeFieldFilterDto.ComparisonValue));
             }
         }
@@ -76,7 +76,7 @@ internal class OctoSubscriptions : ObjectGraphType<object>
             foreach (var fieldFilterDto in fieldFilterDtoList)
             {
                 fieldFilters.Add(
-                    new(fieldFilterDto.AttributePath.ToPascalCase(),
+                    new FieldFilter(fieldFilterDto.AttributePath.ToPascalCase(),
                         (FieldFilterOperator)fieldFilterDto.Operator, fieldFilterDto.ComparisonValue));
             }
         }
@@ -97,7 +97,7 @@ internal class OctoSubscriptions : ObjectGraphType<object>
                 : null,
             FieldFilterCriteria = fieldFilters != null
                 ? FieldFilterCriteria.Create().Fields(fieldFilters)
-                : null,
+                : null
         };
 
         var tenantRepository = tenantContext.GetTenantRepository();

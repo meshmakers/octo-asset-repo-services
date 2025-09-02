@@ -12,8 +12,8 @@ internal sealed class RtAssociationInputDtoType : InputObjectGraphType<RtAssocia
         Name = "RtAssociationInput";
         Description = "Input field for associations";
 
-        Field(x => x.Target, type: typeof(NonNullGraphType<RtEntityIdType>))
+        Field(x => x.Target, typeof(NonNullGraphType<RtEntityIdType>))
             .Description("Runtime ID of the target entity");
-        Field(x => x.ModOption, type: typeof(AssociationModOptionsDtoType)).Description("Type of modification.");
+        Field(x => x.ModOption, typeof(AssociationModOptionsDtoType)).Description("Type of modification.");
     }
 }

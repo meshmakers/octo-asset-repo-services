@@ -7,7 +7,7 @@ internal sealed class RtGeospatialValueDtoType : ObjectGraphType<RtGeospatialVal
 {
     public RtGeospatialValueDtoType()
     {
-        Field(d => d.Distance, nullable: true);
-        Field(d => d.Point, type: typeof(PointGraphType));
+        Field(d => d.Distance, true);
+        Field(d => d.Point, typeof(PointGraphType));
     }
 }

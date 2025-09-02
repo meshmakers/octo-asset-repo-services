@@ -6,29 +6,28 @@ using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Utils;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
 using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.ConstructionKit.Contracts.DependencyGraph;
-using Meshmakers.Octo.ConstructionKit.Contracts.Services;
 using Meshmakers.Octo.Runtime.Contracts.RepositoryEntities;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
 
 /// <summary>
-/// Represents a GraphQL type for a runtime entity generic association DTO in OctoMesh.
+///     Represents a GraphQL type for a runtime entity generic association DTO in OctoMesh.
 /// </summary>
 public sealed class RtAssociationDtoType : ObjectGraphType<RtAssociationDto>
 {
     /// <summary>
-    /// Initializes a new instance of the <see cref="RtAssociationDtoType"/> class.
+    ///     Initializes a new instance of the <see cref="RtAssociationDtoType" /> class.
     /// </summary>
     public RtAssociationDtoType()
     {
         Name = "RtAssociation";
         Description = "A runtime association type of OctoMesh";
 
-        Field(x => x.CkAssociationRoleId, type: typeof(NonNullGraphType<CkIdGraph<CkAssociationRoleId>>));
-        Field(x => x.TargetRtId, type: typeof(NonNullGraphType<OctoObjectIdType>));
-        Field(x => x.TargetCkTypeId, type: typeof(NonNullGraphType<CkIdGraph<CkTypeId>>));
-        Field(x => x.OriginRtId, type: typeof(NonNullGraphType<OctoObjectIdType>));
-        Field(x => x.OriginCkTypeId, type: typeof(NonNullGraphType<CkIdGraph<CkTypeId>>));
+        Field(x => x.CkAssociationRoleId, typeof(NonNullGraphType<CkIdGraph<CkAssociationRoleId>>));
+        Field(x => x.TargetRtId, typeof(NonNullGraphType<OctoObjectIdType>));
+        Field(x => x.TargetCkTypeId, typeof(NonNullGraphType<CkIdGraph<CkTypeId>>));
+        Field(x => x.OriginRtId, typeof(NonNullGraphType<OctoObjectIdType>));
+        Field(x => x.OriginCkTypeId, typeof(NonNullGraphType<CkIdGraph<CkTypeId>>));
 
         Connection<RtEntityAttributeDtoType>("attributes")
             .Argument<ListGraphType<StringGraphType>>(Statics.AttributeNamesFilterArg, "Filter of attribute names")
@@ -37,12 +36,7 @@ public sealed class RtAssociationDtoType : ObjectGraphType<RtAssociationDto>
 
     private object ResolveAttributes(IResolveConnectionContext<RtAssociationDto> context)
     {
-        var ckCacheService = context.RequestServices?.GetRequiredService<ICkCacheService>();
-        if (ckCacheService == null)
-        {
-            throw AssetRepositoryException.ServiceNotRegistered(typeof(ICkCacheService));
-        }
-
+        var ckCacheService = context.GetCkCacheService();
         var graphQlContext = (GraphQlUserContext)context.UserContext;
 
 

@@ -1,10 +1,7 @@
 using GraphQL;
-using GraphQL.Resolvers;
 using GraphQL.Types;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Caches;
-using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Scalars;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
-using Meshmakers.Octo.ConstructionKit.Contracts;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL;
 
@@ -18,7 +15,7 @@ internal sealed class OctoMutation : ObjectGraphType
     {
         Field("Runtime", new RtMutation(graphTypesCache))
             .Resolve(_ => new RtEntityDto());
-        
+
         Field<CkMutation>("ConstructionKit")
             .Resolve(_ => new object());
     }

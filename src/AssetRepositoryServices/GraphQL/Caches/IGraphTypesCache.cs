@@ -23,13 +23,13 @@ internal interface IGraphTypesCache
     /// </summary>
     /// <returns></returns>
     RtEntityDtoType[] GetTypes();
-    
+
     /// <summary>
     ///     Returns the construction kit type graph type for the given construction kit type id
     /// </summary>
     /// <returns></returns>
     RtEntityDtoType GetType(CkId<CkTypeId> ckTypeId);
-    
+
     /// <summary>
     ///     Returns the construction kit type input graph type for the given construction kit type id
     /// </summary>
@@ -47,7 +47,7 @@ internal interface IGraphTypesCache
     /// </summary>
     /// <returns></returns>
     RtRecordDtoType GetRecord(CkId<CkRecordId> ckRecordId);
-    
+
     /// <summary>
     ///     Returns the construction kit record graph type for the given construction kit record id
     /// </summary>
@@ -67,7 +67,7 @@ internal interface IGraphTypesCache
     IGraphType[] GetKnownGraphTypes();
 
     /// <summary>
-    /// Returns an array of known stream data graph types
+    ///     Returns an array of known stream data graph types
     /// </summary>
     /// <returns></returns>
     StreamDataEntityDtoType[] GetStreamTypes();

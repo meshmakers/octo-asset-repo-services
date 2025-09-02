@@ -24,10 +24,10 @@ internal sealed class CkModelDtoType : ObjectGraphType<CkModelDto>
         Name = "CkModel";
         Description = "A construction kit model";
 
-        Field(x => x.Id, type: typeof(NonNullGraphType<ModelIdType>))
+        Field(x => x.Id, typeof(NonNullGraphType<ModelIdType>))
             .Description("Construction kit model id, the unique identifier of the model.");
-        Field(x => x.Description, nullable: true).Description(AssetTexts.Graphql_Model_Description_Description);
-        Field(x => x.ModelState, type: typeof(ModelStateDtoType))
+        Field(x => x.Description, true).Description(AssetTexts.Graphql_Model_Description_Description);
+        Field(x => x.ModelState, typeof(ModelStateDtoType))
             .Description("Availability of the model within the repository.");
 
         Connection<CkTypeDtoType>("Types")
@@ -84,8 +84,7 @@ internal sealed class CkModelDtoType : ObjectGraphType<CkModelDto>
             throw AssetRepositoryException.RequestServicesNotAvailable();
         }
 
-        sessionAccessor = arg.RequestServices.GetRequiredService<IOctoSessionAccessor>();
-
+        sessionAccessor = arg.GetSessionAccessor();
 
         graphQlUserContext = (GraphQlUserContext)arg.UserContext;
 
@@ -117,12 +116,7 @@ internal sealed class CkModelDtoType : ObjectGraphType<CkModelDto>
             throw AssetRepositoryException.RequestServicesNotAvailable();
         }
 
-        var sessionAccessor = arg.RequestServices.GetRequiredService<IOctoSessionAccessor>();
-        if (sessionAccessor.Session == null)
-        {
-            throw AssetRepositoryException.SessionUnavailable();
-        }
-
+        var sessionAccessor = arg.GetSessionAccessor();
         var graphQlUserContext = (GraphQlUserContext)arg.UserContext;
         var dataQueryOperation = DataQueryOperation.Create();
 

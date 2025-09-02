@@ -13,7 +13,7 @@ internal sealed class RtMutation : ObjectGraphType
     public RtMutation(IGraphTypesCache graphTypesCache)
     {
         Name = "Runtime";
-        
+
         Field<RtQueryMutation>("RuntimeQuery")
             .Argument<NonNullGraphType<OctoObjectIdType>>(Statics.RtIdArg, "The query runtime id.")
             .Resolve(_ => new RtEntityDto());
@@ -28,7 +28,8 @@ internal sealed class RtMutation : ObjectGraphType
                 continue;
             }
 
-            Field($"{rtEntityDtoType.CkTypeId.GetGraphQlCamelCaseName()}s", new RtEntityMutation(graphTypesCache, rtEntityDtoType))
+            Field($"{rtEntityDtoType.CkTypeId.GetGraphQlCamelCaseName()}s",
+                    new RtEntityMutation(graphTypesCache, rtEntityDtoType))
                 .Description($"Mutation for entities of type '{rtEntityDtoType.CkTypeId.GetGraphQlPascalCaseName()}'.")
                 .Resolve(_ => new RtEntityDto());
         }

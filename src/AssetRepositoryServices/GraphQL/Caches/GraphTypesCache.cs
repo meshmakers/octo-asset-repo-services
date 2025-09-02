@@ -18,18 +18,18 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Caches;
 internal class GraphTypesCache : IGraphTypesCache
 {
     private readonly ICkCacheService _ckCacheService;
-    private readonly IOctoService _octoService;
-    private readonly IOptions<OctoAssetRepositoryServicesOptions> _options;
     private readonly ConcurrentDictionary<IGraphType, DynamicConnectionType> _connectionTypes;
 
     private readonly ConcurrentDictionary<CkId<CkEnumId>, RtEnumScalarType> _enumTypes;
     private readonly ConcurrentDictionary<CkId<CkRecordId>, RtRecordDtoInputType> _inputRecordTypes;
     private readonly ConcurrentDictionary<CkId<CkTypeId>, RtEntityDtoInputType> _inputTypes;
+    private readonly IOctoService _octoService;
+    private readonly IOptions<OctoAssetRepositoryServicesOptions> _options;
 
     private readonly ConcurrentDictionary<CkId<CkRecordId>, RtRecordDtoType> _recordTypes;
     private readonly string _tenantId;
-    private readonly ConcurrentDictionary<CkId<CkTypeId>, RtEntityDtoType> _types;
     private readonly ConcurrentDictionary<CkId<CkTypeId>, StreamDataEntityDtoType> _tsTypes;
+    private readonly ConcurrentDictionary<CkId<CkTypeId>, RtEntityDtoType> _types;
 
 
     /// <summary>
@@ -147,14 +147,14 @@ internal class GraphTypesCache : IGraphTypesCache
         // Create enum types first, because other elements depend on it.     
         foreach (var ckEnumGraph in _ckCacheService.GetCkEnums(_tenantId))
         {
-            var rtEnumType = _enumTypes.GetOrAdd(ckEnumGraph.CkEnumId,  new RtEnumScalarType(ckEnumGraph.CkEnumId));
+            var rtEnumType = _enumTypes.GetOrAdd(ckEnumGraph.CkEnumId, new RtEnumScalarType(ckEnumGraph.CkEnumId));
             rtEnumType.Populate(_ckCacheService, _tenantId, this, ckEnumGraph);
         }
 
         // Make records second, because types depend on it.
         foreach (var ckRecordGraph in _ckCacheService.GetCkRecords(_tenantId))
         {
-            _recordTypes.TryAdd(ckRecordGraph.CkRecordId,  new RtRecordDtoType(ckRecordGraph.CkRecordId));
+            _recordTypes.TryAdd(ckRecordGraph.CkRecordId, new RtRecordDtoType(ckRecordGraph.CkRecordId));
 
             if (!ckRecordGraph.IsAbstract)
             {
@@ -181,13 +181,14 @@ internal class GraphTypesCache : IGraphTypesCache
 
             if (!ckTypeGraph.IsAbstract)
             {
-                var rtEntityDtoInputType = _inputTypes.GetOrAdd(ckTypeGraph.CkTypeId, new RtEntityDtoInputType(ckTypeGraph.CkTypeId));
+                var rtEntityDtoInputType =
+                    _inputTypes.GetOrAdd(ckTypeGraph.CkTypeId, new RtEntityDtoInputType(ckTypeGraph.CkTypeId));
                 rtEntityDtoInputType.Populate(_options, _ckCacheService, _tenantId, this, ckTypeGraph);
             }
 
             if (ckTypeGraph.IsStreamType)
             {
-                _tsTypes.TryAdd(ckTypeGraph.CkTypeId,  new StreamDataEntityDtoType(ckTypeGraph));
+                _tsTypes.TryAdd(ckTypeGraph.CkTypeId, new StreamDataEntityDtoType(ckTypeGraph));
             }
         }
 

@@ -15,18 +15,18 @@ internal sealed class CkEnumDtoType : ObjectGraphType<CkEnumDto>
         Name = "CkEnum";
         Description = AssetTexts.Graphql_Enum_Description;
 
-        Field(x => x.CkEnumId, type: typeof(NonNullGraphType<CkIdGraph<CkEnumId>>))
+        Field(x => x.CkEnumId, typeof(NonNullGraphType<CkIdGraph<CkEnumId>>))
             .Description(AssetTexts.Graphql_Enum_CkEnumId_Description);
-        Field(x => x.Description, nullable: true)
+        Field(x => x.Description, true)
             .Description(AssetTexts.Graphql_Enum_Description_Description);
-        Field(x => x.UseFlags, type: typeof(NonNullGraphType<BooleanGraphType>))
+        Field(x => x.UseFlags, typeof(NonNullGraphType<BooleanGraphType>))
             .Description(AssetTexts.Graphql_Enum_UseFlags_Description);
-        Field(x => x.IsExtensible, type: typeof(NonNullGraphType<BooleanGraphType>))
+        Field(x => x.IsExtensible, typeof(NonNullGraphType<BooleanGraphType>))
             .Description(AssetTexts.Graphql_Enum_IsExtensible_Description);
-        Field(x => x.Values, type: typeof(NonNullGraphType<ListGraphType<CkEnumValueDtoType>>))
+        Field(x => x.Values, typeof(NonNullGraphType<ListGraphType<CkEnumValueDtoType>>))
             .Description(AssetTexts.Graphql_Enum_Values_Description);
     }
-    
+
     internal static CkEnumDto CreateCkEnumDto(CkEnumGraph ckEnumGraph)
     {
         var ckEnumDto = new CkEnumDto
@@ -39,7 +39,7 @@ internal sealed class CkEnumDtoType : ObjectGraphType<CkEnumDto>
         };
         return ckEnumDto;
     }
-    
+
     internal static CkEnumDto CreateCkEnumDto(CkEnum ckEnum)
     {
         var ckEnumDto = new CkEnumDto

@@ -20,7 +20,7 @@ internal sealed class RtEntityUpdateItemDtoType : ObjectGraphType<RtEntityUpdate
     {
         Name = $"{rtEntityDtoType.Name}{Statics.GraphQlUpdateSuffix}";
         this.Field("Item", "The corresponding item", rtEntityDtoType, resolve: ResolveItem);
-        Field(o => o.UpdateState, type: typeof(UpdateTypesDtoType));
+        Field(o => o.UpdateState, typeof(UpdateTypesDtoType));
     }
 
     private object ResolveItem(IResolveFieldContext<RtEntityUpdateItemDto> arg)

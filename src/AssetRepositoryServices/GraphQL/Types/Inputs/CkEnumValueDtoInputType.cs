@@ -11,18 +11,18 @@ internal sealed class CkEnumValueDtoInputType : InputObjectGraphType<CkEnumValue
         Name = "CkEnumValueInput";
         Description = AssetTexts.Graphql_EnumValue_Description;
 
-        Field(x => x.Key, type: typeof(IntGraphType))
+        Field(x => x.Key, typeof(IntGraphType))
             .Description(AssetTexts.Graphql_EnumValue_Key_Description);
-        Field(x => x.Name, type: typeof(StringGraphType))
+        Field(x => x.Name, typeof(StringGraphType))
             .Description(AssetTexts.Graphql_EnumValue_Name_Description);
-        Field(x => x.Description, type: typeof(StringGraphType))
+        Field(x => x.Description, typeof(StringGraphType))
             .Description(AssetTexts.Graphql_EnumValue_Description_Description);
     }
 
-    internal static Meshmakers.Octo.ConstructionKit.Contracts.DataTransferObjects.CkEnumValueDto CreateCkEnumValueDto(
+    internal static ConstructionKit.Contracts.DataTransferObjects.CkEnumValueDto CreateCkEnumValueDto(
         CkEnumValueDto ckEnumValue)
     {
-        var ckEnumValueDto = new Meshmakers.Octo.ConstructionKit.Contracts.DataTransferObjects.CkEnumValueDto
+        var ckEnumValueDto = new ConstructionKit.Contracts.DataTransferObjects.CkEnumValueDto
         {
             Key = ckEnumValue.Key,
             Name = ckEnumValue.Name,

@@ -6,7 +6,6 @@ using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Utils;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
 using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.ConstructionKit.Contracts.DependencyGraph;
-using Meshmakers.Octo.ConstructionKit.Contracts.Services;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb.Repositories.Entities;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
@@ -23,9 +22,9 @@ internal sealed class CkAttributeDtoType : ObjectGraphType<CkAttributeDto>
         Name = "CkAttribute";
         Description = "Construction kit attribute definitions";
 
-        Field(x => x.CkAttributeId, type: typeof(NonNullGraphType<CkIdGraph<CkAttributeId>>))
+        Field(x => x.CkAttributeId, typeof(NonNullGraphType<CkIdGraph<CkAttributeId>>))
             .Description("Construction kit attribute id.");
-        Field(x => x.AttributeValueType, type: typeof(NonNullGraphType<AttributeValueTypesDtoType>))
+        Field(x => x.AttributeValueType, typeof(NonNullGraphType<AttributeValueTypesDtoType>))
             .Description("Value type of the attribute.");
         Field<CkRecordDtoType>("CkRecord")
             .Description("Optional record id of the attribute value type.")
@@ -33,11 +32,11 @@ internal sealed class CkAttributeDtoType : ObjectGraphType<CkAttributeDto>
         Field<CkEnumDtoType>("CkEnum")
             .Description("Optional enum id of the attribute value type.")
             .Resolve(ResolveCkEnum);
-        Field(x => x.Description, type: typeof(StringGraphType))
+        Field(x => x.Description, typeof(StringGraphType))
             .Description("Optional description of the attribute.");
-        Field(x => x.MetaData, type: typeof(ListGraphType<CkAttributeMetaDataDtoType>))
+        Field(x => x.MetaData, typeof(ListGraphType<CkAttributeMetaDataDtoType>))
             .Description("Optional meta data of the attribute.");
-        Field(x => x.IsDataStream, type: typeof(BooleanGraphType))
+        Field(x => x.IsDataStream, typeof(BooleanGraphType))
             .Description("Optional flag that tells if an attribute is a data stream.");
         Field<ListGraphType<SimpleScalarType>, object>(nameof(CkAttributeDto.DefaultValues))
             .Description("Default values of the attribute.");
@@ -45,36 +44,28 @@ internal sealed class CkAttributeDtoType : ObjectGraphType<CkAttributeDto>
 
     private object? ResolveCkEnum(IResolveFieldContext<CkAttributeDto> arg)
     {
-        var ckCacheService = arg.RequestServices?.GetRequiredService<ICkCacheService>();
-        if (ckCacheService == null)
-        {
-            throw AssetRepositoryException.ServiceNotRegistered(typeof(ICkCacheService));
-        }
+        var ckCacheService = arg.GetCkCacheService();
         var graphQlUserContext = (GraphQlUserContext)arg.UserContext;
-        
+
         if (arg.Source.ValueCkEnumId == null)
         {
             return null;
         }
-        
+
         var ckEnumGraph = ckCacheService.GetCkEnum(graphQlUserContext.TenantId, arg.Source.ValueCkEnumId);
         return CkEnumDtoType.CreateCkEnumDto(ckEnumGraph);
     }
 
     private object? ResolveCkRecord(IResolveFieldContext<CkAttributeDto> arg)
     {
-        var ckCacheService = arg.RequestServices?.GetRequiredService<ICkCacheService>();
-        if (ckCacheService == null)
-        {
-            throw AssetRepositoryException.ServiceNotRegistered(typeof(ICkCacheService));
-        }
+        var ckCacheService = arg.GetCkCacheService();
         var graphQlUserContext = (GraphQlUserContext)arg.UserContext;
-        
+
         if (arg.Source.ValueCkRecordId == null)
         {
             return null;
         }
-        
+
         var ckRecordGraph = ckCacheService.GetCkRecord(graphQlUserContext.TenantId, arg.Source.ValueCkRecordId);
         return CkRecordDtoType.CreateCkRecordDto(ckRecordGraph);
     }
@@ -89,7 +80,8 @@ internal sealed class CkAttributeDtoType : ObjectGraphType<CkAttributeDto>
             ValueCkRecordId = ckTypeAttributeGraph.ValueCkRecordId,
             ValueCkEnumId = ckTypeAttributeGraph.ValueCkEnumId,
             Description = ckTypeAttributeGraph.Description,
-            MetaData = ckTypeAttributeGraph.MetaData?.Select(CkAttributeMetaDataDtoType.CreateCkAttributeMetaDataDto).ToList(),
+            MetaData = ckTypeAttributeGraph.MetaData?.Select(CkAttributeMetaDataDtoType.CreateCkAttributeMetaDataDto)
+                .ToList(),
             IsDataStream = ckTypeAttributeGraph.IsDataStream,
             DefaultValues = ckTypeAttributeGraph.DefaultValues
         };

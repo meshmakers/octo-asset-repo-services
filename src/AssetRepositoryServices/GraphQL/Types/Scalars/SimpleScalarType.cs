@@ -22,6 +22,7 @@ internal class SimpleScalarType : ScalarGraphType
         {
             return str.Value.ToString();
         }
+
         if (value is GraphQLListValue list)
         {
             var items = new List<object?>();
@@ -49,8 +50,8 @@ internal class SimpleScalarType : ScalarGraphType
                     items.Add(boolItem.Value);
                 }
                 else
-                {
                     // Handle other types as needed
+                {
                     items.Add(item.ToString());
                 }
             }

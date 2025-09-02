@@ -9,7 +9,6 @@ using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Inputs;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Scalars;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
-using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.ConstructionKit.Contracts.DataTransferObjects;
 using Meshmakers.Octo.ConstructionKit.Contracts.DependencyGraph;
 using Meshmakers.Octo.Runtime.Contracts.Geospatial.Geometry;
@@ -28,7 +27,8 @@ internal class OctoBuilder<TSourceType>(
         return new OctoBuilder<TSourceType>(complexGraphType, options);
     }
 
-    internal OctoBuilder<TSourceType> Attribute(IGraphTypesCache graphTypesCache, CkTypeAttributeGraph typeAttributeGraph, bool isInputType)
+    internal OctoBuilder<TSourceType> Attribute(IGraphTypesCache graphTypesCache,
+        CkTypeAttributeGraph typeAttributeGraph, bool isInputType)
     {
         var attributeName = typeAttributeGraph.AttributeName;
 
@@ -158,7 +158,8 @@ internal class OctoBuilder<TSourceType>(
                         BinaryId = entityBinaryInfo.BinaryId,
                         Filename = entityBinaryInfo.Filename,
                         Size = entityBinaryInfo.Size,
-                        DownloadUri = new Uri(options.Value.PublicUrl.EnsureEndsWith($"/{tenantContext.TenantId}/v1/largeBinaries?largeBinaryId={entityBinaryInfo.BinaryId}"))
+                        DownloadUri = new Uri(options.Value.PublicUrl.EnsureEndsWith(
+                            $"/{tenantContext.TenantId}/v1/largeBinaries?largeBinaryId={entityBinaryInfo.BinaryId}"))
                     };
                 }
 

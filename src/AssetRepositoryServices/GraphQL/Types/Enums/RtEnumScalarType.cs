@@ -1,8 +1,6 @@
 using GraphQL;
-using GraphQL.DataLoader;
 using GraphQL.Types;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Caches;
-using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.RequestHandling;
 using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.ConstructionKit.Contracts.DependencyGraph;
 using Meshmakers.Octo.ConstructionKit.Contracts.Services;
@@ -21,7 +19,8 @@ internal class RtEnumScalarType : EnumerationGraphType
 
     public CkId<CkEnumId> CkEnumId { get; }
 
-    internal void Populate(ICkCacheService ckCacheService, string tenantId, IGraphTypesCache graphTypesCache, CkEnumGraph ckEnumGraph)
+    internal void Populate(ICkCacheService ckCacheService, string tenantId, IGraphTypesCache graphTypesCache,
+        CkEnumGraph ckEnumGraph)
     {
         var enumGraphData = ckEnumGraph.Values.Select(e => (
             name: e.Name.ToConstantCase(),

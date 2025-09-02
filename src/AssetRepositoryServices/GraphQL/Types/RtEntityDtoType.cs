@@ -4,7 +4,6 @@ using GraphQL.Builders;
 using GraphQL.Types;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.Configuration.DependencyInjection.Options;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Caches;
-using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.RequestHandling;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Enums;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Inputs;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Scalars;
@@ -43,10 +42,10 @@ internal sealed class RtEntityDtoType : ObjectGraphType<RtEntityDto>
             return false;
         };
 
-        Field(d => d.RtId, type: typeof(NonNullGraphType<OctoObjectIdType>));
-        Field(d => d.CkTypeId, type: typeof(CkIdGraph<CkTypeId>));
-        Field(d => d.RtCreationDateTime, type: typeof(DateTimeGraphType));
-        Field(d => d.RtChangedDateTime, type: typeof(DateTimeGraphType));
+        Field(d => d.RtId, typeof(NonNullGraphType<OctoObjectIdType>));
+        Field(d => d.CkTypeId, typeof(CkIdGraph<CkTypeId>));
+        Field(d => d.RtCreationDateTime, typeof(DateTimeGraphType));
+        Field(d => d.RtChangedDateTime, typeof(DateTimeGraphType));
         Field(x => x.RtWellKnownName, true);
         Field(x => x.RtVersion, true);
     }
@@ -57,11 +56,12 @@ internal sealed class RtEntityDtoType : ObjectGraphType<RtEntityDto>
     public CkId<CkTypeId> CkTypeId => _ckTypeGraph.CkTypeId;
 
     /// <summary>
-    /// Returns true if the type is abstract
+    ///     Returns true if the type is abstract
     /// </summary>
     public bool IsAbstract => _ckTypeGraph.IsAbstract;
 
-    internal void Populate(IOptions<OctoAssetRepositoryServicesOptions> options, ICkCacheService ckCacheService, string tenantId, IGraphTypesCache graphTypesCache)
+    internal void Populate(IOptions<OctoAssetRepositoryServicesOptions> options, ICkCacheService ckCacheService,
+        string tenantId, IGraphTypesCache graphTypesCache)
     {
         AddConstructionKit();
         AddGenericAssociations();
@@ -117,9 +117,11 @@ internal sealed class RtEntityDtoType : ObjectGraphType<RtEntityDto>
                 "Include indirect associations, otherwise direct associations are returned.")
             .Argument<NonNullGraphType<GraphDirectionsDtoType>>(Statics.DirectionArg,
                 "The direction of the association.")
-            .Argument<NonNullGraphType<StringGraphType>>(Statics.CkIdArg, "The construction kit type with the given id.")
+            .Argument<NonNullGraphType<StringGraphType>>(Statics.CkIdArg,
+                "The construction kit type with the given id.")
             .Argument<SearchFilterDtoType>(Statics.SearchFilterArg, "Filters items based on text search")
-            .Argument<ResultAggregationInputDtoType>(Statics.AggregationsArg, AssetTexts.Graphql_Type_Filter_Aggregations_Description)
+            .Argument<ResultAggregationInputDtoType>(Statics.AggregationsArg,
+                AssetTexts.Graphql_Type_Filter_Aggregations_Description)
             .Argument<ListGraphType<SortDtoType>>(Statics.SortOrderArg, "Sort order for items")
             .Argument<ListGraphType<FieldFilterDtoType>>(Statics.FieldFilterArg,
                 "Filters items based on field compare")
@@ -128,42 +130,21 @@ internal sealed class RtEntityDtoType : ObjectGraphType<RtEntityDto>
 
     private async Task<object?> ResolveGenericRtAssociationsQuery(IResolveConnectionContext<RtEntityDto> arg)
     {
-        await Task.Yield();
-
-        var sessionAccessor = arg.RequestServices?.GetRequiredService<IOctoSessionAccessor>();
-        if (sessionAccessor?.Session == null)
-        {
-            throw AssetRepositoryException.SessionUnavailable();
-        }
-
+        var sessionAccessor = arg.GetSessionAccessor();
         var graphQlUserContext = (GraphQlUserContext)arg.UserContext;
 
         var offset = arg.GetOffset();
         var dataQueryOperation = arg.GetDataQueryOperation();
-
-        if (!arg.TryGetArgument(Statics.RoleIdArg, out string? roleId))
-        {
-            throw AssetRepositoryException.RoleIdMissing();
-        }
 
         if (!arg.TryGetArgument(Statics.IncludeIndirectArg, out bool? indirectAssociations))
         {
             indirectAssociations = false;
         }
 
-        if (!arg.TryGetArgument(Statics.DirectionArg, out GraphDirections? direction))
-        {
-            throw AssetRepositoryException.DirectionMissing();
-        }
 
-        if (!arg.TryGetArgument(Statics.CkId, out string? ckIdObj))
-        {
-            arg.Errors.Add(new ExecutionError("Invalid query. Missing construction kit id.")
-                { Code = Statics.GraphQlErrorCommon });
-            return null;
-        }
-        
-        CkId<CkTypeId> targetCkId = new(ckIdObj);
+        var roleId = arg.GetArgument<string>(Statics.RoleIdArg);
+        var direction = arg.GetArgument<GraphDirections>(Statics.DirectionArg);
+        var targetCkId = arg.GetArgument<CkId<CkTypeId>>(Statics.CkId);
 
         var tenantRepository = graphQlUserContext.TenantContext.GetTenantRepository();
 
@@ -171,7 +152,7 @@ internal sealed class RtEntityDtoType : ObjectGraphType<RtEntityDto>
         {
             var result = await tenantRepository.GetIndirectRtAssociationTargetsAsync(
                 sessionAccessor.Session, [arg.Source.RtId], CkTypeId, new CkId<CkAssociationRoleId>(roleId),
-                direction.Value,
+                direction,
                 null, targetCkId, dataQueryOperation, offset, arg.First);
 
             return ConnectionUtils.ToConnection(result.First().Value.Items.Select(CreateRtEntityDto), arg);
@@ -180,7 +161,7 @@ internal sealed class RtEntityDtoType : ObjectGraphType<RtEntityDto>
         {
             var result = await tenantRepository.GetRtAssociationTargetsAsync(
                 sessionAccessor.Session, [arg.Source.RtId], CkTypeId, new CkId<CkAssociationRoleId>(roleId),
-                targetCkId, direction.Value,
+                targetCkId, direction,
                 null, dataQueryOperation, offset, arg.First);
 
             return ConnectionUtils.ToConnection(result.First().Value.Items.Select(CreateRtEntityDto), arg);
@@ -189,12 +170,7 @@ internal sealed class RtEntityDtoType : ObjectGraphType<RtEntityDto>
 
     private object ResolveCkType(IResolveFieldContext<RtEntityDto> arg)
     {
-        var ckCacheService = arg.RequestServices?.GetRequiredService<ICkCacheService>();
-        if (ckCacheService == null)
-        {
-            throw AssetRepositoryException.ServiceNotRegistered(typeof(ICkCacheService));
-        }
-
+        var ckCacheService = arg.GetCkCacheService();
         var graphQlUserContext = (GraphQlUserContext)arg.UserContext;
 
         var ckTypeGraph = ckCacheService.GetCkType(graphQlUserContext.TenantId, arg.Source.CkTypeId);

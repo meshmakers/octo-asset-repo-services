@@ -12,17 +12,18 @@ internal sealed class CkEnumValueDtoType : ObjectGraphType<CkEnumValueDto>
         Name = "CkEnumValue";
         Description = AssetTexts.Graphql_EnumValue_Description;
 
-        Field(x => x.Key, type: typeof(IntGraphType))
+        Field(x => x.Key, typeof(IntGraphType))
             .Description(AssetTexts.Graphql_EnumValue_Key_Description);
-        Field(x => x.Name, type: typeof(StringGraphType))
+        Field(x => x.Name, typeof(StringGraphType))
             .Description(AssetTexts.Graphql_EnumValue_Name_Description);
-        Field(x => x.Description, type: typeof(StringGraphType))
+        Field(x => x.Description, typeof(StringGraphType))
             .Description(AssetTexts.Graphql_EnumValue_Description_Description);
-        Field(x => x.IsExtension, type: typeof(BooleanGraphType))
+        Field(x => x.IsExtension, typeof(BooleanGraphType))
             .Description(AssetTexts.Graphql_EnumValue_IsExtension_Description);
     }
-    
-    internal static CkEnumValueDto CreateCkEnumValueDto(ConstructionKit.Contracts.DataTransferObjects.CkEnumValueDto ckEnumValue)
+
+    internal static CkEnumValueDto CreateCkEnumValueDto(
+        ConstructionKit.Contracts.DataTransferObjects.CkEnumValueDto ckEnumValue)
     {
         var ckEnumValueDto = new CkEnumValueDto
         {
@@ -33,7 +34,7 @@ internal sealed class CkEnumValueDtoType : ObjectGraphType<CkEnumValueDto>
         };
         return ckEnumValueDto;
     }
-    
+
     internal static CkEnumValueDto CreateCkEnumValueDto(CkEnumValue ckEnumValue)
     {
         var ckEnumValueDto = new CkEnumValueDto

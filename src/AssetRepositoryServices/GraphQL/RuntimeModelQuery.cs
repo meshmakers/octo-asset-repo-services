@@ -3,26 +3,24 @@ using GraphQL;
 using GraphQL.Builders;
 using GraphQL.Types;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Caches;
-using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.RequestHandling;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Inputs;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Scalars;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Utils;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
 using Meshmakers.Octo.ConstructionKit.Contracts;
-using Meshmakers.Octo.ConstructionKit.Contracts.Services;
-using Meshmakers.Octo.Runtime.Contracts.Repositories.Query;
-using NLog;
+using Meshmakers.Octo.ConstructionKit.Models.System.Generated.System.v1;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL;
 
 [DoNotRegister]
 internal sealed class RuntimeModelQuery : ObjectGraphType
 {
-    private static readonly Logger Logger = LogManager.GetCurrentClassLogger();
+    private readonly ILogger<RuntimeModelQuery> _logger;
 
-    public RuntimeModelQuery(IGraphTypesCache graphTypesCache)
+    public RuntimeModelQuery(ILogger<RuntimeModelQuery> logger, IGraphTypesCache graphTypesCache)
     {
+        _logger = logger;
         Name = "RuntimeModelQuery";
 
         Connection<RtEntityGenericDtoType>("RuntimeEntities")
@@ -73,39 +71,16 @@ internal sealed class RuntimeModelQuery : ObjectGraphType
         }
     }
 
-    private object? ResolveTransientRtQuery(IResolveConnectionContext<object?> arg)
+    private object ResolveTransientRtQuery(IResolveConnectionContext<object?> arg)
     {
-        Logger.Debug("GraphQL query handling for transient runtime query started");
+        _logger.LogDebug("GraphQL query handling for transient runtime query started");
 
-        var sessionAccessor = arg.RequestServices?.GetRequiredService<IOctoSessionAccessor>();
-        if (sessionAccessor?.Session == null)
-        {
-            throw AssetRepositoryException.SessionUnavailable();
-        }
-
-        var ckCacheService = arg.RequestServices?.GetRequiredService<ICkCacheService>();
-        if (ckCacheService == null)
-        {
-            throw AssetRepositoryException.ServiceNotRegistered(typeof(ICkCacheService));
-        }
+        var ckCacheService = arg.GetCkCacheService();
 
         var graphQlUserContext = (GraphQlUserContext)arg.UserContext;
-        if (!arg.TryGetArgument(Statics.CkId, out string? ckIdObj))
-        {
-            arg.Errors.Add(new ExecutionError("Invalid query. Missing construction kit id.")
-                { Code = Statics.GraphQlErrorCommon });
-            return null;
-        }
+        var ckTypeId = arg.GetArgument<CkId<CkTypeId>>(Statics.CkId);
 
-        CkId<CkTypeId> ckTypeId = new(ckIdObj);
-
-        if (!arg.TryGetArgument(Statics.ColumnPathsArg, out IEnumerable<string>? columnPaths))
-        {
-            arg.Errors.Add(new ExecutionError("Invalid query. Missing column paths.")
-                { Code = Statics.GraphQlErrorCommon });
-            return null;
-        }
-
+        var columnPaths = arg.GetArgument<IEnumerable<string>>(Statics.ColumnPathsArg);
         var columnPathList = columnPaths.ToList();
 
         var typeQueryColumnPaths = ckCacheService.GetCkTypeQueryColumnPaths(graphQlUserContext.TenantId, ckTypeId);
@@ -113,10 +88,7 @@ internal sealed class RuntimeModelQuery : ObjectGraphType
             .Where(cp => typeQueryColumnPaths.All(ckTypeQueryColumn => ckTypeQueryColumn.Path != cp)).ToList();
         if (invalidColumnPaths.Any())
         {
-            arg.Errors.Add(
-                new ExecutionError($"Invalid query. Invalid column paths: {string.Join(", ", invalidColumnPaths)}")
-                    { Code = Statics.GraphQlErrorCommon });
-            return null;
+            throw AssetRepositoryException.InvalidColumnPaths(invalidColumnPaths);
         }
 
         var selectedTypeQueryColumns = typeQueryColumnPaths
@@ -124,7 +96,7 @@ internal sealed class RuntimeModelQuery : ObjectGraphType
 
         var dataQueryOperation = arg.GetDataQueryOperation();
 
-        Logger.Debug("GraphQL query handling returning data");
+        _logger.LogDebug("GraphQL query handling returning data");
         return ConnectionUtils.ToConnection(
             [RtTransientQueryDtoType.CreateTransientRtQueryDto(ckTypeId, dataQueryOperation, selectedTypeQueryColumns)],
             arg,
@@ -133,38 +105,22 @@ internal sealed class RuntimeModelQuery : ObjectGraphType
 
     private async Task<object?> ResolveRtQueryAsync(IResolveConnectionContext<object?> arg)
     {
-        Logger.Debug("GraphQL query handling for runtime query started");
+        _logger.LogDebug("GraphQL query handling for runtime query started");
 
-        var sessionAccessor = arg.RequestServices?.GetRequiredService<IOctoSessionAccessor>();
-        if (sessionAccessor?.Session == null)
-        {
-            throw AssetRepositoryException.SessionUnavailable();
-        }
-
-        var ckCacheService = arg.RequestServices?.GetRequiredService<ICkCacheService>();
-        if (ckCacheService == null)
-        {
-            throw AssetRepositoryException.ServiceNotRegistered(typeof(ICkCacheService));
-        }
+        var ckCacheService = arg.GetCkCacheService();
+        var sessionAccessor = arg.GetSessionAccessor();
 
         var graphQlUserContext = (GraphQlUserContext)arg.UserContext;
-        if (!arg.TryGetArgument(Statics.RtIdArg, out OctoObjectId? queryRtId))
-        {
-            arg.Errors.Add(new ExecutionError("Invalid query. Missing runtime id.")
-                { Code = Statics.GraphQlErrorCommon });
-            return null;
-        }
+        var queryRtId = arg.GetArgument<OctoObjectId>(Statics.RtIdArg);
 
         var tenantRepository = graphQlUserContext.TenantContext.GetTenantRepository();
         var rtQuery =
-            await tenantRepository.GetRtEntityByRtIdAsync<ConstructionKit.Models.System.Generated.System.v1.RtQuery>(
-                sessionAccessor.Session, queryRtId.Value);
+            await tenantRepository.GetRtEntityByRtIdAsync<RtQuery>(
+                sessionAccessor.Session, queryRtId);
 
         if (rtQuery == null)
         {
-            arg.Errors.Add(new ExecutionError("Invalid query. Query not found.")
-                { Code = Statics.GraphQlErrorCommon });
-            return null;
+            throw AssetRepositoryException.RtQueryNotFound(queryRtId);
         }
 
         var typeQueryColumnPaths =
@@ -173,16 +129,13 @@ internal sealed class RuntimeModelQuery : ObjectGraphType
             .Where(cp => typeQueryColumnPaths.All(ckTypeQueryColumn => ckTypeQueryColumn.Path != cp)).ToList();
         if (invalidColumnPaths.Any())
         {
-            arg.Errors.Add(
-                new ExecutionError($"Invalid query. Invalid column paths: {string.Join(", ", invalidColumnPaths)}")
-                    { Code = Statics.GraphQlErrorCommon });
-            return null;
+            throw AssetRepositoryException.InvalidColumnPaths(invalidColumnPaths);
         }
 
         var selectedTypeQueryColumns = typeQueryColumnPaths
             .Where(ckTypeQueryColumn => rtQuery.Columns.Contains(ckTypeQueryColumn.Path)).ToList();
 
-        Logger.Debug("GraphQL query handling returning data");
+        _logger.LogDebug("GraphQL query handling returning data");
         return ConnectionUtils.ToConnection(
             [RtQueryDtoType.CreateRtQueryDto(rtQuery, selectedTypeQueryColumns)], arg,
             0, 1);
@@ -190,23 +143,12 @@ internal sealed class RuntimeModelQuery : ObjectGraphType
 
     private async Task<object?> ResolveGenericRtEntitiesQuery(IResolveConnectionContext<object?> arg)
     {
-        Logger.Debug("GraphQL query handling for generic runtime entity started");
+        _logger.LogDebug("GraphQL query handling for generic runtime entity started");
 
-        var sessionAccessor = arg.RequestServices?.GetRequiredService<IOctoSessionAccessor>();
-        if (sessionAccessor?.Session == null)
-        {
-            throw AssetRepositoryException.SessionUnavailable();
-        }
+        var sessionAccessor = arg.GetSessionAccessor();
 
         var graphQlUserContext = (GraphQlUserContext)arg.UserContext;
-        if (!arg.TryGetArgument(Statics.CkId, out string? ckIdObj))
-        {
-            arg.Errors.Add(new ExecutionError("Invalid query. Missing construction kit id.")
-                { Code = Statics.GraphQlErrorCommon });
-            return null;
-        }
-
-        CkId<CkTypeId> ckTypeId = new(ckIdObj);
+        var ckTypeId = arg.GetArgument<CkId<CkTypeId>>(Statics.CkId);
 
         var offset = arg.GetOffset();
         var dataQueryOperation = arg.GetDataQueryOperation();
@@ -236,7 +178,7 @@ internal sealed class RuntimeModelQuery : ObjectGraphType
                 sessionAccessor.Session, ckTypeId, keysList, dataQueryOperation,
                 offset, arg.First);
 
-            Logger.Debug("GraphQL query handling returning data by keys");
+            _logger.LogDebug("GraphQL query handling returning data by keys");
             return ConnectionUtils.ToConnection(resultSetIds.Items.Select(RtEntityDtoType.CreateRtEntityDto), arg,
                 resultSetIds.TotalCount > 0 ? offset.GetValueOrDefault(0) : 0, (int)resultSetIds.TotalCount,
                 resultSetIds.AggregationResult, resultSetIds.FieldAggregationResult);
@@ -246,7 +188,7 @@ internal sealed class RuntimeModelQuery : ObjectGraphType
             ckTypeId, dataQueryOperation, offset,
             arg.First);
 
-        Logger.Debug("GraphQL query handling returning data");
+        _logger.LogDebug("GraphQL query handling returning data");
         return ConnectionUtils.ToConnection(resultSet.Items.Select(RtEntityDtoType.CreateRtEntityDto), arg,
             resultSet.TotalCount > 0 ? offset.GetValueOrDefault(0) : 0, (int)resultSet.TotalCount,
             resultSet.AggregationResult, resultSet.FieldAggregationResult);
@@ -254,29 +196,12 @@ internal sealed class RuntimeModelQuery : ObjectGraphType
 
     private async Task<object?> ResolveRtEntitiesQuery(IResolveConnectionContext<object?> arg)
     {
-        Logger.Debug("GraphQL query handling for specific runtime entity type started");
+        _logger.LogDebug("GraphQL query handling for specific runtime entity type started");
 
-        var sessionAccessor = arg.RequestServices?.GetRequiredService<IOctoSessionAccessor>();
-        if (sessionAccessor?.Session == null)
-        {
-            throw AssetRepositoryException.SessionUnavailable();
-        }
-
+        var sessionAccessor = arg.GetSessionAccessor();
         var graphQlUserContext = (GraphQlUserContext)arg.UserContext;
 
-        if (!arg.FieldDefinition.Metadata.TryGetValue(Statics.CkId, out var ckIdObj))
-        {
-            arg.Errors.Add(new ExecutionError("Invalid query. Missing construction kit id.")
-                { Code = Statics.GraphQlErrorCommon });
-            return null;
-        }
-
-        if (ckIdObj is not CkId<CkTypeId> ckTypeId)
-        {
-            arg.Errors.Add(new ExecutionError("Invalid query. Invalid construction kit id.")
-                { Code = Statics.GraphQlErrorCommon });
-            return null;
-        }
+        var ckTypeId = arg.GetMetadataValue<CkId<CkTypeId>>(Statics.CkId);
 
         var offset = arg.GetOffset();
         var dataQueryOperation = arg.GetDataQueryOperation();
@@ -307,7 +232,7 @@ internal sealed class RuntimeModelQuery : ObjectGraphType
                     sessionAccessor.Session, ckTypeId, keysList, dataQueryOperation,
                     offset, arg.First);
 
-            Logger.Debug("GraphQL query handling returning data by keys");
+            _logger.LogDebug("GraphQL query handling returning data by keys");
             return ConnectionUtils.ToConnection(resultSetIds.Items.Select(RtEntityDtoType.CreateRtEntityDto), arg,
                 resultSetIds.TotalCount > 0 ? offset.GetValueOrDefault(0) : 0, (int)resultSetIds.TotalCount,
                 resultSetIds.AggregationResult, resultSetIds.FieldAggregationResult);
@@ -318,7 +243,7 @@ internal sealed class RuntimeModelQuery : ObjectGraphType
                 ckTypeId, dataQueryOperation, offset,
                 arg.First);
 
-        Logger.Debug("GraphQL query handling returning data");
+        _logger.LogDebug("GraphQL query handling returning data");
         return ConnectionUtils.ToConnection(resultSet.Items.Select(RtEntityDtoType.CreateRtEntityDto), arg,
             resultSet.TotalCount > 0 ? offset.GetValueOrDefault(0) : 0, (int)resultSet.TotalCount,
             resultSet.AggregationResult, resultSet.FieldAggregationResult);

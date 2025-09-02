@@ -1,40 +1,35 @@
 using AssetRepositoryServices.Resources;
-using GraphQL;
 using GraphQL.Builders;
 using GraphQL.Types;
-using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.RequestHandling;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Inputs;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Scalars;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Utils;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
 using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.ConstructionKit.Contracts.DependencyGraph;
-using Meshmakers.Octo.ConstructionKit.Contracts.Services;
 using Meshmakers.Octo.Runtime.Contracts;
-using Meshmakers.Octo.Runtime.Contracts.MongoDb;
-using Meshmakers.Octo.Runtime.Contracts.Repositories;
 using Meshmakers.Octo.Runtime.Contracts.Repositories.Query;
-using NLog;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
 
 /// <summary>
-///     Implements the GraphQL type for <see cref="RtTransientQueryDto"/>.
+///     Implements the GraphQL type for <see cref="RtTransientQueryDto" />.
 /// </summary>
 // ReSharper disable once ClassNeverInstantiated.Global
 internal sealed class RtTransientQueryDtoType : ObjectGraphType<RtTransientQueryDto>
 {
-    private static readonly Logger Logger = LogManager.GetCurrentClassLogger();
+    private readonly ILogger<RtTransientQueryDtoType> _logger;
 
     /// <summary>
     ///     Constructor
     /// </summary>
-    public RtTransientQueryDtoType()
+    public RtTransientQueryDtoType(ILogger<RtTransientQueryDtoType> logger)
     {
+        _logger = logger;
         Name = "RtTransientQuery";
         Description = AssetTexts.Graphql_RtQuery_Description;
-        Field(d => d.AssociatedCkTypeId, type: typeof(NonNullGraphType<CkIdGraph<CkTypeId>>));
-        Field(d => d.Columns, type: typeof(NonNullGraphType<ListGraphType<NonNullGraphType<RtQueryColumnType>>>));
+        Field(d => d.AssociatedCkTypeId, typeof(NonNullGraphType<CkIdGraph<CkTypeId>>));
+        Field(d => d.Columns, typeof(NonNullGraphType<ListGraphType<NonNullGraphType<RtQueryColumnType>>>));
 
         Connection<NonNullGraphType<QueryAggregationResultType>>("Aggregations")
             .Argument<NonNullGraphType<ResultAggregationInputDtoType>>(Statics.AggregationsArg,
@@ -44,36 +39,22 @@ internal sealed class RtTransientQueryDtoType : ObjectGraphType<RtTransientQuery
             .ResolveAsync(ResolveRtQueryRowsAsync);
     }
 
-    private async Task<object?> ResolveRtQueryAggregationAsync(IResolveConnectionContext<object?> context)
+    private async Task<object?> ResolveRtQueryAggregationAsync(IResolveConnectionContext<RtTransientQueryDto?> context)
     {
-        Logger.Debug("GraphQL query handling for runtime aggregation started");
-        var ckCacheService = context.RequestServices?.GetRequiredService<ICkCacheService>();
-        if (ckCacheService == null)
-        {
-            throw AssetRepositoryException.ServiceNotRegistered(typeof(ICkCacheService));
-        }
-
-
-        var sessionAccessor = context.RequestServices?.GetRequiredService<IOctoSessionAccessor>();
-        if (sessionAccessor?.Session == null)
-        {
-            throw AssetRepositoryException.SessionUnavailable();
-        }
+        _logger.LogDebug("GraphQL query handling for runtime aggregation started");
+        var ckCacheService = context.GetCkCacheService();
+        var sessionAccessor = context.GetSessionAccessor();
 
         var graphQlUserContext = (GraphQlUserContext)context.UserContext;
 
-        if (context.Source is not RtTransientQueryDto rtTransientQueryDto)
+        if (context.Source is not { } rtTransientQueryDto)
         {
-            context.Errors.Add(new ExecutionError("Invalid query. Query not found.")
-                { Code = Statics.GraphQlErrorCommon });
-            return null;
+            throw AssetRepositoryException.SourceNotSet();
         }
 
         if (rtTransientQueryDto.UserContext is not QueryUserContext queryUserContext)
         {
-            context.Errors.Add(new ExecutionError("Invalid query. User context not found.")
-                { Code = Statics.GraphQlErrorCommon });
-            return null;
+            throw AssetRepositoryException.UserContextNotSet();
         }
 
         var tenantRepository = graphQlUserContext.TenantContext.GetTenantRepository();
@@ -91,14 +72,12 @@ internal sealed class RtTransientQueryDtoType : ObjectGraphType<RtTransientQuery
 
         if (resultSet.AggregationResult == null)
         {
-            context.Errors.Add(new ExecutionError("Invalid query. Aggregation result not found.")
-                { Code = Statics.GraphQlErrorCommon });
-            return null;
+            throw AssetRepositoryException.AggregationResultNull();
         }
 
         try
         {
-            Logger.Debug("GraphQL query handling returning data");
+            _logger.LogDebug("GraphQL query handling returning data");
             return ConnectionUtils.ToConnection([
                     new QueryAggregationResult(
                         resultSet.TotalCount,
@@ -113,45 +92,29 @@ internal sealed class RtTransientQueryDtoType : ObjectGraphType<RtTransientQuery
                 0, 1, resultSet.AggregationResult,
                 resultSet.FieldAggregationResult);
         }
-        catch (OperationFailedException e)
+        catch (Exception e)
         {
-            context.Errors.Add(new ExecutionError(e.Message)
-                { Code = Statics.GraphQlErrorCommon });
-            return null;
+            return context.HandleException(e);
         }
     }
 
-    private async Task<object?> ResolveRtQueryRowsAsync(IResolveConnectionContext<object?> context)
+    private async Task<object?> ResolveRtQueryRowsAsync(IResolveConnectionContext<RtTransientQueryDto?> context)
     {
-        Logger.Debug("GraphQL query handling for runtime rows started");
+        _logger.LogDebug("GraphQL query handling for runtime rows started");
 
-        var ckCacheService = context.RequestServices?.GetRequiredService<ICkCacheService>();
-        if (ckCacheService == null)
-        {
-            throw AssetRepositoryException.ServiceNotRegistered(typeof(ICkCacheService));
-        }
-
-
-        var sessionAccessor = context.RequestServices?.GetRequiredService<IOctoSessionAccessor>();
-        if (sessionAccessor?.Session == null)
-        {
-            throw AssetRepositoryException.SessionUnavailable();
-        }
+        var ckCacheService = context.GetCkCacheService();
+        var sessionAccessor = context.GetSessionAccessor();
 
         var graphQlUserContext = (GraphQlUserContext)context.UserContext;
 
-        if (context.Source is not RtTransientQueryDto rtTransientQueryDto)
+        if (context.Source is not { } rtTransientQueryDto)
         {
-            context.Errors.Add(new ExecutionError("Invalid query. Query not found.")
-                { Code = Statics.GraphQlErrorCommon });
-            return null;
+            throw AssetRepositoryException.SourceNotSet();
         }
 
         if (rtTransientQueryDto.UserContext is not QueryUserContext queryUserContext)
         {
-            context.Errors.Add(new ExecutionError("Invalid query. User context not found.")
-                { Code = Statics.GraphQlErrorCommon });
-            return null;
+            throw AssetRepositoryException.UserContextNotSet();
         }
 
         var tenantRepository = graphQlUserContext.TenantContext.GetTenantRepository();
@@ -168,7 +131,7 @@ internal sealed class RtTransientQueryDtoType : ObjectGraphType<RtTransientQuery
                 rtTransientQueryDto.AssociatedCkTypeId, queryUserContext.DataQueryOperation,
                 roleIdDirectionPairs, offset, context.First);
 
-            Logger.Debug("GraphQL query handling returning data");
+            _logger.LogDebug("GraphQL query handling returning data");
             return ConnectionUtils.ToConnection(
                 resultSet.Items.Select((entity, _) =>
                     RtQueryRowDtoType.CreateRtQueryRowDto(tenantRepository.TenantId, entity,
@@ -176,11 +139,9 @@ internal sealed class RtTransientQueryDtoType : ObjectGraphType<RtTransientQuery
                 resultSet.TotalCount > 0 ? offset.GetValueOrDefault(0) : 0, (int)resultSet.TotalCount,
                 resultSet.AggregationResult, resultSet.FieldAggregationResult);
         }
-        catch (OperationFailedException e)
+        catch (Exception e)
         {
-            context.Errors.Add(new ExecutionError(e.Message)
-                { Code = Statics.GraphQlErrorCommon });
-            return null;
+            return context.HandleException(e);
         }
     }
 

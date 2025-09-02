@@ -1,6 +1,5 @@
 using GraphQL;
 using GraphQL.Types;
-using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.RequestHandling;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Inputs;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Utils;
@@ -71,13 +70,9 @@ internal sealed class CkEnumMutation : ObjectGraphType
             await tenantContext.CustomizeCkEnumAsync(ckEnumId, ckEnumUpdates);
         }
 
-        var sessionAccessor = arg.RequestServices?.GetRequiredService<IOctoSessionAccessor>();
-        if (sessionAccessor?.Session == null)
-        {
-            throw AssetRepositoryException.SessionUnavailable();
-        }
+        var sessionAccessor = arg.GetSessionAccessor();
 
-        DataQueryOperation queryOperation = DataQueryOperation.Create();
+        var queryOperation = DataQueryOperation.Create();
         var resultSet = await tenantContext.GetTenantRepository()
             .GetCkEnumAsync(sessionAccessor.Session, null, keysList, queryOperation);
 

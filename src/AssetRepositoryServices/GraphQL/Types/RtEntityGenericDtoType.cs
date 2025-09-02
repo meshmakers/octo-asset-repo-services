@@ -1,11 +1,6 @@
-using AssetRepositoryServices.Resources;
 using GraphQL;
 using GraphQL.Builders;
-using GraphQL.DataLoader;
 using GraphQL.Types;
-using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.RequestHandling;
-using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Enums;
-using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Inputs;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Scalars;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Utils;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
@@ -29,13 +24,13 @@ internal sealed class RtEntityGenericDtoType : ObjectGraphType<RtEntityDto>
     {
         Name = "RtEntity";
         Description = "A runtime entity type of OctoMesh";
-        Field(d => d.RtId, type: typeof(OctoObjectIdType));
-        Field(d => d.CkTypeId, type: typeof(CkIdGraph<CkTypeId>));
+        Field(d => d.RtId, typeof(OctoObjectIdType));
+        Field(d => d.CkTypeId, typeof(CkIdGraph<CkTypeId>));
         Field(x => x.RtCreationDateTime, true);
         Field(x => x.RtChangedDateTime, true);
         Field(x => x.RtWellKnownName, true);
         Field(x => x.RtVersion, true);
-        Field("associations", type: typeof(RtEntityGenericAssociationType)).Description(
+        Field("associations", typeof(RtEntityGenericAssociationType)).Description(
                 "A list of associations of this entity. The association role id is used to filter the associations.")
             .Resolve(ctx => new RtEntityGenericAssociation(ctx.Source));
 
@@ -47,12 +42,7 @@ internal sealed class RtEntityGenericDtoType : ObjectGraphType<RtEntityDto>
 
     private object ResolveAttributes(IResolveConnectionContext<RtEntityDto> context)
     {
-        var ckCacheService = context.RequestServices?.GetRequiredService<ICkCacheService>();
-        if (ckCacheService == null)
-        {
-            throw AssetRepositoryException.ServiceNotRegistered(typeof(ICkCacheService));
-        }
-
+        var ckCacheService = context.GetCkCacheService();
         var graphQlContext = (GraphQlUserContext)context.UserContext;
 
 

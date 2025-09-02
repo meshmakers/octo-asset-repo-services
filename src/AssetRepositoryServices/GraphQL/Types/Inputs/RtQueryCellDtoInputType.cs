@@ -12,7 +12,7 @@ internal sealed class RtQueryCellDtoInputType : InputObjectGraphType<RtQueryCell
         Name = $"RtQueryCell{Statics.GraphQlInputSuffix}";
         Description = AssetTexts.Graphql_RtQueryCellInput_Description;
 
-        Field(x => x.AttributePath, type: typeof(StringGraphType))
+        Field(x => x.AttributePath, typeof(StringGraphType))
             .Description(AssetTexts.Graphql_RtQueryCell_AttribuePath_Description);
         Field<SimpleScalarType, object>(nameof(RtEntityAttributeDto.Value))
             .Description(AssetTexts.Graphql_RtQueryCell_Value_Description);

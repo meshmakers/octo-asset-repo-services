@@ -13,6 +13,7 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Caches;
 ///     The schema context allows to cache GraphQL Schemas based on a data source
 /// </summary>
 internal class SchemaContext(
+    ILoggerFactory loggerFactory,
     ILogger<SchemaContext> logger,
     IServiceProvider serviceProvider,
     IOptions<OctoAssetRepositoryServicesOptions> options,
@@ -55,14 +56,14 @@ internal class SchemaContext(
 
             var t = new Func<ICacheEntry, Task<ISchema?>>(async entry =>
             {
-                logger.LogDebug("Creating GraphQL schema for {TenantId}", tenantId);    
+                logger.LogDebug("Creating GraphQL schema for {TenantId}", tenantId);
                 entry.SetSize(1);
                 entry.SlidingExpiration = TimeSpan.FromDays(1);
 
                 var graphTypesCache = new GraphTypesCache(ckCacheService, octoService, options, tenantId);
                 await graphTypesCache.PopulateAsync();
 
-                var query = new OctoQuery(graphTypesCache);
+                var query = new OctoQuery(loggerFactory, graphTypesCache);
                 var mutation = new OctoMutation(graphTypesCache);
                 var subscriptions = new OctoSubscriptions(graphTypesCache);
 

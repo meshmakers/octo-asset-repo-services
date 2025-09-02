@@ -2,39 +2,37 @@ using AssetRepositoryServices.Resources;
 using GraphQL;
 using GraphQL.Builders;
 using GraphQL.Types;
-using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.RequestHandling;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Inputs;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Scalars;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Utils;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
 using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.ConstructionKit.Contracts.DependencyGraph;
-using Meshmakers.Octo.ConstructionKit.Contracts.Services;
+using Meshmakers.Octo.ConstructionKit.Models.System.Generated.System.v1;
 using Meshmakers.Octo.Runtime.Contracts;
-using Meshmakers.Octo.Runtime.Contracts.MongoDb;
 using Meshmakers.Octo.Runtime.Contracts.Repositories.Query;
-using NLog;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
 
 /// <summary>
-///     Implements the GraphQL type for <see cref="RtQueryDto"/>.
+///     Implements the GraphQL type for <see cref="RtQueryDto" />.
 /// </summary>
 // ReSharper disable once ClassNeverInstantiated.Global
 internal sealed class RtQueryDtoType : ObjectGraphType<RtQueryDto>
 {
-    private static readonly Logger Logger = LogManager.GetCurrentClassLogger();
+    private readonly ILogger<RtQueryDtoType> _logger;
 
     /// <summary>
     ///     Constructor
     /// </summary>
-    public RtQueryDtoType()
+    public RtQueryDtoType(ILogger<RtQueryDtoType> logger)
     {
+        _logger = logger;
         Name = "RtQuery";
         Description = AssetTexts.Graphql_RtQuery_Description;
-        Field(d => d.QueryRtId, type: typeof(NonNullGraphType<OctoObjectIdType>));
-        Field(d => d.AssociatedCkTypeId, type: typeof(NonNullGraphType<CkIdGraph<CkTypeId>>));
-        Field(d => d.Columns, type: typeof(NonNullGraphType<ListGraphType<NonNullGraphType<RtQueryColumnType>>>));
+        Field(d => d.QueryRtId, typeof(NonNullGraphType<OctoObjectIdType>));
+        Field(d => d.AssociatedCkTypeId, typeof(NonNullGraphType<CkIdGraph<CkTypeId>>));
+        Field(d => d.Columns, typeof(NonNullGraphType<ListGraphType<NonNullGraphType<RtQueryColumnType>>>));
 
         Connection<NonNullGraphType<RtQueryRowDtoType>>("Rows")
             .ResolveAsync(ResolveRtQueryRowsAsync);
@@ -46,27 +44,16 @@ internal sealed class RtQueryDtoType : ObjectGraphType<RtQueryDto>
 
     private async Task<object?> ResolveRtQueryAggregationAsync(IResolveConnectionContext<RtQueryDto> context)
     {
-          Logger.Debug("GraphQL query handling for runtime aggregation started");
+        _logger.LogDebug("GraphQL query handling for runtime aggregation started");
 
-        var ckCacheService = context.RequestServices?.GetRequiredService<ICkCacheService>();
-        if (ckCacheService == null)
-        {
-            throw AssetRepositoryException.ServiceNotRegistered(typeof(ICkCacheService));
-        }
-
-        var sessionAccessor = context.RequestServices?.GetRequiredService<IOctoSessionAccessor>();
-        if (sessionAccessor?.Session == null)
-        {
-            throw AssetRepositoryException.SessionUnavailable();
-        }
+        var ckCacheService = context.GetCkCacheService();
+        var sessionAccessor = context.GetSessionAccessor();
 
         var graphQlUserContext = (GraphQlUserContext)context.UserContext;
 
         if (context.Source is not { } rtQueryDto)
         {
-            context.Errors.Add(new ExecutionError("Invalid query. Query not found.")
-                { Code = Statics.GraphQlErrorCommon });
-            return null;
+            throw AssetRepositoryException.SourceNotSet();
         }
 
         var tenantRepository = graphQlUserContext.TenantContext.GetTenantRepository();
@@ -84,66 +71,48 @@ internal sealed class RtQueryDtoType : ObjectGraphType<RtQueryDto>
 
         if (resultSet.AggregationResult == null)
         {
-            context.Errors.Add(new ExecutionError("Invalid query. Aggregation result not found.")
-                { Code = Statics.GraphQlErrorCommon });
-            return null;
+            throw AssetRepositoryException.AggregationResultNull();
         }
 
         try
         {
-            Logger.Debug("GraphQL query handling returning data");
+            _logger.LogDebug("GraphQL query handling returning data");
             return ConnectionUtils.ToConnection([
                     new QueryAggregationResult(
-                    resultSet.TotalCount,
-                    resultSet.AggregationResult.CountStatistics,
-                    resultSet.AggregationResult.MinStatistics,
-                    resultSet.AggregationResult.MaxStatistics,
-                    resultSet.AggregationResult.AvgStatistics,
-                    resultSet.AggregationResult.SumStatistics,
-                    resultSet.FieldAggregationResult)
+                        resultSet.TotalCount,
+                        resultSet.AggregationResult.CountStatistics,
+                        resultSet.AggregationResult.MinStatistics,
+                        resultSet.AggregationResult.MaxStatistics,
+                        resultSet.AggregationResult.AvgStatistics,
+                        resultSet.AggregationResult.SumStatistics,
+                        resultSet.FieldAggregationResult)
                 ]
                 , context,
                 0, 1, resultSet.AggregationResult,
                 resultSet.FieldAggregationResult);
         }
-        catch (OperationFailedException e)
+        catch (Exception e)
         {
-            context.Errors.Add(new ExecutionError(e.Message)
-                { Code = Statics.GraphQlErrorCommon });
-            return null;
+            return context.HandleException(e);
         }
     }
 
-    private async Task<object?> ResolveRtQueryRowsAsync(IResolveConnectionContext<object?> context)
+    private async Task<object?> ResolveRtQueryRowsAsync(IResolveConnectionContext<RtQueryDto?> context)
     {
-        Logger.Debug("GraphQL query handling for runtime rows started");
+        _logger.LogDebug("GraphQL query handling for runtime rows started");
 
-        var ckCacheService = context.RequestServices?.GetRequiredService<ICkCacheService>();
-        if (ckCacheService == null)
-        {
-            throw AssetRepositoryException.ServiceNotRegistered(typeof(ICkCacheService));
-        }
-
-        var sessionAccessor = context.RequestServices?.GetRequiredService<IOctoSessionAccessor>();
-        if (sessionAccessor?.Session == null)
-        {
-            throw AssetRepositoryException.SessionUnavailable();
-        }
-
+        var ckCacheService = context.GetCkCacheService();
+        var sessionAccessor = context.GetSessionAccessor();
         var graphQlUserContext = (GraphQlUserContext)context.UserContext;
 
-        if (context.Source is not RtQueryDto rtQueryDto)
+        if (context.Source is not { } rtQueryDto)
         {
-            context.Errors.Add(new ExecutionError("Invalid query. Query not found.")
-                { Code = Statics.GraphQlErrorCommon });
-            return null;
+            throw AssetRepositoryException.SourceNotSet();
         }
 
         if (rtQueryDto.UserContext is not QueryUserContext queryUserContext)
         {
-            context.Errors.Add(new ExecutionError("Invalid query. User context not found.")
-                { Code = Statics.GraphQlErrorCommon });
-            return null;
+            throw AssetRepositoryException.UserContextNotSet();
         }
 
         var tenantRepository = graphQlUserContext.TenantContext.GetTenantRepository();
@@ -161,25 +130,24 @@ internal sealed class RtQueryDtoType : ObjectGraphType<RtQueryDto>
 
         try
         {
-            Logger.Debug("GraphQL query handling returning data");
+            _logger.LogDebug("GraphQL query handling returning data");
             return ConnectionUtils.ToConnection(
                 resultSet.Items.Select((entity, _) =>
                     RtQueryRowDtoType.CreateRtQueryRowDto(tenantRepository.TenantId, entity,
                         queryUserContext.CkTypeQueryColumns)), context,
-                resultSet.TotalCount > 0 ? offset.GetValueOrDefault(0) : 0, (int)resultSet.TotalCount, resultSet.AggregationResult, resultSet.FieldAggregationResult);
+                resultSet.TotalCount > 0 ? offset.GetValueOrDefault(0) : 0, (int)resultSet.TotalCount,
+                resultSet.AggregationResult, resultSet.FieldAggregationResult);
         }
-        catch (OperationFailedException e)
+        catch (Exception e)
         {
-            context.Errors.Add(new ExecutionError(e.Message)
-                { Code = Statics.GraphQlErrorCommon });
-            return null;
+            return context.HandleException(e);
         }
     }
 
-    public static RtQueryDto CreateRtQueryDto(ConstructionKit.Models.System.Generated.System.v1.RtQuery rtQuery,
+    public static RtQueryDto CreateRtQueryDto(RtQuery rtQuery,
         IReadOnlyList<CkTypeQueryColumn> ckTypeQueryColumns)
     {
-        DataQueryOperation dataQueryOperation = DataQueryOperation.Create();
+        var dataQueryOperation = DataQueryOperation.Create();
         if (rtQuery.FieldFilter != null)
         {
             foreach (var fieldFilter in rtQuery.FieldFilter)

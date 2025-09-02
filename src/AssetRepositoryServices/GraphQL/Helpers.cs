@@ -5,19 +5,11 @@ using GraphQL;
 using GraphQL.Builders;
 using GraphQL.Resolvers;
 using GraphQL.Types;
-using Meshmakers.Octo.Backend.AssetRepositoryServices.Configuration.DependencyInjection.Options;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Caches;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
-using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Inputs;
-using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Scalars;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Utils;
-using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
 using Meshmakers.Octo.ConstructionKit.Contracts;
-using Meshmakers.Octo.ConstructionKit.Contracts.DataTransferObjects;
-using Meshmakers.Octo.ConstructionKit.Contracts.DependencyGraph;
-using Meshmakers.Octo.Runtime.Contracts.Geospatial.Geometry;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb;
-using Meshmakers.Octo.Runtime.Contracts.RepositoryEntities;
 using ObjectExtensions = GraphQL.ObjectExtensions;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL;
@@ -157,7 +149,7 @@ internal static class Helpers
         }
 
         Dictionary<string, object?>? extensionDataDictionary = null;
-        unmappedDictionary = new();
+        unmappedDictionary = new Dictionary<string, object?>();
 
         foreach (var item in source)
         {
@@ -317,6 +309,4 @@ internal static class Helpers
     {
         return ValueConverter.ConvertTo(value, targetType);
     }
-
-
 }

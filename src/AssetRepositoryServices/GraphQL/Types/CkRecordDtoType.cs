@@ -7,7 +7,6 @@ using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Utils;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
 using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.ConstructionKit.Contracts.DependencyGraph;
-using Meshmakers.Octo.ConstructionKit.Contracts.Services;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb.Repositories.Entities;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
@@ -20,11 +19,11 @@ internal sealed class CkRecordDtoType : ObjectGraphType<CkRecordDto>
         Name = "CkRecord";
         Description = AssetTexts.Graphql_Record_Description;
 
-        Field(x => x.CkRecordId, type: typeof(NonNullGraphType<CkIdGraph<CkRecordId>>))
+        Field(x => x.CkRecordId, typeof(NonNullGraphType<CkIdGraph<CkRecordId>>))
             .Description(AssetTexts.Graphql_Record_CkRecordId_Description);
         Field(x => x.IsAbstract).Description(AssetTexts.Graphql_Record_IsAbstract_Description);
         Field(x => x.IsFinal).Description(AssetTexts.Graphql_Record_IsFinal_Description);
-        Field(x => x.Description, nullable: true).Description(AssetTexts.Graphql_Record_Description_Description);
+        Field(x => x.Description, true).Description(AssetTexts.Graphql_Record_Description_Description);
 
         Connection<CkTypeAttributeDtoType>("attributes")
             .Argument<ListGraphType<StringGraphType>>(Statics.AttributeNamesFilterArg,
@@ -35,12 +34,7 @@ internal sealed class CkRecordDtoType : ObjectGraphType<CkRecordDto>
             .Description(AssetTexts.Graphql_Record_DerivedRecords_Description)
             .Resolve(ctx =>
                 {
-                    var ckCacheService = ctx.RequestServices?.GetRequiredService<ICkCacheService>();
-                    if (ckCacheService == null)
-                    {
-                        throw AssetRepositoryException.ServiceNotRegistered(typeof(ICkCacheService));
-                    }
-
+                    var ckCacheService = ctx.GetCkCacheService();
                     var graphQlContext = (GraphQlUserContext)ctx.UserContext;
 
                     var result = ckCacheService.GetCkRecord(graphQlContext.TenantId, ctx.Source.CkRecordId)
@@ -54,12 +48,7 @@ internal sealed class CkRecordDtoType : ObjectGraphType<CkRecordDto>
             .Description(AssetTexts.Graphql_Record_BaseRecord_Description)
             .Resolve(ctx =>
             {
-                var ckCacheService = ctx.RequestServices?.GetRequiredService<ICkCacheService>();
-                if (ckCacheService == null)
-                {
-                    throw AssetRepositoryException.ServiceNotRegistered(typeof(ICkCacheService));
-                }
-
+                var ckCacheService = ctx.GetCkCacheService();
                 var graphQlContext = (GraphQlUserContext)ctx.UserContext;
 
                 var result = ckCacheService.GetCkRecord(graphQlContext.TenantId, ctx.Source.CkRecordId)
@@ -75,12 +64,7 @@ internal sealed class CkRecordDtoType : ObjectGraphType<CkRecordDto>
 
     private object ResolveAttributes(IResolveConnectionContext<CkRecordDto> ctx)
     {
-        var ckCacheService = ctx.RequestServices?.GetRequiredService<ICkCacheService>();
-        if (ckCacheService == null)
-        {
-            throw AssetRepositoryException.ServiceNotRegistered(typeof(ICkCacheService));
-        }
-
+        var ckCacheService = ctx.GetCkCacheService();
         var graphQlContext = (GraphQlUserContext)ctx.UserContext;
 
         ctx.TryGetArgument(Statics.AttributeNamesFilterArg,

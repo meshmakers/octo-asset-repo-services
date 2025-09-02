@@ -5,7 +5,6 @@ using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Caches;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
 using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.ConstructionKit.Contracts.DependencyGraph;
-using Meshmakers.Octo.ConstructionKit.Contracts.Services;
 using Microsoft.Extensions.Options;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Inputs;
@@ -37,7 +36,7 @@ internal sealed class RtRecordDtoInputType : InputObjectGraphType<RtRecordDto>
     {
         var rtRecordDto = value.ToObjectWithWithUnknownProperties<RtRecordDto>(out var unmappedDictionary);
         rtRecordDto.CkRecordId = CkRecordId;
-        
+
         if (unmappedDictionary.Count > 0)
         {
             rtRecordDto.Attributes = new List<RtEntityAttributeDto>();
@@ -60,7 +59,8 @@ internal sealed class RtRecordDtoInputType : InputObjectGraphType<RtRecordDto>
     /// <param name="options"></param>
     /// <param name="graphTypesCache"></param>
     /// <param name="recordGraph">The cache item</param>
-    public void Populate(IOptions<OctoAssetRepositoryServicesOptions> options, IGraphTypesCache graphTypesCache, CkRecordGraph recordGraph)
+    public void Populate(IOptions<OctoAssetRepositoryServicesOptions> options, IGraphTypesCache graphTypesCache,
+        CkRecordGraph recordGraph)
     {
         var builder = OctoBuilder<RtRecordDto>.Create(this, options);
         foreach (var attribute in recordGraph.AllAttributes.Values)

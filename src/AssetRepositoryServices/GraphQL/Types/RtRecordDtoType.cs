@@ -2,7 +2,6 @@
 using GraphQL.Types;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.Configuration.DependencyInjection.Options;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Caches;
-using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Utils;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
 using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.ConstructionKit.Contracts.DependencyGraph;
@@ -72,7 +71,7 @@ internal sealed class RtRecordDtoType : ObjectGraphType<RtRecordDto>
         var rtRecordDto = new RtRecordDto
         {
             CkRecordId = rtEntity.CkRecordId,
-            UserContext = rtEntity,
+            UserContext = rtEntity
         };
         return rtRecordDto;
     }
@@ -83,7 +82,7 @@ internal sealed class RtRecordDtoType : ObjectGraphType<RtRecordDto>
         var rtRecordDto = new RtRecordDto
         {
             CkRecordId = rtRecord.CkRecordId,
-            UserContext = rtRecord,
+            UserContext = rtRecord
         };
 
         var ckTypeGraph = ckCacheService.GetCkRecord(tenantId, rtRecord.CkRecordId);

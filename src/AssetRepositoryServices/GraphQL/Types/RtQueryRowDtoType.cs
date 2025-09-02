@@ -25,8 +25,8 @@ internal sealed class RtQueryRowDtoType : ObjectGraphType<RtQueryRowDto>
     {
         Name = "RtQueryRow";
         Description = AssetTexts.Graphql_RtQueryRow_Description;
-        Field(d => d.RtId, type: typeof(OctoObjectIdType));
-        Field(d => d.CkTypeId, type: typeof(CkIdGraph<CkTypeId>));
+        Field(d => d.RtId, typeof(OctoObjectIdType));
+        Field(d => d.CkTypeId, typeof(CkIdGraph<CkTypeId>));
         Field(x => x.RtCreationDateTime, true);
         Field(x => x.RtChangedDateTime, true);
         Field(x => x.RtWellKnownName, true);
@@ -40,12 +40,7 @@ internal sealed class RtQueryRowDtoType : ObjectGraphType<RtQueryRowDto>
 
     private object ResolveCells(IResolveConnectionContext<RtQueryRowDto> context)
     {
-        var ckCacheService = context.RequestServices?.GetRequiredService<ICkCacheService>();
-        if (ckCacheService == null)
-        {
-            throw AssetRepositoryException.ServiceNotRegistered(typeof(ICkCacheService));
-        }
-
+        var ckCacheService = context.GetCkCacheService();
         var rtQueryRowUserContext = (RtQueryRowUserContext)context.Source.UserContext!;
 
         return ConnectionUtils.ToConnection(

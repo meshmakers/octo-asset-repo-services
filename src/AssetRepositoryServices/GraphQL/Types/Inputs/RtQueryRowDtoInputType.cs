@@ -17,8 +17,8 @@ internal sealed class RtQueryRowDtoInputType : InputObjectGraphType<RtQueryRowDt
     {
         Name = $"RtQueryRow{Statics.GraphQlInputSuffix}";
 
-        Field(x => x.CkTypeId, type: typeof(NonNullGraphType<CkIdGraph<CkTypeId>>));
+        Field(x => x.CkTypeId, typeof(NonNullGraphType<CkIdGraph<CkTypeId>>));
         Field(x => x.RtWellKnownName, true);
-        Field(x => x.Cells, type: typeof(NonNullGraphType<ListGraphType<RtQueryCellDtoInputType>>));
+        Field(x => x.Cells, typeof(NonNullGraphType<ListGraphType<RtQueryCellDtoInputType>>));
     }
 }

@@ -11,7 +11,7 @@ internal sealed class RtEntityAttributeDtoType : ObjectGraphType<RtEntityAttribu
         Name = "RtEntityAttribute";
         Description = "Attribute of a runtime entity";
 
-        Field(x => x.AttributeName, type: typeof(StringGraphType)).Description("Attribute name within the entity.");
+        Field(x => x.AttributeName, typeof(StringGraphType)).Description("Attribute name within the entity.");
         Field<SimpleScalarType, object>(nameof(RtEntityAttributeDto.Value)).Description("Value of a scalar attribute.");
     }
 }

@@ -9,6 +9,6 @@ internal sealed class PositionGraphType : ObjectGraphType<Position>
     {
         Field(x => x.Latitude);
         Field(x => x.Longitude);
-        Field(x => x.Altitude, nullable: true);
+        Field(x => x.Altitude, true);
     }
 }

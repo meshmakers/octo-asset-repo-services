@@ -2,7 +2,6 @@ using GraphQL.Server.Transports.AspNetCore;
 using Meshmakers.Common.Shared;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Utils;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.Services;
-using Meshmakers.Octo.Services.Infrastructure;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.RequestHandling;
 
@@ -22,7 +21,8 @@ public class TenantUserContextBuilder : IUserContextBuilder
     }
 
     /// <inheritdoc />
-    public async ValueTask<IDictionary<string, object?>?> BuildUserContextAsync(HttpContext httpContext, object? payload)
+    public async ValueTask<IDictionary<string, object?>?> BuildUserContextAsync(HttpContext httpContext,
+        object? payload)
     {
         var tenantId = httpContext.GetTenantId() ?? _octoService.SystemContext.TenantId;
 

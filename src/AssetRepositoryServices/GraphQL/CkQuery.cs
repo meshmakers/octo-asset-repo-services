@@ -1,7 +1,6 @@
 using GraphQL;
 using GraphQL.Builders;
 using GraphQL.Types;
-using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.RequestHandling;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Inputs;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Utils;
@@ -78,11 +77,7 @@ internal sealed class CkQuery : ObjectGraphType
     {
         _logger.LogDebug("GraphQL query handling of construction kit models started");
 
-        var sessionAccessor = arg.RequestServices?.GetRequiredService<IOctoSessionAccessor>();
-        if (sessionAccessor?.Session == null)
-        {
-            throw AssetRepositoryException.SessionUnavailable();
-        }
+        var sessionAccessor = arg.GetSessionAccessor();
 
         var graphQlUserContext = (GraphQlUserContext)arg.UserContext;
 
@@ -122,11 +117,7 @@ internal sealed class CkQuery : ObjectGraphType
     {
         _logger.LogDebug("GraphQL query handling of construction kit records started");
 
-        var sessionAccessor = arg.RequestServices?.GetRequiredService<IOctoSessionAccessor>();
-        if (sessionAccessor?.Session == null)
-        {
-            throw AssetRepositoryException.SessionUnavailable();
-        }
+        var sessionAccessor = arg.GetSessionAccessor();
 
         var graphQlUserContext = (GraphQlUserContext)arg.UserContext;
 
@@ -172,12 +163,7 @@ internal sealed class CkQuery : ObjectGraphType
     {
         _logger.LogDebug("GraphQL query handling of construction kit enums started");
 
-        var sessionAccessor = arg.RequestServices?.GetRequiredService<IOctoSessionAccessor>();
-        if (sessionAccessor?.Session == null)
-        {
-            throw AssetRepositoryException.SessionUnavailable();
-        }
-
+        var sessionAccessor = arg.GetSessionAccessor();
         var graphQlUserContext = (GraphQlUserContext)arg.UserContext;
 
         var offset = arg.GetOffset();
@@ -222,12 +208,7 @@ internal sealed class CkQuery : ObjectGraphType
     {
         _logger.LogDebug("GraphQL query handling of construction kit entities started");
 
-        var sessionAccessor = arg.RequestServices?.GetRequiredService<IOctoSessionAccessor>();
-        if (sessionAccessor?.Session == null)
-        {
-            throw AssetRepositoryException.SessionUnavailable();
-        }
-
+        var sessionAccessor = arg.GetSessionAccessor();
         var graphQlUserContext = (GraphQlUserContext)arg.UserContext;
 
         var offset = arg.GetOffset();
@@ -272,12 +253,7 @@ internal sealed class CkQuery : ObjectGraphType
     {
         _logger.LogDebug("GraphQL query handling of construction kit attributes started");
 
-        var sessionAccessor = arg.RequestServices?.GetRequiredService<IOctoSessionAccessor>();
-        if (sessionAccessor?.Session == null)
-        {
-            throw AssetRepositoryException.SessionUnavailable();
-        }
-
+        var sessionAccessor = arg.GetSessionAccessor();
         var graphQlUserContext = (GraphQlUserContext)arg.UserContext;
 
         var offset = arg.GetOffset();

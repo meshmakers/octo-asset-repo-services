@@ -7,6 +7,6 @@ internal sealed class PointGraphType : ObjectGraphType<Point>
 {
     public PointGraphType()
     {
-        Field(x => x.Coordinates, type: typeof(PositionGraphType));
+        Field(x => x.Coordinates, typeof(PositionGraphType));
     }
 }

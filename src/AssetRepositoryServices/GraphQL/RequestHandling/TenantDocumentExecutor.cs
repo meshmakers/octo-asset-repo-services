@@ -6,7 +6,8 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.RequestHandlin
 internal class TenantDocumentExecutor(ISchemaContext schemaContext, IDocumentExecuter documentExecutor)
     : IDocumentExecuter<OctoSchema>
 {
-    private readonly IDocumentExecuter _documentExecutor = documentExecutor ?? throw new ArgumentNullException(nameof(documentExecutor));
+    private readonly IDocumentExecuter _documentExecutor =
+        documentExecutor ?? throw new ArgumentNullException(nameof(documentExecutor));
 
     public async Task<ExecutionResult> ExecuteAsync(ExecutionOptions options)
     {

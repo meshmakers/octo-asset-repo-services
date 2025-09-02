@@ -1,5 +1,5 @@
-using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
 using Meshmakers.Octo.ConstructionKit.Contracts;
+using Meshmakers.Octo.Runtime.Contracts;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices;
 
@@ -22,9 +22,9 @@ internal class AssetRepositoryException : Exception
         return new AssetRepositoryException($"Service {type.FullName} is not registered");
     }
 
-    internal static Exception CkIdMetadataMissing()
+    internal static Exception CkIdMetadataMissing(string name)
     {
-        return new AssetRepositoryException("CkId metadata is missing");
+        return new AssetRepositoryException($"{name} metadata is missing");
     }
 
     internal static Exception DataLoaderContextUnavailable()
@@ -42,24 +42,14 @@ internal class AssetRepositoryException : Exception
         return new AssetRepositoryException("RequestServices is not available");
     }
 
-    internal static Exception RoleIdMissing()
-    {
-        return new AssetRepositoryException("RoleId is missing");
-    }
-
-    internal static Exception DirectionMissing()
-    {
-        return new AssetRepositoryException("Direction is missing");
-    }
-
     public static Exception ParentUnavailable()
     {
         return new AssetRepositoryException("Parent is not available");
     }
 
-    public static Exception ArgumentMissing(string valuesArg)
+    public static Exception ArgumentMissing(string name)
     {
-        return new AssetRepositoryException($"Argument {valuesArg} is missing");
+        return new AssetRepositoryException($"Argument {name} is missing");
     }
 
     public static Exception QueryNotFound(OctoObjectId queryRtId)
@@ -67,38 +57,44 @@ internal class AssetRepositoryException : Exception
         return new AssetRepositoryException($"Query with id '{queryRtId}' not found");
     }
 
-    public static Exception AttributeNotFound(string attributePath, CkId<CkTypeId> ckTypeId)
+
+    public static Exception CkIdMetadataInvalidType(string name, Type type)
     {
-        return new AssetRepositoryException($"Attribute '{attributePath}' not found in type '{ckTypeId}'");
+        return new AssetRepositoryException($"{name} metadata is not of type {type.FullName}");
     }
 
-    public static Exception NavigationWithoutRestrictionNotAllowed(CkId<CkAssociationRoleId> navigationPairCkRoleId,
-        GraphDirections navigationPairDirection, CkId<CkTypeId> navigationPairTargetCkTypeId)
+    public static Exception AggregationResultNull()
     {
-        return new AssetRepositoryException(
-            $"Navigation without restriction is not allowed for role id '{navigationPairCkRoleId}' in direction '{navigationPairDirection}' to '{navigationPairTargetCkTypeId}'");
+        return new AssetRepositoryException("Aggregation result is null");
     }
 
-    public static Exception CannotConvertValue(object o, Type type)
+    public static Exception SourceNotSet()
     {
-        return new AssetRepositoryException($"Cannot convert value '{o}' to type '{type}'");
+        return new AssetRepositoryException("Source is not set");
     }
 
-    public static Exception CannotConvertValueToString(object o)
+    public static Exception UserContextNotSet()
     {
-        return CannotConvertValue(o, typeof(string));
+        return new AssetRepositoryException("User context is not set");
     }
 
-    public static Exception NoMatchFound(RtQueryRowDto queryRowDto)
+    public static Exception InvalidColumnPaths(List<string> invalidColumnPaths)
     {
-        var queryRowDtoJson = System.Text.Json.JsonSerializer.Serialize(queryRowDto);
-        return new AssetRepositoryException($"No match found for query row: {queryRowDtoJson}");
+        return new AssetRepositoryException($"Invalid column paths: {string.Join(", ", invalidColumnPaths)}");
     }
 
-    public static Exception MultipleCandidatesFound(RtQueryRowDto queryRowDto, CkId<CkAssociationRoleId> keyCkRoleId, GraphDirections keyDirection, CkId<CkTypeId> keyTargetCkTypeId)
+    public static Exception RtQueryNotFound(OctoObjectId queryRtId)
     {
-        var queryRowDtoJson = System.Text.Json.JsonSerializer.Serialize(queryRowDto);
-       return new AssetRepositoryException(
-            $"Multiple candidates found for query row: {queryRowDtoJson}, role id: {keyCkRoleId}, direction: {keyDirection}, target type id: {keyTargetCkTypeId}");
+        return new AssetRepositoryException($"RtQuery with id '{queryRtId}' not found");
+    }
+
+    public static Exception InvalidStreamDataQueryParams()
+    {
+        return new AssetRepositoryException("Invalid query. From, To and Limit must be set for downsampling");
+    }
+
+    public static Exception CkEnumValueNotFound(string attributePath, CkId<CkEnumId> ckEnumId, object enumValue, Exception inner)
+    {
+        return new AssetRepositoryException($"{ckEnumId} at path {attributePath} does not define value {enumValue}", inner);
     }
 }

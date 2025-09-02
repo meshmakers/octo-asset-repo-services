@@ -10,11 +10,11 @@ internal sealed class CkAttributeMetaDataDtoType : ObjectGraphType<CkAttributeMe
         Name = "CkAttributeMetaData";
         Description = "Construction kit attribute meta data";
 
-        Field(x => x.Key, type: typeof(NonNullGraphType<IdGraphType>))
+        Field(x => x.Key, typeof(NonNullGraphType<IdGraphType>))
             .Description("Key of the meta data.");
-        Field(x => x.Value, type: typeof(StringGraphType))
+        Field(x => x.Value, typeof(StringGraphType))
             .Description("Value of the meta data.");
-        Field(x => x.Description, type: typeof(StringGraphType))
+        Field(x => x.Description, typeof(StringGraphType))
             .Description("Optional description of the meta data.");
     }
 
