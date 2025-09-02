@@ -154,7 +154,7 @@ internal class QueryMapper(
             {
                 mappingResult.Errors.Add(new NavigationPairMappingError
                 {
-                    Comparision = compareValues, ErrorId = "OCTO001", NavigationPair = navigationPair,
+                    Comparision = compareValues, ErrorId = "MAPPING001", NavigationPair = navigationPair,
                     ErrorMessage = "No suitable candidate is found, but a candidate is required.",
                     Candidates = candidates
                 });
@@ -163,7 +163,7 @@ internal class QueryMapper(
             {
                 mappingResult.Errors.Add(new NavigationPairMappingError
                 {
-                    Comparision = compareValues, ErrorId = "OCTO002", NavigationPair = navigationPair,
+                    Comparision = compareValues, ErrorId = "MAPPING002", NavigationPair = navigationPair,
                     ErrorMessage =
                         "Several suitable candidates are found, but only one candidate can be present for the assignment.",
                     Candidates = candidates
@@ -205,7 +205,7 @@ internal class QueryMapper(
                         {
                             { cellDto.AttributePath, cellDto.Value }
                         },
-                        ErrorId = "OCTO0003",
+                        ErrorId = "MAPPING0003",
                         ErrorMessage =
                             $"Enum value '{ex.EnumValue}' not found for attribute path '{cellDto.AttributePath}'"
                     });
@@ -218,7 +218,7 @@ internal class QueryMapper(
                         {
                             { cellDto.AttributePath, cellDto.Value }
                         },
-                        ErrorId = "OCTO0004",
+                        ErrorId = "MAPPING0004",
                         ErrorMessage = ex.Message
                     });
                 }
@@ -230,7 +230,7 @@ internal class QueryMapper(
                         {
                             { cellDto.AttributePath, cellDto.Value }
                         },
-                        ErrorId = "OCTO0005",
+                        ErrorId = "MAPPING0005",
                         ErrorMessage = ex.Message
                     });
                 }
