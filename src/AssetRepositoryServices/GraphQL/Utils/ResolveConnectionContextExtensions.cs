@@ -1,12 +1,10 @@
 using System.Diagnostics.CodeAnalysis;
-using System.Reflection;
 using GraphQL;
 using GraphQL.Builders;
 using Meshmakers.Common.Shared;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.RequestHandling;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
 using Meshmakers.Octo.ConstructionKit.Contracts;
-using Meshmakers.Octo.ConstructionKit.Contracts.Messages;
 using Meshmakers.Octo.ConstructionKit.Contracts.Services;
 using Meshmakers.Octo.Runtime.Contracts;
 using Meshmakers.Octo.Runtime.Contracts.Geospatial.Geometry;
@@ -72,6 +70,30 @@ internal static class ResolveConnectionContextExtensions
         {
             context.Errors.Add(new ExecutionError(ckCacheException.Message, ckCacheException)
                 { Code = Statics.GraphQlErrorCache });
+        }
+        else if (exception is CkModelException ckModelException)
+        {
+            var error =new ExecutionError(ckModelException.Message, ckModelException)
+            {
+                Code = Statics.GraphQlCkModelUpdateError,
+                Extensions = new Dictionary<string, object?>()
+            };
+
+            List<AssetRepositoryException.DetailMessage> details = new();
+            var innerException = ckModelException.InnerException;
+            while (innerException != null)
+            {
+                var detailMessage = new AssetRepositoryException.DetailMessage
+                {
+                    Message = $"{innerException.Message}"
+                };
+                details.Add(detailMessage);
+                innerException = innerException.InnerException;
+            }
+            error.Extensions[Statics.GraphQlDetails] = details;
+
+            context.Errors.Add(error);
+
         }
         else if (exception is RuntimeRepositoryException runtimeRepositoryException)
         {
