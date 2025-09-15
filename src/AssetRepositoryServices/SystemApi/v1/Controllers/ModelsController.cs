@@ -57,7 +57,7 @@ public class ModelsController : ControllerBase
     [HttpPost]
     [Route("ExportRtByQuery")]
     [Authorize(AssetRepositoryServiceConstants.SystemAssetApiReadOnlyPolicy)]
-    [ProducesResponseType(typeof(ExportModelResponseDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(TransferModelResponseDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(InternalServerErrorDto), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(InternalServerErrorDto), StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> ExportRtByQueryAsync([Required] string tenantId,
@@ -68,7 +68,7 @@ public class ModelsController : ControllerBase
             var args = new ExportRtByQueryCommandRequest(tenantId, exportModelRequestByQueryDto.QueryId);
             var r =
                 await _exportRtByQueryCommandClient.GetResponse<JobCreatedResponse>(args);
-            return Ok(new ExportModelResponseDto(r.JobId));
+            return Ok(new TransferModelResponseDto(r.JobId));
         }
         catch (InvalidOperationException e)
         {
@@ -90,7 +90,7 @@ public class ModelsController : ControllerBase
     [HttpPost]
     [Route("ExportRtByDeepGraph")]
     [Authorize(AssetRepositoryServiceConstants.SystemAssetApiReadOnlyPolicy)]
-    [ProducesResponseType(typeof(ExportModelResponseDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(TransferModelResponseDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(InternalServerErrorDto), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(InternalServerErrorDto), StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> ExportRtByDeepGraphAsync([Required] string tenantId,
@@ -103,7 +103,7 @@ public class ModelsController : ControllerBase
                 exportModelRequestByDeepGraphDto.OriginCkTypeId);
             var r =
                 await _exportRtByDeepGraphCommandClient.GetResponse<JobCreatedResponse>(args);
-            return Ok(new ExportModelResponseDto(r.JobId));
+            return Ok(new TransferModelResponseDto(r.JobId));
         }
         catch (InvalidOperationException e)
         {
@@ -127,7 +127,7 @@ public class ModelsController : ControllerBase
     [RequestSizeLimit(300_000_000)]
     [Route("ImportRt")]
     [Authorize(AssetRepositoryServiceConstants.SystemAssetApiReadWritePolicy)]
-    [ProducesResponseType(typeof(ExportModelResponseDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(TransferModelResponseDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(InternalServerErrorDto), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(InternalServerErrorDto), StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> ImportRt([Required] string tenantId, [Required] ImportStrategyDto importStrategy, [Required] IFormFile file)
@@ -144,7 +144,7 @@ public class ModelsController : ControllerBase
             var args = new ImportRtCommandRequest(tenantId, insertStrategy, cacheKey);
             var r =
                 await _importRtCommandClient.GetResponse<JobCreatedResponse>(args);
-            return Ok(new ExportModelResponseDto(r.JobId));
+            return Ok(new TransferModelResponseDto(r.JobId));
         }
         catch (InvalidOperationException e)
         {
@@ -167,7 +167,7 @@ public class ModelsController : ControllerBase
     //[Consumes("application/zip", "application/zip")]
     [Route("ImportCk")]
     [Authorize(AssetRepositoryServiceConstants.SystemAssetApiReadWritePolicy)]
-    [ProducesResponseType(typeof(string), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(TransferModelResponseDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(InternalServerErrorDto), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(InternalServerErrorDto), StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> ImportCk([Required] string tenantId, IFormFile file)
@@ -178,7 +178,7 @@ public class ModelsController : ControllerBase
             var args = new ImportCkCommandRequest(tenantId, cacheKey);
             var r =
                 await _importCkCommandClient.GetResponse<JobCreatedResponse>(args);
-            return Ok(r.JobId);
+            return Ok(new TransferModelResponseDto(r.JobId));
         }
         catch (InvalidOperationException e)
         {
