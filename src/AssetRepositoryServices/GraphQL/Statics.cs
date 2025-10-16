@@ -58,7 +58,7 @@ internal static class Statics
     public const string GraphQlErrorCache = "ASSET1005";
     public const string GraphQlCkModelUpdateError = "ASSET1006";
 
-    public static string GetGraphQlPascalCaseName<TKey>(this CkId<TKey> ckKey) where TKey : IComparable<TKey>, ICkKey
+    public static string GetGraphQlPascalCaseName<TKey>(this RtCkId<TKey> ckKey) where TKey : IComparable<TKey>, ICkElementId
     {
         return ckKey.SemanticVersionedFullName
             .Replace(".", "")
@@ -66,7 +66,7 @@ internal static class Statics
             .ToPascalCase();
     }
 
-    public static string GetGraphQlCamelCaseName<TKey>(this CkId<TKey> ckKey) where TKey : IComparable<TKey>, ICkKey
+    public static string GetGraphQlCamelCaseName<TKey>(this RtCkId<TKey> ckKey) where TKey : IComparable<TKey>, ICkElementId
     {
         return ckKey.SemanticVersionedFullName
             .Replace(".", "")
@@ -74,8 +74,8 @@ internal static class Statics
             .ToCamelCase();
     }
 
-    public static string GetGraphQlPascalCaseNameForStreamData<TKey>(this CkId<TKey> ckKey)
-        where TKey : IComparable<TKey>, ICkKey
+    public static string GetGraphQlPascalCaseNameForStreamData<TKey>(this RtCkId<TKey> ckKey)
+        where TKey : IComparable<TKey>, ICkElementId
     {
         return "stream" + ckKey.SemanticVersionedFullName
             .Replace(".", "")

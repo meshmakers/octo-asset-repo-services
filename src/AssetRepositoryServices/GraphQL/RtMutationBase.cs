@@ -23,7 +23,7 @@ internal abstract class RtMutationBase : ObjectGraphType
         List<AssociationUpdateInfo> associations)
     {
         var ckTypeGraph =
-            ckCacheService.GetCkType(tenantId, rtEntity.CkTypeId ?? throw OctoGraphQLException.CkTypeIdUndefined());
+            ckCacheService.GetRtCkType(tenantId, rtEntity.CkTypeId ?? throw OctoGraphQLException.CkTypeIdUndefined());
 
         rtEntity.RtWellKnownName = rtEntityDto.RtWellKnownName;
 
@@ -195,7 +195,7 @@ internal abstract class RtMutationBase : ObjectGraphType
 
         var rtRecord = new RtRecord
         {
-            CkRecordId = ckRecordGraph.CkRecordId
+            CkRecordId = ckRecordGraph.CkRecordId.ToRtCkId()
         };
 
         if (rtRecordDto.Attributes != null)
@@ -231,7 +231,7 @@ internal abstract class RtMutationBase : ObjectGraphType
                 var assocInfo = new AssociationUpdateInfo(
                     new RtEntityId(rtAssociationDto.Target.CkTypeId, rtAssociationDto.Target.RtId),
                     rtEntity.ToRtEntityId(),
-                    ckTypeAssociationGraph.CkRoleId,
+                    ckTypeAssociationGraph.CkRoleId.ToRtCkId(),
                     rtAssociationDto.ModOption ?? AssociationModOptionsDto.Create);
                 associations.Add(assocInfo);
             }
@@ -261,7 +261,7 @@ internal abstract class RtMutationBase : ObjectGraphType
                 var assocInfo = new AssociationUpdateInfo(
                     rtEntity.ToRtEntityId(),
                     new RtEntityId(rtAssociationDto.Target.CkTypeId, rtAssociationDto.Target.RtId),
-                    typeAssociationGraph.CkRoleId,
+                    typeAssociationGraph.CkRoleId.ToRtCkId(),
                     rtAssociationDto.ModOption ?? AssociationModOptionsDto.Create);
                 associations.Add(assocInfo);
             }

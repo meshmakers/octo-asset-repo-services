@@ -18,7 +18,7 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
 internal sealed class RtRecordDtoType : ObjectGraphType<RtRecordDto>
 {
     /// <inheritdoc />
-    public RtRecordDtoType(CkId<CkRecordId> ckRecordId)
+    public RtRecordDtoType(RtCkId<CkRecordId> ckRecordId)
     {
         CkRecordId = ckRecordId;
 
@@ -38,7 +38,7 @@ internal sealed class RtRecordDtoType : ObjectGraphType<RtRecordDto>
     /// <summary>
     ///     Returns the Construction Kid Id of the object type
     /// </summary>
-    public CkId<CkRecordId> CkRecordId { get; }
+    public RtCkId<CkRecordId> CkRecordId { get; }
 
 
     internal void Populate(IOptions<OctoAssetRepositoryServicesOptions> options, IGraphTypesCache graphTypesCache,
@@ -85,18 +85,18 @@ internal sealed class RtRecordDtoType : ObjectGraphType<RtRecordDto>
             UserContext = rtRecord
         };
 
-        var ckTypeGraph = ckCacheService.GetCkRecord(tenantId, rtRecord.CkRecordId);
+        var ckRecordGraph = ckCacheService.GetRtCkRecord(tenantId, rtRecord.CkRecordId);
 
         IEnumerable<CkTypeAttributeGraph> resultList;
         if (filterAttributeNames != null && filterAttributeNames.Any())
         {
             resultList =
-                ckTypeGraph.AllAttributes.Values.Where(a =>
+                ckRecordGraph.AllAttributes.Values.Where(a =>
                     filterAttributeNames.Contains(a.AttributeName.ToCamelCase()));
         }
         else
         {
-            resultList = ckTypeGraph.AllAttributes.Values;
+            resultList = ckRecordGraph.AllAttributes.Values;
         }
 
         var attributeDtos =

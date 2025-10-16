@@ -64,7 +64,7 @@ internal sealed class RtTransientQueryDtoType : ObjectGraphType<RtTransientQuery
             var offset = context.GetOffset();
             var dataQueryOperation = context.GetDataQueryOperation(queryUserContext.DataQueryOperation);
 
-            var roleIdDirectionPairs = RtPathEvaluator.TokenizeAndGetNavigationPairs(ckCacheService,
+            var roleIdDirectionPairs = RtPathEvaluator.TokenizeAndGetNavigationPairsByRtCkId(ckCacheService,
                 tenantRepository.TenantId, rtTransientQueryDto.AssociatedCkTypeId,
                 rtTransientQueryDto.Columns.Select(column => column.AttributePath));
 
@@ -124,7 +124,7 @@ internal sealed class RtTransientQueryDtoType : ObjectGraphType<RtTransientQuery
 
             var offset = context.GetOffset();
 
-            var roleIdDirectionPairs = RtPathEvaluator.TokenizeAndGetNavigationPairs(ckCacheService,
+            var roleIdDirectionPairs = RtPathEvaluator.TokenizeAndGetNavigationPairsByRtCkId(ckCacheService,
                 tenantRepository.TenantId, rtTransientQueryDto.AssociatedCkTypeId,
                 rtTransientQueryDto.Columns.Select(column => column.AttributePath));
 
@@ -147,7 +147,7 @@ internal sealed class RtTransientQueryDtoType : ObjectGraphType<RtTransientQuery
         }
     }
 
-    public static RtTransientQueryDto CreateTransientRtQueryDto(CkId<CkTypeId> ckTypeId,
+    public static RtTransientQueryDto CreateTransientRtQueryDto(RtCkId<CkTypeId> ckTypeId,
         DataQueryOperation dataQueryOperation, IReadOnlyList<CkTypeQueryColumn> ckTypeQueryColumns)
     {
         var rtTransientQueryDto = new RtTransientQueryDto

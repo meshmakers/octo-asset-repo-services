@@ -19,7 +19,7 @@ internal sealed class RtRecordDtoInputType : InputObjectGraphType<RtRecordDto>
     ///     Constructor
     /// </summary>
     /// <param name="ckRecordId">Corresponding construction kit id</param>
-    public RtRecordDtoInputType(CkId<CkRecordId> ckRecordId)
+    public RtRecordDtoInputType(RtCkId<CkRecordId> ckRecordId)
     {
         CkRecordId = ckRecordId;
         Name = $"{ckRecordId.GetGraphQlPascalCaseName()}{Statics.GraphQlInputSuffix}";
@@ -28,7 +28,7 @@ internal sealed class RtRecordDtoInputType : InputObjectGraphType<RtRecordDto>
     /// <summary>
     ///     Returns the construction kit id
     /// </summary>
-    public CkId<CkRecordId> CkRecordId { get; }
+    public RtCkId<CkRecordId> CkRecordId { get; }
 
     /// <inheritdoc />
     /// <remarks>We need an overload, to deserialize all properties to the dictionary of <see cref="RtEntityDto" /></remarks>

@@ -24,8 +24,8 @@ internal class NavigationPropertyException : AssetRepositoryException
 
 
 
-    public static Exception NavigationWithoutRestrictionNotAllowed(CkId<CkAssociationRoleId> navigationPairCkRoleId,
-        GraphDirections navigationPairDirection, CkId<CkTypeId> navigationPairTargetCkTypeId)
+    public static Exception NavigationWithoutRestrictionNotAllowed(RtCkId<CkAssociationRoleId> navigationPairCkRoleId,
+        GraphDirections navigationPairDirection, RtCkId<CkTypeId> navigationPairTargetCkTypeId)
     {
         return new NavigationPropertyException(
             $"Navigation without restriction is not allowed for role id '{navigationPairCkRoleId}' in direction '{navigationPairDirection}' to '{navigationPairTargetCkTypeId}'");
@@ -41,7 +41,7 @@ internal class NavigationPropertyException : AssetRepositoryException
         return CannotConvertValue(o, typeof(string));
     }
 
-    public static Exception AttributeNotFound(string attributePath, CkId<CkTypeId> ckTypeId)
+    public static Exception AttributeNotFound(string attributePath, RtCkId<CkTypeId> ckTypeId)
     {
         return new NavigationPropertyException($"Attribute '{attributePath}' not found in type '{ckTypeId}'");
     }

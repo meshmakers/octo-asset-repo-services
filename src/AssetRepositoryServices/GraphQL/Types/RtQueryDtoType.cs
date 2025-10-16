@@ -63,7 +63,7 @@ internal sealed class RtQueryDtoType : ObjectGraphType<RtQueryDto>
             var offset = context.GetOffset();
             var dataQueryOperation = context.GetDataQueryOperation();
 
-            var roleIdDirectionPairs = RtPathEvaluator.TokenizeAndGetNavigationPairs(ckCacheService,
+            var roleIdDirectionPairs = RtPathEvaluator.TokenizeAndGetNavigationPairsByRtCkId(ckCacheService,
                 tenantRepository.TenantId, rtQueryDto.AssociatedCkTypeId,
                 rtQueryDto.Columns.Select(column => column.AttributePath));
 
@@ -122,7 +122,7 @@ internal sealed class RtQueryDtoType : ObjectGraphType<RtQueryDto>
             var offset = context.GetOffset();
             var dataQueryOperation = context.GetDataQueryOperation();
 
-            var roleIdDirectionPairs = RtPathEvaluator.TokenizeAndGetNavigationPairs(ckCacheService,
+            var roleIdDirectionPairs = RtPathEvaluator.TokenizeAndGetNavigationPairsByRtCkId(ckCacheService,
                 tenantRepository.TenantId, rtQueryDto.AssociatedCkTypeId,
                 rtQueryDto.Columns.Select(column => column.AttributePath));
 

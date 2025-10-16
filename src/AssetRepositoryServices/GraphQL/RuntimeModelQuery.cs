@@ -78,12 +78,12 @@ internal sealed class RuntimeModelQuery : ObjectGraphType
         var ckCacheService = arg.GetCkCacheService();
 
         var graphQlUserContext = (GraphQlUserContext)arg.UserContext;
-        var ckTypeId = arg.GetArgument<CkId<CkTypeId>>(Statics.CkId);
+        var ckTypeId = arg.GetArgument<RtCkId<CkTypeId>>(Statics.CkId);
 
         var columnPaths = arg.GetArgument<IEnumerable<string>>(Statics.ColumnPathsArg);
         var columnPathList = columnPaths.ToList();
 
-        var typeQueryColumnPaths = ckCacheService.GetCkTypeQueryColumnPaths(graphQlUserContext.TenantId, ckTypeId);
+        var typeQueryColumnPaths = ckCacheService.GetCkTypeQueryColumnPathsByRtCkId(graphQlUserContext.TenantId, ckTypeId);
         var invalidColumnPaths = columnPathList
             .Where(cp => typeQueryColumnPaths.All(ckTypeQueryColumn => ckTypeQueryColumn.Path != cp)).ToList();
         if (invalidColumnPaths.Any())
@@ -157,7 +157,7 @@ internal sealed class RuntimeModelQuery : ObjectGraphType
             var sessionAccessor = arg.GetSessionAccessor();
 
             var graphQlUserContext = (GraphQlUserContext)arg.UserContext;
-            var ckTypeId = arg.GetArgument<CkId<CkTypeId>>(Statics.CkId);
+            var ckTypeId = arg.GetArgument<RtCkId<CkTypeId>>(Statics.CkId);
 
             var offset = arg.GetOffset();
             var dataQueryOperation = arg.GetDataQueryOperation();
@@ -217,7 +217,7 @@ internal sealed class RuntimeModelQuery : ObjectGraphType
             var sessionAccessor = arg.GetSessionAccessor();
             var graphQlUserContext = (GraphQlUserContext)arg.UserContext;
 
-            var ckTypeId = arg.GetMetadataValue<CkId<CkTypeId>>(Statics.CkId);
+            var ckTypeId = arg.GetMetadataValue<RtCkId<CkTypeId>>(Statics.CkId);
 
             var offset = arg.GetOffset();
             var dataQueryOperation = arg.GetDataQueryOperation();

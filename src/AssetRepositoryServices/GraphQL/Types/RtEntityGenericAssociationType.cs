@@ -60,7 +60,7 @@ public sealed class RtEntityGenericAssociationType : ObjectGraphType<RtEntityGen
         }
 
         var direction = ctx.GetArgument<GraphDirections>(Statics.DirectionArg);
-        var ckAssociationRoleId = ctx.GetArgument<CkId<CkAssociationRoleId>?>(Statics.RoleIdArg);
+        var ckAssociationRoleId = ctx.GetArgument<RtCkId<CkAssociationRoleId>?>(Statics.RoleIdArg);
 
         var graphQlUserContext = (GraphQlUserContext)ctx.UserContext;
         var tenantRepository = graphQlUserContext.TenantContext.GetTenantRepository();
@@ -116,7 +116,7 @@ public sealed class RtEntityGenericAssociationType : ObjectGraphType<RtEntityGen
 
         var roleId = ctx.GetArgument<string>(Statics.RoleIdArg);
         var direction = ctx.GetArgument<GraphDirections>(Statics.DirectionArg);
-        var targetCkId = ctx.GetArgument<CkId<CkTypeId>>(Statics.CkId);
+        var targetCkId = ctx.GetArgument<RtCkId<CkTypeId>>(Statics.CkId);
 
         var tenantRepository = graphQlUserContext.TenantContext.GetTenantRepository();
 
@@ -126,7 +126,7 @@ public sealed class RtEntityGenericAssociationType : ObjectGraphType<RtEntityGen
                 $"Get{ctx.Source.RtEntityDto.CkTypeId}_{targetCkId}_{roleId}_{direction}", async rtEntityIds =>
                     await tenantRepository.GetIndirectRtAssociationTargetsAsync(
                         sessionAccessor.Session, rtEntityIds.Select(x => x.RtId), ctx.Source.RtEntityDto.CkTypeId,
-                        new CkId<CkAssociationRoleId>(roleId),
+                        new RtCkId<CkAssociationRoleId>(roleId),
                         direction,
                         null, targetCkId, dataQueryOperation, offset, ctx.First));
 
@@ -142,7 +142,7 @@ public sealed class RtEntityGenericAssociationType : ObjectGraphType<RtEntityGen
                 $"Get{ctx.Source.RtEntityDto.CkTypeId}_{targetCkId}_{roleId}_{direction}", async rtEntityIds =>
                     await tenantRepository.GetRtAssociationTargetsAsync(
                         sessionAccessor.Session, rtEntityIds.Select(x => x.RtId), ctx.Source.RtEntityDto.CkTypeId,
-                        new CkId<CkAssociationRoleId>(roleId),
+                        new RtCkId<CkAssociationRoleId>(roleId),
                         targetCkId, direction,
                         null, dataQueryOperation, offset, ctx.First));
 

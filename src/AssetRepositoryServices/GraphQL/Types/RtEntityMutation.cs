@@ -15,13 +15,13 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
 [DoNotRegister]
 internal class RtEntityMutation : RtMutationBase
 {
-    public RtEntityMutation(IGraphTypesCache graphTypesCache, RtEntityDtoType rtEntityDtoType)
+    public RtEntityMutation(IGraphTypesCache graphTypesCache, RtCkId<CkTypeId> rtCkTypeId)
     {
-        Name = rtEntityDtoType.CkTypeId.GetGraphQlPascalCaseName() + "Mutations";
+        Name = rtCkTypeId.GetGraphQlPascalCaseName() + "Mutations";
 
 
-        var inputType = graphTypesCache.GetInputType(rtEntityDtoType.CkTypeId);
-        var outputType = graphTypesCache.GetType(rtEntityDtoType.CkTypeId);
+        var inputType = graphTypesCache.GetInputType(rtCkTypeId);
+        var outputType = graphTypesCache.GetType(rtCkTypeId);
 
         var createArgument = new QueryArgument(new NonNullGraphType(new ListGraphType(inputType)))
             { Name = Statics.EntitiesArg };
@@ -33,12 +33,12 @@ internal class RtEntityMutation : RtMutationBase
         this.FieldAsync("create", $"Creates new entities of type '{outputType.Name}'.",
                 new ListGraphType(outputType),
                 new QueryArguments(createArgument), ResolveCreate)
-            .AddMetadata(Statics.CkId, rtEntityDtoType.CkTypeId);
+            .AddMetadata(Statics.CkId, rtCkTypeId);
 
         this.FieldAsync("update", $"Updates existing entity of type '{outputType.Name}'.",
                 new ListGraphType(outputType),
                 new QueryArguments(updateArgument), ResolveUpdate)
-            .AddMetadata(Statics.CkId, rtEntityDtoType.CkTypeId);
+            .AddMetadata(Statics.CkId, rtCkTypeId);
     }
 
     private async ValueTask<object?> ResolveCreate(IResolveFieldContext<object?> arg)
@@ -109,7 +109,7 @@ internal class RtEntityMutation : RtMutationBase
         var tenantRepository = tenantContext.GetTenantRepository();
         var graphQlUserContext = (GraphQlUserContext)arg.UserContext;
 
-        var ckTypeId = arg.GetMetadataValue<CkId<CkTypeId>>(Statics.CkId);
+        var ckTypeId = arg.GetMetadataValue<RtCkId<CkTypeId>>(Statics.CkId);
 
 
         var inputObjects = arg.GetArgument<List<MutationDto<RtEntityDto>>>(Statics.EntitiesArg);

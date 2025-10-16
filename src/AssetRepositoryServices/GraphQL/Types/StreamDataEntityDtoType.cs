@@ -30,7 +30,7 @@ internal sealed class StreamDataEntityDtoType : ObjectGraphType<StreamDataEntity
 
         //name results to the connection type.
         // e.g. StreamDataIndustryEnergyMeterConnection
-        Name = _ckTypeGraph.CkTypeId.GetGraphQlPascalCaseNameForStreamData();
+        Name = _ckTypeGraph.CkTypeId.ToRtCkId().GetGraphQlPascalCaseNameForStreamData();
 
         // this results to the connection Name
         // data can be queried like this
@@ -46,14 +46,14 @@ internal sealed class StreamDataEntityDtoType : ObjectGraphType<StreamDataEntity
         // }
         // 
 
-        ConnectionName = _ckTypeGraph.CkTypeId.GetGraphQlPascalCaseName();
+        ConnectionName = _ckTypeGraph.CkTypeId.ToRtCkId().GetGraphQlPascalCaseName();
 
         Description = $"Stream data entities of construction kit type '{_ckTypeGraph.CkTypeId}'";
         IsTypeOf = o =>
         {
             if (o is StreamDataEntityDto rtEntityDto)
             {
-                return _ckTypeGraph.GetAllDerivedTypes(true).Contains(rtEntityDto.CkTypeId);
+                return _ckTypeGraph.GetAllDerivedTypes(true).Select(t => t.ToRtCkId()).Contains(rtEntityDto.CkTypeId);
             }
 
             return false;
@@ -136,7 +136,7 @@ internal sealed class StreamDataEntityDtoType : ObjectGraphType<StreamDataEntity
                     throw OctoGraphQLException.EnumAttributeHasNoCkEnumId(typeAttributeGraph.AttributeName);
                 }
 
-                builder = Field(attributeName, graphTypesCache.GetEnum(typeAttributeGraph.ValueCkEnumId));
+                builder = Field(attributeName, graphTypesCache.GetEnum(typeAttributeGraph.ValueCkEnumId.ToRtCkId()));
                 break;
             case AttributeValueTypesDto.Record:
                 if (typeAttributeGraph.ValueCkRecordId == null)
@@ -144,7 +144,7 @@ internal sealed class StreamDataEntityDtoType : ObjectGraphType<StreamDataEntity
                     throw OctoGraphQLException.RecordAttributeHasNoCkRecordId(typeAttributeGraph.AttributeName);
                 }
 
-                graphType = graphTypesCache.GetRecord(typeAttributeGraph.ValueCkRecordId);
+                graphType = graphTypesCache.GetRecord(typeAttributeGraph.ValueCkRecordId.ToRtCkId());
                 builder = Field(attributeName, graphType);
                 break;
             case AttributeValueTypesDto.RecordArray:
@@ -153,7 +153,7 @@ internal sealed class StreamDataEntityDtoType : ObjectGraphType<StreamDataEntity
                     throw OctoGraphQLException.RecordAttributeHasNoCkRecordId(typeAttributeGraph.AttributeName);
                 }
 
-                graphType = graphTypesCache.GetRecord(typeAttributeGraph.ValueCkRecordId);
+                graphType = graphTypesCache.GetRecord(typeAttributeGraph.ValueCkRecordId.ToRtCkId());
                 builder = Field(attributeName, new ListGraphType(graphType));
                 break;
             default:
@@ -223,7 +223,7 @@ internal sealed class StreamDataEntityDtoType : ObjectGraphType<StreamDataEntity
 
         var graphQlUserContext = (GraphQlUserContext)arg.UserContext;
 
-        var ckTypeGraph = ckCacheService.GetCkType(graphQlUserContext.TenantId, arg.Source.CkTypeId);
+        var ckTypeGraph = ckCacheService.GetRtCkType(graphQlUserContext.TenantId, arg.Source.CkTypeId);
         return CkTypeDtoType.CreateCkTypeDto(ckTypeGraph);
     }
 

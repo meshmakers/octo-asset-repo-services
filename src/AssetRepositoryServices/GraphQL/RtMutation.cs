@@ -28,9 +28,11 @@ internal sealed class RtMutation : ObjectGraphType
                 continue;
             }
 
-            Field($"{rtEntityDtoType.CkTypeId.GetGraphQlCamelCaseName()}s",
-                    new RtEntityMutation(graphTypesCache, rtEntityDtoType))
-                .Description($"Mutation for entities of type '{rtEntityDtoType.CkTypeId.GetGraphQlPascalCaseName()}'.")
+            var rtCkTypeId = rtEntityDtoType.CkTypeId.ToRtCkId();
+
+            Field($"{rtCkTypeId.GetGraphQlCamelCaseName()}s",
+                    new RtEntityMutation(graphTypesCache, rtCkTypeId))
+                .Description($"Mutation for entities of type '{rtCkTypeId.GetGraphQlPascalCaseName()}'.")
                 .Resolve(_ => new RtEntityDto());
         }
     }

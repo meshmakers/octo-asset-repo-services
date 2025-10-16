@@ -35,7 +35,7 @@ internal class QueryMapper(
                 if (mappingMode == MappingMode.Update)
                 {
                     var ckAssociationRoleGraph =
-                        ckCacheService.GetCkAssociationRole(tenantId, navigationPairToInputObject.Key.CkRoleId);
+                        ckCacheService.GetRtCkAssociationRole(tenantId, navigationPairToInputObject.Key.CkRoleId);
 
                     if (navigationPairToInputObject.Key.Direction == GraphDirections.Outbound &&
                         ckAssociationRoleGraph.OutboundMultiplicity == MultiplicitiesDto.One ||
@@ -60,7 +60,7 @@ internal class QueryMapper(
                                     associationUpdateInfoList.Add(AssociationUpdateInfo.CreateDelete(
                                         rtEntity.ToRtEntityId(), associationsItem.ToRtEntityId(),
                                         navigationPairToInputObject.Key.CkRoleId));
-                                    associationUpdateInfoList.Add(AssociationUpdateInfo.CreateCreate(
+                                    associationUpdateInfoList.Add(AssociationUpdateInfo.CreateInsert(
                                         rtEntity.ToRtEntityId(), targetRtEntity.ToRtEntityId(),
                                         navigationPairToInputObject.Key.CkRoleId));
                                 }
@@ -88,7 +88,7 @@ internal class QueryMapper(
                                 associationUpdateInfoList.Add(AssociationUpdateInfo.CreateDelete(
                                     associationsItem.ToRtEntityId(),rtEntity.ToRtEntityId(),
                                     navigationPairToInputObject.Key.CkRoleId));
-                                associationUpdateInfoList.Add(AssociationUpdateInfo.CreateCreate(
+                                associationUpdateInfoList.Add(AssociationUpdateInfo.CreateInsert(
                                     targetRtEntity.ToRtEntityId(), rtEntity.ToRtEntityId(),
                                     navigationPairToInputObject.Key.CkRoleId));
                             }
@@ -99,13 +99,13 @@ internal class QueryMapper(
                 {
                     if (navigationPairToInputObject.Key.Direction == GraphDirections.Outbound)
                     {
-                        associationUpdateInfoList.Add(AssociationUpdateInfo.CreateCreate(
+                        associationUpdateInfoList.Add(AssociationUpdateInfo.CreateInsert(
                             rtEntity.ToRtEntityId(), targetRtEntity.ToRtEntityId(),
                             navigationPairToInputObject.Key.CkRoleId));
                     }
                     else if (navigationPairToInputObject.Key.Direction == GraphDirections.Inbound)
                     {
-                        associationUpdateInfoList.Add(AssociationUpdateInfo.CreateCreate(
+                        associationUpdateInfoList.Add(AssociationUpdateInfo.CreateInsert(
                             targetRtEntity.ToRtEntityId(), rtEntity.ToRtEntityId(),
                             navigationPairToInputObject.Key.CkRoleId));
                     }
@@ -196,7 +196,7 @@ internal class QueryMapper(
             foreach (var cellDto in rtQueryRowDto.Cells)
             {
                 // Ignore attribute paths that are navigation properties
-                var navigationPair = RtPathEvaluator.TokenizeAndGetNavigationPair(ckCacheService, tenantId,
+                var navigationPair = RtPathEvaluator.TokenizeAndGetNavigationPairByRtCkId(ckCacheService, tenantId,
                     rtEntity.CkTypeId ?? throw OctoGraphQLException.CkTypeIdUndefined(), cellDto.AttributePath);
                 if (navigationPair != null)
                 {

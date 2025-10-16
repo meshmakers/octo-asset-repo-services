@@ -46,7 +46,7 @@ internal sealed class RtEntityGenericDtoType : ObjectGraphType<RtEntityDto>
         var graphQlContext = (GraphQlUserContext)context.UserContext;
 
 
-        var ckTypeGraph = ckCacheService.GetCkType(graphQlContext.TenantId, context.Source.CkTypeId);
+        var ckTypeGraph = ckCacheService.GetRtCkType(graphQlContext.TenantId, context.Source.CkTypeId);
 
         IEnumerable<CkTypeAttributeGraph> resultList;
         IEnumerable<string>? filterAttributeNames = null;

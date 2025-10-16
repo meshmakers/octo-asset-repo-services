@@ -77,7 +77,7 @@ internal sealed class CkModelDtoType : ObjectGraphType<CkModelDto>
     private static bool GetParameter<TKey>(IResolveConnectionContext<CkModelDto> arg,
         out IOctoSessionAccessor sessionAccessor,
         out GraphQlUserContext graphQlUserContext, out int? offset, out DataQueryOperation dataQueryOperation,
-        out List<CkId<TKey>> keysList) where TKey : IComparable<TKey>, ICkKey
+        out List<CkId<TKey>> keysList) where TKey : IComparable<TKey>, ICkElementId
     {
         if (arg.RequestServices == null)
         {

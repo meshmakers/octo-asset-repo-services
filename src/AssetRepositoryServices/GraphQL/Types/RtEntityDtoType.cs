@@ -30,13 +30,13 @@ internal sealed class RtEntityDtoType : ObjectGraphType<RtEntityDto>
     {
         _ckTypeGraph = ckTypeGraph;
 
-        Name = _ckTypeGraph.CkTypeId.GetGraphQlPascalCaseName();
+        Name = _ckTypeGraph.CkTypeId.ToRtCkId().GetGraphQlPascalCaseName();
         Description = $"Runtime entities of construction kit type '{_ckTypeGraph.CkTypeId}'";
         IsTypeOf = o =>
         {
             if (o is RtEntityDto rtEntityDto)
             {
-                return _ckTypeGraph.GetAllDerivedTypes(true).Contains(rtEntityDto.CkTypeId);
+                return _ckTypeGraph.GetAllDerivedTypes(true).Select(t => t.ToRtCkId()).Contains(rtEntityDto.CkTypeId);
             }
 
             return false;
@@ -51,7 +51,7 @@ internal sealed class RtEntityDtoType : ObjectGraphType<RtEntityDto>
     }
 
     /// <summary>
-    ///     Returns the Construction Kid Id of the object type
+    ///     Returns the Construction Kid ID of the object type
     /// </summary>
     public CkId<CkTypeId> CkTypeId => _ckTypeGraph.CkTypeId;
 
@@ -76,6 +76,8 @@ internal sealed class RtEntityDtoType : ObjectGraphType<RtEntityDto>
         {
             var allowedTypes = ckTypeAssociationGraph
                 .SelectMany(x => ckCacheService.GetCkType(tenantId, x.TargetCkTypeId).GetAllDerivedTypes(true))
+                .Select(x => x.ToRtCkId())
+                .Distinct()
                 .ToList();
             if (!allowedTypes.Any())
             {
@@ -83,14 +85,16 @@ internal sealed class RtEntityDtoType : ObjectGraphType<RtEntityDto>
             }
 
             this.AssociationField(graphTypesCache, ckTypeAssociationGraph.Key,
-                allowedTypes.Select(x => x).Distinct().ToList(), _ckTypeGraph.CkTypeId,
-                ckTypeAssociationGraph.First().CkRoleId, GraphDirections.Outbound);
+                allowedTypes, _ckTypeGraph.CkTypeId.ToRtCkId(),
+                ckTypeAssociationGraph.First().CkRoleId.ToRtCkId(), GraphDirections.Outbound);
         }
 
         foreach (var ckTypeAssociationGraph in _ckTypeGraph.Associations.In.All.GroupBy(x => x.NavigationPropertyName))
         {
             var allowedTypes = ckTypeAssociationGraph
                 .SelectMany(x => ckCacheService.GetCkType(tenantId, x.OriginCkTypeId).GetAllDerivedTypes(true))
+                .Select(x => x.ToRtCkId())
+                .Distinct()
                 .ToList();
             if (!allowedTypes.Any())
             {
@@ -98,8 +102,8 @@ internal sealed class RtEntityDtoType : ObjectGraphType<RtEntityDto>
             }
 
             this.AssociationField(graphTypesCache, ckTypeAssociationGraph.Key,
-                allowedTypes.Select(x => x).Distinct().ToList(), _ckTypeGraph.CkTypeId,
-                ckTypeAssociationGraph.First().CkRoleId, GraphDirections.Inbound);
+                allowedTypes, _ckTypeGraph.CkTypeId.ToRtCkId(),
+                ckTypeAssociationGraph.First().CkRoleId.ToRtCkId(), GraphDirections.Inbound);
         }
     }
 
@@ -144,16 +148,16 @@ internal sealed class RtEntityDtoType : ObjectGraphType<RtEntityDto>
             }
 
 
-            var roleId = arg.GetArgument<string>(Statics.RoleIdArg);
+            var roleId = arg.GetArgument<RtCkId<CkAssociationRoleId>>(Statics.RoleIdArg);
             var direction = arg.GetArgument<GraphDirections>(Statics.DirectionArg);
-            var targetCkId = arg.GetArgument<CkId<CkTypeId>>(Statics.CkId);
+            var targetCkId = arg.GetArgument<RtCkId<CkTypeId>>(Statics.CkId);
 
             var tenantRepository = graphQlUserContext.TenantContext.GetTenantRepository();
 
             if (indirectAssociations.Value)
             {
                 var result = await tenantRepository.GetIndirectRtAssociationTargetsAsync(
-                    sessionAccessor.Session, [arg.Source.RtId], CkTypeId, new CkId<CkAssociationRoleId>(roleId),
+                    sessionAccessor.Session, [arg.Source.RtId], CkTypeId.ToRtCkId(), roleId,
                     direction,
                     null, targetCkId, dataQueryOperation, offset, arg.First);
 
@@ -162,7 +166,7 @@ internal sealed class RtEntityDtoType : ObjectGraphType<RtEntityDto>
             else
             {
                 var result = await tenantRepository.GetRtAssociationTargetsAsync(
-                    sessionAccessor.Session, [arg.Source.RtId], CkTypeId, new CkId<CkAssociationRoleId>(roleId),
+                    sessionAccessor.Session, [arg.Source.RtId], CkTypeId.ToRtCkId(), roleId,
                     targetCkId, direction,
                     null, dataQueryOperation, offset, arg.First);
 
@@ -180,7 +184,7 @@ internal sealed class RtEntityDtoType : ObjectGraphType<RtEntityDto>
         var ckCacheService = arg.GetCkCacheService();
         var graphQlUserContext = (GraphQlUserContext)arg.UserContext;
 
-        var ckTypeGraph = ckCacheService.GetCkType(graphQlUserContext.TenantId, arg.Source.CkTypeId);
+        var ckTypeGraph = ckCacheService.GetRtCkType(graphQlUserContext.TenantId, arg.Source.CkTypeId);
         return CkTypeDtoType.CreateCkTypeDto(ckTypeGraph);
     }
 

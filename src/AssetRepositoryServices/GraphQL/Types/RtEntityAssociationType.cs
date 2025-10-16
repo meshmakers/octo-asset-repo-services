@@ -21,11 +21,11 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
 internal class RtEntityAssociationType : ObjectGraphType
 {
     private readonly GraphDirections _graphDirection;
-    private readonly CkId<CkTypeId> _originCkId;
-    private readonly CkId<CkAssociationRoleId> _roleId;
+    private readonly RtCkId<CkTypeId> _originCkId;
+    private readonly RtCkId<CkAssociationRoleId> _roleId;
 
     public RtEntityAssociationType(string name, string description, IGraphTypesCache entityDtoCache,
-        IEnumerable<RtEntityDtoType> rtEntityDtoTypes, CkId<CkTypeId> originCkId, CkId<CkAssociationRoleId> roleId,
+        IEnumerable<RtEntityDtoType> rtEntityDtoTypes, RtCkId<CkTypeId> originCkId, RtCkId<CkAssociationRoleId> roleId,
         GraphDirections graphDirection)
     {
         _originCkId = originCkId;
@@ -56,7 +56,7 @@ internal class RtEntityAssociationType : ObjectGraphType
 
     private object ResolveRtEntitiesQuery(IResolveConnectionContext<RtEntityDto> ctx)
     {
-        var targetCkId = ctx.GetMetadataValue<CkId<CkTypeId>>(Statics.CkId);
+        var targetCkId = ctx.GetMetadataValue<RtCkId<CkTypeId>>(Statics.CkId);
         var offset = ctx.GetOffset();
         var dataQueryOperation = ctx.GetDataQueryOperation();
 

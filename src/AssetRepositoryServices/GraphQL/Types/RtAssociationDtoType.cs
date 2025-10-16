@@ -41,7 +41,7 @@ public sealed class RtAssociationDtoType : ObjectGraphType<RtAssociationDto>
 
 
         var ckAssociationRole =
-            ckCacheService.GetCkAssociationRole(graphQlContext.TenantId, context.Source.CkAssociationRoleId);
+            ckCacheService.GetRtCkAssociationRole(graphQlContext.TenantId, context.Source.CkAssociationRoleId);
 
         IEnumerable<CkTypeAttributeGraph> resultList;
         if (context.HasArgument(Statics.AttributeNamesFilterArg))

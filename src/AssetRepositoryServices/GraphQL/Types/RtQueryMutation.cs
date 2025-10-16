@@ -76,7 +76,7 @@ internal sealed class RtQueryMutation : RtMutationBase
 
             foreach (var queryRowDto in inputObjects)
             {
-                var rtEntity = await tenantRepository.CreateTransientRtEntityAsync(queryRowDto.CkTypeId);
+                var rtEntity = await tenantRepository.CreateTransientRtEntityByRtCkIdAsync(queryRowDto.CkTypeId);
 
                 await queryMapper.MapAsync(rtEntity, queryRowDto, associationUpdateInfoList, MappingMode.Insert,
                     mappingResult);

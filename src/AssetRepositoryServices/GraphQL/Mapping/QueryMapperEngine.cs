@@ -91,7 +91,7 @@ internal class QueryMapperEngine
                     .Distinct();
 
                 var targetCkTypeGraph =
-                    ckCacheService.GetCkType(tenantRepository.TenantId, navigationPair.TargetCkTypeId);
+                    ckCacheService.GetRtCkType(tenantRepository.TenantId, navigationPair.TargetCkTypeId);
                 targetCkTypeGraph.AllAttributesByName.TryGetValue(subAttributePath.ToPascalCase(),
                     out var attributeGraph);
                 var attributeValueType = attributeGraph?.ValueType;

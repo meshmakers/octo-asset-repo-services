@@ -100,7 +100,7 @@ internal class OctoBuilder<TSourceType>(
                     throw OctoGraphQLException.EnumAttributeHasNoCkEnumId(typeAttributeGraph.AttributeName);
                 }
 
-                return (graphTypesCache.GetEnum(typeAttributeGraph.ValueCkEnumId), null);
+                return (graphTypesCache.GetEnum(typeAttributeGraph.ValueCkEnumId.ToRtCkId()), null);
             case AttributeValueTypesDto.Record:
                 if (typeAttributeGraph.ValueCkRecordId == null)
                 {
@@ -109,8 +109,8 @@ internal class OctoBuilder<TSourceType>(
 
                 graphType = isInputType switch
                 {
-                    true => graphTypesCache.GetRecordInput(typeAttributeGraph.ValueCkRecordId),
-                    _ => graphTypesCache.GetRecord(typeAttributeGraph.ValueCkRecordId)
+                    true => graphTypesCache.GetRecordInput(typeAttributeGraph.ValueCkRecordId.ToRtCkId()),
+                    _ => graphTypesCache.GetRecord(typeAttributeGraph.ValueCkRecordId.ToRtCkId())
                 };
 
                 return (graphType, null);
@@ -122,8 +122,8 @@ internal class OctoBuilder<TSourceType>(
 
                 graphType = isInputType switch
                 {
-                    true => graphTypesCache.GetRecordInput(typeAttributeGraph.ValueCkRecordId),
-                    _ => new NonNullGraphType(graphTypesCache.GetRecord(typeAttributeGraph.ValueCkRecordId))
+                    true => graphTypesCache.GetRecordInput(typeAttributeGraph.ValueCkRecordId.ToRtCkId()),
+                    _ => new NonNullGraphType(graphTypesCache.GetRecord(typeAttributeGraph.ValueCkRecordId.ToRtCkId()))
                 };
 
                 return (new ListGraphType(graphType), null);

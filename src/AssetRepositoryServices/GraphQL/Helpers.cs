@@ -87,9 +87,9 @@ internal static class Helpers
 
     public static FieldType AssociationField<TSourceType>(
         this ComplexGraphType<TSourceType> complexGraphType,
-        IGraphTypesCache graphTypesCache, string name, IReadOnlyList<CkId<CkTypeId>> allowedTypes,
-        CkId<CkTypeId> originCkId,
-        CkId<CkAssociationRoleId> roleId, GraphDirections graphDirection)
+        IGraphTypesCache graphTypesCache, string name, IReadOnlyList<RtCkId<CkTypeId>> allowedTypes,
+        RtCkId<CkTypeId> originCkId,
+        RtCkId<CkAssociationRoleId> roleId, GraphDirections graphDirection)
     {
         var graphTypes = allowedTypes.Select(graphTypesCache.GetType);
 

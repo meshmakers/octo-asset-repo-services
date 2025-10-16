@@ -28,13 +28,13 @@ internal interface IGraphTypesCache
     ///     Returns the construction kit type graph type for the given construction kit type id
     /// </summary>
     /// <returns></returns>
-    RtEntityDtoType GetType(CkId<CkTypeId> ckTypeId);
+    RtEntityDtoType GetType(RtCkId<CkTypeId> ckTypeId);
 
     /// <summary>
     ///     Returns the construction kit type input graph type for the given construction kit type id
     /// </summary>
     /// <returns></returns>
-    RtEntityDtoInputType GetInputType(CkId<CkTypeId> ckTypeId);
+    RtEntityDtoInputType GetInputType(RtCkId<CkTypeId> ckTypeId);
 
     /// <summary>
     ///     Returns an array of known construction kit record graph types
@@ -46,19 +46,19 @@ internal interface IGraphTypesCache
     ///     Returns the construction kit record graph type for the given construction kit record id
     /// </summary>
     /// <returns></returns>
-    RtRecordDtoType GetRecord(CkId<CkRecordId> ckRecordId);
+    RtRecordDtoType GetRecord(RtCkId<CkRecordId> ckRecordId);
 
     /// <summary>
     ///     Returns the construction kit record graph type for the given construction kit record id
     /// </summary>
     /// <returns></returns>
-    RtRecordDtoInputType GetRecordInput(CkId<CkRecordId> ckRecordId);
+    RtRecordDtoInputType GetRecordInput(RtCkId<CkRecordId> ckRecordId);
 
     /// <summary>
     ///     Returns the construction kit enum graph type for the given construction kit enum id
     /// </summary>
     /// <returns></returns>
-    RtEnumScalarType GetEnum(CkId<CkEnumId> ckEnumId);
+    RtEnumScalarType GetEnum(RtCkId<CkEnumId> ckEnumId);
 
     /// <summary>
     ///     Returns an array of known graph types
