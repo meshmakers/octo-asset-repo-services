@@ -25,7 +25,7 @@ internal sealed class RtEntityGenericDtoType : ObjectGraphType<RtEntityDto>
         Name = "RtEntity";
         Description = "A runtime entity type of OctoMesh";
         Field(d => d.RtId, typeof(OctoObjectIdType));
-        Field(d => d.CkTypeId, typeof(CkIdGraph<CkTypeId>));
+        Field(d => d.CkTypeId, typeof(RtCkIdGraph<CkTypeId>));
         Field(x => x.RtCreationDateTime, true);
         Field(x => x.RtChangedDateTime, true);
         Field(x => x.RtWellKnownName, true);

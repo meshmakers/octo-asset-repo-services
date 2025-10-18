@@ -19,7 +19,7 @@ internal sealed class RtEntityIdType : InputObjectGraphType<RtEntityIdDto>
         Description = "Id information consists of CkTypeId and RtId";
 
         Field(x => x.RtId, typeof(NonNullGraphType<OctoObjectIdType>)).Description("Unique id of the object.");
-        Field(x => x.CkTypeId, typeof(NonNullGraphType<CkIdGraph<CkTypeId>>))
+        Field(x => x.CkTypeId, typeof(NonNullGraphType<RtCkIdGraph<CkTypeId>>))
             .Description("Construction kit type id of the object.");
     }
 }

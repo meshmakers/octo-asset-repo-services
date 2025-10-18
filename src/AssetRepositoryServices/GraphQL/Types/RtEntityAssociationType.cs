@@ -40,7 +40,7 @@ internal class RtEntityAssociationType : ObjectGraphType
         foreach (var rtEntityDtoType in rtEntityDtoTypes)
         {
             this.Connection<object?, IGraphType, RtEntityDto>(entityDtoCache, rtEntityDtoType, rtEntityDtoType.Name)
-                .AddMetadata(Statics.CkId, rtEntityDtoType.CkTypeId)
+                .AddMetadata(Statics.CkId, rtEntityDtoType.CkTypeId.ToRtCkId())
                 .Argument<OctoObjectIdType>(Statics.RtIdArg, "Returns the entity with the given rtId.")
                 .Argument<ListGraphType<OctoObjectIdType>>(Statics.RtIdsArg,
                     "Returns entities with the given rtIds.")

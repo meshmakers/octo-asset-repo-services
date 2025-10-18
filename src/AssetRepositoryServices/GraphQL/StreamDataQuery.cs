@@ -29,7 +29,7 @@ internal sealed class StreamDataQuery : ObjectGraphType
         {
             this.Connection<object?, IGraphType, StreamDataEntityDto>(graphTypesCache, rtEntityDtoType,
                     rtEntityDtoType.ConnectionName)
-                .AddMetadata(Statics.CkId, rtEntityDtoType.CkTypeId)
+                .AddMetadata(Statics.CkId, rtEntityDtoType.CkTypeId.ToRtCkId())
                 .Argument<OctoObjectIdType>(Statics.RtIdArg, "Returns the entity with the given rtId.")
                 .Argument<ListGraphType<OctoObjectIdType>>(Statics.RtIdsArg, "Returns entities with the given rtIds.")
                 .Argument<StreamDataArgumentsGraphType>(Statics.StreamDataArgument, "Filter for stream data data.")

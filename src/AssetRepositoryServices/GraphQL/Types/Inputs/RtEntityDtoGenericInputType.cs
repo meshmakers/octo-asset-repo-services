@@ -17,7 +17,7 @@ internal sealed class RtEntityDtoGenericInputType : InputObjectGraphType<RtEntit
     {
         Name = $"RtEntity{Statics.GraphQlInputSuffix}";
 
-        Field(x => x.CkTypeId, typeof(NonNullGraphType<CkIdGraph<CkTypeId>>));
+        Field(x => x.CkTypeId, typeof(NonNullGraphType<RtCkIdGraph<CkTypeId>>));
         Field(x => x.RtWellKnownName, true);
         Field(x => x.Attributes, typeof(NonNullGraphType<ListGraphType<RtEntityAttributeDtoInputType>>));
     }

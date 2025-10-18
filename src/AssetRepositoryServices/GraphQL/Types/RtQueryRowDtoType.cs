@@ -26,7 +26,7 @@ internal sealed class RtQueryRowDtoType : ObjectGraphType<RtQueryRowDto>
         Name = "RtQueryRow";
         Description = AssetTexts.Graphql_RtQueryRow_Description;
         Field(d => d.RtId, typeof(OctoObjectIdType));
-        Field(d => d.CkTypeId, typeof(CkIdGraph<CkTypeId>));
+        Field(d => d.CkTypeId, typeof(RtCkIdGraph<CkTypeId>));
         Field(x => x.RtCreationDateTime, true);
         Field(x => x.RtChangedDateTime, true);
         Field(x => x.RtWellKnownName, true);

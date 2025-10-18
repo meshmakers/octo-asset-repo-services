@@ -60,7 +60,7 @@ internal sealed class StreamDataEntityDtoType : ObjectGraphType<StreamDataEntity
         };
 
         Field(d => d.RtId, typeof(NonNullGraphType<OctoObjectIdType>));
-        Field(d => d.CkTypeId, typeof(NonNullGraphType<CkIdGraph<CkTypeId>>));
+        Field(d => d.CkTypeId, typeof(NonNullGraphType<RtCkIdGraph<CkTypeId>>));
         Field(d => d.TimeStamp, typeof(DateTimeGraphType));
         Field(d => d.RtWellKnownName, typeof(StringGraphType));
         Field(d => d.RtCreationDateTime, typeof(DateTimeGraphType));

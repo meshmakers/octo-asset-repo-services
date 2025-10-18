@@ -28,7 +28,7 @@ internal sealed class RtTransientQueryDtoType : ObjectGraphType<RtTransientQuery
         _logger = logger;
         Name = "RtTransientQuery";
         Description = AssetTexts.Graphql_RtQuery_Description;
-        Field(d => d.AssociatedCkTypeId, typeof(NonNullGraphType<CkIdGraph<CkTypeId>>));
+        Field(d => d.AssociatedCkTypeId, typeof(NonNullGraphType<RtCkIdGraph<CkTypeId>>));
         Field(d => d.Columns, typeof(NonNullGraphType<ListGraphType<NonNullGraphType<RtQueryColumnType>>>));
 
         Connection<NonNullGraphType<QueryAggregationResultType>>("Aggregations")
