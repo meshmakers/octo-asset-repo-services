@@ -57,7 +57,7 @@ internal class RtEntityMutation : RtMutationBase
             return null;
         }
 
-        if (ckIdObj is not CkId<CkTypeId> ckTypeId)
+        if (ckIdObj is not RtCkId<CkTypeId> rtCkTypeId)
         {
             arg.Errors.Add(new ExecutionError("Invalid query. Invalid construction kit id.")
                 { Code = Statics.GraphQlInvalidArguments });
@@ -72,7 +72,7 @@ internal class RtEntityMutation : RtMutationBase
             var associationUpdateInfoList = new List<AssociationUpdateInfo>();
             foreach (var rtEntityDto in inputObjects)
             {
-                var rtEntity = await tenantRepository.CreateTransientRtEntityAsync(ckTypeId);
+                var rtEntity = await tenantRepository.CreateTransientRtEntityByRtCkIdAsync(rtCkTypeId);
                 await RtEntityFromInputObjectAsync(ckCacheService, graphQlUserContext.TenantId, rtEntity, rtEntityDto,
                     associationUpdateInfoList);
                 entityUpdateInfos.Add(EntityUpdateInfo<RtEntity>.CreateInsert(rtEntity));

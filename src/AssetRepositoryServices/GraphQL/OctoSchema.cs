@@ -13,10 +13,16 @@ internal sealed class OctoSchema : Schema
     static OctoSchema()
     {
         ValueConverter.Register(typeof(string), typeof(OctoObjectId), o => new OctoObjectId((string)o));
+
         ValueConverter.Register(typeof(string), typeof(CkId<CkTypeId>), o => new CkId<CkTypeId>((string)o));
         ValueConverter.Register(typeof(string), typeof(CkId<CkRecordId>), o => new CkId<CkRecordId>((string)o));
         ValueConverter.Register(typeof(string), typeof(CkId<CkAttributeId>), o => new CkId<CkAttributeId>((string)o));
         ValueConverter.Register(typeof(string), typeof(CkId<CkAssociationRoleId>), o => new CkId<CkAssociationRoleId>((string)o));
+
+        ValueConverter.Register(typeof(string), typeof(RtCkId<CkTypeId>), o => new RtCkId<CkTypeId>((string)o));
+        ValueConverter.Register(typeof(string), typeof(RtCkId<CkRecordId>), o => new RtCkId<CkRecordId>((string)o));
+        ValueConverter.Register(typeof(string), typeof(RtCkId<CkAttributeId>), o => new RtCkId<CkAttributeId>((string)o));
+        ValueConverter.Register(typeof(string), typeof(RtCkId<CkAssociationRoleId>), o => new RtCkId<CkAssociationRoleId>((string)o));
     }
 
     /// <summary>
