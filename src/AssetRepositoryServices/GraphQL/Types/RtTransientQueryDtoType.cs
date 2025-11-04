@@ -62,7 +62,7 @@ internal sealed class RtTransientQueryDtoType : ObjectGraphType<RtTransientQuery
             var tenantRepository = graphQlUserContext.TenantContext.GetTenantRepository();
 
             var offset = context.GetOffset();
-            var dataQueryOperation = context.GetDataQueryOperation(queryUserContext.DataQueryOperation);
+            var dataQueryOperation = context.GetDataQueryOperation(queryUserContext.QueryOptions);
 
             var roleIdDirectionPairs = RtPathEvaluator.TokenizeAndGetNavigationPairsByRtCkId(ckCacheService,
                 tenantRepository.TenantId, rtTransientQueryDto.AssociatedCkTypeId,
@@ -130,7 +130,7 @@ internal sealed class RtTransientQueryDtoType : ObjectGraphType<RtTransientQuery
 
 
             var resultSet = await tenantRepository.GetRtEntitiesGraphByTypeAsync(sessionAccessor.Session,
-                rtTransientQueryDto.AssociatedCkTypeId, queryUserContext.DataQueryOperation,
+                rtTransientQueryDto.AssociatedCkTypeId, queryUserContext.QueryOptions,
                 roleIdDirectionPairs, offset, context.First);
 
             _logger.LogDebug("GraphQL query handling returning data");
@@ -148,23 +148,23 @@ internal sealed class RtTransientQueryDtoType : ObjectGraphType<RtTransientQuery
     }
 
     public static RtTransientQueryDto CreateTransientRtQueryDto(RtCkId<CkTypeId> ckTypeId,
-        DataQueryOperation dataQueryOperation, IReadOnlyList<CkTypeQueryColumn> ckTypeQueryColumns)
+        RtEntityQueryOptions queryOptions, IReadOnlyList<CkTypeQueryColumn> ckTypeQueryColumns)
     {
         var rtTransientQueryDto = new RtTransientQueryDto
         {
             AssociatedCkTypeId = ckTypeId,
             Columns = ckTypeQueryColumns.Select(RtQueryColumnType.CreateRtQueryColumnDto).ToList(),
-            UserContext = new QueryUserContext(dataQueryOperation, ckTypeQueryColumns)
+            UserContext = new QueryUserContext(queryOptions, ckTypeQueryColumns)
         };
 
         return rtTransientQueryDto;
     }
 
     private class QueryUserContext(
-        DataQueryOperation dataQueryOperation,
+        RtEntityQueryOptions queryOptions,
         IReadOnlyList<CkTypeQueryColumn> ckTypeQueryColumns)
     {
-        public DataQueryOperation DataQueryOperation { get; } = dataQueryOperation;
+        public RtEntityQueryOptions QueryOptions { get; } = queryOptions;
         public IReadOnlyList<CkTypeQueryColumn> CkTypeQueryColumns { get; } = ckTypeQueryColumns;
     }
 }

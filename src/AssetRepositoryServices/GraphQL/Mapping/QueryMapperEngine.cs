@@ -42,7 +42,7 @@ internal class QueryMapperEngine
         Dictionary<NavigationPair, List<RtEntityGraphItem>> navigationPairToInputObjects = new();
         foreach (var navigationPair in navigationPairs)
         {
-            var dataQueryOperation = DataQueryOperation.Create();
+            var queryOptions = RtEntityQueryOptions.Create();
             if (navigationPair.FieldFilters == null || !navigationPair.FieldFilters.Any())
             {
                 throw NavigationPropertyException.NavigationWithoutRestrictionNotAllowed(navigationPair.CkRoleId,
@@ -51,13 +51,13 @@ internal class QueryMapperEngine
 
             foreach (var navigationPairFieldFilter in navigationPair.FieldFilters)
             {
-                dataQueryOperation.AddFieldFilter(navigationPairFieldFilter.AttributePath,
+                queryOptions.AddFieldFilter(navigationPairFieldFilter.AttributePath,
                     navigationPairFieldFilter.Operator, navigationPairFieldFilter.ComparisonValue);
             }
 
             var resultSet = await tenantRepository.GetRtEntitiesGraphByTypeAsync(sessionAccessor.Session,
                 navigationPair.TargetCkTypeId,
-                dataQueryOperation, navigationPair.InnerNavigationPairs);
+                queryOptions, navigationPair.InnerNavigationPairs);
             navigationPairToInputObjects.Add(navigationPair, resultSet.Items.ToList());
         }
 

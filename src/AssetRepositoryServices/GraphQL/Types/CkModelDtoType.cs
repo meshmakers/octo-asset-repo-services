@@ -76,7 +76,7 @@ internal sealed class CkModelDtoType : ObjectGraphType<CkModelDto>
 
     private static bool GetParameter<TKey>(IResolveConnectionContext<CkModelDto> arg,
         out IOctoSessionAccessor sessionAccessor,
-        out GraphQlUserContext graphQlUserContext, out int? offset, out DataQueryOperation dataQueryOperation,
+        out GraphQlUserContext graphQlUserContext, out int? offset, out RtEntityQueryOptions queryOptions,
         out List<CkId<TKey>> keysList) where TKey : IComparable<TKey>, ICkElementId
     {
         if (arg.RequestServices == null)
@@ -89,7 +89,7 @@ internal sealed class CkModelDtoType : ObjectGraphType<CkModelDto>
         graphQlUserContext = (GraphQlUserContext)arg.UserContext;
 
         offset = arg.GetOffset();
-        dataQueryOperation = arg.GetDataQueryOperation();
+        queryOptions = arg.GetDataQueryOperation();
 
         keysList = new List<CkId<TKey>>();
         if (arg.TryGetArgument(Statics.CkIdsArg, null, out IEnumerable<string>? keys))
@@ -120,12 +120,12 @@ internal sealed class CkModelDtoType : ObjectGraphType<CkModelDto>
 
             var sessionAccessor = arg.GetSessionAccessor();
             var graphQlUserContext = (GraphQlUserContext)arg.UserContext;
-            var dataQueryOperation = DataQueryOperation.Create();
+            var queryOptions = RtEntityQueryOptions.Create();
 
             var tenantRepository = graphQlUserContext.TenantContext.GetTenantRepository();
             var resultSet =
                 await tenantRepository.GetCkModelsAsync(sessionAccessor.Session,
-                    new List<CkModelId> { arg.Source.Id }, dataQueryOperation, 0, 1);
+                    [arg.Source.Id], queryOptions, 0, 1);
 
             if (resultSet.Items.Any() && resultSet.Items.First().Dependencies != null)
             {

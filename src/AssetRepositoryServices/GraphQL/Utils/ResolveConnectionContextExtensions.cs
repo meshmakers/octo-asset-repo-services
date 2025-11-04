@@ -188,10 +188,10 @@ internal static class ResolveConnectionContextExtensions
         return false;
     }
 
-    internal static DataQueryOperation GetDataQueryOperation<TEntity>(this IResolveConnectionContext<TEntity> ctx,
-        DataQueryOperation? operation = null)
+    internal static RtEntityQueryOptions GetDataQueryOperation<TEntity>(this IResolveConnectionContext<TEntity> ctx,
+        RtEntityQueryOptions? operation = null)
     {
-        var dataQueryOperation = operation ?? DataQueryOperation.Create();
+        var dataQueryOperation = operation ?? RtEntityQueryOptions.Create();
 
         if (ctx.TryGetArgument(Statics.SearchFilterArg, out SearchFilterDto? filterDto))
         {
@@ -273,12 +273,12 @@ internal static class ResolveConnectionContextExtensions
     }
 
     private static void GetFieldAggregation(FieldGroupByAggregationInputDto? fieldAggregationInputDto,
-        DataQueryOperation dataQueryOperation)
+        RtEntityQueryOptions queryOptions)
     {
         if (fieldAggregationInputDto != null)
         {
             var aggregateFieldGroupBy =
-                dataQueryOperation.AggregateFieldGroupBy(fieldAggregationInputDto.GroupByAttributePaths.ToArray());
+                queryOptions.AggregateFieldGroupBy(fieldAggregationInputDto.GroupByAttributePaths.ToArray());
             if (fieldAggregationInputDto.CountAttributePaths != null)
             {
                 aggregateFieldGroupBy.CountAttributePaths(fieldAggregationInputDto.CountAttributePaths.ToArray());

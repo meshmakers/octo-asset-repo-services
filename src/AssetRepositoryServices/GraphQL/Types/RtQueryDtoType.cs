@@ -147,12 +147,12 @@ internal sealed class RtQueryDtoType : ObjectGraphType<RtQueryDto>
     public static RtQueryDto CreateRtQueryDto(RtQuery rtQuery,
         IReadOnlyList<CkTypeQueryColumn> ckTypeQueryColumns)
     {
-        var dataQueryOperation = DataQueryOperation.Create();
+        var queryOptions = RtEntityQueryOptions.Create();
         if (rtQuery.FieldFilter != null)
         {
             foreach (var fieldFilter in rtQuery.FieldFilter)
             {
-                dataQueryOperation.FieldFilter(fieldFilter.AttributePath.ToPascalCase(),
+                queryOptions.FieldFilter(fieldFilter.AttributePath.ToPascalCase(),
                     (FieldFilterOperator)fieldFilter.Operator,
                     fieldFilter.ComparisonValue);
             }
@@ -162,7 +162,7 @@ internal sealed class RtQueryDtoType : ObjectGraphType<RtQueryDto>
         {
             foreach (var sort in rtQuery.Sorting)
             {
-                dataQueryOperation.SortOrder(sort.AttributePath.ToPascalCase(), (SortOrders)sort.SortOrder);
+                queryOptions.SortOrder(sort.AttributePath.ToPascalCase(), (SortOrders)sort.SortOrder);
             }
         }
 

@@ -55,7 +55,7 @@ internal abstract class RtMutationBase : ObjectGraphType
         {
             var resultSet = await repository.GetRtEntitiesByIdAsync(session, grouping.Key,
                 entityUpdateInfos.Select(x => x.RtId ?? throw OctoGraphQLException.RtIdUndefined()
-                ).ToList(), DataQueryOperation.Create());
+                ).ToList(), RtEntityQueryOptions.Create());
 
             resultSetComplete.AddRange(resultSet.Items);
         }
@@ -85,7 +85,7 @@ internal abstract class RtMutationBase : ObjectGraphType
 
             var resultSet = await repository.GetRtEntitiesGraphByIdAsync(session, grouping.Key,
                 entityUpdateInfos.Select(x => x.RtId ?? throw OctoGraphQLException.RtIdUndefined()
-                ).ToList(), DataQueryOperation.Create(), roleIdDirectionPairs);
+                ).ToList(), RtEntityQueryOptions.Create(), roleIdDirectionPairs);
 
             resultSetComplete.AddRange(resultSet.Items);
         }

@@ -41,14 +41,14 @@ internal class QueryMapper(
                         ckAssociationRoleGraph.OutboundMultiplicity == MultiplicitiesDto.One ||
                         ckAssociationRoleGraph.OutboundMultiplicity == MultiplicitiesDto.ZeroOrOne)
                     {
-                        var dataQueryOperation = DataQueryOperation.Create();
+                        var queryOptions = RtEntityQueryOptions.Create();
                         var associations = await tenantRepository.GetRtAssociationTargetsAsync(sessionAccessor.Session,
                             rtEntity.RtId, rtEntity.CkTypeId ?? throw OctoGraphQLException.CkTypeIdUndefined(),
                             navigationPairToInputObject.Key.CkRoleId,
                             navigationPairToInputObject.Key.TargetCkTypeId,
                             navigationPairToInputObject.Key.Direction,
                             null,
-                            dataQueryOperation
+                            queryOptions
                         );
 
                         if (associations.Items.Any())
@@ -71,14 +71,14 @@ internal class QueryMapper(
                              ckAssociationRoleGraph.InboundMultiplicity == MultiplicitiesDto.One ||
                              ckAssociationRoleGraph.InboundMultiplicity == MultiplicitiesDto.ZeroOrOne)
                     {
-                        var dataQueryOperation = DataQueryOperation.Create();
+                        var queryOptions = RtEntityQueryOptions.Create();
                         var associations = await tenantRepository.GetRtAssociationTargetsAsync(sessionAccessor.Session,
                             rtEntity.RtId, rtEntity.CkTypeId ?? throw OctoGraphQLException.CkTypeIdUndefined(),
                             navigationPairToInputObject.Key.CkRoleId,
                             navigationPairToInputObject.Key.TargetCkTypeId,
                             navigationPairToInputObject.Key.Direction,
                             null,
-                            dataQueryOperation
+                            queryOptions
                         );
 
                         if (associations.Items.Any())

@@ -74,9 +74,9 @@ internal sealed class CkEnumMutation : ObjectGraphType
 
             var sessionAccessor = arg.GetSessionAccessor();
 
-            var queryOperation = DataQueryOperation.Create();
+            var queryOptions = RtEntityQueryOptions.Create();
             var resultSet = await tenantContext.GetTenantRepository()
-                .GetCkEnumAsync(sessionAccessor.Session, null, keysList, queryOperation);
+                .GetCkEnumAsync(sessionAccessor.Session, null, keysList, queryOptions);
 
             return resultSet.Items.Select(CkEnumDtoType.CreateCkEnumDto);
         }

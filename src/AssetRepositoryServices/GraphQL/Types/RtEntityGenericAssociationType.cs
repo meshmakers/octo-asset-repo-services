@@ -66,13 +66,12 @@ public sealed class RtEntityGenericAssociationType : ObjectGraphType<RtEntityGen
         var tenantRepository = graphQlUserContext.TenantContext.GetTenantRepository();
         var offset = ctx.GetOffset();
 
+        var queryOptions = RtAssociationQueryOptions.Create(direction, offset, ctx.First);
         if (ckAssociationRoleId != null)
         {
             var loader = dataLoaderAccessor.Context.GetOrAddBatchLoader<RtEntityId, IResultSet<RtAssociation>>(
                 $"Get{ctx.Source.RtEntityDto.CkTypeId}_{direction}", async rtEntityIds =>
-                    await tenantRepository.GetRtAssociationsAsync(
-                        sessionAccessor.Session, rtEntityIds,
-                        direction, ckAssociationRoleId, offset, ctx.First));
+                    await tenantRepository.GetRtAssociationsAsync(sessionAccessor.Session, rtEntityIds, queryOptions));
             var dataLoaderResult = loader.LoadAsync(ctx.Source.RtEntityDto.ToRtEntityId());
 
             return dataLoaderResult.Then(resultSet => ConnectionUtils.ToConnection(
@@ -83,9 +82,7 @@ public sealed class RtEntityGenericAssociationType : ObjectGraphType<RtEntityGen
         {
             var loader = dataLoaderAccessor.Context.GetOrAddBatchLoader<RtEntityId, IResultSet<RtAssociation>>(
                 $"Get{ctx.Source.RtEntityDto.CkTypeId}_{direction}", async rtEntityIds =>
-                    await tenantRepository.GetRtAssociationsAsync(
-                        sessionAccessor.Session, rtEntityIds,
-                        direction, offset, ctx.First));
+                    await tenantRepository.GetRtAssociationsAsync(sessionAccessor.Session, rtEntityIds, queryOptions));
             var dataLoaderResult = loader.LoadAsync(ctx.Source.RtEntityDto.ToRtEntityId());
 
             return dataLoaderResult.Then(resultSet => ConnectionUtils.ToConnection(
