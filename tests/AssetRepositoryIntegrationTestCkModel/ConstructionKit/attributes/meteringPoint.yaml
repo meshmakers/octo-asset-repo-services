@@ -1,0 +1,12 @@
+$schema: https://schemas.meshmakers.cloud/construction-kit-elements.schema.json
+attributes:
+  - id: MeteringPointNumber
+    valueType: String      
+  - id: MeterReading
+    valueType: Int
+  - id: OperatingStatus
+    valueCkEnumId: ${this}/OperatingStatus
+    valueType: Enum
+  - id: NetworkOperator
+    valueCkEnumId: ${this}/NetworkOperator
+    valueType: Enum 

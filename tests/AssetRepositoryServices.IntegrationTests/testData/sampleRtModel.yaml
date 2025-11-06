@@ -1,0 +1,301 @@
+$schema: https://schemas.meshmakers.cloud/runtime-model.schema.json
+dependencies:
+  - AssetRepositoryIntegrationTest
+entities:
+  # Customer 1 - Residential
+  - rtId: 67000001aaaa1111bbbb0001
+    ckTypeId: AssetRepositoryIntegrationTest/Customer
+    rtWellKnownName: "CustomerMaxMustermann"
+    attributes:
+      - id: AssetRepositoryIntegrationTest/FirstName
+        value: Max
+      - id: AssetRepositoryIntegrationTest/LastName
+        value: Mustermann
+      - id: AssetRepositoryIntegrationTest/Street
+        value: Hauptstraße 42
+      - id: AssetRepositoryIntegrationTest/PostalCode
+        value: 5020
+      - id: AssetRepositoryIntegrationTest/City
+        value: Salzburg
+      - id: AssetRepositoryIntegrationTest/Country
+        value: Austria
+      - id: AssetRepositoryIntegrationTest/EMailAddress
+        value: max.mustermann@example.com
+      - id: AssetRepositoryIntegrationTest/DateOfBirth
+        value: 1985-03-15T00:00:00Z
+      - id: AssetRepositoryIntegrationTest/PhoneNumberMobile
+        value: +43 664 1234567
+
+  # Customer 2 - Residential
+  - rtId: 67000001aaaa1111bbbb0002
+    ckTypeId: AssetRepositoryIntegrationTest/Customer
+    rtWellKnownName: "CustomerAnnaMueller"
+    attributes:
+      - id: AssetRepositoryIntegrationTest/FirstName
+        value: Anna
+      - id: AssetRepositoryIntegrationTest/LastName
+        value: Müller
+      - id: AssetRepositoryIntegrationTest/Street
+        value: Linzer Straße 15
+      - id: AssetRepositoryIntegrationTest/PostalCode
+        value: 5020
+      - id: AssetRepositoryIntegrationTest/City
+        value: Salzburg
+      - id: AssetRepositoryIntegrationTest/Country
+        value: Austria
+      - id: AssetRepositoryIntegrationTest/EMailAddress
+        value: anna.mueller@example.com
+      - id: AssetRepositoryIntegrationTest/PhoneNumberMobile
+        value: +43 676 7654321
+      - id: AssetRepositoryIntegrationTest/PhoneNumberLandLine
+        value: +43 662 123456
+
+  # Customer 3 - Business
+  - rtId: 67000001aaaa1111bbbb0003
+    ckTypeId: AssetRepositoryIntegrationTest/Customer
+    rtWellKnownName: "CustomerTechGmbH"
+    attributes:
+      - id: AssetRepositoryIntegrationTest/CompanyName
+        value: Tech Solutions GmbH
+      - id: AssetRepositoryIntegrationTest/FirstName
+        value: Hans
+      - id: AssetRepositoryIntegrationTest/LastName
+        value: Schmidt
+      - id: AssetRepositoryIntegrationTest/Street
+        value: Gewerbepark 7
+      - id: AssetRepositoryIntegrationTest/PostalCode
+        value: 5023
+      - id: AssetRepositoryIntegrationTest/City
+        value: Salzburg
+      - id: AssetRepositoryIntegrationTest/Country
+        value: Austria
+      - id: AssetRepositoryIntegrationTest/EMailAddress
+        value: office@techsolutions.at
+      - id: AssetRepositoryIntegrationTest/PhoneNumberLandLine
+        value: +43 662 987654
+
+  # Customer 4 - Residential
+  - rtId: 67000001aaaa1111bbbb0004
+    ckTypeId: AssetRepositoryIntegrationTest/Customer
+    rtWellKnownName: "CustomerPeterWeber"
+    attributes:
+      - id: AssetRepositoryIntegrationTest/FirstName
+        value: Peter
+      - id: AssetRepositoryIntegrationTest/LastName
+        value: Weber
+      - id: AssetRepositoryIntegrationTest/Street
+        value: Bergstraße 88
+      - id: AssetRepositoryIntegrationTest/PostalCode
+        value: 5061
+      - id: AssetRepositoryIntegrationTest/City
+        value: Elsbethen
+      - id: AssetRepositoryIntegrationTest/Country
+        value: Austria
+      - id: AssetRepositoryIntegrationTest/EMailAddress
+        value: peter.weber@example.com
+      - id: AssetRepositoryIntegrationTest/DateOfBirth
+        value: 1978-11-22T00:00:00Z
+      - id: AssetRepositoryIntegrationTest/PhoneNumberMobile
+        value: +43 650 9876543
+
+  # Operating Facility 1 - Residential Building (owned by Max Mustermann)
+  - rtId: 67000002bbbb2222cccc0001
+    ckTypeId: AssetRepositoryIntegrationTest/OperatingFacility
+    rtWellKnownName: "FacilityHauptstrasse42"
+    attributes:
+      - id: System/Name
+        value: Wohnhaus Hauptstraße 42
+      - id: System/Description
+        value: Einfamilienhaus mit Garage
+    associations:
+      - roleId: AssetRepositoryIntegrationTest/Ownership
+        targetRtId: 67000001aaaa1111bbbb0001
+        targetCkTypeId: AssetRepositoryIntegrationTest/Customer
+
+  # Operating Facility 2 - Residential Building (owned by Anna Müller)
+  - rtId: 67000002bbbb2222cccc0002
+    ckTypeId: AssetRepositoryIntegrationTest/OperatingFacility
+    rtWellKnownName: "FacilityLinzerStrasse15"
+    attributes:
+      - id: System/Name
+        value: Wohnhaus Linzer Straße 15
+      - id: System/Description
+        value: Mehrfamilienhaus, 3 Stockwerke
+    associations:
+      - roleId: AssetRepositoryIntegrationTest/Ownership
+        targetRtId: 67000001aaaa1111bbbb0002
+        targetCkTypeId: AssetRepositoryIntegrationTest/Customer
+
+  # Operating Facility 3 - Commercial Building (owned by Tech Solutions GmbH)
+  - rtId: 67000002bbbb2222cccc0003
+    ckTypeId: AssetRepositoryIntegrationTest/OperatingFacility
+    rtWellKnownName: "FacilityGewerbepark7"
+    attributes:
+      - id: System/Name
+        value: Bürogebäude Gewerbepark 7
+      - id: System/Description
+        value: Gewerbeobjekt mit 500m² Nutzfläche
+    associations:
+      - roleId: AssetRepositoryIntegrationTest/Ownership
+        targetRtId: 67000001aaaa1111bbbb0003
+        targetCkTypeId: AssetRepositoryIntegrationTest/Customer
+
+  # Operating Facility 4 - Residential Building (owned by Peter Weber)
+  - rtId: 67000002bbbb2222cccc0004
+    ckTypeId: AssetRepositoryIntegrationTest/OperatingFacility
+    rtWellKnownName: "FacilityBergstrasse88"
+    attributes:
+      - id: System/Name
+        value: Einfamilienhaus Bergstraße 88
+      - id: System/Description
+        value: Landhaus mit Photovoltaik-Anlage
+    associations:
+      - roleId: AssetRepositoryIntegrationTest/Ownership
+        targetRtId: 67000001aaaa1111bbbb0004
+        targetCkTypeId: AssetRepositoryIntegrationTest/Customer
+
+  # Metering Point 1 - Electricity (Max Mustermann)
+  - rtId: 67000003cccc3333dddd0001
+    ckTypeId: AssetRepositoryIntegrationTest/MeteringPoint
+    rtWellKnownName: "MeteringPointAT0010001234567890"
+    attributes:
+      - id: System/Name
+        value: Stromzähler Haupteingang
+      - id: AssetRepositoryIntegrationTest/MeteringPointNumber
+        value: AT0010001234567890
+      - id: AssetRepositoryIntegrationTest/MeterReading
+        value: 45678
+      - id: AssetRepositoryIntegrationTest/OperatingStatus
+        value: 1  # OK
+    associations:
+      - roleId: System/ParentChild
+        targetRtId: 67000002bbbb2222cccc0001
+        targetCkTypeId: AssetRepositoryIntegrationTest/OperatingFacility
+
+  # Metering Point 2 - Gas (Max Mustermann)
+  - rtId: 67000003cccc3333dddd0002
+    ckTypeId: AssetRepositoryIntegrationTest/MeteringPoint
+    rtWellKnownName: "MeteringPointAT0020001234567891"
+    attributes:
+      - id: System/Name
+        value: Gaszähler Keller
+      - id: AssetRepositoryIntegrationTest/MeteringPointNumber
+        value: AT0020001234567891
+      - id: AssetRepositoryIntegrationTest/MeterReading
+        value: 12456
+      - id: AssetRepositoryIntegrationTest/OperatingStatus
+        value: 1  # OK
+    associations:
+      - roleId: System/ParentChild
+        targetRtId: 67000002bbbb2222cccc0001
+        targetCkTypeId: AssetRepositoryIntegrationTest/OperatingFacility
+
+  # Metering Point 3 - Electricity (Anna Müller - Apartment 1)
+  - rtId: 67000003cccc3333dddd0003
+    ckTypeId: AssetRepositoryIntegrationTest/MeteringPoint
+    rtWellKnownName: "MeteringPointAT0010001234567892"
+    attributes:
+      - id: System/Name
+        value: Stromzähler Wohnung 1
+      - id: AssetRepositoryIntegrationTest/MeteringPointNumber
+        value: AT0010001234567892
+      - id: AssetRepositoryIntegrationTest/MeterReading
+        value: 38920
+      - id: AssetRepositoryIntegrationTest/OperatingStatus
+        value: 1  # OK
+    associations:
+      - roleId: System/ParentChild
+        targetRtId: 67000002bbbb2222cccc0002
+        targetCkTypeId: AssetRepositoryIntegrationTest/OperatingFacility
+
+  # Metering Point 4 - Electricity (Anna Müller - Apartment 2)
+  - rtId: 67000003cccc3333dddd0004
+    ckTypeId: AssetRepositoryIntegrationTest/MeteringPoint
+    rtWellKnownName: "MeteringPointAT0010001234567893"
+    attributes:
+      - id: System/Name
+        value: Stromzähler Wohnung 2
+      - id: AssetRepositoryIntegrationTest/MeteringPointNumber
+        value: AT0010001234567893
+      - id: AssetRepositoryIntegrationTest/MeterReading
+        value: 42150
+      - id: AssetRepositoryIntegrationTest/OperatingStatus
+        value: 2  # Maintenance
+    associations:
+      - roleId: System/ParentChild
+        targetRtId: 67000002bbbb2222cccc0002
+        targetCkTypeId: AssetRepositoryIntegrationTest/OperatingFacility
+
+  # Metering Point 5 - Electricity (Tech Solutions GmbH)
+  - rtId: 67000003cccc3333dddd0005
+    ckTypeId: AssetRepositoryIntegrationTest/MeteringPoint
+    rtWellKnownName: "MeteringPointAT0010001234567894"
+    attributes:
+      - id: System/Name
+        value: Stromzähler Hauptverteiler
+      - id: AssetRepositoryIntegrationTest/MeteringPointNumber
+        value: AT0010001234567894
+      - id: AssetRepositoryIntegrationTest/MeterReading
+        value: 156789
+      - id: AssetRepositoryIntegrationTest/OperatingStatus
+        value: 1  # OK
+      - id: AssetRepositoryIntegrationTest/NetworkOperator
+        value: 0  # Unknown
+    associations:
+      - roleId: System/ParentChild
+        targetRtId: 67000002bbbb2222cccc0003
+        targetCkTypeId: AssetRepositoryIntegrationTest/OperatingFacility
+
+  # Metering Point 6 - Electricity (Peter Weber)
+  - rtId: 67000003cccc3333dddd0006
+    ckTypeId: AssetRepositoryIntegrationTest/MeteringPoint
+    rtWellKnownName: "MeteringPointAT0010001234567895"
+    attributes:
+      - id: System/Name
+        value: Stromzähler Hausanschluss
+      - id: AssetRepositoryIntegrationTest/MeteringPointNumber
+        value: AT0010001234567895
+      - id: AssetRepositoryIntegrationTest/MeterReading
+        value: 28456
+      - id: AssetRepositoryIntegrationTest/OperatingStatus
+        value: 1  # OK
+    associations:
+      - roleId: System/ParentChild
+        targetRtId: 67000002bbbb2222cccc0004
+        targetCkTypeId: AssetRepositoryIntegrationTest/OperatingFacility
+
+  # Metering Point 7 - Solar (Peter Weber - PV System)
+  - rtId: 67000003cccc3333dddd0007
+    ckTypeId: AssetRepositoryIntegrationTest/MeteringPoint
+    rtWellKnownName: "MeteringPointAT0030001234567896"
+    attributes:
+      - id: System/Name
+        value: Einspeisezähler Photovoltaik
+      - id: AssetRepositoryIntegrationTest/MeteringPointNumber
+        value: AT0030001234567896
+      - id: AssetRepositoryIntegrationTest/MeterReading
+        value: 8934
+      - id: AssetRepositoryIntegrationTest/OperatingStatus
+        value: 1  # OK
+    associations:
+      - roleId: System/ParentChild
+        targetRtId: 67000002bbbb2222cccc0004
+        targetCkTypeId: AssetRepositoryIntegrationTest/OperatingFacility
+
+  # Metering Point 8 - Water (Tech Solutions GmbH)
+  - rtId: 67000003cccc3333dddd0008
+    ckTypeId: AssetRepositoryIntegrationTest/MeteringPoint
+    rtWellKnownName: "MeteringPointAT0040001234567897"
+    attributes:
+      - id: System/Name
+        value: Wasserzähler Bürogebäude
+      - id: AssetRepositoryIntegrationTest/MeteringPointNumber
+        value: AT0040001234567897
+      - id: AssetRepositoryIntegrationTest/MeterReading
+        value: 4567
+      - id: AssetRepositoryIntegrationTest/OperatingStatus
+        value: 1  # OK
+    associations:
+      - roleId: System/ParentChild
+        targetRtId: 67000002bbbb2222cccc0003
+        targetCkTypeId: AssetRepositoryIntegrationTest/OperatingFacility

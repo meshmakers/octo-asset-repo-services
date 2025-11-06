@@ -1,0 +1,19 @@
+$schema: https://schemas.meshmakers.cloud/construction-kit-elements.schema.json
+types:
+- typeId: MeteringPoint
+  derivedFromCkTypeId: ${this}/Asset
+  indexes:
+    - indexType: "Ascending"
+      fields:
+        - attributePaths:
+            - MeteringPointNumber
+  attributes:
+  - id: ${this}/MeteringPointNumber
+    name: MeteringPointNumber
+  - id: ${this}/MeterReading
+    name: MeterReading
+  - id: ${this}/OperatingStatus
+    name: OperatingStatus
+  - id: ${this}/NetworkOperator
+    name: NetworkOperator
+    isOptional: true

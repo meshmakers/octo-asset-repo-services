@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <AssemblyName>AssetRepositoryIntegrationTestCkModel</AssemblyName>
+        <RootNamespace>AssetRepositoryIntegrationTestCkModel</RootNamespace>
+        <TargetFramework>net9.0</TargetFramework>
+        <Configurations>Debug;Release;DebugL</Configurations>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <PackageReference Include="Meshmakers.Octo.Runtime.Contracts" Version="$(OctoVersion)" />
+        <PackageReference Include="Meshmakers.Octo.ConstructionKit.SourceGeneration" OutputItemType="Analyzer" ReferenceOutputAssembly="false" Version="$(OctoVersion)" />
+        <PackageReference Include="Meshmakers.Octo.ConstructionKit.MsBuildTasks" Version="$(OctoVersion)" PrivateAssets="all" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <ConstructionKitFolder Visible="false" Include="$(MSBuildProjectDirectory)\ConstructionKit"/>
+    </ItemGroup>
+</Project>

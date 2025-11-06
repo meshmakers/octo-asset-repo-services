@@ -1,0 +1,11 @@
+$schema: https://schemas.meshmakers.cloud/construction-kit-elements.schema.json
+enums:
+- enumId: OperatingStatus
+  useFlags: false
+  values:
+  - key: 0
+    name: Unknown
+  - key: 1
+    name: OK
+  - key: 2
+    name: Maintenance

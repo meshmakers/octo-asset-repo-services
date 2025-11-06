@@ -20,6 +20,10 @@
     </PropertyGroup>
 
     <ItemGroup>
+        <InternalsVisibleTo Include="Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests" />
+    </ItemGroup>
+
+    <ItemGroup>
         <PackageReference Include="GraphQL.DataLoader" Version="8.6.0" />
         <PackageReference Include="GraphQL.MicrosoftDI" Version="8.6.0" />
         <PackageReference Include="GraphQL.Server.Transports.AspNetCore" Version="8.3.1" />
@@ -36,6 +40,7 @@
         <PackageReference Include="Meshmakers.Octo.Services.StreamData" Version="$(OctoVersion)" />
         <PackageReference Include="Meshmakers.Octo.Services.Swagger" Version="$(OctoVersion)" />
         <PackageReference Include="Meshmakers.Octo.Runtime.Engine.MongoDb" Version="$(OctoVersion)" />
+        <ProjectReference Include="..\..\tests\AssetRepositoryIntegrationTestCkModel\AssetRepositoryIntegrationTestCkModel.csproj" />
         <ProjectReference Include="..\AssetRepositoryServices.Resources\AssetRepositoryServices.Resources.csproj" />
     </ItemGroup>
 

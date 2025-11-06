@@ -16,28 +16,38 @@ This is the **Octo Asset Repository Services** - a multi-tenant ASP.NET Core 9.0
 
 ## Build and Test Commands
 
+**IMPORTANT: Always use the DebugL configuration for local development builds.**
+
 ### Build
 ```bash
 # Restore NuGet packages
 dotnet restore Octo.AssetRepServices.sln
 
-# Build solution (Release configuration)
-dotnet build Octo.AssetRepServices.sln -c Release
-
-# Build for local development (DebugL configuration uses local nuget packages at ../nuget)
+# Build solution - ALWAYS use DebugL for local development
 dotnet build Octo.AssetRepServices.sln -c DebugL
+
+# DebugL configuration:
+# - Uses version 999.0.0
+# - Uses local NuGet packages from ../nuget
+# - Preferred for all local development and testing
 ```
 
 ### Test
 ```bash
+# Run all integration tests
+dotnet test tests/AssetRepositoryServices.IntegrationTests/ -c DebugL
+
 # Run all tests except SystemTests
-dotnet test '**/*Tests.csproj' --exclude '**/*SystemTests.csproj'
+dotnet test '**/*Tests.csproj' --exclude '**/*SystemTests.csproj' -c DebugL
+
+# Run specific test class
+dotnet test --filter "FullyQualifiedName~RtEntityDeleteMutationTests" -c DebugL
 ```
 
 ### Run Locally
 ```bash
-# Run the application from the main project
-dotnet run --project src/AssetRepositoryServices/AssetRepositoryServices.csproj
+# Run the application from the main project with DebugL configuration
+dotnet run --project src/AssetRepositoryServices/AssetRepositoryServices.csproj -c DebugL
 ```
 
 ### Docker
@@ -58,9 +68,9 @@ docker build -f src/AssetRepositoryServices/Dockerfile \
   - **src/AssetRepositoryServices.Resources/** - Localized resource strings for GraphQL descriptions
 
 ### Build Configurations
+- **DebugL** - **[DEFAULT]** Local development configuration (version 999.0.0, uses local NuGet packages from ../nuget) - **ALWAYS use this for local development**
 - **Debug** - Standard debug configuration
-- **Release** - Production release configuration
-- **DebugL** - Local development configuration (version 999.0.0, uses local NuGet packages from ../nuget)
+- **Release** - Production release configuration (used by CI/CD only)
 
 ### Key Architectural Components
 

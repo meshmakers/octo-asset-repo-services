@@ -1,0 +1,24 @@
+$schema: https://schemas.meshmakers.cloud/construction-kit-elements.schema.json
+attributes:
+- id: FirstName
+  valueType: String
+- id: LastName
+  valueType: String
+- id: CompanyName
+  valueType: String  
+- id: Street
+  valueType: String
+- id: PostalCode
+  valueType: String
+- id: City
+  valueType: String
+- id: Country
+  valueType: String
+- id: EMailAddress
+  valueType: String
+- id: DateOfBirth
+  valueType: DateTime  
+- id: PhoneNumberMobile
+  valueType: String    
+- id: PhoneNumberLandLine
+  valueType: String      

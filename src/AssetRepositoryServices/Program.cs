@@ -85,3 +85,13 @@ finally
     // Ensure to flush and stop internal timers/threads before application-exit (Avoid segmentation fault on Linux)
     LogManager.Shutdown();
 }
+
+// Make the implicit Program class available to integration tests
+namespace Meshmakers.Octo.Backend.AssetRepositoryServices
+{
+    /// <summary>
+    /// Main entry point for the Asset Repository Services application.
+    /// This partial class makes the implicitly generated Program class accessible to integration tests.
+    /// </summary>
+    public partial class Program { }
+}
