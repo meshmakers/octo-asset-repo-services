@@ -186,4 +186,13 @@
     <data name="Graphql_Type_Filter_Aggregations_Description" xml:space="preserve">
         <value>Allows to define aggregations (min, max, sum, count, avg, ..) for a result set or a grouping of fields.</value>
     </data>
+    <data name="Graphql_RtEntityMutationGeneric_DeleteOperation_Description" xml:space="preserve">
+        <value>Mutation to delete runtime entities.</value>
+    </data>
+    <data name="Graphql_Arguments_Entities_Description" xml:space="preserve">
+        <value>List of entities to be manipulated.</value>
+    </data>
+    <data name="Graphql_Arguments_Options_Description" xml:space="preserve">
+        <value>Options that defines the behaviour of the operation.</value>
+    </data>
 </root>

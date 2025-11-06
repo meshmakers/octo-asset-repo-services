@@ -380,5 +380,23 @@ namespace AssetRepositoryServices.Resources {
                 return ResourceManager.GetString("Graphql_Type_Filter_Aggregations_Description", resourceCulture);
             }
         }
+        
+        public static string Graphql_RtEntityMutationGeneric_DeleteOperation_Description {
+            get {
+                return ResourceManager.GetString("Graphql_RtEntityMutationGeneric_DeleteOperation_Description", resourceCulture);
+            }
+        }
+        
+        public static string Graphql_Arguments_Entities_Description {
+            get {
+                return ResourceManager.GetString("Graphql_Arguments_Entities_Description", resourceCulture);
+            }
+        }
+        
+        public static string Graphql_Arguments_Options_Description {
+            get {
+                return ResourceManager.GetString("Graphql_Arguments_Options_Description", resourceCulture);
+            }
+        }
     }
 }

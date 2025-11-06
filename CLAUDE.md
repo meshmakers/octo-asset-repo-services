@@ -1,0 +1,168 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## Project Overview
+
+This is the **Octo Asset Repository Services** - a multi-tenant ASP.NET Core 9.0 backend service that provides GraphQL and REST API access to data products in the Octo Mesh ecosystem. The service manages runtime entities, construction kit models, and time-series stream data stored in MongoDB.
+
+**Key Technologies:**
+- .NET 9.0 (ASP.NET Core Web API)
+- GraphQL (GraphQL.NET v8.6.0) with dynamic schema generation per tenant
+- MongoDB via Octo Runtime Engine
+- Multi-tenancy with tenant-specific schemas and databases
+- Docker containerization
+- Azure Pipelines CI/CD
+
+## Build and Test Commands
+
+### Build
+```bash
+# Restore NuGet packages
+dotnet restore Octo.AssetRepServices.sln
+
+# Build solution (Release configuration)
+dotnet build Octo.AssetRepServices.sln -c Release
+
+# Build for local development (DebugL configuration uses local nuget packages at ../nuget)
+dotnet build Octo.AssetRepServices.sln -c DebugL
+```
+
+### Test
+```bash
+# Run all tests except SystemTests
+dotnet test '**/*Tests.csproj' --exclude '**/*SystemTests.csproj'
+```
+
+### Run Locally
+```bash
+# Run the application from the main project
+dotnet run --project src/AssetRepositoryServices/AssetRepositoryServices.csproj
+```
+
+### Docker
+```bash
+# Build Docker image (requires build args for private NuGet)
+docker build -f src/AssetRepositoryServices/Dockerfile \
+  --build-arg OCTO_PRIVATE_NUGET_SERVICE=<nuget-url> \
+  --build-arg OCTO_PRIVATE_NUGET_CERTIFICATE=<cert-path> \
+  --build-arg OCTO_VERSION=<version> \
+  -t octo-asset-repo-services .
+```
+
+## Project Structure and Architecture
+
+### Solution Layout
+- **Octo.AssetRepServices.sln** - Main solution file
+  - **src/AssetRepositoryServices/** - Main web service project
+  - **src/AssetRepositoryServices.Resources/** - Localized resource strings for GraphQL descriptions
+
+### Build Configurations
+- **Debug** - Standard debug configuration
+- **Release** - Production release configuration
+- **DebugL** - Local development configuration (version 999.0.0, uses local NuGet packages from ../nuget)
+
+### Key Architectural Components
+
+#### 1. Multi-Tenant GraphQL Engine
+The service dynamically generates GraphQL schemas per tenant:
+
+- **SchemaContext** (`GraphQL/Caches/SchemaContext.cs`) - Caches tenant-specific GraphQL schemas in memory (limit: 64 schemas)
+- **OctoQuery** (`GraphQL/OctoQuery.cs`) - Root query with three main sections:
+  - `ConstructionKit` - Query construction kit models (CK types, enums, attributes)
+  - `Runtime` - Query runtime entities (data instances)
+  - `StreamData` - Query time-series data (only included if stream types exist)
+- **OctoMutation** (`GraphQL/OctoMutation.cs`) - Root mutation for Runtime and ConstructionKit operations
+
+GraphQL types are dynamically created based on the tenant's construction kit model stored in MongoDB.
+
+#### 2. Multi-Tenant Request Pipeline
+- **TenantIdRouteConstraint** (`Routing/TenantIdRouteConstraint.cs`) - Routes include tenant ID
+- **TenantUserContextBuilder** (`GraphQL/RequestHandling/TenantUserContextBuilder.cs`) - Builds tenant context from HTTP request
+- **GraphQLUserContext** (`GraphQL/Utils/GraphQLUserContext.cs`) - Per-request context containing tenant info
+- **TenantDocumentExecutor** (`GraphQL/RequestHandling/TenantDocumentExecutor.cs`) - Executes GraphQL queries in tenant context
+
+#### 3. API Controllers
+Located in versioned API folders:
+
+**System APIs** (`SystemApi/v1/Controllers/`):
+- `TenantsController.cs` - Tenant management operations
+- `ModelsController.cs` - Construction kit model import/management
+- `DiagnosticsController.cs` - Health and diagnostics
+
+**Tenant APIs** (`TenantApi/v1/Controllers/`):
+- `LargeBinariesController.cs` - Binary file upload/download
+
+#### 4. Stream Data Management
+Time-series data support (`StreamData/`):
+- **StreamDataController** - REST API for stream data operations
+- **TenantManager** - Manages stream data tenant contexts
+- **StreamDataDatabaseManager** - Database operations for time-series data
+- **StreamDataTenantContext** - Per-tenant stream data context
+
+#### 5. Configuration and DI
+- **Program.cs** - Application startup with NLog, observability, authentication (JWT + OIDC)
+- **RuntimeEngineBuilderExtensions** - Configures Octo runtime engine, GraphQL, authentication
+- **OctoApplicationBuilderExtensions** - Middleware pipeline configuration
+- Configuration sections:
+  - `System` - System-level configuration
+  - `AssetRepository` - Asset repository specific settings
+
+#### 6. Dynamic Type System
+GraphQL types are generated dynamically based on Construction Kit models:
+- **RtEntityMutationGeneric** - Generic mutations for runtime entities (create, update, delete)
+- **RtEntityGenericAssociation** - Dynamic association/relationship types
+- **DynamicConnectionType** - Relay-style pagination connections
+- **DynamicEdgeType** - Relay-style edges
+- **CkTypeDtoType**, **CkAttributeDtoType**, **CkEnumDtoType** - Construction kit metadata types
+
+Delete operations support multiple strategies via `DeleteOptions`:
+- `Archive` (default) - Soft delete
+- `Permanent` - Hard delete
+
+### Important Naming Conventions
+- **Ck** prefix = Construction Kit (metadata/model definitions)
+- **Rt** prefix = Runtime (actual data instances)
+- **Dto** suffix = Data Transfer Objects
+- Types like `CkId` have been renamed to `RtCkId` in runtime model contexts
+
+### Dependencies
+External Octo services referenced via `$(OctoVersion)`:
+- `Meshmakers.Octo.Services.Infrastructure` - Core infrastructure
+- `Meshmakers.Octo.Services.Observability` - Telemetry and observability
+- `Meshmakers.Octo.Services.StreamData` - Stream data support
+- `Meshmakers.Octo.Services.Swagger` - OpenAPI/Swagger configuration
+- `Meshmakers.Octo.Runtime.Engine.MongoDb` - MongoDB runtime engine
+
+Version resolution (from `Directory.Build.props`):
+- DebugL configuration: uses version 999.0.0 and local NuGet at `$(OctoRepoRootPath)../nuget`
+- With private server: uses version 0.1.*
+- Public: uses version 3.2.*
+
+## Development Notes
+
+### When Working with GraphQL
+- Schema caching is automatic per tenant (up to 64 cached schemas)
+- Schema invalidation happens via `SchemaContext.Invalidate(tenantId)`
+- All GraphQL types must be thread-safe (they're cached and reused)
+- Use resource strings from `AssetRepositoryServices.Resources` for descriptions
+
+### When Working with Tenant Context
+- Always access tenant via `Helpers.GetTenantContext(arg.UserContext)`
+- Session management via `arg.GetSessionAccessor().Session`
+- Tenant repositories are obtained from tenant context: `tenantContext.GetTenantRepository()`
+
+### When Adding New Operations
+- Place mutations in appropriate mutation classes (RtMutation, CkMutation)
+- Use `OperationResult` and call `ResolveConnectionContextExtensions.ValidateOperationResult()` for consistency
+- Handle exceptions via `arg.HandleException(e)` in GraphQL resolvers
+
+### Authentication
+The service supports dual authentication:
+- Cookie-based authentication for GraphQL Playground
+- JWT Bearer tokens for API access
+- OIDC integration via `InfrastructureCommon.OidcAuthenticationScheme`
+
+### Configuration
+Use environment variable prefix `OCTO_` to override configuration values.
+User secrets are supported for local development (UserSecretsId: `173d8e91-b831-4e8a-a43f-672c57e6a4da`).

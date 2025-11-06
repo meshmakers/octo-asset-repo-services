@@ -17,6 +17,7 @@ internal static class Statics
     internal const string IncludeIndirectArg = "includeIndirect";
     internal const string DirectionArg = "direction";
     internal const string ValuesArg = "values";
+    internal const string OptionsArg = "options";
 
     internal const string UpdateTypesArg = "updateTypes";
     internal const string SearchFilterArg = "searchFilter";
@@ -45,9 +46,7 @@ internal static class Statics
     public const string GraphQlUpdateSuffix = "Update";
     public const string GraphQlInputSuffix = "Input";
     public const string GraphQlUpdateMessageSuffix = "Message";
-    public const string GraphQlDeletePrefix = "DeleteInput";
     public const string GraphQlUpdatePrefix = "Update";
-    public const string GraphQlCreationPrefix = "Creation";
 
     public const string GraphQlDetails = "OctoDetails";
     public const string GraphQlInvalidArguments = "ASSET1000";
