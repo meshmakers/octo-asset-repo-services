@@ -299,3 +299,81 @@ entities:
       - roleId: System/ParentChild
         targetRtId: 67000002bbbb2222cccc0003
         targetCkTypeId: AssetRepositoryIntegrationTest/OperatingFacility
+
+  # === DELETED ENTITIES ===
+
+  # Customer 5 - DELETED (Former customer, moved away)
+  - rtId: 67000001aaaa1111bbbb0005
+    ckTypeId: AssetRepositoryIntegrationTest/Customer
+    rtState: Deleted
+    rtWellKnownName: "CustomerMariaHuber"
+    attributes:
+      - id: AssetRepositoryIntegrationTest/FirstName
+        value: Maria
+      - id: AssetRepositoryIntegrationTest/LastName
+        value: Huber
+      - id: AssetRepositoryIntegrationTest/Street
+        value: Mozartstraße 99
+      - id: AssetRepositoryIntegrationTest/PostalCode
+        value: 5020
+      - id: AssetRepositoryIntegrationTest/City
+        value: Salzburg
+      - id: AssetRepositoryIntegrationTest/Country
+        value: Austria
+      - id: AssetRepositoryIntegrationTest/EMailAddress
+        value: maria.huber@example.com
+      - id: AssetRepositoryIntegrationTest/PhoneNumberMobile
+        value: +43 660 1111111
+
+  # Operating Facility 5 - DELETED (Building demolished)
+  - rtId: 67000002bbbb2222cccc0005
+    ckTypeId: AssetRepositoryIntegrationTest/OperatingFacility
+    rtState: Deleted
+    rtWellKnownName: "FacilityAltesLagerhaus"
+    attributes:
+      - id: System/Name
+        value: Altes Lagerhaus
+      - id: System/Description
+        value: Abgerissenes Lagergebäude
+    associations:
+      - roleId: AssetRepositoryIntegrationTest/Ownership
+        targetRtId: 67000001aaaa1111bbbb0005
+        targetCkTypeId: AssetRepositoryIntegrationTest/Customer
+
+  # Metering Point 9 - DELETED (Old meter, replaced)
+  - rtId: 67000003cccc3333dddd0009
+    ckTypeId: AssetRepositoryIntegrationTest/MeteringPoint
+    rtState: Deleted
+    rtWellKnownName: "MeteringPointAT0010001234567898"
+    attributes:
+      - id: System/Name
+        value: Alter Stromzähler (ersetzt)
+      - id: AssetRepositoryIntegrationTest/MeteringPointNumber
+        value: AT0010001234567898
+      - id: AssetRepositoryIntegrationTest/MeterReading
+        value: 99999
+      - id: AssetRepositoryIntegrationTest/OperatingStatus
+        value: 2
+    associations:
+      - roleId: System/ParentChild
+        targetRtId: 67000002bbbb2222cccc0005
+        targetCkTypeId: AssetRepositoryIntegrationTest/OperatingFacility
+
+  # Metering Point 10 - DELETED (Old gas meter, removed)
+  - rtId: 67000003cccc3333dddd0010
+    ckTypeId: AssetRepositoryIntegrationTest/MeteringPoint
+    rtState: Deleted
+    rtWellKnownName: "MeteringPointAT0020001234567899"
+    attributes:
+      - id: System/Name
+        value: Alter Gaszähler (ausgebaut)
+      - id: AssetRepositoryIntegrationTest/MeteringPointNumber
+        value: AT0020001234567899
+      - id: AssetRepositoryIntegrationTest/MeterReading
+        value: 88888
+      - id: AssetRepositoryIntegrationTest/OperatingStatus
+        value: 2
+    associations:
+      - roleId: System/ParentChild
+        targetRtId: 67000002bbbb2222cccc0005
+        targetCkTypeId: AssetRepositoryIntegrationTest/OperatingFacility
