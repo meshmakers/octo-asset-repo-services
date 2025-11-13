@@ -300,12 +300,12 @@ entities:
         targetRtId: 67000002bbbb2222cccc0003
         targetCkTypeId: AssetRepositoryIntegrationTest/OperatingFacility
 
-  # === DELETED ENTITIES ===
+  # === ARCHIVED ENTITIES ===
 
-  # Customer 5 - DELETED (Former customer, moved away)
+  # Customer 5 - ARCHIVED (Former customer, moved away)
   - rtId: 67000001aaaa1111bbbb0005
     ckTypeId: AssetRepositoryIntegrationTest/Customer
-    rtState: Deleted
+    rtState: Archived
     rtWellKnownName: "CustomerMariaHuber"
     attributes:
       - id: AssetRepositoryIntegrationTest/FirstName
@@ -325,10 +325,10 @@ entities:
       - id: AssetRepositoryIntegrationTest/PhoneNumberMobile
         value: +43 660 1111111
 
-  # Operating Facility 5 - DELETED (Building demolished)
+  # Operating Facility 5 - ARCHIVED (Building demolished)
   - rtId: 67000002bbbb2222cccc0005
     ckTypeId: AssetRepositoryIntegrationTest/OperatingFacility
-    rtState: Deleted
+    rtState: Archived
     rtWellKnownName: "FacilityAltesLagerhaus"
     attributes:
       - id: System/Name
@@ -340,10 +340,10 @@ entities:
         targetRtId: 67000001aaaa1111bbbb0005
         targetCkTypeId: AssetRepositoryIntegrationTest/Customer
 
-  # Metering Point 9 - DELETED (Old meter, replaced)
+  # Metering Point 9 - ARCHIVED (Old meter, replaced)
   - rtId: 67000003cccc3333dddd0009
     ckTypeId: AssetRepositoryIntegrationTest/MeteringPoint
-    rtState: Deleted
+    rtState: Archived
     rtWellKnownName: "MeteringPointAT0010001234567898"
     attributes:
       - id: System/Name
@@ -359,10 +359,10 @@ entities:
         targetRtId: 67000002bbbb2222cccc0005
         targetCkTypeId: AssetRepositoryIntegrationTest/OperatingFacility
 
-  # Metering Point 10 - DELETED (Old gas meter, removed)
+  # Metering Point 10 - ARCHIVED (Old gas meter, removed)
   - rtId: 67000003cccc3333dddd0010
     ckTypeId: AssetRepositoryIntegrationTest/MeteringPoint
-    rtState: Deleted
+    rtState: Archived
     rtWellKnownName: "MeteringPointAT0020001234567899"
     attributes:
       - id: System/Name
