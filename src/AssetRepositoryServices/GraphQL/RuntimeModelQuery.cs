@@ -25,6 +25,7 @@ internal sealed class RuntimeModelQuery : ObjectGraphType
 
         Connection<RtEntityGenericDtoType>("RuntimeEntities")
             .Argument<StringGraphType>(Statics.CkIdArg, "The construction kit type with the given id.")
+            .Argument<GlobalQueryOptionsDtoType>(Statics.OptionsArg, "Global options to apply to the query, for example to include archived items.")
             .Argument<OctoObjectIdType>(Statics.RtIdArg, "Returns the entity with the given rtId.")
             .Argument<ListGraphType<OctoObjectIdType>>(Statics.RtIdsArg,
                 "Returns entities with the given rtIds.")
@@ -56,6 +57,7 @@ internal sealed class RuntimeModelQuery : ObjectGraphType
         {
             this.Connection<object?, IGraphType, RtEntityDto>(graphTypesCache, rtEntityDtoType, rtEntityDtoType.Name)
                 .AddMetadata(Statics.CkId, rtEntityDtoType.CkTypeId.ToRtCkId())
+                .Argument<GlobalQueryOptionsDtoType>(Statics.OptionsArg, "Global options to apply to the query, for example to include archived items.")
                 .Argument<OctoObjectIdType>(Statics.RtIdArg, "Returns the entity with the given rtId.")
                 .Argument<ListGraphType<OctoObjectIdType>>(Statics.RtIdsArg,
                     "Returns entities with the given rtIds.")
@@ -94,11 +96,11 @@ internal sealed class RuntimeModelQuery : ObjectGraphType
         var selectedTypeQueryColumns = typeQueryColumnPaths
             .Where(ckTypeQueryColumn => columnPathList.Contains(ckTypeQueryColumn.Path)).ToList();
 
-        var dataQueryOperation = arg.GetDataQueryOperation();
+        var queryOptions = arg.GetQueryOptions();
 
         _logger.LogDebug("GraphQL query handling returning data");
         return ConnectionUtils.ToConnection(
-            [RtTransientQueryDtoType.CreateTransientRtQueryDto(ckTypeId, dataQueryOperation, selectedTypeQueryColumns)],
+            [RtTransientQueryDtoType.CreateTransientRtQueryDto(ckTypeId, queryOptions, selectedTypeQueryColumns)],
             arg,
             0, 1);
     }
@@ -160,7 +162,7 @@ internal sealed class RuntimeModelQuery : ObjectGraphType
             var ckTypeId = arg.GetArgument<RtCkId<CkTypeId>>(Statics.CkId);
 
             var offset = arg.GetOffset();
-            var dataQueryOperation = arg.GetDataQueryOperation();
+            var queryOptions = arg.GetQueryOptions();
 
             var keysList = new List<OctoObjectId>();
             if (arg.TryGetArgument(Statics.RtIdArg, out OctoObjectId? rtId))
@@ -184,7 +186,7 @@ internal sealed class RuntimeModelQuery : ObjectGraphType
             if (keysList.Any())
             {
                 var resultSetIds = await tenantRepository.GetRtEntitiesByIdAsync(
-                    sessionAccessor.Session, ckTypeId, keysList, dataQueryOperation,
+                    sessionAccessor.Session, ckTypeId, keysList, queryOptions,
                     offset, arg.First);
 
                 _logger.LogDebug("GraphQL query handling returning data by keys");
@@ -194,7 +196,7 @@ internal sealed class RuntimeModelQuery : ObjectGraphType
             }
 
             var resultSet = await tenantRepository.GetRtEntitiesByTypeAsync(sessionAccessor.Session,
-                ckTypeId, dataQueryOperation, offset,
+                ckTypeId, queryOptions, offset,
                 arg.First);
 
             _logger.LogDebug("GraphQL query handling returning data");
@@ -220,7 +222,7 @@ internal sealed class RuntimeModelQuery : ObjectGraphType
             var ckTypeId = arg.GetMetadataValue<RtCkId<CkTypeId>>(Statics.CkId);
 
             var offset = arg.GetOffset();
-            var dataQueryOperation = arg.GetDataQueryOperation();
+            var rtEntityQueryOptions = arg.GetQueryOptions();
 
             var keysList = new List<OctoObjectId>();
             if (arg.TryGetArgument(Statics.RtIdArg, out OctoObjectId? rtId))
@@ -245,7 +247,7 @@ internal sealed class RuntimeModelQuery : ObjectGraphType
             {
                 var resultSetIds =
                     await tenantRepository.GetRtEntitiesByIdAsync(
-                        sessionAccessor.Session, ckTypeId, keysList, dataQueryOperation,
+                        sessionAccessor.Session, ckTypeId, keysList, rtEntityQueryOptions,
                         offset, arg.First);
 
                 _logger.LogDebug("GraphQL query handling returning data by keys");
@@ -256,7 +258,7 @@ internal sealed class RuntimeModelQuery : ObjectGraphType
 
             var resultSet =
                 await tenantRepository.GetRtEntitiesByTypeAsync(sessionAccessor.Session,
-                    ckTypeId, dataQueryOperation, offset,
+                    ckTypeId, rtEntityQueryOptions, offset,
                     arg.First);
 
             _logger.LogDebug("GraphQL query handling returning data");

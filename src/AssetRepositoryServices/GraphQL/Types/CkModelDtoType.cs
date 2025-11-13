@@ -89,7 +89,7 @@ internal sealed class CkModelDtoType : ObjectGraphType<CkModelDto>
         graphQlUserContext = (GraphQlUserContext)arg.UserContext;
 
         offset = arg.GetOffset();
-        queryOptions = arg.GetDataQueryOperation();
+        queryOptions = arg.GetQueryOptions();
 
         keysList = new List<CkId<TKey>>();
         if (arg.TryGetArgument(Statics.CkIdsArg, null, out IEnumerable<string>? keys))
@@ -147,7 +147,7 @@ internal sealed class CkModelDtoType : ObjectGraphType<CkModelDto>
             _logger.LogDebug("GraphQL query handling of construction kit types started");
 
             if (!GetParameter<CkTypeId>(arg, out var sessionAccessor, out var graphQlUserContext, out var offset,
-                    out var dataQueryOperation, out var keysList))
+                    out var queryOptions, out var keysList))
             {
                 return ConnectionUtils.ToConnection(new List<CkTypeDto>(), arg);
             }
@@ -157,12 +157,12 @@ internal sealed class CkModelDtoType : ObjectGraphType<CkModelDto>
                 throw AssetRepositoryException.SessionUnavailable();
             }
 
-            dataQueryOperation.FieldEquals(nameof(CkType.CkModelId), arg.Source.Id);
+            queryOptions.FieldEquals(nameof(CkType.CkModelId), arg.Source.Id);
 
             var tenantRepository = graphQlUserContext.TenantContext.GetTenantRepository();
             var resultSet =
                 await tenantRepository.GetCkTypeAsync(sessionAccessor.Session, null,
-                    keysList, dataQueryOperation, offset, arg.First);
+                    keysList, queryOptions, offset, arg.First);
 
             _logger.LogDebug("GraphQL query handling returning data for construction kit types");
             return ConnectionUtils.ToConnection(resultSet.Items.Select(CkTypeDtoType.CreateCkTypeDto), arg,
@@ -182,7 +182,7 @@ internal sealed class CkModelDtoType : ObjectGraphType<CkModelDto>
             _logger.LogDebug("GraphQL query handling of construction kit attributes started");
 
             if (!GetParameter<CkAttributeId>(arg, out var sessionAccessor, out var graphQlUserContext, out var offset,
-                    out var dataQueryOperation, out var keysList))
+                    out var queryOptions, out var keysList))
             {
                 return ConnectionUtils.ToConnection(new List<CkAttributeDto>(), arg);
             }
@@ -192,12 +192,12 @@ internal sealed class CkModelDtoType : ObjectGraphType<CkModelDto>
                 throw AssetRepositoryException.SessionUnavailable();
             }
 
-            dataQueryOperation.FieldEquals(nameof(CkAttribute.CkModelId), arg.Source.Id);
+            queryOptions.FieldEquals(nameof(CkAttribute.CkModelId), arg.Source.Id);
 
             var tenantRepository = graphQlUserContext.TenantContext.GetTenantRepository();
             var resultSet =
                 await tenantRepository.GetCkAttributesAsync(sessionAccessor.Session, null,
-                    keysList, dataQueryOperation, offset, arg.First);
+                    keysList, queryOptions, offset, arg.First);
 
             _logger.LogDebug("GraphQL query handling returning data for construction kit attribute");
             return ConnectionUtils.ToConnection(resultSet.Items.Select(CkAttributeDtoType.CreateCkAttributeDto), arg,
@@ -217,7 +217,7 @@ internal sealed class CkModelDtoType : ObjectGraphType<CkModelDto>
             _logger.LogDebug("GraphQL query handling of construction kit enums started");
 
             if (!GetParameter<CkEnumId>(arg, out var sessionAccessor, out var graphQlUserContext, out var offset,
-                    out var dataQueryOperation, out var keysList))
+                    out var queryOptions, out var keysList))
             {
                 return ConnectionUtils.ToConnection(new List<CkEnumDto>(), arg);
             }
@@ -227,12 +227,12 @@ internal sealed class CkModelDtoType : ObjectGraphType<CkModelDto>
                 throw AssetRepositoryException.SessionUnavailable();
             }
 
-            dataQueryOperation.FieldEquals(nameof(CkAttribute.CkModelId), arg.Source.Id);
+            queryOptions.FieldEquals(nameof(CkAttribute.CkModelId), arg.Source.Id);
 
             var tenantRepository = graphQlUserContext.TenantContext.GetTenantRepository();
             var resultSet =
                 await tenantRepository.GetCkEnumAsync(sessionAccessor.Session, null,
-                    keysList, dataQueryOperation, offset, arg.First);
+                    keysList, queryOptions, offset, arg.First);
 
             _logger.LogDebug("GraphQL query handling returning data for construction kit enums");
             return ConnectionUtils.ToConnection(resultSet.Items.Select(CkEnumDtoType.CreateCkEnumDto), arg,
@@ -252,7 +252,7 @@ internal sealed class CkModelDtoType : ObjectGraphType<CkModelDto>
             _logger.LogDebug("GraphQL query handling of construction kit records started");
 
             if (!GetParameter<CkRecordId>(arg, out var sessionAccessor, out var graphQlUserContext, out var offset,
-                    out var dataQueryOperation, out var keysList))
+                    out var queryOptions, out var keysList))
             {
                 return ConnectionUtils.ToConnection(new List<CkRecordDto>(), arg);
             }
@@ -262,12 +262,12 @@ internal sealed class CkModelDtoType : ObjectGraphType<CkModelDto>
                 throw AssetRepositoryException.SessionUnavailable();
             }
 
-            dataQueryOperation.FieldEquals(nameof(CkAttribute.CkModelId), arg.Source.Id);
+            queryOptions.FieldEquals(nameof(CkAttribute.CkModelId), arg.Source.Id);
 
             var tenantRepository = graphQlUserContext.TenantContext.GetTenantRepository();
             var resultSet =
                 await tenantRepository.GetCkRecordAsync(sessionAccessor.Session, null,
-                    keysList, dataQueryOperation, offset, arg.First);
+                    keysList, queryOptions, offset, arg.First);
 
             _logger.LogDebug("GraphQL query handling returning data for construction kit records");
             return ConnectionUtils.ToConnection(resultSet.Items.Select(CkRecordDtoType.CreateCkRecordDto), arg,

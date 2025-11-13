@@ -188,27 +188,32 @@ internal static class ResolveConnectionContextExtensions
         return false;
     }
 
-    internal static RtEntityQueryOptions GetDataQueryOperation<TEntity>(this IResolveConnectionContext<TEntity> ctx,
+    internal static RtEntityQueryOptions GetQueryOptions<TEntity>(this IResolveConnectionContext<TEntity> ctx,
         RtEntityQueryOptions? operation = null)
     {
-        var dataQueryOperation = operation ?? RtEntityQueryOptions.Create();
+        var queryOptions = operation ?? RtEntityQueryOptions.Create();
+
+        if (ctx.TryGetArgument(Statics.OptionsArg, out GlobalQueryOptionsDto? queryOptionsDto))
+        {
+            queryOptions.Global(queryOptionsDto.IncludeArchivedEntities ?? false);
+        }
 
         if (ctx.TryGetArgument(Statics.SearchFilterArg, out SearchFilterDto? filterDto))
         {
-            dataQueryOperation = dataQueryOperation.UseLanguage(filterDto.Language ?? "en");
+            queryOptions = queryOptions.UseLanguage(filterDto.Language ?? "en");
             if (filterDto.Type == null || filterDto.Type == SearchFilterTypesDto.TextSearch)
             {
                 ArgumentValidation.ValidateString(nameof(filterDto.Language), filterDto.Language);
 
                 if (filterDto.SearchTerm != null)
                 {
-                    dataQueryOperation = dataQueryOperation.TextSearch(filterDto.SearchTerm);
+                    queryOptions = queryOptions.TextSearch(filterDto.SearchTerm);
                 }
             }
             else if (filterDto.AttributePaths != null && filterDto.SearchTerm != null)
             {
-                dataQueryOperation =
-                    dataQueryOperation.AttributeSearch(filterDto.AttributePaths, filterDto.SearchTerm);
+                queryOptions =
+                    queryOptions.AttributeSearch(filterDto.AttributePaths, filterDto.SearchTerm);
             }
         }
 
@@ -216,7 +221,7 @@ internal static class ResolveConnectionContextExtensions
         {
             foreach (var fieldFilterDto in fieldFilterDtoList)
             {
-                dataQueryOperation = dataQueryOperation.FieldFilter(fieldFilterDto.AttributePath,
+                queryOptions = queryOptions.FieldFilter(fieldFilterDto.AttributePath,
                     (FieldFilterOperator)fieldFilterDto.Operator, fieldFilterDto.ComparisonValue);
             }
         }
@@ -225,16 +230,16 @@ internal static class ResolveConnectionContextExtensions
         {
             foreach (var sortDto in sortDtos)
             {
-                dataQueryOperation = dataQueryOperation.SortOrder(sortDto.AttributePath,
+                queryOptions = queryOptions.SortOrder(sortDto.AttributePath,
                     (SortOrders)sortDto.SortOrder);
             }
         }
 
         if (ctx.TryGetArgument(Statics.AggregationsArg, out ResultAggregationInputDto? resultAggregationInputDto))
         {
-            GetFieldAggregation(resultAggregationInputDto.GroupBy, dataQueryOperation);
+            GetFieldAggregation(resultAggregationInputDto.GroupBy, queryOptions);
 
-            var aggregateResult = dataQueryOperation.AggregateResult();
+            var aggregateResult = queryOptions.AggregateResult();
             if (resultAggregationInputDto.CountAttributePaths != null)
             {
                 aggregateResult.CountAttributePaths(resultAggregationInputDto.CountAttributePaths.ToArray());
@@ -265,11 +270,11 @@ internal static class ResolveConnectionContextExtensions
         {
             var point = new Point(new Position(nearGeospatialFilterDto.Point.Coordinates.Latitude,
                 nearGeospatialFilterDto.Point.Coordinates.Longitude));
-            dataQueryOperation.NearGeospatialFilter(nearGeospatialFilterDto.AttributeName, point,
+            queryOptions.NearGeospatialFilter(nearGeospatialFilterDto.AttributeName, point,
                 nearGeospatialFilterDto.MinDistance, nearGeospatialFilterDto.MaxDistance);
         }
 
-        return dataQueryOperation;
+        return queryOptions;
     }
 
     private static void GetFieldAggregation(FieldGroupByAggregationInputDto? fieldAggregationInputDto,

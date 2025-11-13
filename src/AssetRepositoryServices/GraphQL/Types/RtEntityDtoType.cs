@@ -140,7 +140,7 @@ internal sealed class RtEntityDtoType : ObjectGraphType<RtEntityDto>
             var graphQlUserContext = (GraphQlUserContext)arg.UserContext;
 
             var offset = arg.GetOffset();
-            var dataQueryOperation = arg.GetDataQueryOperation();
+            var queryOptions = arg.GetQueryOptions();
 
             if (!arg.TryGetArgument(Statics.IncludeIndirectArg, out bool? indirectAssociations))
             {
@@ -159,7 +159,7 @@ internal sealed class RtEntityDtoType : ObjectGraphType<RtEntityDto>
                 var result = await tenantRepository.GetIndirectRtAssociationTargetsAsync(
                     sessionAccessor.Session, [arg.Source.RtId], CkTypeId.ToRtCkId(), roleId,
                     direction,
-                    null, targetCkId, dataQueryOperation, offset, arg.First);
+                    null, targetCkId, queryOptions, offset, arg.First);
 
                 return ConnectionUtils.ToConnection(result.First().Value.Items.Select(CreateRtEntityDto), arg);
             }
@@ -168,7 +168,7 @@ internal sealed class RtEntityDtoType : ObjectGraphType<RtEntityDto>
                 var result = await tenantRepository.GetRtAssociationTargetsAsync(
                     sessionAccessor.Session, [arg.Source.RtId], CkTypeId.ToRtCkId(), roleId,
                     targetCkId, direction,
-                    null, dataQueryOperation, offset, arg.First);
+                    null, queryOptions, offset, arg.First);
 
                 return ConnectionUtils.ToConnection(result.First().Value.Items.Select(CreateRtEntityDto), arg);
             }

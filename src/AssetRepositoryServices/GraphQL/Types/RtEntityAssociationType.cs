@@ -58,7 +58,7 @@ internal class RtEntityAssociationType : ObjectGraphType
     {
         var targetCkId = ctx.GetMetadataValue<RtCkId<CkTypeId>>(Statics.CkId);
         var offset = ctx.GetOffset();
-        var dataQueryOperation = ctx.GetDataQueryOperation();
+        var queryOptions = ctx.GetQueryOptions();
 
         ctx.TryGetArgument(Statics.RtIdArg, out OctoObjectId? key);
         ctx.TryGetArgument(Statics.RtIdsArg, null, out IEnumerable<OctoObjectId>? keys);
@@ -83,7 +83,7 @@ internal class RtEntityAssociationType : ObjectGraphType
             $"Get{_originCkId}_{targetCkId}_{_roleId}_{_graphDirection}", async rtIds =>
                 await tenantRepository.GetRtAssociationTargetsAsync(sessionAccessor.Session,
                     rtIds.Select(x => x.RtId), _originCkId, _roleId, targetCkId, _graphDirection, keysList,
-                    dataQueryOperation, offset, ctx.First)
+                    queryOptions, offset, ctx.First)
         );
 
         var dataLoaderResult = loader.LoadAsync(ctx.Source.ToRtEntityId());

@@ -35,6 +35,18 @@ internal sealed class RtQueryDtoType : ObjectGraphType<RtQueryDto>
         Field(d => d.Columns, typeof(NonNullGraphType<ListGraphType<NonNullGraphType<RtQueryColumnType>>>));
 
         Connection<NonNullGraphType<RtQueryRowDtoType>>("Rows")
+            .Argument<GlobalQueryOptionsDtoType>(Statics.OptionsArg, "Global options to apply to the query, for example to include archived items.")
+            .Argument<OctoObjectIdType>(Statics.RtIdArg, "Returns the entity with the given rtId.")
+            .Argument<ListGraphType<OctoObjectIdType>>(Statics.RtIdsArg,
+                "Returns entities with the given rtIds.")
+            .Argument<SearchFilterDtoType>(Statics.SearchFilterArg, "Filters items based on text search")
+            .Argument<ResultAggregationInputDtoType>(Statics.AggregationsArg,
+                AssetTexts.Graphql_Type_Filter_Aggregations_Description)
+            .Argument<ListGraphType<SortDtoType>>(Statics.SortOrderArg, "Sort order for items")
+            .Argument<NearGeospatialFilterDtoType>(Statics.GeoNearFilterArg,
+                "Geospatial filter for items, that searches for items near a point")
+            .Argument<ListGraphType<FieldFilterDtoType>>(Statics.FieldFilterArg,
+                "Filters items based on field compare")
             .ResolveAsync(ResolveRtQueryRowsAsync);
         Connection<NonNullGraphType<QueryAggregationResultType>>("Aggregations")
             .Argument<NonNullGraphType<ResultAggregationInputDtoType>>(Statics.AggregationsArg,
@@ -61,14 +73,14 @@ internal sealed class RtQueryDtoType : ObjectGraphType<RtQueryDto>
             var tenantRepository = graphQlUserContext.TenantContext.GetTenantRepository();
 
             var offset = context.GetOffset();
-            var dataQueryOperation = context.GetDataQueryOperation();
+            var queryOptions = context.GetQueryOptions();
 
             var roleIdDirectionPairs = RtPathEvaluator.TokenizeAndGetNavigationPairsByRtCkId(ckCacheService,
                 tenantRepository.TenantId, rtQueryDto.AssociatedCkTypeId,
                 rtQueryDto.Columns.Select(column => column.AttributePath));
 
             var resultSet = await tenantRepository.GetRtEntitiesGraphByTypeAsync(sessionAccessor.Session,
-                rtQueryDto.AssociatedCkTypeId, dataQueryOperation, roleIdDirectionPairs, offset,
+                rtQueryDto.AssociatedCkTypeId, queryOptions, roleIdDirectionPairs, offset,
                 context.First);
 
             if (resultSet.AggregationResult == null)
@@ -120,14 +132,14 @@ internal sealed class RtQueryDtoType : ObjectGraphType<RtQueryDto>
             var tenantRepository = graphQlUserContext.TenantContext.GetTenantRepository();
 
             var offset = context.GetOffset();
-            var dataQueryOperation = context.GetDataQueryOperation();
+            var queryOptions = context.GetQueryOptions();
 
             var roleIdDirectionPairs = RtPathEvaluator.TokenizeAndGetNavigationPairsByRtCkId(ckCacheService,
                 tenantRepository.TenantId, rtQueryDto.AssociatedCkTypeId,
                 rtQueryDto.Columns.Select(column => column.AttributePath));
 
             var resultSet = await tenantRepository.GetRtEntitiesGraphByTypeAsync(sessionAccessor.Session,
-                rtQueryDto.AssociatedCkTypeId, dataQueryOperation, roleIdDirectionPairs, offset,
+                rtQueryDto.AssociatedCkTypeId, queryOptions, roleIdDirectionPairs, offset,
                 context.First);
 
             _logger.LogDebug("GraphQL query handling returning data");

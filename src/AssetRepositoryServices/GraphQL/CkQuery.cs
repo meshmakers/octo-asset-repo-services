@@ -84,7 +84,7 @@ internal sealed class CkQuery : ObjectGraphType
             var graphQlUserContext = (GraphQlUserContext)arg.UserContext;
 
             var offset = arg.GetOffset();
-            var dataQueryOperation = arg.GetDataQueryOperation();
+            var queryOptions = arg.GetQueryOptions();
 
             var keysList = new List<CkModelId>();
             if (arg.TryGetArgument(Statics.CkIdArg, out string? key))
@@ -107,7 +107,7 @@ internal sealed class CkQuery : ObjectGraphType
             var tenantRepository = graphQlUserContext.TenantContext.GetTenantRepository();
             var resultSet =
                 await tenantRepository.GetCkModelsAsync(sessionAccessor.Session,
-                    keysList, dataQueryOperation, offset, arg.First);
+                    keysList, queryOptions, offset, arg.First);
 
             _logger.LogDebug("GraphQL query handling returning data for construction kit models");
             return ConnectionUtils.ToConnection(resultSet.Items.Select(CkModelDtoType.CreateCkModelDto), arg,
@@ -131,7 +131,7 @@ internal sealed class CkQuery : ObjectGraphType
             var graphQlUserContext = (GraphQlUserContext)arg.UserContext;
 
             var offset = arg.GetOffset();
-            var dataQueryOperation = arg.GetDataQueryOperation();
+            var queryOptions = arg.GetQueryOptions();
 
             var modelIdList = new List<CkModelId>();
             if (arg.TryGetArgument(Statics.CkModelIds, null, out IEnumerable<string>? modelIds))
@@ -160,7 +160,7 @@ internal sealed class CkQuery : ObjectGraphType
             var tenantRepository = graphQlUserContext.TenantContext.GetTenantRepository();
             var resultSet =
                 await tenantRepository.GetCkRecordAsync(sessionAccessor.Session, modelIdList,
-                    keysList, dataQueryOperation, offset, arg.First);
+                    keysList, queryOptions, offset, arg.First);
 
             _logger.LogDebug("GraphQL query handling returning data for construction kit records");
             return ConnectionUtils.ToConnection(resultSet.Items.Select(CkRecordDtoType.CreateCkRecordDto), arg,
@@ -183,7 +183,7 @@ internal sealed class CkQuery : ObjectGraphType
             var graphQlUserContext = (GraphQlUserContext)arg.UserContext;
 
             var offset = arg.GetOffset();
-            var dataQueryOperation = arg.GetDataQueryOperation();
+            var queryOptions = arg.GetQueryOptions();
 
             var modelIdList = new List<CkModelId>();
             if (arg.TryGetArgument(Statics.CkModelIds, null, out IEnumerable<string>? modelIds))
@@ -212,7 +212,7 @@ internal sealed class CkQuery : ObjectGraphType
             var tenantRepository = graphQlUserContext.TenantContext.GetTenantRepository();
             var resultSet =
                 await tenantRepository.GetCkEnumAsync(sessionAccessor.Session, modelIdList,
-                    keysList, dataQueryOperation, offset, arg.First);
+                    keysList, queryOptions, offset, arg.First);
 
             _logger.LogDebug("GraphQL query handling returning data for construction kit enums");
             return ConnectionUtils.ToConnection(resultSet.Items.Select(CkEnumDtoType.CreateCkEnumDto), arg,
@@ -235,7 +235,7 @@ internal sealed class CkQuery : ObjectGraphType
             var graphQlUserContext = (GraphQlUserContext)arg.UserContext;
 
             var offset = arg.GetOffset();
-            var dataQueryOperation = arg.GetDataQueryOperation();
+            var queryOptions = arg.GetQueryOptions();
 
             var modelIdList = new List<CkModelId>();
             if (arg.TryGetArgument(Statics.CkModelIds, null, out IEnumerable<string>? modelIds))
@@ -264,7 +264,7 @@ internal sealed class CkQuery : ObjectGraphType
             var tenantRepository = graphQlUserContext.TenantContext.GetTenantRepository();
             var resultSet =
                 await tenantRepository.GetCkTypeAsync(sessionAccessor.Session, modelIdList,
-                    keysList, dataQueryOperation, offset, arg.First);
+                    keysList, queryOptions, offset, arg.First);
 
             _logger.LogDebug("GraphQL query handling returning data for construction kit entities");
             return ConnectionUtils.ToConnection(resultSet.Items.Select(CkTypeDtoType.CreateCkTypeDto), arg,
@@ -287,7 +287,7 @@ internal sealed class CkQuery : ObjectGraphType
             var graphQlUserContext = (GraphQlUserContext)arg.UserContext;
 
             var offset = arg.GetOffset();
-            var dataQueryOperation = arg.GetDataQueryOperation();
+            var queryOptions = arg.GetQueryOptions();
 
             var modelIdList = new List<CkModelId>();
             if (arg.TryGetArgument(Statics.CkModelIds, null, out IEnumerable<string>? modelIds))
@@ -316,7 +316,7 @@ internal sealed class CkQuery : ObjectGraphType
             var tenantRepository = graphQlUserContext.TenantContext.GetTenantRepository();
             var resultSet =
                 await tenantRepository.GetCkAttributesAsync(sessionAccessor.Session, modelIdList,
-                    keysList, dataQueryOperation, offset, arg.First);
+                    keysList, queryOptions, offset, arg.First);
 
             _logger.LogDebug("GraphQL query handling returning data for construction kit attributes");
             return ConnectionUtils.ToConnection(resultSet.Items.Select(CkAttributeDtoType.CreateCkAttributeDto), arg,

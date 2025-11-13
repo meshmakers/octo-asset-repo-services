@@ -104,7 +104,7 @@ public sealed class RtEntityGenericAssociationType : ObjectGraphType<RtEntityGen
         var graphQlUserContext = (GraphQlUserContext)ctx.UserContext;
 
         var offset = ctx.GetOffset();
-        var dataQueryOperation = ctx.GetDataQueryOperation();
+        var queryOptions = ctx.GetQueryOptions();
 
         if (!ctx.TryGetArgument(Statics.IncludeIndirectArg, out bool? indirectAssociations))
         {
@@ -125,7 +125,7 @@ public sealed class RtEntityGenericAssociationType : ObjectGraphType<RtEntityGen
                         sessionAccessor.Session, rtEntityIds.Select(x => x.RtId), ctx.Source.RtEntityDto.CkTypeId,
                         new RtCkId<CkAssociationRoleId>(roleId),
                         direction,
-                        null, targetCkId, dataQueryOperation, offset, ctx.First));
+                        null, targetCkId, queryOptions, offset, ctx.First));
 
             var dataLoaderResult = loader.LoadAsync(ctx.Source.RtEntityDto.ToRtEntityId());
 
@@ -141,7 +141,7 @@ public sealed class RtEntityGenericAssociationType : ObjectGraphType<RtEntityGen
                         sessionAccessor.Session, rtEntityIds.Select(x => x.RtId), ctx.Source.RtEntityDto.CkTypeId,
                         new RtCkId<CkAssociationRoleId>(roleId),
                         targetCkId, direction,
-                        null, dataQueryOperation, offset, ctx.First));
+                        null, queryOptions, offset, ctx.First));
 
             var dataLoaderResult = loader.LoadAsync(ctx.Source.RtEntityDto.ToRtEntityId());
 

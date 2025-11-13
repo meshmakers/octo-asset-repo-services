@@ -62,14 +62,14 @@ internal sealed class RtTransientQueryDtoType : ObjectGraphType<RtTransientQuery
             var tenantRepository = graphQlUserContext.TenantContext.GetTenantRepository();
 
             var offset = context.GetOffset();
-            var dataQueryOperation = context.GetDataQueryOperation(queryUserContext.QueryOptions);
+            var queryOptions = context.GetQueryOptions(queryUserContext.QueryOptions);
 
             var roleIdDirectionPairs = RtPathEvaluator.TokenizeAndGetNavigationPairsByRtCkId(ckCacheService,
                 tenantRepository.TenantId, rtTransientQueryDto.AssociatedCkTypeId,
                 rtTransientQueryDto.Columns.Select(column => column.AttributePath));
 
             var resultSet = await tenantRepository.GetRtEntitiesGraphByTypeAsync(sessionAccessor.Session,
-                rtTransientQueryDto.AssociatedCkTypeId, dataQueryOperation,
+                rtTransientQueryDto.AssociatedCkTypeId, queryOptions,
                 roleIdDirectionPairs, offset, context.First);
 
             if (resultSet.AggregationResult == null)
