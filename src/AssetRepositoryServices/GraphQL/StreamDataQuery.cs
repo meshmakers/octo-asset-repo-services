@@ -47,10 +47,10 @@ internal sealed class StreamDataQuery : ObjectGraphType
             var fieldContext = FieldContext.FromContext(arg);
 
             var ckCacheService = arg.GetCkCacheService();
-            var ckTypeId = arg.GetMetadataValue<CkId<CkTypeId>>(Statics.CkId);
+            var ckTypeId = arg.GetMetadataValue<RtCkId<CkTypeId>>(Statics.CkId);
             var graphQlUserContext = (GraphQlUserContext)arg.UserContext;
             var tenantId = graphQlUserContext.TenantId;
-            var requestedType = ckCacheService.GetCkType(tenantId, ckTypeId);
+            var requestedType = ckCacheService.GetRtCkType(tenantId, ckTypeId);
 
             var q = new CrateQueryBuilder(tenantId);
             q.IncludeDefaultVariables();
