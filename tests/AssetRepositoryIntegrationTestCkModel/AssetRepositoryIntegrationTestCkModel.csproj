@@ -3,7 +3,6 @@
     <PropertyGroup>
         <AssemblyName>AssetRepositoryIntegrationTestCkModel</AssemblyName>
         <RootNamespace>AssetRepositoryIntegrationTestCkModel</RootNamespace>
-        <TargetFramework>net9.0</TargetFramework>
         <Configurations>Debug;Release;DebugL</Configurations>
     </PropertyGroup>
 

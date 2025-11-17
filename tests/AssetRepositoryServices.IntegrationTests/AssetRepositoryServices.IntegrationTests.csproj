@@ -3,9 +3,6 @@
     <PropertyGroup>
         <AssemblyName>Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests</AssemblyName>
         <RootNamespace>Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests</RootNamespace>
-        <TargetFramework>net9.0</TargetFramework>
-        <ImplicitUsings>enable</ImplicitUsings>
-        <Nullable>enable</Nullable>
         <IsPackable>false</IsPackable>
         <IsTestProject>true</IsTestProject>
         <Configurations>Debug;Release;DebugL</Configurations>
@@ -14,12 +11,12 @@
 
     <ItemGroup>
         <PackageReference Include="FakeItEasy" Version="8.3.0" />
-        <PackageReference Include="MartinCostello.Logging.XUnit.v3" Version="0.6.0" />
-        <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" Version="9.0.10" />
-        <PackageReference Include="Microsoft.Extensions.Configuration" Version="9.0.10" />
-        <PackageReference Include="Microsoft.Extensions.Configuration.Binder" Version="9.0.10" />
-        <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="9.0.10" />
-        <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.0.0" />
+        <PackageReference Include="MartinCostello.Logging.XUnit.v3" Version="0.7.0" />
+        <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.0" />
+        <PackageReference Include="Microsoft.Extensions.Configuration" Version="10.0.0" />
+        <PackageReference Include="Microsoft.Extensions.Configuration.Binder" Version="10.0.0" />
+        <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="10.0.0" />
+        <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.0.1" />
         <PackageReference Include="Testcontainers.MongoDb" Version="4.8.1" />
         <PackageReference Include="FluentAssertions" Version="8.8.0" />
         <PackageReference Include="xunit.runner.visualstudio" Version="3.1.5">
