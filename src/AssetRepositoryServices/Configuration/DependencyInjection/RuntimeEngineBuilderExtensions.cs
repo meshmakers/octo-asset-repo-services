@@ -256,6 +256,12 @@ public static class RuntimeEngineBuilderExtensions
                 c.Converters.Add(new CkIdEnumIdConverter());
                 c.Converters.Add(new CkModelIdConverter());
 
+                c.Converters.Add(new RtCkIdAttributeIdConverter());
+                c.Converters.Add(new RtCkIdAssociationRoleIdConverter());
+                c.Converters.Add(new RtCkIdTypeIdConverter());
+                c.Converters.Add(new RtCkIdRecordIdConverter());
+                c.Converters.Add(new RtCkIdEnumIdConverter());
+
                 c.PropertyNamingPolicy = JsonNamingPolicy.CamelCase;
             }) // For .NET Core 3+
             .AddErrorInfoProvider(opt => opt.ExposeExceptionDetails = true)
