@@ -30,7 +30,7 @@ internal sealed class CkRecordDtoType : ObjectGraphType<CkRecordDto>
                 AssetTexts.Graphql_Record_Filter_Attributes_Description)
             .Resolve(ResolveAttributes);
 
-        Connection<CkTypeDtoType>("derivedRecordTypes")
+        Connection<CkRecordDtoType>("derivedRecordTypes")
             .Description(AssetTexts.Graphql_Record_DerivedRecords_Description)
             .Resolve(ctx =>
                 {
@@ -44,7 +44,7 @@ internal sealed class CkRecordDtoType : ObjectGraphType<CkRecordDto>
                 }
             );
 
-        Field<CkTypeDtoType>("baseRecordTypes")
+        Field<CkRecordDtoType>("baseRecordTypes")
             .Description(AssetTexts.Graphql_Record_BaseRecord_Description)
             .Resolve(ctx =>
             {
