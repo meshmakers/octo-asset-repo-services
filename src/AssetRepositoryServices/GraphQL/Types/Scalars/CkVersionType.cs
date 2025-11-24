@@ -3,29 +3,29 @@ using Meshmakers.Octo.ConstructionKit.Contracts;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Scalars;
 
-internal class ModelIdType : ScalarGraphType
+internal class CkVersionType : ScalarGraphType
 {
-    public ModelIdType()
+    public CkVersionType()
     {
-        Name = nameof(CkModelId);
-        Description = "Identifies a construction kit model.";
+        Name = nameof(CkVersion);
+        Description = "A construction kit version.";
     }
 
     public override object? ParseValue(object? value)
     {
         return value switch
         {
-            string s => new CkModelId(s),
-            CkModelId _ => value,
+            string s => new CkVersion(s),
+            CkVersion _ => value,
             _ => ThrowValueConversionError(value)
         };
     }
 
     public override object? Serialize(object? value)
     {
-        if (value is CkModelId ckModelId)
+        if (value is CkVersion ckVersion)
         {
-            return ckModelId.SemanticVersionedFullName;
+            return ckVersion.ToString();
         }
 
         return null;
