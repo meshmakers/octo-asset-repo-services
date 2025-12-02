@@ -124,7 +124,7 @@ internal class AssetRepositoryException : Exception
 
     public static Exception InvalidArgumentsCkIdAndRtCkIdInSameQuery()
     {
-        return new AssetRepositoryException("Invalid arguments: Cannot use both CkTypeId and RtCkTypeId in the same query");
+        return new AssetRepositoryException("Invalid arguments: Cannot use both ckId and rtCkId in the same query");
     }
 
     public static Exception InvalidArgumentsCkIdOrRtCkIdAndModelIdInSameQuery()
