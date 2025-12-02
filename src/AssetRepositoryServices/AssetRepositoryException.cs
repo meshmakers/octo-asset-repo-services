@@ -1,8 +1,4 @@
-using GraphQL;
-using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL;
 using Meshmakers.Octo.ConstructionKit.Contracts;
-using Meshmakers.Octo.ConstructionKit.Contracts.Messages;
-using Meshmakers.Octo.Runtime.Contracts;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices;
 
@@ -124,5 +120,15 @@ internal class AssetRepositoryException : Exception
         }
 
         return ex;
+    }
+
+    public static Exception InvalidArgumentsCkIdAndRtCkIdInSameQuery()
+    {
+        return new AssetRepositoryException("Invalid arguments: Cannot use both CkTypeId and RtCkTypeId in the same query");
+    }
+
+    public static Exception InvalidArgumentsCkIdOrRtCkIdAndModelIdInSameQuery()
+    {
+        return new AssetRepositoryException("Invalid arguments: Cannot use both CkTypeId or RtCkTypeId and ModelId in the same query");
     }
 }
