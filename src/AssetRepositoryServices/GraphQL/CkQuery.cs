@@ -49,6 +49,9 @@ internal sealed class CkQuery : ObjectGraphType
             .Argument<StringGraphType>(Statics.CkIdArg, "Returns the entity with the given attribute id.")
             .Argument<ListGraphType<StringGraphType>>(Statics.CkIdsArg,
                 "Returns entities with the given attribute ids.")
+            .Argument<StringGraphType>(Statics.RtCkIdArg, "Returns the construction kit attribute with the given runtime construction kit id.")
+            .Argument<ListGraphType<StringGraphType>>(Statics.RtCkIdsArg,
+                "Returns the construction kit attributes with the given runtime construction kit ids.")
             .Argument<SearchFilterDtoType>(Statics.SearchFilterArg, "Filters items based on text search")
             .Argument<ListGraphType<SortDtoType>>(Statics.SortOrderArg, "Sort order for items")
             .Argument<ListGraphType<FieldFilterDtoType>>(Statics.FieldFilterArg,
@@ -60,6 +63,9 @@ internal sealed class CkQuery : ObjectGraphType
             .Argument<StringGraphType>(Statics.CkIdArg, "Returns the enum with the given enum id.")
             .Argument<ListGraphType<StringGraphType>>(Statics.CkIdsArg,
                 "Returns enums with the given enum ids.")
+            .Argument<StringGraphType>(Statics.RtCkIdArg, "Returns the construction kit enum with the given runtime construction kit id.")
+            .Argument<ListGraphType<StringGraphType>>(Statics.RtCkIdsArg,
+                "Returns the construction kit enums with the given runtime construction kit ids.")
             .Argument<SearchFilterDtoType>(Statics.SearchFilterArg, "Filters items based on text search")
             .Argument<ListGraphType<SortDtoType>>(Statics.SortOrderArg, "Sort order for items")
             .Argument<ListGraphType<FieldFilterDtoType>>(Statics.FieldFilterArg,
@@ -71,6 +77,9 @@ internal sealed class CkQuery : ObjectGraphType
             .Argument<StringGraphType>(Statics.CkIdArg, "Returns the record with the given record id.")
             .Argument<ListGraphType<StringGraphType>>(Statics.CkIdsArg,
                 "Returns records with the given record ids.")
+            .Argument<StringGraphType>(Statics.RtCkIdArg, "Returns the construction kit record with the given runtime construction kit id.")
+            .Argument<ListGraphType<StringGraphType>>(Statics.RtCkIdsArg,
+                "Returns the construction kit records with the given runtime construction kit ids.")
             .Argument<SearchFilterDtoType>(Statics.SearchFilterArg, "Filters items based on text search")
             .Argument<ListGraphType<SortDtoType>>(Statics.SortOrderArg, "Sort order for items")
             .Argument<ListGraphType<FieldFilterDtoType>>(Statics.FieldFilterArg,
@@ -144,28 +153,63 @@ internal sealed class CkQuery : ObjectGraphType
                 modelIdList.AddRange(modelIds.Select(k => new CkModelId(k)));
             }
 
-            var keysList = new List<CkId<CkRecordId>>();
-            if (arg.TryGetArgument(Statics.CkIdArg, out string? key))
+            var ckIdsList = new List<CkId<CkRecordId>>();
+            if (arg.TryGetArgument(Statics.CkIdArg, out string? ckId))
             {
-                keysList.Add(new CkId<CkRecordId>(key));
+                ckIdsList.Add(new CkId<CkRecordId>(ckId));
             }
 
-            if (arg.TryGetArgument(Statics.CkIdsArg, null, out IEnumerable<string>? keys))
+            if (arg.TryGetArgument(Statics.CkIdsArg, null, out IEnumerable<string>? ckIds))
             {
-                keysList.AddRange(keys.Select(k => new CkId<CkRecordId>(k)));
+                ckIdsList.AddRange(ckIds.Select(k => new CkId<CkRecordId>(k)));
+            }
+
+            var rtCkIdsList = new List<RtCkId<CkRecordId>>();
+            if (arg.TryGetArgument(Statics.RtCkIdArg, out string? rtCkId))
+            {
+                rtCkIdsList.Add(new RtCkId<CkRecordId>(rtCkId));
+            }
+
+            if (arg.TryGetArgument(Statics.RtCkIdsArg, null, out IEnumerable<string>? rtCkIds))
+            {
+                rtCkIdsList.AddRange(rtCkIds.Select(k => new RtCkId<CkRecordId>(k)));
             }
 
             // If argument defined, but empty array, do not return any data. That must be a mistake by client (otherwise
             // all entities are returned)
-            if (!keysList.Any() && (arg.HasArgument(Statics.CkIdArg) || arg.HasArgument(Statics.CkIdsArg)))
+            if (!ckIdsList.Any() && !rtCkIdsList.Any() && (arg.HasArgument(Statics.CkIdArg) || arg.HasArgument(Statics.CkIdsArg) ||
+                arg.HasArgument(Statics.RtCkIdArg) || arg.HasArgument(Statics.RtCkIdsArg)))
             {
                 return ConnectionUtils.ToConnection(new List<CkRecordDto>(), arg);
             }
 
+            if ((ckIdsList.Any() || rtCkIdsList.Any()) && modelIdList.Any())
+            {
+                throw AssetRepositoryException.InvalidArgumentsCkIdOrRtCkIdAndModelIdInSameQuery();
+            }
+
+            if (ckIdsList.Any() && rtCkIdsList.Any())
+            {
+                throw AssetRepositoryException.InvalidArgumentsCkIdAndRtCkIdInSameQuery();
+            }
+
             var tenantRepository = graphQlUserContext.TenantContext.GetTenantRepository();
-            var resultSet =
-                await tenantRepository.GetCkRecordAsync(sessionAccessor.Session, modelIdList,
-                    keysList, queryOptions, offset, arg.First);
+            IResultSet<CkRecord>? resultSet;
+            if (rtCkIdsList.Any())
+            {
+                resultSet = await tenantRepository.GetCkRecordAsync(sessionAccessor.Session,
+                    rtCkIdsList, queryOptions, offset, arg.First);
+            }
+            else if (ckIdsList.Any())
+            {
+                resultSet = await tenantRepository.GetCkRecordAsync(sessionAccessor.Session,
+                    ckIdsList, queryOptions, offset, arg.First);
+            }
+            else
+            {
+                resultSet = await tenantRepository.GetCkRecordAsync(sessionAccessor.Session, modelIdList,
+                    queryOptions, offset, arg.First);
+            }
 
             _logger.LogDebug("GraphQL query handling returning data for construction kit records");
             return ConnectionUtils.ToConnection(resultSet.Items.Select(CkRecordDtoType.CreateCkRecordDto), arg,
@@ -196,28 +240,63 @@ internal sealed class CkQuery : ObjectGraphType
                 modelIdList.AddRange(modelIds.Select(k => new CkModelId(k)));
             }
 
-            var keysList = new List<CkId<CkEnumId>>();
-            if (arg.TryGetArgument(Statics.CkIdArg, out string? key))
+            var ckIdsList = new List<CkId<CkEnumId>>();
+            if (arg.TryGetArgument(Statics.CkIdArg, out string? ckId))
             {
-                keysList.Add(new CkId<CkEnumId>(key));
+                ckIdsList.Add(new CkId<CkEnumId>(ckId));
             }
 
-            if (arg.TryGetArgument(Statics.CkIdsArg, null, out IEnumerable<string>? keys))
+            if (arg.TryGetArgument(Statics.CkIdsArg, null, out IEnumerable<string>? ckIds))
             {
-                keysList.AddRange(keys.Select(k => new CkId<CkEnumId>(k)));
+                ckIdsList.AddRange(ckIds.Select(k => new CkId<CkEnumId>(k)));
+            }
+
+            var rtCkIdsList = new List<RtCkId<CkEnumId>>();
+            if (arg.TryGetArgument(Statics.RtCkIdArg, out string? rtCkId))
+            {
+                rtCkIdsList.Add(new RtCkId<CkEnumId>(rtCkId));
+            }
+
+            if (arg.TryGetArgument(Statics.RtCkIdsArg, null, out IEnumerable<string>? rtCkIds))
+            {
+                rtCkIdsList.AddRange(rtCkIds.Select(k => new RtCkId<CkEnumId>(k)));
             }
 
             // If argument defined, but empty array, do not return any data. That must be a mistake by client (otherwise
             // all entities are returned)
-            if (!keysList.Any() && (arg.HasArgument(Statics.CkIdArg) || arg.HasArgument(Statics.CkIdsArg)))
+            if (!ckIdsList.Any() && !rtCkIdsList.Any() && (arg.HasArgument(Statics.CkIdArg) || arg.HasArgument(Statics.CkIdsArg) ||
+                arg.HasArgument(Statics.RtCkIdArg) || arg.HasArgument(Statics.RtCkIdsArg)))
             {
                 return ConnectionUtils.ToConnection(new List<CkEnumDto>(), arg);
             }
 
+            if ((ckIdsList.Any() || rtCkIdsList.Any()) && modelIdList.Any())
+            {
+                throw AssetRepositoryException.InvalidArgumentsCkIdOrRtCkIdAndModelIdInSameQuery();
+            }
+
+            if (ckIdsList.Any() && rtCkIdsList.Any())
+            {
+                throw AssetRepositoryException.InvalidArgumentsCkIdAndRtCkIdInSameQuery();
+            }
+
             var tenantRepository = graphQlUserContext.TenantContext.GetTenantRepository();
-            var resultSet =
-                await tenantRepository.GetCkEnumAsync(sessionAccessor.Session, modelIdList,
-                    keysList, queryOptions, offset, arg.First);
+            IResultSet<CkEnum>? resultSet;
+            if (rtCkIdsList.Any())
+            {
+                resultSet = await tenantRepository.GetCkEnumAsync(sessionAccessor.Session,
+                    rtCkIdsList, queryOptions, offset, arg.First);
+            }
+            else if (ckIdsList.Any())
+            {
+                resultSet = await tenantRepository.GetCkEnumAsync(sessionAccessor.Session,
+                    ckIdsList, queryOptions, offset, arg.First);
+            }
+            else
+            {
+                resultSet = await tenantRepository.GetCkEnumAsync(sessionAccessor.Session, modelIdList,
+                    queryOptions, offset, arg.First);
+            }
 
             _logger.LogDebug("GraphQL query handling returning data for construction kit enums");
             return ConnectionUtils.ToConnection(resultSet.Items.Select(CkEnumDtoType.CreateCkEnumDto), arg,
@@ -335,28 +414,63 @@ internal sealed class CkQuery : ObjectGraphType
                 modelIdList.AddRange(modelIds.Select(k => new CkModelId(k)));
             }
 
-            var keysList = new List<CkId<CkAttributeId>>();
-            if (arg.TryGetArgument(Statics.CkIdArg, out string? key))
+            var ckIdsList = new List<CkId<CkAttributeId>>();
+            if (arg.TryGetArgument(Statics.CkIdArg, out string? ckId))
             {
-                keysList.Add(new CkId<CkAttributeId>(key));
+                ckIdsList.Add(new CkId<CkAttributeId>(ckId));
             }
 
-            if (arg.TryGetArgument(Statics.CkIdsArg, null, out IEnumerable<string>? keys))
+            if (arg.TryGetArgument(Statics.CkIdsArg, null, out IEnumerable<string>? ckIds))
             {
-                keysList.AddRange(keys.Select(k => new CkId<CkAttributeId>(k)));
+                ckIdsList.AddRange(ckIds.Select(k => new CkId<CkAttributeId>(k)));
+            }
+
+            var rtCkIdsList = new List<RtCkId<CkAttributeId>>();
+            if (arg.TryGetArgument(Statics.RtCkIdArg, out string? rtCkId))
+            {
+                rtCkIdsList.Add(new RtCkId<CkAttributeId>(rtCkId));
+            }
+
+            if (arg.TryGetArgument(Statics.RtCkIdsArg, null, out IEnumerable<string>? rtCkIds))
+            {
+                rtCkIdsList.AddRange(rtCkIds.Select(k => new RtCkId<CkAttributeId>(k)));
             }
 
             // If argument defined, but empty array, do not return any data. That must be a mistake by client (otherwise
             // all entities are returned)
-            if (!keysList.Any() && (arg.HasArgument(Statics.CkIdArg) || arg.HasArgument(Statics.CkIdsArg)))
+            if (!ckIdsList.Any() && !rtCkIdsList.Any() && (arg.HasArgument(Statics.CkIdArg) || arg.HasArgument(Statics.CkIdsArg) ||
+                arg.HasArgument(Statics.RtCkIdArg) || arg.HasArgument(Statics.RtCkIdsArg)))
             {
-                return ConnectionUtils.ToConnection(new List<RtEntityDto>(), arg);
+                return ConnectionUtils.ToConnection(new List<CkAttributeDto>(), arg);
+            }
+
+            if ((ckIdsList.Any() || rtCkIdsList.Any()) && modelIdList.Any())
+            {
+                throw AssetRepositoryException.InvalidArgumentsCkIdOrRtCkIdAndModelIdInSameQuery();
+            }
+
+            if (ckIdsList.Any() && rtCkIdsList.Any())
+            {
+                throw AssetRepositoryException.InvalidArgumentsCkIdAndRtCkIdInSameQuery();
             }
 
             var tenantRepository = graphQlUserContext.TenantContext.GetTenantRepository();
-            var resultSet =
-                await tenantRepository.GetCkAttributesAsync(sessionAccessor.Session, modelIdList,
-                    keysList, queryOptions, offset, arg.First);
+            IResultSet<CkAttribute>? resultSet;
+            if (rtCkIdsList.Any())
+            {
+                resultSet = await tenantRepository.GetCkAttributesAsync(sessionAccessor.Session,
+                    rtCkIdsList, queryOptions, offset, arg.First);
+            }
+            else if (ckIdsList.Any())
+            {
+                resultSet = await tenantRepository.GetCkAttributesAsync(sessionAccessor.Session,
+                    ckIdsList, queryOptions, offset, arg.First);
+            }
+            else
+            {
+                resultSet = await tenantRepository.GetCkAttributesAsync(sessionAccessor.Session, modelIdList,
+                    queryOptions, offset, arg.First);
+            }
 
             _logger.LogDebug("GraphQL query handling returning data for construction kit attributes");
             return ConnectionUtils.ToConnection(resultSet.Items.Select(CkAttributeDtoType.CreateCkAttributeDto), arg,
