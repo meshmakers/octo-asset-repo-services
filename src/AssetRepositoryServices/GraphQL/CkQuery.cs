@@ -6,6 +6,8 @@ using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Inputs;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Utils;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
 using Meshmakers.Octo.ConstructionKit.Contracts;
+using Meshmakers.Octo.Runtime.Contracts.MongoDb.Repositories.Entities;
+using Meshmakers.Octo.Runtime.Contracts.Repositories.Query;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL;
 
@@ -33,6 +35,9 @@ internal sealed class CkQuery : ObjectGraphType
             .Argument<StringGraphType>(Statics.CkIdArg, "Returns the construction kit type with the given id.")
             .Argument<ListGraphType<StringGraphType>>(Statics.CkIdsArg,
                 "Returns the construction kit types with the given ids.")
+            .Argument<StringGraphType>(Statics.RtCkIdArg, "Returns the construction kit type with the given runtime construction kit id.")
+            .Argument<ListGraphType<StringGraphType>>(Statics.RtCkIdsArg,
+                "Returns the construction kit types with the given runtime construction kit ids.")
             .Argument<SearchFilterDtoType>(Statics.SearchFilterArg, "Filters items based on text search")
             .Argument<ListGraphType<SortDtoType>>(Statics.SortOrderArg, "Sort order for items")
             .Argument<ListGraphType<FieldFilterDtoType>>(Statics.FieldFilterArg,
@@ -243,28 +248,63 @@ internal sealed class CkQuery : ObjectGraphType
                 modelIdList.AddRange(modelIds.Select(k => new CkModelId(k)));
             }
 
-            var keysList = new List<CkId<CkTypeId>>();
-            if (arg.TryGetArgument(Statics.CkIdArg, out string? key))
+            var ckIdsList = new List<CkId<CkTypeId>>();
+            if (arg.TryGetArgument(Statics.CkIdArg, out string? ckTypeId))
             {
-                keysList.Add(new CkId<CkTypeId>(key));
+                ckIdsList.Add(new CkId<CkTypeId>(ckTypeId));
             }
 
-            if (arg.TryGetArgument(Statics.CkIdsArg, null, out IEnumerable<string>? keys))
+            if (arg.TryGetArgument(Statics.CkIdsArg, null, out IEnumerable<string>? ckTypeIds))
             {
-                keysList.AddRange(keys.Select(k => new CkId<CkTypeId>(k)));
+                ckIdsList.AddRange(ckTypeIds.Select(k => new CkId<CkTypeId>(k)));
+            }
+
+            var rtCkIdsList = new List<RtCkId<CkTypeId>>();
+            if (arg.TryGetArgument(Statics.RtCkIdArg, out string? rtCkId))
+            {
+                rtCkIdsList.Add(new RtCkId<CkTypeId>(rtCkId));
+            }
+
+            if (arg.TryGetArgument(Statics.RtCkIdsArg, null, out IEnumerable<string>? rtCkIds))
+            {
+                rtCkIdsList.AddRange(rtCkIds.Select(k => new RtCkId<CkTypeId>(k)));
             }
 
             // If argument defined, but empty array, do not return any data. That must be a mistake by client (otherwise
             // all entities are returned)
-            if (!keysList.Any() && (arg.HasArgument(Statics.CkIdArg) || arg.HasArgument(Statics.CkIdsArg)))
+            if (!ckIdsList.Any() && !rtCkIdsList.Any() && (arg.HasArgument(Statics.CkIdArg) || arg.HasArgument(Statics.CkIdsArg) ||
+                arg.HasArgument(Statics.RtCkIdArg) || arg.HasArgument(Statics.RtCkIdsArg)))
             {
                 return ConnectionUtils.ToConnection(new List<CkTypeDto>(), arg);
             }
 
+            if ((ckIdsList.Any() || rtCkIdsList.Any()) && modelIdList.Any())
+            {
+                throw AssetRepositoryException.InvalidArgumentsCkIdOrRtCkIdAndModelIdInSameQuery();
+            }
+
+            if (ckIdsList.Any() && rtCkIdsList.Any())
+            {
+                throw AssetRepositoryException.InvalidArgumentsCkIdAndRtCkIdInSameQuery();
+            }
+
             var tenantRepository = graphQlUserContext.TenantContext.GetTenantRepository();
-            var resultSet =
-                await tenantRepository.GetCkTypeAsync(sessionAccessor.Session, modelIdList,
-                    keysList, queryOptions, offset, arg.First);
+            IResultSet<CkType>? resultSet;
+            if (rtCkIdsList.Any())
+            {
+                resultSet = await tenantRepository.GetCkTypeAsync(sessionAccessor.Session,
+                    rtCkIdsList, queryOptions, offset, arg.First);
+            }
+            else if (ckIdsList.Any())
+            {
+                resultSet = await tenantRepository.GetCkTypeAsync(sessionAccessor.Session,
+                    ckIdsList, queryOptions, offset, arg.First);
+            }
+            else
+            {
+                resultSet = await tenantRepository.GetCkTypeAsync(sessionAccessor.Session, modelIdList,
+                    queryOptions, offset, arg.First);
+            }
 
             _logger.LogDebug("GraphQL query handling returning data for construction kit entities");
             return ConnectionUtils.ToConnection(resultSet.Items.Select(CkTypeDtoType.CreateCkTypeDto), arg,

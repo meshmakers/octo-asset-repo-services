@@ -161,8 +161,8 @@ internal sealed class CkModelDtoType : ObjectGraphType<CkModelDto>
 
             var tenantRepository = graphQlUserContext.TenantContext.GetTenantRepository();
             var resultSet =
-                await tenantRepository.GetCkTypeAsync(sessionAccessor.Session, null,
-                    keysList, queryOptions, offset, arg.First);
+                await tenantRepository.GetCkTypeAsync(sessionAccessor.Session, keysList, queryOptions, offset,
+                    arg.First);
 
             _logger.LogDebug("GraphQL query handling returning data for construction kit types");
             return ConnectionUtils.ToConnection(resultSet.Items.Select(CkTypeDtoType.CreateCkTypeDto), arg,
