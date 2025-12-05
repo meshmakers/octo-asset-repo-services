@@ -195,4 +195,25 @@
     <data name="Graphql_Arguments_Options_Description" xml:space="preserve">
         <value>Options that defines the behaviour of the operation.</value>
     </data>
+    <data name="Graphql_AssociationRole_CkAssociationRoleId_Description" xml:space="preserve">
+        <value>Construction kit association role id, the unique identifier of the association role.</value>
+    </data>
+    <data name="Graphql_AssociationRole_Description" xml:space="preserve">
+        <value>Definition of a construction kit association roles with navigation property names and cardinalities</value>
+    </data>
+    <data name="Graphql_AssociationRole_Description_Description" xml:space="preserve">
+        <value>Optional description of the association role.</value>
+    </data>
+    <data name="Graphql_AssociationRole_InboundName_Description" xml:space="preserve">
+        <value>The name of navigation property of inbound direction side</value>
+    </data>
+    <data name="Graphql_AssociationRole_OutboundName_Description" xml:space="preserve">
+        <value>The name of navigation property of outbound direction side</value>
+    </data>
+    <data name="Graphql_AssociationRole_InboundMultiplicity_Description" xml:space="preserve">
+        <value>Cardinality of the inbound direction side</value>
+    </data>
+    <data name="Graphql_AssociationRole_OutboundMultiplicity_Description" xml:space="preserve">
+        <value>Cardinality of the outbound direction</value>
+    </data>
 </root>

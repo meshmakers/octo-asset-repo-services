@@ -398,5 +398,47 @@ namespace AssetRepositoryServices.Resources {
                 return ResourceManager.GetString("Graphql_Arguments_Options_Description", resourceCulture);
             }
         }
+        
+        public static string Graphql_AssociationRole_CkAssociationRoleId_Description {
+            get {
+                return ResourceManager.GetString("Graphql_AssociationRole_CkAssociationRoleId_Description", resourceCulture);
+            }
+        }
+        
+        public static string Graphql_AssociationRole_Description {
+            get {
+                return ResourceManager.GetString("Graphql_AssociationRole_Description", resourceCulture);
+            }
+        }
+        
+        public static string Graphql_AssociationRole_Description_Description {
+            get {
+                return ResourceManager.GetString("Graphql_AssociationRole_Description_Description", resourceCulture);
+            }
+        }
+        
+        public static string Graphql_AssociationRole_InboundName_Description {
+            get {
+                return ResourceManager.GetString("Graphql_AssociationRole_InboundName_Description", resourceCulture);
+            }
+        }
+        
+        public static string Graphql_AssociationRole_OutboundName_Description {
+            get {
+                return ResourceManager.GetString("Graphql_AssociationRole_OutboundName_Description", resourceCulture);
+            }
+        }
+        
+        public static string Graphql_AssociationRole_InboundMultiplicity_Description {
+            get {
+                return ResourceManager.GetString("Graphql_AssociationRole_InboundMultiplicity_Description", resourceCulture);
+            }
+        }
+        
+        public static string Graphql_AssociationRole_OutboundMultiplicity_Description {
+            get {
+                return ResourceManager.GetString("Graphql_AssociationRole_OutboundMultiplicity_Description", resourceCulture);
+            }
+        }
     }
 }
