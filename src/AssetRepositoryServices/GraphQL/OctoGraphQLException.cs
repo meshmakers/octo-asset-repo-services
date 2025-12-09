@@ -105,4 +105,9 @@ public class OctoGraphQLException : Exception
     {
         return new OctoGraphQLException("CkAssociationRoleId is undefined.");
     }
+
+    public static Exception DirectionNotSupported(GraphDirections sourceDirection)
+    {
+        return new OctoGraphQLException($"Direction {sourceDirection} is not supported.");
+    }
 }

@@ -2,7 +2,6 @@
 using GraphQL.Builders;
 using GraphQL.Types;
 using Meshmakers.Common.Shared;
-using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Scalars;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Utils;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
 using Meshmakers.Octo.ConstructionKit.Contracts;
@@ -33,6 +32,10 @@ internal sealed class CkTypeDtoType : ObjectGraphType<CkTypeDto>
             .Argument<ListGraphType<StringGraphType>>(Statics.AttributeNamesFilterArg,
                 AssetTexts.Graphql_Type_Filter_Attributes_Description)
             .Resolve(ResolveAttributes);
+
+        Field<CkTypeAssociationDirectionDtoType>("associations")
+            .Returns<CkTypeAssociationDirectionDto>()
+            .Resolve(ctx=> new CkTypeAssociationDirectionDto { CkTypeId = ctx.Source.CkTypeId });
 
         Connection<CkTypeQueryColumnDtoType>("availableQueryColumns")
             .Argument<StringGraphType>(Statics.AttributePathContainsFilterArg,

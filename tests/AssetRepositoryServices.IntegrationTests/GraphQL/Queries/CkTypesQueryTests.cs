@@ -863,4 +863,735 @@ public class CkTypesQueryTests : IClassFixture<CkQueryTestFixture>
     }
 
     #endregion
+
+    #region Associations Tests
+
+    [Fact]
+    public async Task CkTypes_Associations_ReturnsAssociationsStructure()
+    {
+        // Arrange - query Entity type which should have associations
+        var query = @"
+            query ($rtCkId: String!) {
+                constructionKit {
+                    types(rtCkId: $rtCkId) {
+                        items {
+                            ckTypeId {
+                                fullName
+                            }
+                            associations {
+                                in {
+                                    all {
+                                        roleId {
+                                            fullName
+                                        }
+                                        originCkTypeId {
+                                            fullName
+                                        }
+                                        targetCkTypeId {
+                                            fullName
+                                        }
+                                        navigationPropertyName
+                                        multiplicity
+                                    }
+                                }
+                                out {
+                                    all {
+                                        roleId {
+                                            fullName
+                                        }
+                                        originCkTypeId {
+                                            fullName
+                                        }
+                                        targetCkTypeId {
+                                            fullName
+                                        }
+                                        navigationPropertyName
+                                        multiplicity
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }";
+
+        var variables = JsonSerializer.Serialize(new { rtCkId = EntityTypeRtCkId });
+
+        // Act
+        var result = await _fixture.ExecuteGraphQlAsync(query, variables);
+
+        // Assert
+        result.Should().NotBeNull();
+        result.Errors.Should().BeNullOrEmpty();
+        result.Data.Should().NotBeNull();
+
+        var json = _fixture.SerializeGraphQl(result);
+        var answer = JObject.Parse(json);
+
+        var types = answer.SelectToken("data.constructionKit.types.items");
+        types.Should().NotBeNull();
+
+        var typesArray = (JArray)types;
+        typesArray.Should().HaveCount(1);
+
+        var entityType = typesArray[0];
+        var associations = entityType["associations"];
+        associations.Should().NotBeNull("associations field should exist");
+
+        // Verify in and out directions exist
+        var inAssociations = associations["in"];
+        var outAssociations = associations["out"];
+        inAssociations.Should().NotBeNull("in direction should exist");
+        outAssociations.Should().NotBeNull("out direction should exist");
+
+        // Verify all field exists in both directions
+        inAssociations["all"].Should().NotBeNull("in.all should exist");
+        outAssociations["all"].Should().NotBeNull("out.all should exist");
+    }
+
+    [Fact]
+    public async Task CkTypes_Associations_InDirection_ReturnsAllInheritedAndOwned()
+    {
+        // Arrange - query Entity type for inbound associations
+        var query = @"
+            query ($rtCkId: String!) {
+                constructionKit {
+                    types(rtCkId: $rtCkId) {
+                        items {
+                            ckTypeId {
+                                fullName
+                            }
+                            associations {
+                                in {
+                                    all {
+                                        roleId {
+                                            fullName
+                                        }
+                                        navigationPropertyName
+                                        multiplicity
+                                    }
+                                    inherited {
+                                        roleId {
+                                            fullName
+                                        }
+                                        navigationPropertyName
+                                    }
+                                    owned {
+                                        roleId {
+                                            fullName
+                                        }
+                                        navigationPropertyName
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }";
+
+        var variables = JsonSerializer.Serialize(new { rtCkId = EntityTypeRtCkId });
+
+        // Act
+        var result = await _fixture.ExecuteGraphQlAsync(query, variables);
+
+        // Assert
+        result.Should().NotBeNull();
+        result.Errors.Should().BeNullOrEmpty();
+        result.Data.Should().NotBeNull();
+
+        var json = _fixture.SerializeGraphQl(result);
+        var answer = JObject.Parse(json);
+
+        var types = answer.SelectToken("data.constructionKit.types.items");
+        types.Should().NotBeNull();
+
+        var typesArray = (JArray)types;
+        typesArray.Should().HaveCount(1);
+
+        var entityType = typesArray[0];
+        var inAssociations = entityType["associations"]?["in"];
+        inAssociations.Should().NotBeNull();
+
+        // Verify all three association sources exist
+        var all = inAssociations["all"];
+        var inherited = inAssociations["inherited"];
+        var owned = inAssociations["owned"];
+
+        all.Should().NotBeNull("all should exist");
+        all.Type.Should().Be(JTokenType.Array, "all should be an array");
+
+        inherited.Should().NotBeNull("inherited should exist");
+        inherited.Type.Should().Be(JTokenType.Array, "inherited should be an array");
+
+        owned.Should().NotBeNull("owned should exist");
+        owned.Type.Should().Be(JTokenType.Array, "owned should be an array");
+    }
+
+    [Fact]
+    public async Task CkTypes_Associations_OutDirection_ReturnsAllInheritedAndOwned()
+    {
+        // Arrange - query Entity type for outbound associations
+        var query = @"
+            query ($rtCkId: String!) {
+                constructionKit {
+                    types(rtCkId: $rtCkId) {
+                        items {
+                            ckTypeId {
+                                fullName
+                            }
+                            associations {
+                                out {
+                                    all {
+                                        roleId {
+                                            fullName
+                                        }
+                                        navigationPropertyName
+                                        multiplicity
+                                    }
+                                    inherited {
+                                        roleId {
+                                            fullName
+                                        }
+                                        navigationPropertyName
+                                    }
+                                    owned {
+                                        roleId {
+                                            fullName
+                                        }
+                                        navigationPropertyName
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }";
+
+        var variables = JsonSerializer.Serialize(new { rtCkId = EntityTypeRtCkId });
+
+        // Act
+        var result = await _fixture.ExecuteGraphQlAsync(query, variables);
+
+        // Assert
+        result.Should().NotBeNull();
+        result.Errors.Should().BeNullOrEmpty();
+        result.Data.Should().NotBeNull();
+
+        var json = _fixture.SerializeGraphQl(result);
+        var answer = JObject.Parse(json);
+
+        var types = answer.SelectToken("data.constructionKit.types.items");
+        types.Should().NotBeNull();
+
+        var typesArray = (JArray)types;
+        typesArray.Should().HaveCount(1);
+
+        var entityType = typesArray[0];
+        var outAssociations = entityType["associations"]?["out"];
+        outAssociations.Should().NotBeNull();
+
+        // Verify all three association sources exist
+        var all = outAssociations["all"];
+        var inherited = outAssociations["inherited"];
+        var owned = outAssociations["owned"];
+
+        all.Should().NotBeNull("all should exist");
+        all.Type.Should().Be(JTokenType.Array, "all should be an array");
+
+        inherited.Should().NotBeNull("inherited should exist");
+        inherited.Type.Should().Be(JTokenType.Array, "inherited should be an array");
+
+        owned.Should().NotBeNull("owned should exist");
+        owned.Type.Should().Be(JTokenType.Array, "owned should be an array");
+    }
+
+    [Fact]
+    public async Task CkTypes_Associations_AssociationFields_HaveCorrectStructure()
+    {
+        // Arrange - query for type with associations to verify association field structure
+        var query = @"
+            query ($rtCkId: String!) {
+                constructionKit {
+                    types(rtCkId: $rtCkId) {
+                        items {
+                            ckTypeId {
+                                fullName
+                            }
+                            associations {
+                                out {
+                                    all {
+                                        roleId {
+                                            fullName
+                                            semanticVersionedFullName
+                                        }
+                                        originCkTypeId {
+                                            fullName
+                                            semanticVersionedFullName
+                                        }
+                                        targetCkTypeId {
+                                            fullName
+                                            semanticVersionedFullName
+                                        }
+                                        navigationPropertyName
+                                        multiplicity
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }";
+
+        var variables = JsonSerializer.Serialize(new { rtCkId = EntityTypeRtCkId });
+
+        // Act
+        var result = await _fixture.ExecuteGraphQlAsync(query, variables);
+
+        // Assert
+        result.Should().NotBeNull();
+        result.Errors.Should().BeNullOrEmpty();
+        result.Data.Should().NotBeNull();
+
+        var json = _fixture.SerializeGraphQl(result);
+        var answer = JObject.Parse(json);
+
+        var associations = answer.SelectToken("data.constructionKit.types.items[0].associations.out.all") as JArray;
+        associations.Should().NotBeNull();
+
+        // If there are associations, verify their structure
+        if (associations.Count > 0)
+        {
+            var firstAssociation = associations[0];
+
+            // Verify roleId structure
+            var roleId = firstAssociation["roleId"];
+            roleId.Should().NotBeNull("roleId should exist");
+            roleId["fullName"]?.Value<string>().Should().NotBeNullOrEmpty("roleId.fullName should exist");
+            roleId["semanticVersionedFullName"]?.Value<string>().Should().NotBeNullOrEmpty("roleId.semanticVersionedFullName should exist");
+
+            // Verify originCkTypeId structure
+            var originCkTypeId = firstAssociation["originCkTypeId"];
+            originCkTypeId.Should().NotBeNull("originCkTypeId should exist");
+            originCkTypeId["fullName"]?.Value<string>().Should().NotBeNullOrEmpty("originCkTypeId.fullName should exist");
+
+            // Verify targetCkTypeId structure
+            var targetCkTypeId = firstAssociation["targetCkTypeId"];
+            targetCkTypeId.Should().NotBeNull("targetCkTypeId should exist");
+            targetCkTypeId["fullName"]?.Value<string>().Should().NotBeNullOrEmpty("targetCkTypeId.fullName should exist");
+
+            // Verify navigationPropertyName
+            var navigationPropertyName = firstAssociation["navigationPropertyName"]?.Value<string>();
+            navigationPropertyName.Should().NotBeNullOrEmpty("navigationPropertyName should exist");
+
+            // Verify multiplicity
+            var multiplicity = firstAssociation["multiplicity"]?.Value<string>();
+            multiplicity.Should().NotBeNullOrEmpty("multiplicity should exist");
+        }
+    }
+
+    [Fact]
+    public async Task CkTypes_Associations_AllContainsInheritedAndOwned()
+    {
+        // Arrange - verify that 'all' contains items from both 'inherited' and 'owned'
+        var query = @"
+            query ($rtCkId: String!) {
+                constructionKit {
+                    types(rtCkId: $rtCkId) {
+                        items {
+                            ckTypeId {
+                                fullName
+                            }
+                            associations {
+                                out {
+                                    all {
+                                        roleId {
+                                            fullName
+                                        }
+                                    }
+                                    inherited {
+                                        roleId {
+                                            fullName
+                                        }
+                                    }
+                                    owned {
+                                        roleId {
+                                            fullName
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }";
+
+        var variables = JsonSerializer.Serialize(new { rtCkId = EntityTypeRtCkId });
+
+        // Act
+        var result = await _fixture.ExecuteGraphQlAsync(query, variables);
+
+        // Assert
+        result.Should().NotBeNull();
+        result.Errors.Should().BeNullOrEmpty();
+
+        var json = _fixture.SerializeGraphQl(result);
+        var answer = JObject.Parse(json);
+
+        var outAssociations = answer.SelectToken("data.constructionKit.types.items[0].associations.out");
+        outAssociations.Should().NotBeNull();
+
+        var all = outAssociations["all"] as JArray ?? new JArray();
+        var inherited = outAssociations["inherited"] as JArray ?? new JArray();
+        var owned = outAssociations["owned"] as JArray ?? new JArray();
+
+        // 'all' should contain the union of 'inherited' and 'owned'
+        var allCount = all.Count;
+        var inheritedAndOwnedCount = inherited.Count + owned.Count;
+
+        allCount.Should().Be(inheritedAndOwnedCount,
+            "all associations count should equal inherited + owned count");
+
+        // Extract roleIds from each list
+        var allRoleIds = all.Select(a => a["roleId"]?["fullName"]?.Value<string>()).ToHashSet();
+        var inheritedRoleIds = inherited.Select(a => a["roleId"]?["fullName"]?.Value<string>()).ToHashSet();
+        var ownedRoleIds = owned.Select(a => a["roleId"]?["fullName"]?.Value<string>()).ToHashSet();
+
+        // All inherited and owned should be present in all
+        foreach (var roleId in inheritedRoleIds)
+        {
+            allRoleIds.Should().Contain(roleId, "inherited associations should be in all");
+        }
+
+        foreach (var roleId in ownedRoleIds)
+        {
+            allRoleIds.Should().Contain(roleId, "owned associations should be in all");
+        }
+    }
+
+    [Fact]
+    public async Task CkTypes_Associations_MultiplicityValues_AreValid()
+    {
+        // Arrange - verify multiplicity values are valid enum values
+        var query = @"
+            query ($rtCkId: String!) {
+                constructionKit {
+                    types(rtCkId: $rtCkId) {
+                        items {
+                            associations {
+                                in {
+                                    all {
+                                        multiplicity
+                                    }
+                                }
+                                out {
+                                    all {
+                                        multiplicity
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }";
+
+        var variables = JsonSerializer.Serialize(new { rtCkId = EntityTypeRtCkId });
+
+        // Act
+        var result = await _fixture.ExecuteGraphQlAsync(query, variables);
+
+        // Assert
+        result.Should().NotBeNull();
+        result.Errors.Should().BeNullOrEmpty();
+
+        var json = _fixture.SerializeGraphQl(result);
+        var answer = JObject.Parse(json);
+
+        var entityType = answer.SelectToken("data.constructionKit.types.items[0]");
+        entityType.Should().NotBeNull();
+
+        // Valid multiplicity values: 0_1 (zero or one), 1 (one), N (zero or more), 1_N (one or more)
+        var validMultiplicities = new[] { "0_1", "1", "N", "1_N" };
+
+        // Check inbound multiplicities
+        var inAll = entityType["associations"]?["in"]?["all"] as JArray ?? new JArray();
+        foreach (var association in inAll)
+        {
+            var multiplicity = association["multiplicity"]?.Value<string>();
+            if (multiplicity != null)
+            {
+                validMultiplicities.Should().Contain(multiplicity,
+                    $"multiplicity '{multiplicity}' should be a valid enum value");
+            }
+        }
+
+        // Check outbound multiplicities
+        var outAll = entityType["associations"]?["out"]?["all"] as JArray ?? new JArray();
+        foreach (var association in outAll)
+        {
+            var multiplicity = association["multiplicity"]?.Value<string>();
+            if (multiplicity != null)
+            {
+                validMultiplicities.Should().Contain(multiplicity,
+                    $"multiplicity '{multiplicity}' should be a valid enum value");
+            }
+        }
+    }
+
+    [Fact]
+    public async Task CkTypes_Associations_QueryOnlyInDirection()
+    {
+        // Arrange - verify we can query only inbound direction
+        var query = @"
+            query ($rtCkId: String!) {
+                constructionKit {
+                    types(rtCkId: $rtCkId) {
+                        items {
+                            ckTypeId {
+                                fullName
+                            }
+                            associations {
+                                in {
+                                    all {
+                                        roleId {
+                                            fullName
+                                        }
+                                        navigationPropertyName
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }";
+
+        var variables = JsonSerializer.Serialize(new { rtCkId = EntityTypeRtCkId });
+
+        // Act
+        var result = await _fixture.ExecuteGraphQlAsync(query, variables);
+
+        // Assert
+        result.Should().NotBeNull();
+        result.Errors.Should().BeNullOrEmpty();
+        result.Data.Should().NotBeNull();
+
+        var json = _fixture.SerializeGraphQl(result);
+        var answer = JObject.Parse(json);
+
+        var associations = answer.SelectToken("data.constructionKit.types.items[0].associations");
+        associations.Should().NotBeNull();
+
+        // Only 'in' direction should be present in the response
+        associations["in"].Should().NotBeNull("in direction should exist");
+        // 'out' is not queried, so it should not be in the response
+    }
+
+    [Fact]
+    public async Task CkTypes_Associations_QueryOnlyOutDirection()
+    {
+        // Arrange - verify we can query only outbound direction
+        var query = @"
+            query ($rtCkId: String!) {
+                constructionKit {
+                    types(rtCkId: $rtCkId) {
+                        items {
+                            ckTypeId {
+                                fullName
+                            }
+                            associations {
+                                out {
+                                    all {
+                                        roleId {
+                                            fullName
+                                        }
+                                        navigationPropertyName
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }";
+
+        var variables = JsonSerializer.Serialize(new { rtCkId = EntityTypeRtCkId });
+
+        // Act
+        var result = await _fixture.ExecuteGraphQlAsync(query, variables);
+
+        // Assert
+        result.Should().NotBeNull();
+        result.Errors.Should().BeNullOrEmpty();
+        result.Data.Should().NotBeNull();
+
+        var json = _fixture.SerializeGraphQl(result);
+        var answer = JObject.Parse(json);
+
+        var associations = answer.SelectToken("data.constructionKit.types.items[0].associations");
+        associations.Should().NotBeNull();
+
+        // Only 'out' direction should be present in the response
+        associations["out"].Should().NotBeNull("out direction should exist");
+    }
+
+    [Fact]
+    public async Task CkTypes_Associations_QueryOnlyOwned()
+    {
+        // Arrange - verify we can query only owned associations
+        var query = @"
+            query ($rtCkId: String!) {
+                constructionKit {
+                    types(rtCkId: $rtCkId) {
+                        items {
+                            ckTypeId {
+                                fullName
+                            }
+                            associations {
+                                out {
+                                    owned {
+                                        roleId {
+                                            fullName
+                                        }
+                                        navigationPropertyName
+                                        multiplicity
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }";
+
+        var variables = JsonSerializer.Serialize(new { rtCkId = EntityTypeRtCkId });
+
+        // Act
+        var result = await _fixture.ExecuteGraphQlAsync(query, variables);
+
+        // Assert
+        result.Should().NotBeNull();
+        result.Errors.Should().BeNullOrEmpty();
+        result.Data.Should().NotBeNull();
+
+        var json = _fixture.SerializeGraphQl(result);
+        var answer = JObject.Parse(json);
+
+        var outAssociations = answer.SelectToken("data.constructionKit.types.items[0].associations.out");
+        outAssociations.Should().NotBeNull();
+
+        var owned = outAssociations["owned"];
+        owned.Should().NotBeNull("owned should exist");
+        owned.Type.Should().Be(JTokenType.Array, "owned should be an array");
+    }
+
+    [Fact]
+    public async Task CkTypes_Associations_QueryOnlyInherited()
+    {
+        // Arrange - verify we can query only inherited associations
+        var query = @"
+            query ($rtCkId: String!) {
+                constructionKit {
+                    types(rtCkId: $rtCkId) {
+                        items {
+                            ckTypeId {
+                                fullName
+                            }
+                            associations {
+                                in {
+                                    inherited {
+                                        roleId {
+                                            fullName
+                                        }
+                                        navigationPropertyName
+                                        multiplicity
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }";
+
+        var variables = JsonSerializer.Serialize(new { rtCkId = TenantTypeRtCkId });
+
+        // Act
+        var result = await _fixture.ExecuteGraphQlAsync(query, variables);
+
+        // Assert
+        result.Should().NotBeNull();
+        result.Errors.Should().BeNullOrEmpty();
+        result.Data.Should().NotBeNull();
+
+        var json = _fixture.SerializeGraphQl(result);
+        var answer = JObject.Parse(json);
+
+        var inAssociations = answer.SelectToken("data.constructionKit.types.items[0].associations.in");
+        inAssociations.Should().NotBeNull();
+
+        var inherited = inAssociations["inherited"];
+        inherited.Should().NotBeNull("inherited should exist");
+        inherited.Type.Should().Be(JTokenType.Array, "inherited should be an array");
+    }
+
+    [Fact]
+    public async Task CkTypes_Associations_MultipleTypesWithAssociations()
+    {
+        // Arrange - query multiple types and their associations
+        var query = @"
+            query ($rtCkIds: [String]!) {
+                constructionKit {
+                    types(rtCkIds: $rtCkIds) {
+                        items {
+                            ckTypeId {
+                                semanticVersionedFullName
+                            }
+                            associations {
+                                out {
+                                    all {
+                                        roleId {
+                                            semanticVersionedFullName
+                                        }
+                                    }
+                                }
+                                in {
+                                    all {
+                                        roleId {
+                                            semanticVersionedFullName
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }";
+
+        var variables = JsonSerializer.Serialize(new { rtCkIds = new[] { EntityTypeRtCkId, TenantTypeRtCkId } });
+
+        // Act
+        var result = await _fixture.ExecuteGraphQlAsync(query, variables);
+
+        // Assert
+        result.Should().NotBeNull();
+        result.Errors.Should().BeNullOrEmpty();
+        result.Data.Should().NotBeNull();
+
+        var json = _fixture.SerializeGraphQl(result);
+        var answer = JObject.Parse(json);
+
+        var types = answer.SelectToken("data.constructionKit.types.items") as JArray;
+        types.Should().NotBeNull();
+        types.Should().HaveCount(2, "Should return both types");
+
+        foreach (var type in types)
+        {
+            var associations = type["associations"];
+            associations.Should().NotBeNull("Each type should have associations field");
+
+            var outAll = associations["out"]?["all"];
+            var inAll = associations["in"]?["all"];
+
+            outAll.Should().NotBeNull("out.all should exist");
+            inAll.Should().NotBeNull("in.all should exist");
+        }
+    }
+
+    #endregion
 }
