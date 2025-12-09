@@ -66,29 +66,17 @@ public sealed class RtEntityGenericAssociationType : ObjectGraphType<RtEntityGen
         var tenantRepository = graphQlUserContext.TenantContext.GetTenantRepository();
         var offset = ctx.GetOffset();
 
-        var queryOptions = RtAssociationQueryOptions.Create(direction, offset, ctx.First);
-        if (ckAssociationRoleId != null)
-        {
-            var loader = dataLoaderAccessor.Context.GetOrAddBatchLoader<RtEntityId, IResultSet<RtAssociation>>(
-                $"Get{ctx.Source.RtEntityDto.CkTypeId}_{direction}", async rtEntityIds =>
-                    await tenantRepository.GetRtAssociationsAsync(sessionAccessor.Session, rtEntityIds, queryOptions));
-            var dataLoaderResult = loader.LoadAsync(ctx.Source.RtEntityDto.ToRtEntityId());
+        var queryOptions =
+            RtAssociationExtendedQueryOptions.Create(direction, ckAssociationRoleId, null, null, offset, ctx.First);
 
-            return dataLoaderResult.Then(resultSet => ConnectionUtils.ToConnection(
-                resultSet.Items.Select(RtAssociationDtoType.CreateRtAssociationDto), ctx,
-                resultSet.TotalCount > 0 ? offset.GetValueOrDefault(0) : 0, (int)resultSet.TotalCount));
-        }
-        else
-        {
-            var loader = dataLoaderAccessor.Context.GetOrAddBatchLoader<RtEntityId, IResultSet<RtAssociation>>(
-                $"Get{ctx.Source.RtEntityDto.CkTypeId}_{direction}", async rtEntityIds =>
-                    await tenantRepository.GetRtAssociationsAsync(sessionAccessor.Session, rtEntityIds, queryOptions));
-            var dataLoaderResult = loader.LoadAsync(ctx.Source.RtEntityDto.ToRtEntityId());
+        var loader = dataLoaderAccessor.Context.GetOrAddBatchLoader<RtEntityId, IResultSet<RtAssociation>>(
+            $"Get{ctx.Source.RtEntityDto.CkTypeId}_{direction}", async rtEntityIds =>
+                await tenantRepository.GetRtAssociationsAsync(sessionAccessor.Session, rtEntityIds, queryOptions));
+        var dataLoaderResult = loader.LoadAsync(ctx.Source.RtEntityDto.ToRtEntityId());
 
-            return dataLoaderResult.Then(resultSet => ConnectionUtils.ToConnection(
-                resultSet.Items.Select(RtAssociationDtoType.CreateRtAssociationDto), ctx,
-                resultSet.TotalCount > 0 ? offset.GetValueOrDefault(0) : 0, (int)resultSet.TotalCount));
-        }
+        return dataLoaderResult.Then(resultSet => ConnectionUtils.ToConnection(
+            resultSet.Items.Select(RtAssociationDtoType.CreateRtAssociationDto), ctx,
+            resultSet.TotalCount > 0 ? offset.GetValueOrDefault(0) : 0, (int)resultSet.TotalCount));
     }
 
     private object ResolveGenericRtAssociationTargetsQuery(IResolveConnectionContext<RtEntityGenericAssociation> ctx)

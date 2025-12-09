@@ -118,7 +118,7 @@ public class SampleDataTests(SampleDataFixture fixture)
             f.RtWellKnownName == "FacilityHauptstrasse42");
 
         // Get associations using RtAssociationQueryOptions
-        var associationOptions = RtAssociationQueryOptions.Create(GraphDirections.Outbound, 0, 10);
+        var associationOptions = RtAssociationExtendedQueryOptions.Create(GraphDirections.Outbound, 0, 10);
         var associations = await tenantRepository.GetRtAssociationsAsync(
             session,
             [hauptstrasseFacility.ToRtEntityId()],
@@ -152,7 +152,7 @@ public class SampleDataTests(SampleDataFixture fixture)
 
         // Get associations to verify parent-child relationships
         var meteringPointIds = meteringResult.Items.Take(2).Select(mp => mp.ToRtEntityId()).ToList();
-        var associationOptions = RtAssociationQueryOptions.Create(GraphDirections.Outbound, 0, 10);
+        var associationOptions = RtAssociationExtendedQueryOptions.Create(GraphDirections.Outbound, 0, 10);
         var associations = await tenantRepository.GetRtAssociationsAsync(
             session,
             meteringPointIds,
