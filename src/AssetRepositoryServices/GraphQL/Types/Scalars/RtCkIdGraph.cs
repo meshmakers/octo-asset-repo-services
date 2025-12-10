@@ -11,8 +11,13 @@ internal class RtCkIdGraph<TCkKey> : ScalarGraphType where TCkKey : IComparable<
         Description = "A runtime construction kit id of " + typeof(TCkKey).Name + ".";
     }
 
-    public override object ParseValue(object? value)
+    public override object? ParseValue(object? value)
     {
+        if (value == null)
+        {
+            return null;
+        }
+
         return value switch
         {
             string s => new RtCkId<TCkKey>(s),

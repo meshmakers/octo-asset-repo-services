@@ -18,6 +18,8 @@ internal static class Statics
     internal const string RoleIdArg = "roleId";
     internal const string IncludeIndirectArg = "includeIndirect";
     internal const string DirectionArg = "direction";
+    internal const string RelatedRtCkId = "relatedRtCkId";
+    internal const string RelatedRtId = "relatedRtId";
     internal const string ValuesArg = "values";
     internal const string OptionsArg = "options";
 

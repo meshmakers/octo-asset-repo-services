@@ -5,6 +5,7 @@ using GraphQL.DataLoader;
 using GraphQL.Types;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Enums;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Inputs;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Scalars;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Utils;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
 using Meshmakers.Octo.ConstructionKit.Contracts;
@@ -46,6 +47,10 @@ public sealed class RtEntityGenericAssociationType : ObjectGraphType<RtEntityGen
             .Argument<StringGraphType>(Statics.RoleIdArg, "The role id of the association.")
             .Argument<NonNullGraphType<GraphDirectionsDtoType>>(Statics.DirectionArg,
                 "The direction of the association.")
+            .Argument<RtCkIdGraph<CkTypeId>>(Statics.RelatedRtCkId,
+                "A construction kit type id to filter the associations by target type.")
+            .Argument<OctoObjectIdType>(Statics.RelatedRtId,
+                "A construction kit object id to filter the associations by target runtime entity.")
             .Resolve(ResolveGenericRtAssociationsQuery);
     }
 
@@ -61,13 +66,16 @@ public sealed class RtEntityGenericAssociationType : ObjectGraphType<RtEntityGen
 
         var direction = ctx.GetArgument<GraphDirections>(Statics.DirectionArg);
         var ckAssociationRoleId = ctx.GetArgument<RtCkId<CkAssociationRoleId>?>(Statics.RoleIdArg);
+        var relatedRtCkTypeId = ctx.GetArgument<RtCkId<CkTypeId>?>(Statics.RelatedRtCkId);
+        var relatedRtId = ctx.GetArgument<OctoObjectId?>(Statics.RelatedRtId);
 
         var graphQlUserContext = (GraphQlUserContext)ctx.UserContext;
         var tenantRepository = graphQlUserContext.TenantContext.GetTenantRepository();
         var offset = ctx.GetOffset();
 
         var queryOptions =
-            RtAssociationExtendedQueryOptions.Create(direction, ckAssociationRoleId, null, null, offset, ctx.First);
+            RtAssociationExtendedQueryOptions.Create(direction, ckAssociationRoleId, relatedRtCkTypeId,
+                relatedRtId, offset, ctx.First);
 
         var loader = dataLoaderAccessor.Context.GetOrAddBatchLoader<RtEntityId, IResultSet<RtAssociation>>(
             $"Get{ctx.Source.RtEntityDto.CkTypeId}_{direction}", async rtEntityIds =>
