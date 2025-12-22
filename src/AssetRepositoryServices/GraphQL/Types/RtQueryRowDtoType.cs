@@ -35,6 +35,8 @@ internal sealed class RtQueryRowDtoType : ObjectGraphType<RtQueryRowDto>
         Connection<NonNullGraphType<RtQueryCellDtoType>>("Cells")
             .Argument<ListGraphType<StringGraphType>>(Statics.AttributePathsFilterArg,
                 AssetTexts.Graphql_Arguments_AttributePathsFilter_Description)
+            .Argument<BooleanGraphType>(Statics.ResolveEnumValuesToNames,
+                "When true, enum integer values are resolved to their label names. Defaults to true.")
             .Resolve(ResolveCells);
     }
 
@@ -43,22 +45,29 @@ internal sealed class RtQueryRowDtoType : ObjectGraphType<RtQueryRowDto>
         var ckCacheService = context.GetCkCacheService();
         var rtQueryRowUserContext = (RtQueryRowUserContext)context.Source.UserContext!;
 
+        // Default to true for backward compatibility with existing behavior
+        context.TryGetArgument(Statics.ResolveEnumValuesToNames, true, out bool resolveEnumValuesToNames);
+
         return ConnectionUtils.ToConnection(
             rtQueryRowUserContext.CkTypeQueryColumns.Select(item =>
                 CreateRtQueryCellDto(ckCacheService, rtQueryRowUserContext.TenantId, rtQueryRowUserContext.RtEntity,
-                    item)),
+                    item, resolveEnumValuesToNames)),
             context);
     }
 
     private RtQueryCellDto CreateRtQueryCellDto(ICkCacheService ckCacheService, string tenantId,
         RtEntityGraphItem rtEntity,
-        CkTypeQueryColumn ckTypeQueryColumn)
+        CkTypeQueryColumn ckTypeQueryColumn, bool resolveEnumValuesToNames)
     {
+        var resolveFlags = resolveEnumValuesToNames
+            ? AttributeValueResolveFlags.ResolveEnumsToNames
+            : AttributeValueResolveFlags.Default;
+
         var cellDto = new RtQueryCellDto
         {
             AttributePath = ckTypeQueryColumn.Path,
             Value = rtEntity.GetAttributeValueByAccessPath(ckCacheService, tenantId, ckTypeQueryColumn.AccessPathList,
-                AttributeValueResolveFlags.ResolveEnumsToNames)
+                resolveFlags)
         };
         if (cellDto.Value is RtCkId<CkTypeId> ckTypeId)
         {

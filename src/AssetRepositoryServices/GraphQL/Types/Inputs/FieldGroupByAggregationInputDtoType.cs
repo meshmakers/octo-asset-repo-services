@@ -14,5 +14,8 @@ internal sealed class FieldGroupByAggregationInputDtoType : InputObjectGraphType
         Field(x => x.MaxValueAttributePaths, typeof(ListGraphType<StringGraphType>));
         Field(x => x.AvgAttributePaths, typeof(ListGraphType<StringGraphType>));
         Field(x => x.SumAttributePaths, typeof(ListGraphType<StringGraphType>));
+        Field(x => x.ResolveEnumValuesToNames, typeof(BooleanGraphType))
+            .Description("When true, enum integer values in groupBy keys are resolved to their label names. Defaults to true.")
+            .DefaultValue(true);
     }
 }

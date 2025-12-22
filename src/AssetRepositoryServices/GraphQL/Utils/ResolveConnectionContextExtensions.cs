@@ -284,6 +284,9 @@ internal static class ResolveConnectionContextExtensions
         {
             var aggregateFieldGroupBy =
                 queryOptions.AggregateFieldGroupBy(fieldAggregationInputDto.GroupByAttributePaths.ToArray());
+
+            aggregateFieldGroupBy.ResolveEnumValuesToNames = fieldAggregationInputDto.ResolveEnumValuesToNames;
+
             if (fieldAggregationInputDto.CountAttributePaths != null)
             {
                 aggregateFieldGroupBy.CountAttributePaths(fieldAggregationInputDto.CountAttributePaths.ToArray());
