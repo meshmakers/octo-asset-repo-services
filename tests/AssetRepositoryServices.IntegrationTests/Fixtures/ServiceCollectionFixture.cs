@@ -33,7 +33,7 @@ public abstract class ServiceCollectionFixture : ITestOutputHelperAccessor, IAsy
 
 
         // Register CK models
-        Services.AddCkModelAssetRepositoryIntegrationTest();
+        Services.AddCkModelAssetRepositoryIntegrationTestV1();
 
         // Add logging with xUnit output
         Services.AddLogging(loggingBuilder =>
