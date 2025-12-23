@@ -6,7 +6,7 @@ using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.ConstructionKit.Contracts.DataTransferObjects;
 using Meshmakers.Octo.ConstructionKit.Contracts.DependencyGraph;
 using Meshmakers.Octo.ConstructionKit.Contracts.Services;
-using Meshmakers.Octo.ConstructionKit.Models.System.Generated.System.v1;
+using Meshmakers.Octo.ConstructionKit.Models.System.Generated.System.v2;
 using Meshmakers.Octo.Runtime.Contracts;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb.Repositories;
 using Meshmakers.Octo.Runtime.Contracts.Repositories;
@@ -69,7 +69,7 @@ internal abstract class RtMutationBase : ObjectGraphType
         List<EntityUpdateInfo<RtEntity>> entityUpdateInfos, OctoObjectId queryRtId)
     {
         var rtQuery =
-            await repository.GetRtEntityByRtIdAsync<RtQuery>(session,
+            await repository.GetRtEntityByRtIdAsync<RtSimpleRtQuery>(session,
                 queryRtId);
         if (rtQuery == null)
         {

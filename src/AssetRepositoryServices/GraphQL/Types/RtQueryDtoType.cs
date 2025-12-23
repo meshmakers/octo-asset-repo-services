@@ -8,7 +8,7 @@ using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Utils;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
 using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.ConstructionKit.Contracts.DependencyGraph;
-using Meshmakers.Octo.ConstructionKit.Models.System.Generated.System.v1;
+using Meshmakers.Octo.ConstructionKit.Models.System.Generated.System.v2;
 using Meshmakers.Octo.Runtime.Contracts;
 using Meshmakers.Octo.Runtime.Contracts.Repositories.Query;
 
@@ -156,7 +156,7 @@ internal sealed class RtQueryDtoType : ObjectGraphType<RtQueryDto>
         }
     }
 
-    public static RtQueryDto CreateRtQueryDto(RtQuery rtQuery,
+    public static RtQueryDto CreateRtQueryDto(RtSimpleRtQuery rtQuery,
         IReadOnlyList<CkTypeQueryColumn> ckTypeQueryColumns)
     {
         var queryOptions = RtEntityQueryOptions.Create();

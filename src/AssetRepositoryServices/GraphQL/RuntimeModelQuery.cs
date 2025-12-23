@@ -9,7 +9,7 @@ using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Scalars;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Utils;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
 using Meshmakers.Octo.ConstructionKit.Contracts;
-using Meshmakers.Octo.ConstructionKit.Models.System.Generated.System.v1;
+using Meshmakers.Octo.ConstructionKit.Models.System.Generated.System.v2;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL;
 
@@ -119,7 +119,7 @@ internal sealed class RuntimeModelQuery : ObjectGraphType
 
             var tenantRepository = graphQlUserContext.TenantContext.GetTenantRepository();
             var rtQuery =
-                await tenantRepository.GetRtEntityByRtIdAsync<RtQuery>(
+                await tenantRepository.GetRtEntityByRtIdAsync<RtSimpleRtQuery>(
                     sessionAccessor.Session, queryRtId);
 
             if (rtQuery == null)

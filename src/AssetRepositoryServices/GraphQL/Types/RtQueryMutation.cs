@@ -9,7 +9,7 @@ using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.ConstructionKit.Contracts.DataTransferObjects;
 using Meshmakers.Octo.ConstructionKit.Contracts.Messages;
 using Meshmakers.Octo.ConstructionKit.Contracts.Services;
-using Meshmakers.Octo.ConstructionKit.Models.System.Generated.System.v1;
+using Meshmakers.Octo.ConstructionKit.Models.System.Generated.System.v2;
 using Meshmakers.Octo.Runtime.Contracts;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb.Repositories;
 using Meshmakers.Octo.Runtime.Contracts.Repositories.Query;
@@ -58,7 +58,7 @@ internal sealed class RtQueryMutation : RtMutationBase
             var queryRtId = context.Parent.GetArgument<OctoObjectId>(Statics.RtIdArg);
             var inputObjects = context.GetArgument<List<RtQueryRowDto>>(Statics.EntitiesArg);
 
-            var rtQuery = await tenantRepository.GetRtEntityByRtIdAsync<RtQuery>(sessionAccessor.Session, queryRtId);
+            var rtQuery = await tenantRepository.GetRtEntityByRtIdAsync<RtSimpleRtQuery>(sessionAccessor.Session, queryRtId);
             if (rtQuery == null)
             {
                 throw AssetRepositoryException.QueryNotFound(queryRtId);
@@ -154,7 +154,7 @@ internal sealed class RtQueryMutation : RtMutationBase
             var queryRtId = context.Parent.GetArgument<OctoObjectId>(Statics.RtIdArg);
             var inputObjects = context.GetArgument<List<MutationDto<RtQueryRowDto>>>(Statics.EntitiesArg);
 
-            var rtQuery = await tenantRepository.GetRtEntityByRtIdAsync<RtQuery>(sessionAccessor.Session, queryRtId);
+            var rtQuery = await tenantRepository.GetRtEntityByRtIdAsync<RtSimpleRtQuery>(sessionAccessor.Session, queryRtId);
             if (rtQuery == null)
             {
                 throw AssetRepositoryException.QueryNotFound(queryRtId);
