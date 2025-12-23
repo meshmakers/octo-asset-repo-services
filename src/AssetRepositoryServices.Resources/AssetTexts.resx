@@ -216,4 +216,13 @@
     <data name="Graphql_AssociationRole_OutboundMultiplicity_Description" xml:space="preserve">
         <value>Cardinality of the outbound direction</value>
     </data>
+    <data name="Graphql_Type_RtCkTypeId_Description" xml:space="preserve">
+        <value>Runtime construction kit type id, the unique identifier of the type.</value>
+    </data>
+    <data name="Graphql_Record_RtCkRecordId_Description" xml:space="preserve">
+        <value>Runtime construction kit record id, the unique identifier of the record.</value>
+    </data>
+    <data name="Graphql_Enum_RtCkEnumId_Description" xml:space="preserve">
+        <value>Runtime construction kit enum id, the unique identifier of the enum.</value>
+    </data>
 </root>

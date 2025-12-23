@@ -17,6 +17,8 @@ internal sealed class CkEnumDtoType : ObjectGraphType<CkEnumDto>
 
         Field(x => x.CkEnumId, typeof(NonNullGraphType<CkIdGraph<CkEnumId>>))
             .Description(AssetTexts.Graphql_Enum_CkEnumId_Description);
+        Field(x => x.RtCkEnumId, typeof(NonNullGraphType<RtCkIdGraph<CkEnumId>>))
+            .Description(AssetTexts.Graphql_Enum_RtCkEnumId_Description);
         Field(x => x.Description, true)
             .Description(AssetTexts.Graphql_Enum_Description_Description);
         Field(x => x.UseFlags, typeof(NonNullGraphType<BooleanGraphType>))

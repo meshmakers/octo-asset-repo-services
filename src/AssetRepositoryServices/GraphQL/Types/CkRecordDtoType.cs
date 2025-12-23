@@ -21,6 +21,8 @@ internal sealed class CkRecordDtoType : ObjectGraphType<CkRecordDto>
 
         Field(x => x.CkRecordId, typeof(NonNullGraphType<CkIdGraph<CkRecordId>>))
             .Description(AssetTexts.Graphql_Record_CkRecordId_Description);
+        Field(x => x.RtCkRecordId, typeof(NonNullGraphType<RtCkIdGraph<CkRecordId>>))
+            .Description(AssetTexts.Graphql_Record_RtCkRecordId_Description);
         Field(x => x.IsAbstract).Description(AssetTexts.Graphql_Record_IsAbstract_Description);
         Field(x => x.IsFinal).Description(AssetTexts.Graphql_Record_IsFinal_Description);
         Field(x => x.Description, true).Description(AssetTexts.Graphql_Record_Description_Description);

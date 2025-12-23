@@ -440,5 +440,23 @@ namespace AssetRepositoryServices.Resources {
                 return ResourceManager.GetString("Graphql_AssociationRole_OutboundMultiplicity_Description", resourceCulture);
             }
         }
+        
+        public static string Graphql_Type_RtCkTypeId_Description {
+            get {
+                return ResourceManager.GetString("Graphql_Type_RtCkTypeId_Description", resourceCulture);
+            }
+        }
+        
+        public static string Graphql_Record_RtCkRecordId_Description {
+            get {
+                return ResourceManager.GetString("Graphql_Record_RtCkRecordId_Description", resourceCulture);
+            }
+        }
+        
+        public static string Graphql_Enum_RtCkEnumId_Description {
+            get {
+                return ResourceManager.GetString("Graphql_Enum_RtCkEnumId_Description", resourceCulture);
+            }
+        }
     }
 }
