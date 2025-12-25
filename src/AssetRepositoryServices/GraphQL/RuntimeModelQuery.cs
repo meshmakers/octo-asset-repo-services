@@ -43,16 +43,9 @@ internal sealed class RuntimeModelQuery : ObjectGraphType
             .Argument<NonNullGraphType<OctoObjectIdType>>(Statics.RtIdArg, "The query runtime id.")
             .ResolveAsync(ResolveRtQueryAsync);
 
-        Connection<NonNullGraphType<RtTransientQueryDtoType>>("TransientRuntimeQuery")
-            .Argument<NonNullGraphType<StringGraphType>>(Statics.CkIdArg,
-                "The construction kit type with the given id.")
-            .Argument<NonNullGraphType<ListGraphType<NonNullGraphType<StringGraphType>>>>(Statics.ColumnPathsArg,
-                "The column paths to include in the result.")
-            .Argument<SearchFilterDtoType>(Statics.SearchFilterArg, "Filters items based on text search")
-            .Argument<ListGraphType<SortDtoType>>(Statics.SortOrderArg, "Sort order for items")
-            .Argument<ListGraphType<FieldFilterDtoType>>(Statics.FieldFilterArg,
-                "Filters items based on field compare")
-            .Resolve(ResolveTransientRtQuery);
+        Field<NonNullGraphType<RtTransientQuery>>("TransientQuery")
+            .Description("Transient runtime queries")
+            .Resolve(_ => new { });
 
         foreach (var rtEntityDtoType in graphTypesCache.GetTypes())
         {
@@ -73,39 +66,6 @@ internal sealed class RuntimeModelQuery : ObjectGraphType
                     "Filters items based on field compare")
                 .ResolveAsync(ResolveRtEntitiesQuery);
         }
-    }
-
-    private object ResolveTransientRtQuery(IResolveConnectionContext<object?> arg)
-    {
-        _logger.LogDebug("GraphQL query handling for transient runtime query started");
-
-        var ckCacheService = arg.GetCkCacheService();
-
-        var graphQlUserContext = (GraphQlUserContext)arg.UserContext;
-        var ckTypeId = arg.GetArgument<RtCkId<CkTypeId>>(Statics.CkId);
-
-        var columnPaths = arg.GetArgument<IEnumerable<string>>(Statics.ColumnPathsArg);
-        var columnPathList = columnPaths.ToList();
-
-        var typeQueryColumnPaths =
-            ckCacheService.GetCkTypeQueryColumnPathsByRtCkId(graphQlUserContext.TenantId, ckTypeId);
-        var invalidColumnPaths = columnPathList
-            .Where(cp => typeQueryColumnPaths.All(ckTypeQueryColumn => ckTypeQueryColumn.Path != cp)).ToList();
-        if (invalidColumnPaths.Any())
-        {
-            throw AssetRepositoryException.InvalidColumnPaths(invalidColumnPaths);
-        }
-
-        var selectedTypeQueryColumns = typeQueryColumnPaths
-            .Where(ckTypeQueryColumn => columnPathList.Contains(ckTypeQueryColumn.Path)).ToList();
-
-        var queryOptions = arg.GetQueryOptions();
-
-        _logger.LogDebug("GraphQL query handling returning data");
-        return ConnectionUtils.ToOctoConnection(
-            [RtTransientQueryDtoType.CreateTransientRtQueryDto(ckTypeId, queryOptions, selectedTypeQueryColumns)],
-            arg,
-            0, 1);
     }
 
     private async Task<object?> ResolveRtQueryAsync(IResolveConnectionContext<object?> arg)

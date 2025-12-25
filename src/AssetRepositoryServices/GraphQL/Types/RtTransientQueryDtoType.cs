@@ -124,14 +124,60 @@ internal sealed class RtTransientQueryDtoType : ObjectGraphType<RtTransientQuery
 
             var offset = context.GetOffset();
 
+            if (queryUserContext.QueryType == QueryType.Aggregation)
+            {
+                var aggregateResult = queryUserContext.QueryOptions.AggregateResult();
+
+                // Add aggregation definitions to query options
+                foreach (var tuple in queryUserContext.CkTypeQueryColumns)
+                {
+                    switch (tuple.Item2)
+                    {
+                        case AggregationTypesDto.Count:
+                            aggregateResult.CountAttributePaths(tuple.Item1.Path);
+                            break;
+                        case AggregationTypesDto.Minimum:
+                            aggregateResult.MinAttributePaths(tuple.Item1.Path);
+                            break;
+                        case AggregationTypesDto.Maximum:
+                            aggregateResult.MaxAttributePaths(tuple.Item1.Path);
+                            break;
+                        case AggregationTypesDto.Average:
+                            aggregateResult.AvgAttributePaths(tuple.Item1.Path);
+                            break;
+                        case AggregationTypesDto.Sum:
+                            aggregateResult.SumAttributePaths(tuple.Item1.Path);
+                            break;
+                        default:
+                            throw AssetRepositoryException.AggregationTypeUnknown(tuple.Item2);
+                    }
+                }
+            }
+
             var roleIdDirectionPairs = RtPathEvaluator.TokenizeAndGetNavigationPairsByRtCkId(ckCacheService,
                 tenantRepository.TenantId, rtTransientQueryDto.AssociatedCkTypeId,
                 rtTransientQueryDto.Columns.Select(column => column.AttributePath));
 
-
             var resultSet = await tenantRepository.GetRtEntitiesGraphByTypeAsync(sessionAccessor.Session,
                 rtTransientQueryDto.AssociatedCkTypeId, queryUserContext.QueryOptions,
                 roleIdDirectionPairs, offset, context.First);
+
+            if (queryUserContext.QueryType == QueryType.Aggregation)
+            {
+                _logger.LogDebug("GraphQL query handling returning aggregation data");
+
+                if (resultSet.AggregationResult == null)
+                {
+                    throw AssetRepositoryException.AggregationResultNull();
+                }
+
+                return ConnectionUtils.ToConnection(
+                [
+                    RtAggregationQueryRowDtoType.CreateRtQueryRowDto(tenantRepository.TenantId,
+                        rtTransientQueryDto.AssociatedCkTypeId, resultSet.AggregationResult,
+                        queryUserContext.CkTypeQueryColumns)
+                ], context, 0, 1);
+            }
 
             _logger.LogDebug("GraphQL query handling returning data");
             return ConnectionUtils.ToOctoConnection(
@@ -147,29 +193,34 @@ internal sealed class RtTransientQueryDtoType : ObjectGraphType<RtTransientQuery
         }
     }
 
-    public static RtTransientQueryDto CreateTransientRtQueryDto(RtCkId<CkTypeId> ckTypeId,
-        RtEntityQueryOptions queryOptions, IReadOnlyList<CkTypeQueryColumn> ckTypeQueryColumns)
+    public static RtTransientQueryDto CreateTransientRtQueryDto(QueryType queryType, RtCkId<CkTypeId> ckTypeId,
+        RtEntityQueryOptions queryOptions, IReadOnlyList<Tuple<CkTypeQueryColumn, AggregationTypesDto>> ckTypeQueryColumns)
     {
-        var ckTypeQueryColumnsWithAggregation = ckTypeQueryColumns
-            .Select(c => Tuple.Create(c, AggregationTypesDto.None))
-            .ToList();
 
         var rtTransientQueryDto = new RtTransientQueryDto
         {
             AssociatedCkTypeId = ckTypeId,
-            Columns = ckTypeQueryColumnsWithAggregation
+            Columns = ckTypeQueryColumns
                 .Select(c => RtQueryColumnType.CreateRtQueryColumnDto(c.Item1, c.Item2)).ToList(),
-            UserContext = new QueryUserContext(queryOptions, ckTypeQueryColumnsWithAggregation)
+            UserContext = new QueryUserContext(queryType, queryOptions, ckTypeQueryColumns)
         };
 
         return rtTransientQueryDto;
     }
 
     private class QueryUserContext(
+        QueryType queryType,
         RtEntityQueryOptions queryOptions,
         IReadOnlyList<Tuple<CkTypeQueryColumn, AggregationTypesDto>> ckTypeQueryColumns)
     {
+        public QueryType QueryType { get; } = queryType;
         public RtEntityQueryOptions QueryOptions { get; } = queryOptions;
         public IReadOnlyList<Tuple<CkTypeQueryColumn, AggregationTypesDto>> CkTypeQueryColumns { get; } = ckTypeQueryColumns;
+    }
+
+    internal enum QueryType
+    {
+        Standard,
+        Aggregation
     }
 }
