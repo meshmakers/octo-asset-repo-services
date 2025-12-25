@@ -19,7 +19,7 @@ internal class QueryMapperEngine
 
 
     internal async Task<QueryMapper> CreateQueryMapperAsync(ICkCacheService ckCacheService, GraphQlUserContext graphQlUserContext,
-        RtSimpleRtQuery rtQuery, ITenantRepository tenantRepository, List<RtQueryRowDto> inputObjects,
+        RtSimpleRtQuery rtQuery, ITenantRepository tenantRepository, List<RtSimpleQueryRowDto> inputObjects,
         IOctoSessionAccessor sessionAccessor)
     {
         var navigationPairToInputObjects = await NavigationPairToInputObjects(ckCacheService, graphQlUserContext,
@@ -29,7 +29,7 @@ internal class QueryMapperEngine
 
     private async Task<Dictionary<NavigationPair, List<RtEntityGraphItem>>> NavigationPairToInputObjects(
         ICkCacheService ckCacheService, GraphQlUserContext graphQlUserContext,
-        RtSimpleRtQuery rtQuery, ITenantRepository tenantRepository, List<RtQueryRowDto> inputObjects,
+        RtSimpleRtQuery rtQuery, ITenantRepository tenantRepository, List<RtSimpleQueryRowDto> inputObjects,
         IOctoSessionAccessor sessionAccessor)
     {
         var navigationPairs = RtPathEvaluator.TokenizeAndGetNavigationPairs(ckCacheService, graphQlUserContext.TenantId,
@@ -65,7 +65,7 @@ internal class QueryMapperEngine
     }
 
     private async Task EvaluateNavigationFilters(ICkCacheService ckCacheService, ITenantRepository tenantRepository,
-        List<NavigationPair> navigationPairs, List<RtQueryRowDto> inputObjects)
+        List<NavigationPair> navigationPairs, List<RtSimpleQueryRowDto> inputObjects)
     {
         foreach (var navigationPair in navigationPairs)
         {

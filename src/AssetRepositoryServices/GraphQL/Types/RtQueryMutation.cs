@@ -56,7 +56,7 @@ internal sealed class RtQueryMutation : RtMutationBase
             var graphQlUserContext = (GraphQlUserContext)context.UserContext;
 
             var queryRtId = context.Parent.GetArgument<OctoObjectId>(Statics.RtIdArg);
-            var inputObjects = context.GetArgument<List<RtQueryRowDto>>(Statics.EntitiesArg);
+            var inputObjects = context.GetArgument<List<RtSimpleQueryRowDto>>(Statics.EntitiesArg);
 
             var rtQuery = await tenantRepository.GetRtEntityByRtIdAsync<RtSimpleRtQuery>(sessionAccessor.Session, queryRtId);
             if (rtQuery == null)
@@ -152,7 +152,7 @@ internal sealed class RtQueryMutation : RtMutationBase
             var graphQlUserContext = (GraphQlUserContext)context.UserContext;
 
             var queryRtId = context.Parent.GetArgument<OctoObjectId>(Statics.RtIdArg);
-            var inputObjects = context.GetArgument<List<MutationDto<RtQueryRowDto>>>(Statics.EntitiesArg);
+            var inputObjects = context.GetArgument<List<MutationDto<RtSimpleQueryRowDto>>>(Statics.EntitiesArg);
 
             var rtQuery = await tenantRepository.GetRtEntityByRtIdAsync<RtSimpleRtQuery>(sessionAccessor.Session, queryRtId);
             if (rtQuery == null)

@@ -129,6 +129,11 @@ internal class GraphTypesCache : IGraphTypesCache
         inputTypes.AddRange(_enumTypes.Values);
         inputTypes.AddRange(_recordTypes.Values);
         inputTypes.AddRange(_inputRecordTypes.Values);
+
+        // Register query row types implementing the RtQueryRow interface
+        inputTypes.Add(new RtSimpleQueryRowDtoType());
+        inputTypes.Add(new RtAggregationQueryRowDtoType());
+
         return inputTypes.ToArray();
     }
 

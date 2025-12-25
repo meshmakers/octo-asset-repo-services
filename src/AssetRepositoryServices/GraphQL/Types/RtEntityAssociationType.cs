@@ -88,7 +88,7 @@ internal class RtEntityAssociationType : ObjectGraphType
 
         var dataLoaderResult = loader.LoadAsync(ctx.Source.ToRtEntityId());
 
-        return dataLoaderResult.Then(resultSet => ConnectionUtils.ToConnection(
+        return dataLoaderResult.Then(resultSet => ConnectionUtils.ToOctoConnection(
             resultSet.Items.Select(RtEntityDtoType.CreateRtEntityDto), ctx,
             resultSet.TotalCount > 0 ? offset.GetValueOrDefault(0) : 0, (int)resultSet.TotalCount));
     }

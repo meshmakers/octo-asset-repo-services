@@ -161,7 +161,7 @@ internal sealed class RtEntityDtoType : ObjectGraphType<RtEntityDto>
                     direction,
                     null, targetCkId, queryOptions, offset, arg.First);
 
-                return ConnectionUtils.ToConnection(result.First().Value.Items.Select(CreateRtEntityDto), arg);
+                return ConnectionUtils.ToOctoConnection(result.First().Value.Items.Select(CreateRtEntityDto), arg);
             }
             else
             {
@@ -170,7 +170,7 @@ internal sealed class RtEntityDtoType : ObjectGraphType<RtEntityDto>
                     targetCkId, direction,
                     null, queryOptions, offset, arg.First);
 
-                return ConnectionUtils.ToConnection(result.First().Value.Items.Select(CreateRtEntityDto), arg);
+                return ConnectionUtils.ToOctoConnection(result.First().Value.Items.Select(CreateRtEntityDto), arg);
             }
         }
         catch (Exception e)

@@ -64,7 +64,7 @@ internal abstract class RtMutationBase : ObjectGraphType
         return resultSetComplete.Select(RtEntityDtoType.CreateRtEntityDto);
     }
 
-    protected async Task<IEnumerable<RtQueryRowDto>> GetRtQueryRowResultSet(IOctoSession session,
+    protected async Task<IEnumerable<RtSimpleQueryRowDto>> GetRtQueryRowResultSet(IOctoSession session,
         ICkCacheService ckCacheService, ITenantRepository repository,
         List<EntityUpdateInfo<RtEntity>> entityUpdateInfos, OctoObjectId queryRtId)
     {
@@ -99,10 +99,12 @@ internal abstract class RtMutationBase : ObjectGraphType
         }
 
         var selectedTypeQueryColumns = typeQueryColumnPaths
-            .Where(ckTypeQueryColumn => rtQuery.Columns.Contains(ckTypeQueryColumn.Path)).ToList();
+            .Where(ckTypeQueryColumn => rtQuery.Columns.Contains(ckTypeQueryColumn.Path))
+            .Select(ckTypeQueryColumn => Tuple.Create(ckTypeQueryColumn, AggregationTypesDto.None))
+            .ToList();
 
         return resultSetComplete.Select((entity, _) =>
-            RtQueryRowDtoType.CreateRtQueryRowDto(repository.TenantId, entity, selectedTypeQueryColumns));
+            RtSimpleQueryRowDtoType.CreateRtQueryRowDto(repository.TenantId, entity, selectedTypeQueryColumns));
     }
 
 

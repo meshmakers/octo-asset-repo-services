@@ -19,7 +19,7 @@ internal class QueryMapper(
     string tenantId,
     Dictionary<NavigationPair, List<RtEntityGraphItem>> navigationCache)
 {
-    public async Task MapAsync(RtEntity rtEntity, RtQueryRowDto queryRowDto,
+    public async Task MapAsync(RtEntity rtEntity, RtSimpleQueryRowDto queryRowDto,
         List<AssociationUpdateInfo> associationUpdateInfoList, MappingMode mappingMode, MappingResult mappingResult)
     {
         foreach (var navigationPairToInputObject in navigationCache)
@@ -118,7 +118,7 @@ internal class QueryMapper(
 
     private List<RtEntityGraphItem> CompareNavigationProperties(NavigationPair navigationPair,
         List<PathTerm> parentPathTerms,
-        RtQueryRowDto queryRowDto,
+        RtSimpleQueryRowDto queryRowDto,
         List<RtEntityGraphItem> candidates,
         MappingResult mappingResult)
     {
@@ -187,7 +187,7 @@ internal class QueryMapper(
     }
 
     private void RtEntityFromInputObject(RtEntity rtEntity,
-        RtQueryRowDto rtQueryRowDto, MappingResult mappingResult)
+        RtSimpleQueryRowDto rtQueryRowDto, MappingResult mappingResult)
     {
         rtEntity.RtWellKnownName = rtQueryRowDto.RtWellKnownName;
 

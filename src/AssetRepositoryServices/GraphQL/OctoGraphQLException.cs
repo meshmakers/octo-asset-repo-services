@@ -110,4 +110,9 @@ public class OctoGraphQLException : Exception
     {
         return new OctoGraphQLException($"Direction {sourceDirection} is not supported.");
     }
+
+    public static Exception UnknownUserContextType()
+    {
+        return new OctoGraphQLException("Unknown user context type.");
+    }
 }

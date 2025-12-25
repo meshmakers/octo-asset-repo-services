@@ -8,7 +8,7 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Inputs;
 /// <summary>
 ///     Implements a GraphQL input type for runtime entity query row
 /// </summary>
-internal sealed class RtQueryRowDtoInputType : InputObjectGraphType<RtQueryRowDto>
+internal sealed class RtQueryRowDtoInputType : InputObjectGraphType<RtSimpleQueryRowDto>
 {
     /// <summary>
     ///     Constructor

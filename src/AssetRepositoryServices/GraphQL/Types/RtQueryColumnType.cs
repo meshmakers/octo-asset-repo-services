@@ -23,12 +23,13 @@ internal sealed class RtQueryColumnType : ObjectGraphType<RtQueryColumnDto>
         Field(d => d.AttributeValueType, typeof(AttributeValueTypesDtoType));
     }
 
-    public static RtQueryColumnDto CreateRtQueryColumnDto(CkTypeQueryColumn ckTypeQueryColumn)
+    public static RtQueryColumnDto CreateRtQueryColumnDto(CkTypeQueryColumn ckTypeQueryColumn, AggregationTypesDto aggregationType)
     {
         var rtQueryColumnDto = new RtQueryColumnDto
         {
             AttributePath = ckTypeQueryColumn.Path,
             AttributeValueType = ckTypeQueryColumn.ValueType,
+            AggregationType = aggregationType,
             UserContext = ckTypeQueryColumn
         };
         return rtQueryColumnDto;

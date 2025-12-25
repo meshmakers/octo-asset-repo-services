@@ -6,7 +6,7 @@ using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Inputs;
 
-internal sealed class RtQueryRowDtoUpdateType : InputObjectGraphType<MutationDto<RtQueryRowDto>>
+internal sealed class RtQueryRowDtoUpdateType : InputObjectGraphType<MutationDto<RtSimpleQueryRowDto>>
 {
     public RtQueryRowDtoUpdateType()
     {

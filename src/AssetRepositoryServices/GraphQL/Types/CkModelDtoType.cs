@@ -149,7 +149,7 @@ internal sealed class CkModelDtoType : ObjectGraphType<CkModelDto>
             if (!GetParameter<CkTypeId>(arg, out var sessionAccessor, out var graphQlUserContext, out var offset,
                     out var queryOptions, out var keysList))
             {
-                return ConnectionUtils.ToConnection(new List<CkTypeDto>(), arg);
+                return ConnectionUtils.ToOctoConnection(new List<CkTypeDto>(), arg);
             }
 
             if (sessionAccessor.Session == null)
@@ -165,7 +165,7 @@ internal sealed class CkModelDtoType : ObjectGraphType<CkModelDto>
                     arg.First);
 
             _logger.LogDebug("GraphQL query handling returning data for construction kit types");
-            return ConnectionUtils.ToConnection(resultSet.Items.Select(CkTypeDtoType.CreateCkTypeDto), arg,
+            return ConnectionUtils.ToOctoConnection(resultSet.Items.Select(CkTypeDtoType.CreateCkTypeDto), arg,
                 resultSet.TotalCount > 0 ? offset.GetValueOrDefault(0) : 0, (int)resultSet.TotalCount,
                 resultSet.AggregationResult, resultSet.FieldAggregationResult);
         }
@@ -184,7 +184,7 @@ internal sealed class CkModelDtoType : ObjectGraphType<CkModelDto>
             if (!GetParameter<CkAttributeId>(arg, out var sessionAccessor, out var graphQlUserContext, out var offset,
                     out var queryOptions, out var keysList))
             {
-                return ConnectionUtils.ToConnection(new List<CkAttributeDto>(), arg);
+                return ConnectionUtils.ToOctoConnection(new List<CkAttributeDto>(), arg);
             }
 
             if (sessionAccessor.Session == null)
@@ -208,7 +208,7 @@ internal sealed class CkModelDtoType : ObjectGraphType<CkModelDto>
             }
 
             _logger.LogDebug("GraphQL query handling returning data for construction kit attribute");
-            return ConnectionUtils.ToConnection(resultSet.Items.Select(CkAttributeDtoType.CreateCkAttributeDto), arg,
+            return ConnectionUtils.ToOctoConnection(resultSet.Items.Select(CkAttributeDtoType.CreateCkAttributeDto), arg,
                 resultSet.TotalCount > 0 ? offset.GetValueOrDefault(0) : 0, (int)resultSet.TotalCount,
                 resultSet.AggregationResult, resultSet.FieldAggregationResult);
         }
@@ -227,7 +227,7 @@ internal sealed class CkModelDtoType : ObjectGraphType<CkModelDto>
             if (!GetParameter<CkEnumId>(arg, out var sessionAccessor, out var graphQlUserContext, out var offset,
                     out var queryOptions, out var keysList))
             {
-                return ConnectionUtils.ToConnection(new List<CkEnumDto>(), arg);
+                return ConnectionUtils.ToOctoConnection(new List<CkEnumDto>(), arg);
             }
 
             if (sessionAccessor.Session == null)
@@ -251,7 +251,7 @@ internal sealed class CkModelDtoType : ObjectGraphType<CkModelDto>
             }
 
             _logger.LogDebug("GraphQL query handling returning data for construction kit enums");
-            return ConnectionUtils.ToConnection(resultSet.Items.Select(CkEnumDtoType.CreateCkEnumDto), arg,
+            return ConnectionUtils.ToOctoConnection(resultSet.Items.Select(CkEnumDtoType.CreateCkEnumDto), arg,
                 resultSet.TotalCount > 0 ? offset.GetValueOrDefault(0) : 0, (int)resultSet.TotalCount,
                 resultSet.AggregationResult, resultSet.FieldAggregationResult);
         }
@@ -270,7 +270,7 @@ internal sealed class CkModelDtoType : ObjectGraphType<CkModelDto>
             if (!GetParameter<CkRecordId>(arg, out var sessionAccessor, out var graphQlUserContext, out var offset,
                     out var queryOptions, out var keysList))
             {
-                return ConnectionUtils.ToConnection(new List<CkRecordDto>(), arg);
+                return ConnectionUtils.ToOctoConnection(new List<CkRecordDto>(), arg);
             }
 
             if (sessionAccessor.Session == null)
@@ -294,7 +294,7 @@ internal sealed class CkModelDtoType : ObjectGraphType<CkModelDto>
             }
 
             _logger.LogDebug("GraphQL query handling returning data for construction kit records");
-            return ConnectionUtils.ToConnection(resultSet.Items.Select(CkRecordDtoType.CreateCkRecordDto), arg,
+            return ConnectionUtils.ToOctoConnection(resultSet.Items.Select(CkRecordDtoType.CreateCkRecordDto), arg,
                 resultSet.TotalCount > 0 ? offset.GetValueOrDefault(0) : 0, (int)resultSet.TotalCount,
                 resultSet.AggregationResult, resultSet.FieldAggregationResult);
         }

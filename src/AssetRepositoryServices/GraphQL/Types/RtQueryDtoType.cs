@@ -11,6 +11,7 @@ using Meshmakers.Octo.ConstructionKit.Contracts.DependencyGraph;
 using Meshmakers.Octo.ConstructionKit.Models.System.Generated.System.v2;
 using Meshmakers.Octo.Runtime.Contracts;
 using Meshmakers.Octo.Runtime.Contracts.Repositories.Query;
+using ZstdSharp.Unsafe;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
 
@@ -35,7 +36,8 @@ internal sealed class RtQueryDtoType : ObjectGraphType<RtQueryDto>
         Field(d => d.Columns, typeof(NonNullGraphType<ListGraphType<NonNullGraphType<RtQueryColumnType>>>));
 
         Connection<NonNullGraphType<RtQueryRowDtoType>>("Rows")
-            .Argument<GlobalQueryOptionsDtoType>(Statics.OptionsArg, "Global options to apply to the query, for example to include archived items.")
+            .Argument<GlobalQueryOptionsDtoType>(Statics.OptionsArg,
+                "Global options to apply to the query, for example to include archived items.")
             .Argument<OctoObjectIdType>(Statics.RtIdArg, "Returns the entity with the given rtId.")
             .Argument<ListGraphType<OctoObjectIdType>>(Statics.RtIdsArg,
                 "Returns entities with the given rtIds.")
@@ -89,7 +91,7 @@ internal sealed class RtQueryDtoType : ObjectGraphType<RtQueryDto>
             }
 
             _logger.LogDebug("GraphQL query handling returning data");
-            return ConnectionUtils.ToConnection([
+            return ConnectionUtils.ToOctoConnection([
                     new QueryAggregationResult(
                         resultSet.TotalCount,
                         resultSet.AggregationResult.CountStatistics,
@@ -134,6 +136,36 @@ internal sealed class RtQueryDtoType : ObjectGraphType<RtQueryDto>
             var offset = context.GetOffset();
             var queryOptions = context.GetQueryOptions();
 
+            if (queryUserContext.RtPersistentQuery is RtAggregationRtQuery)
+            {
+                var aggregateResult = queryOptions.AggregateResult();
+
+                // Add aggregation definitions to query options
+                foreach (var tuple in queryUserContext.CkTypeQueryColumns)
+                {
+                    switch (tuple.Item2)
+                    {
+                        case AggregationTypesDto.Count:
+                            aggregateResult.CountAttributePaths(tuple.Item1.Path);
+                            break;
+                        case AggregationTypesDto.Minimum:
+                            aggregateResult.MinAttributePaths(tuple.Item1.Path);
+                            break;
+                        case AggregationTypesDto.Maximum:
+                            aggregateResult.MaxAttributePaths(tuple.Item1.Path);
+                            break;
+                        case AggregationTypesDto.Average:
+                            aggregateResult.AvgAttributePaths(tuple.Item1.Path);
+                            break;
+                        case AggregationTypesDto.Sum:
+                            aggregateResult.SumAttributePaths(tuple.Item1.Path);
+                            break;
+                        default:
+                            throw AssetRepositoryException.AggregationTypeUnknown(tuple.Item2);
+                    }
+                }
+            }
+
             var roleIdDirectionPairs = RtPathEvaluator.TokenizeAndGetNavigationPairsByRtCkId(ckCacheService,
                 tenantRepository.TenantId, rtQueryDto.AssociatedCkTypeId,
                 rtQueryDto.Columns.Select(column => column.AttributePath));
@@ -142,13 +174,30 @@ internal sealed class RtQueryDtoType : ObjectGraphType<RtQueryDto>
                 rtQueryDto.AssociatedCkTypeId, queryOptions, roleIdDirectionPairs, offset,
                 context.First);
 
+
+            if (queryUserContext.RtPersistentQuery is RtAggregationRtQuery aggregationRtQuery)
+            {
+                _logger.LogDebug("GraphQL query handling returning aggregation data");
+
+                if (resultSet.AggregationResult == null)
+                {
+                    throw AssetRepositoryException.AggregationResultNull();
+                }
+
+                return ConnectionUtils.ToConnection(
+                [
+                    RtAggregationQueryRowDtoType.CreateRtQueryRowDto(tenantRepository.TenantId,
+                        aggregationRtQuery.QueryCkTypeId, resultSet.AggregationResult,
+                        queryUserContext.CkTypeQueryColumns)
+                ], context, 0, 1);
+            }
+
             _logger.LogDebug("GraphQL query handling returning data");
             return ConnectionUtils.ToConnection(
                 resultSet.Items.Select((entity, _) =>
-                    RtQueryRowDtoType.CreateRtQueryRowDto(tenantRepository.TenantId, entity,
+                    RtSimpleQueryRowDtoType.CreateRtQueryRowDto(tenantRepository.TenantId, entity,
                         queryUserContext.CkTypeQueryColumns)), context,
-                resultSet.TotalCount > 0 ? offset.GetValueOrDefault(0) : 0, (int)resultSet.TotalCount,
-                resultSet.AggregationResult, resultSet.FieldAggregationResult);
+                resultSet.TotalCount > 0 ? offset.GetValueOrDefault(0) : 0, (int)resultSet.TotalCount);
         }
         catch (Exception e)
         {
@@ -156,8 +205,34 @@ internal sealed class RtQueryDtoType : ObjectGraphType<RtQueryDto>
         }
     }
 
+    public static RtQueryDto CreateRtQueryDto(RtAggregationRtQuery rtAggregationRtQuery,
+        IReadOnlyList<Tuple<CkTypeQueryColumn, AggregationTypesDto>> ckTypeQueryColumns)
+    {
+        var queryOptions = RtEntityQueryOptions.Create();
+        if (rtAggregationRtQuery.FieldFilter != null)
+        {
+            foreach (var fieldFilter in rtAggregationRtQuery.FieldFilter)
+            {
+                queryOptions.FieldFilter(fieldFilter.AttributePath.ToPascalCase(),
+                    (FieldFilterOperator)fieldFilter.Operator,
+                    fieldFilter.ComparisonValue);
+            }
+        }
+
+        var rtQueryDto = new RtQueryDto
+        {
+            QueryRtId = rtAggregationRtQuery.RtId,
+            AssociatedCkTypeId = rtAggregationRtQuery.QueryCkTypeId,
+            Columns = ckTypeQueryColumns.Select(c => RtQueryColumnType.CreateRtQueryColumnDto(c.Item1, c.Item2))
+                .ToList(),
+            UserContext = new QueryUserContext(rtAggregationRtQuery, ckTypeQueryColumns)
+        };
+
+        return rtQueryDto;
+    }
+
     public static RtQueryDto CreateRtQueryDto(RtSimpleRtQuery rtQuery,
-        IReadOnlyList<CkTypeQueryColumn> ckTypeQueryColumns)
+        IReadOnlyList<Tuple<CkTypeQueryColumn, AggregationTypesDto>> ckTypeQueryColumns)
     {
         var queryOptions = RtEntityQueryOptions.Create();
         if (rtQuery.FieldFilter != null)
@@ -182,15 +257,21 @@ internal sealed class RtQueryDtoType : ObjectGraphType<RtQueryDto>
         {
             QueryRtId = rtQuery.RtId,
             AssociatedCkTypeId = rtQuery.QueryCkTypeId,
-            Columns = ckTypeQueryColumns.Select(RtQueryColumnType.CreateRtQueryColumnDto).ToList(),
-            UserContext = new QueryUserContext(ckTypeQueryColumns)
+            Columns = ckTypeQueryColumns
+                .Select(c => RtQueryColumnType.CreateRtQueryColumnDto(c.Item1, c.Item2)).ToList(),
+            UserContext = new QueryUserContext(rtQuery, ckTypeQueryColumns)
         };
 
         return rtQueryDto;
     }
 
-    private class QueryUserContext(IReadOnlyList<CkTypeQueryColumn> ckTypeQueryColumns)
+    private class QueryUserContext(
+        RtPersistentQuery rtPersistentQuery,
+        IReadOnlyList<Tuple<CkTypeQueryColumn, AggregationTypesDto>> ckTypeQueryColumns)
     {
-        public IReadOnlyList<CkTypeQueryColumn> CkTypeQueryColumns { get; } = ckTypeQueryColumns;
+        public RtPersistentQuery RtPersistentQuery { get; } = rtPersistentQuery;
+
+        public IReadOnlyList<Tuple<CkTypeQueryColumn, AggregationTypesDto>> CkTypeQueryColumns { get; } =
+            ckTypeQueryColumns;
     }
 }

@@ -57,7 +57,7 @@ public sealed class RtAssociationDtoType : ObjectGraphType<RtAssociationDto>
             resultList = ckAssociationRole.AllAttributes.Values;
         }
 
-        return ConnectionUtils.ToConnection(
+        return ConnectionUtils.ToOctoConnection(
             resultList.Select(item => CreateRtEntityAttributeDto((RtAssociation)context.Source.UserContext!, item)),
             context);
     }
