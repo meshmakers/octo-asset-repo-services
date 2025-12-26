@@ -116,7 +116,41 @@ internal sealed class RuntimeModelQuery : ObjectGraphType
     private OctoConnection<RtQueryDto> ResolveRtGroupingAggregationRtQueryAsync(IResolveConnectionContext<object?> arg,
         RtGroupingAggregationRtQuery rtGroupingAggregationRtQuery)
     {
-        return null!;
+        var ckCacheService = arg.GetCkCacheService();
+        var graphQlUserContext = (GraphQlUserContext)arg.UserContext;
+
+        var typeQueryColumnPaths =
+            ckCacheService.GetCkTypeQueryColumnPathsByRtCkId(graphQlUserContext.TenantId,
+                rtGroupingAggregationRtQuery.QueryCkTypeId);
+
+        // Validate grouping columns
+        var groupingColumns = rtGroupingAggregationRtQuery.GroupingColumns?.ToList() ?? [];
+        var invalidGroupingColumns = groupingColumns
+            .Where(cp => typeQueryColumnPaths.All(ckTypeQueryColumn => ckTypeQueryColumn.Path != cp)).ToList();
+        if (invalidGroupingColumns.Any())
+        {
+            throw AssetRepositoryException.InvalidColumnPaths(invalidGroupingColumns);
+        }
+
+        // Validate aggregation columns
+        var invalidColumnPaths = rtGroupingAggregationRtQuery.Columns
+            .Where(cp => typeQueryColumnPaths.All(ckTypeQueryColumn => ckTypeQueryColumn.Path != cp.AttributePath)).ToList();
+        if (invalidColumnPaths.Any())
+        {
+            throw AssetRepositoryException.InvalidColumnPaths(invalidColumnPaths.Select(p => p.AttributePath).ToList());
+        }
+
+        var selectedTypeQueryColumns = typeQueryColumnPaths
+            .Join(rtGroupingAggregationRtQuery.Columns,
+                ckTypeQueryColumn => ckTypeQueryColumn.Path,
+                column => column.AttributePath,
+                (ckTypeQueryColumn, column) => Tuple.Create(ckTypeQueryColumn, MapAggregationType(column.AggregationType)))
+            .ToList();
+
+        _logger.LogDebug("GraphQL query handling returning data");
+        return ConnectionUtils.ToOctoConnection(
+            [RtQueryDtoType.CreateRtQueryDto(rtGroupingAggregationRtQuery, selectedTypeQueryColumns, groupingColumns)], arg,
+            0, 1);
     }
 
     private OctoConnection<RtQueryDto> ResolveRtAggregationRtQueryAsync(IResolveConnectionContext<object?> arg,
@@ -138,7 +172,7 @@ internal sealed class RuntimeModelQuery : ObjectGraphType
             .Join(rtAggregationRtQuery.Columns,
                 ckTypeQueryColumn => ckTypeQueryColumn.Path,
                 column => column.AttributePath,
-                (ckTypeQueryColumn, column) => Tuple.Create(ckTypeQueryColumn, (AggregationTypesDto)column.AggregationType))
+                (ckTypeQueryColumn, column) => Tuple.Create(ckTypeQueryColumn, MapAggregationType(column.AggregationType)))
             .ToList();
 
         _logger.LogDebug("GraphQL query handling returning data");
@@ -294,5 +328,20 @@ internal sealed class RuntimeModelQuery : ObjectGraphType
         {
             return arg.HandleException(e);
         }
+    }
+
+    private static AggregationTypesDto MapAggregationType(Enum aggregationType)
+    {
+        // Map by name since the generated System enum has different numeric values than AggregationTypesDto
+        var typeName = aggregationType.ToString();
+        return typeName switch
+        {
+            "Count" => AggregationTypesDto.Count,
+            "Sum" => AggregationTypesDto.Sum,
+            "Average" => AggregationTypesDto.Average,
+            "Minimum" => AggregationTypesDto.Minimum,
+            "Maximum" => AggregationTypesDto.Maximum,
+            _ => throw new ArgumentOutOfRangeException(nameof(aggregationType), aggregationType, $"Unknown aggregation type: {typeName}")
+        };
     }
 }

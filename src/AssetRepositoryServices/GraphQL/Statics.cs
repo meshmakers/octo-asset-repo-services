@@ -13,6 +13,7 @@ internal static class Statics
     internal const string CkIdArg = "ckId";
     internal const string RtCkIdArg = "rtCkId";
     internal const string ColumnPathsArg = "columnPaths";
+    internal const string GroupByColumnPathsArg = "groupByColumnPaths";
     internal const string CkIdsArg = "ckIds";
     internal const string RtCkIdsArg = "rtCkIds";
     internal const string RoleIdArg = "roleId";

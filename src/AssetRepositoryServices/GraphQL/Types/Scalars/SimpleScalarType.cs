@@ -23,6 +23,21 @@ internal class SimpleScalarType : ScalarGraphType
             return str.Value.ToString();
         }
 
+        if (value is GraphQLIntValue intValue)
+        {
+            return int.Parse(intValue.Value);
+        }
+
+        if (value is GraphQLFloatValue floatValue)
+        {
+            return double.Parse(floatValue.Value, NumberStyles.Float, CultureInfo.InvariantCulture);
+        }
+
+        if (value is GraphQLBooleanValue boolValue)
+        {
+            return boolValue.Value;
+        }
+
         if (value is GraphQLListValue list)
         {
             var items = new List<object?>();

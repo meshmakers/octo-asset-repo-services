@@ -94,6 +94,9 @@ internal class OctoBuilder<TSourceType>(
                     _ => typeof(LargeBinaryInfoDtoType)
                 };
                 return (null, binaryLinkedType);
+            case AttributeValueTypesDto.Binary:
+                return (null, typeof(ListGraphType<ByteGraphType>));
+
             case AttributeValueTypesDto.Enum:
                 if (typeAttributeGraph.ValueCkEnumId == null)
                 {

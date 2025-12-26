@@ -131,26 +131,22 @@ internal sealed class RtTransientQueryDtoType : ObjectGraphType<RtTransientQuery
                 // Add aggregation definitions to query options
                 foreach (var tuple in queryUserContext.CkTypeQueryColumns)
                 {
-                    switch (tuple.Item2)
-                    {
-                        case AggregationTypesDto.Count:
-                            aggregateResult.CountAttributePaths(tuple.Item1.Path);
-                            break;
-                        case AggregationTypesDto.Minimum:
-                            aggregateResult.MinAttributePaths(tuple.Item1.Path);
-                            break;
-                        case AggregationTypesDto.Maximum:
-                            aggregateResult.MaxAttributePaths(tuple.Item1.Path);
-                            break;
-                        case AggregationTypesDto.Average:
-                            aggregateResult.AvgAttributePaths(tuple.Item1.Path);
-                            break;
-                        case AggregationTypesDto.Sum:
-                            aggregateResult.SumAttributePaths(tuple.Item1.Path);
-                            break;
-                        default:
-                            throw AssetRepositoryException.AggregationTypeUnknown(tuple.Item2);
-                    }
+                    AddAggregationToResult(aggregateResult, tuple);
+                }
+            }
+            else if (queryUserContext.QueryType == QueryType.GroupingAggregation)
+            {
+                if (queryUserContext.GroupByColumnPaths == null || queryUserContext.GroupByColumnPaths.Count == 0)
+                {
+                    throw AssetRepositoryException.GroupByColumnPathsRequired();
+                }
+
+                var aggregateFieldGroupBy = queryUserContext.QueryOptions.AggregateFieldGroupBy(queryUserContext.GroupByColumnPaths.ToArray());
+
+                // Add aggregation definitions to query options
+                foreach (var tuple in queryUserContext.CkTypeQueryColumns)
+                {
+                    AddAggregationToGroupBy(aggregateFieldGroupBy, tuple);
                 }
             }
 
@@ -179,6 +175,24 @@ internal sealed class RtTransientQueryDtoType : ObjectGraphType<RtTransientQuery
                 ], context, 0, 1);
             }
 
+            if (queryUserContext.QueryType == QueryType.GroupingAggregation)
+            {
+                _logger.LogDebug("GraphQL query handling returning grouping aggregation data");
+
+                if (resultSet.FieldAggregationResult == null || !resultSet.FieldAggregationResult.Any())
+                {
+                    throw AssetRepositoryException.FieldAggregationResultNull();
+                }
+
+                var fieldAggregationResults = resultSet.FieldAggregationResult.ToList();
+                return ConnectionUtils.ToConnection(
+                    fieldAggregationResults.Select(fieldAggResult =>
+                        RtGroupingAggregationQueryRowDtoType.CreateRtQueryRowDto(tenantRepository.TenantId,
+                            rtTransientQueryDto.AssociatedCkTypeId, fieldAggResult,
+                            queryUserContext.CkTypeQueryColumns)),
+                    context, 0, fieldAggregationResults.Count);
+            }
+
             _logger.LogDebug("GraphQL query handling returning data");
             return ConnectionUtils.ToOctoConnection(
                 resultSet.Items.Select((entity, _) =>
@@ -194,33 +208,96 @@ internal sealed class RtTransientQueryDtoType : ObjectGraphType<RtTransientQuery
     }
 
     public static RtTransientQueryDto CreateTransientRtQueryDto(QueryType queryType, RtCkId<CkTypeId> ckTypeId,
-        RtEntityQueryOptions queryOptions, IReadOnlyList<Tuple<CkTypeQueryColumn, AggregationTypesDto>> ckTypeQueryColumns)
+        RtEntityQueryOptions queryOptions, IReadOnlyList<Tuple<CkTypeQueryColumn, AggregationTypesDto>> ckTypeQueryColumns,
+        IReadOnlyList<string>? groupByColumnPaths = null)
     {
+        var columns = new List<RtQueryColumnDto>();
+
+        // For grouping aggregation, add the groupBy columns first
+        if (queryType == QueryType.GroupingAggregation && groupByColumnPaths != null)
+        {
+            columns.AddRange(groupByColumnPaths.Select(RtQueryColumnType.CreateGroupByColumnDto));
+        }
+
+        // Then add the aggregation columns
+        columns.AddRange(ckTypeQueryColumns.Select(c => RtQueryColumnType.CreateRtQueryColumnDto(c.Item1, c.Item2)));
 
         var rtTransientQueryDto = new RtTransientQueryDto
         {
             AssociatedCkTypeId = ckTypeId,
-            Columns = ckTypeQueryColumns
-                .Select(c => RtQueryColumnType.CreateRtQueryColumnDto(c.Item1, c.Item2)).ToList(),
-            UserContext = new QueryUserContext(queryType, queryOptions, ckTypeQueryColumns)
+            Columns = columns,
+            UserContext = new QueryUserContext(queryType, queryOptions, ckTypeQueryColumns, groupByColumnPaths)
         };
 
         return rtTransientQueryDto;
     }
 
+    private static void AddAggregationToResult(AggregationInput aggregateResult,
+        Tuple<CkTypeQueryColumn, AggregationTypesDto> tuple)
+    {
+        switch (tuple.Item2)
+        {
+            case AggregationTypesDto.Count:
+                aggregateResult.CountAttributePaths(tuple.Item1.Path);
+                break;
+            case AggregationTypesDto.Minimum:
+                aggregateResult.MinAttributePaths(tuple.Item1.Path);
+                break;
+            case AggregationTypesDto.Maximum:
+                aggregateResult.MaxAttributePaths(tuple.Item1.Path);
+                break;
+            case AggregationTypesDto.Average:
+                aggregateResult.AvgAttributePaths(tuple.Item1.Path);
+                break;
+            case AggregationTypesDto.Sum:
+                aggregateResult.SumAttributePaths(tuple.Item1.Path);
+                break;
+            default:
+                throw AssetRepositoryException.AggregationTypeUnknown(tuple.Item2);
+        }
+    }
+
+    private static void AddAggregationToGroupBy(FieldAggregationInput aggregateFieldGroupBy,
+        Tuple<CkTypeQueryColumn, AggregationTypesDto> tuple)
+    {
+        switch (tuple.Item2)
+        {
+            case AggregationTypesDto.Count:
+                aggregateFieldGroupBy.CountAttributePaths(tuple.Item1.Path);
+                break;
+            case AggregationTypesDto.Minimum:
+                aggregateFieldGroupBy.MinAttributePaths(tuple.Item1.Path);
+                break;
+            case AggregationTypesDto.Maximum:
+                aggregateFieldGroupBy.MaxAttributePaths(tuple.Item1.Path);
+                break;
+            case AggregationTypesDto.Average:
+                aggregateFieldGroupBy.AvgAttributePaths(tuple.Item1.Path);
+                break;
+            case AggregationTypesDto.Sum:
+                aggregateFieldGroupBy.SumAttributePaths(tuple.Item1.Path);
+                break;
+            default:
+                throw AssetRepositoryException.AggregationTypeUnknown(tuple.Item2);
+        }
+    }
+
     private class QueryUserContext(
         QueryType queryType,
         RtEntityQueryOptions queryOptions,
-        IReadOnlyList<Tuple<CkTypeQueryColumn, AggregationTypesDto>> ckTypeQueryColumns)
+        IReadOnlyList<Tuple<CkTypeQueryColumn, AggregationTypesDto>> ckTypeQueryColumns,
+        IReadOnlyList<string>? groupByColumnPaths = null)
     {
         public QueryType QueryType { get; } = queryType;
         public RtEntityQueryOptions QueryOptions { get; } = queryOptions;
         public IReadOnlyList<Tuple<CkTypeQueryColumn, AggregationTypesDto>> CkTypeQueryColumns { get; } = ckTypeQueryColumns;
+        public IReadOnlyList<string>? GroupByColumnPaths { get; } = groupByColumnPaths;
     }
 
     internal enum QueryType
     {
         Standard,
-        Aggregation
+        Aggregation,
+        GroupingAggregation
     }
 }

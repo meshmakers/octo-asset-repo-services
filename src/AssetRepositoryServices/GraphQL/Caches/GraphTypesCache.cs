@@ -133,6 +133,7 @@ internal class GraphTypesCache : IGraphTypesCache
         // Register query row types implementing the RtQueryRow interface
         inputTypes.Add(new RtSimpleQueryRowDtoType());
         inputTypes.Add(new RtAggregationQueryRowDtoType());
+        inputTypes.Add(new RtGroupingAggregationQueryRowDtoType());
 
         return inputTypes.ToArray();
     }

@@ -142,4 +142,14 @@ internal class AssetRepositoryException : Exception
     {
         return new AssetRepositoryException("Aggregation type unknown: " + aggregationType);
     }
+
+    public static Exception GroupByColumnPathsRequired()
+    {
+        return new AssetRepositoryException("GroupBy column paths are required for grouping aggregation queries");
+    }
+
+    public static Exception FieldAggregationResultNull()
+    {
+        return new AssetRepositoryException("Field aggregation result is null");
+    }
 }
