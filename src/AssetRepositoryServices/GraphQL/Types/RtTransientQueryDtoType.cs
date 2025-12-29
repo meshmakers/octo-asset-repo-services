@@ -123,9 +123,12 @@ internal sealed class RtTransientQueryDtoType : ObjectGraphType<RtTransientQuery
             var tenantRepository = graphQlUserContext.TenantContext.GetTenantRepository();
 
             var offset = context.GetOffset();
+            var first = context.First;
 
             if (queryUserContext.QueryType == QueryType.Aggregation)
             {
+                offset = null;
+                first = null;
                 var aggregateResult = queryUserContext.QueryOptions.AggregateResult();
 
                 // Add aggregation definitions to query options
@@ -136,7 +139,9 @@ internal sealed class RtTransientQueryDtoType : ObjectGraphType<RtTransientQuery
             }
             else if (queryUserContext.QueryType == QueryType.GroupingAggregation)
             {
-                if (queryUserContext.GroupByColumnPaths == null || queryUserContext.GroupByColumnPaths.Count == 0)
+                offset = null;
+                first = null;
+                if (queryUserContext.GroupByColumnPaths == null)
                 {
                     throw AssetRepositoryException.GroupByColumnPathsRequired();
                 }
@@ -156,7 +161,7 @@ internal sealed class RtTransientQueryDtoType : ObjectGraphType<RtTransientQuery
 
             var resultSet = await tenantRepository.GetRtEntitiesGraphByTypeAsync(sessionAccessor.Session,
                 rtTransientQueryDto.AssociatedCkTypeId, queryUserContext.QueryOptions,
-                roleIdDirectionPairs, offset, context.First);
+                roleIdDirectionPairs, offset, first);
 
             if (queryUserContext.QueryType == QueryType.Aggregation)
             {
@@ -185,12 +190,20 @@ internal sealed class RtTransientQueryDtoType : ObjectGraphType<RtTransientQuery
                 }
 
                 var fieldAggregationResults = resultSet.FieldAggregationResult.ToList();
-                return ConnectionUtils.ToConnection(
-                    fieldAggregationResults.Select(fieldAggResult =>
+                var totalCount = fieldAggregationResults.Count;
+                var currentOffset = offset.GetValueOrDefault(0);
+
+                // Apply paging to field aggregation results
+                var pagedResults = fieldAggregationResults
+                    .Skip(currentOffset)
+                    .Take(context.First ?? totalCount)
+                    .Select(fieldAggResult =>
                         RtGroupingAggregationQueryRowDtoType.CreateRtQueryRowDto(tenantRepository.TenantId,
                             rtTransientQueryDto.AssociatedCkTypeId, fieldAggResult,
-                            queryUserContext.CkTypeQueryColumns)),
-                    context, 0, fieldAggregationResults.Count);
+                            queryUserContext.CkTypeQueryColumns));
+
+                return ConnectionUtils.ToConnection(pagedResults, context,
+                    totalCount > 0 ? currentOffset : 0, totalCount);
             }
 
             _logger.LogDebug("GraphQL query handling returning data");

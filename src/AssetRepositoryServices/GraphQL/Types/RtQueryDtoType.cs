@@ -137,6 +137,10 @@ internal sealed class RtQueryDtoType : ObjectGraphType<RtQueryDto>
             // Use query options from the persistent query definition, then enhance with runtime options
             var queryOptions = context.GetQueryOptions(queryUserContext.QueryOptions);
 
+            // For aggregation queries, paging is applied in-memory to the results, not server-side
+            var isAggregationQuery = queryUserContext.RtPersistentQuery is RtAggregationRtQuery
+                                     or RtGroupingAggregationRtQuery;
+
             if (queryUserContext.RtPersistentQuery is RtAggregationRtQuery)
             {
                 var aggregateResult = queryOptions.AggregateResult();
@@ -167,9 +171,11 @@ internal sealed class RtQueryDtoType : ObjectGraphType<RtQueryDto>
                 tenantRepository.TenantId, rtQueryDto.AssociatedCkTypeId,
                 rtQueryDto.Columns.Select(column => column.AttributePath));
 
+            // For aggregation queries, don't pass paging parameters to the database query
             var resultSet = await tenantRepository.GetRtEntitiesGraphByTypeAsync(sessionAccessor.Session,
-                rtQueryDto.AssociatedCkTypeId, queryOptions, roleIdDirectionPairs, offset,
-                context.First);
+                rtQueryDto.AssociatedCkTypeId, queryOptions, roleIdDirectionPairs,
+                isAggregationQuery ? null : offset,
+                isAggregationQuery ? null : context.First);
 
 
             if (queryUserContext.RtPersistentQuery is RtAggregationRtQuery aggregationRtQuery)
@@ -193,18 +199,26 @@ internal sealed class RtQueryDtoType : ObjectGraphType<RtQueryDto>
             {
                 _logger.LogDebug("GraphQL query handling returning grouping aggregation data");
 
-                if (resultSet.FieldAggregationResult == null)
+                if (resultSet.FieldAggregationResult == null || !resultSet.FieldAggregationResult.Any())
                 {
                     throw AssetRepositoryException.FieldAggregationResultNull();
                 }
 
                 var fieldAggregationResults = resultSet.FieldAggregationResult.ToList();
-                return ConnectionUtils.ToConnection(
-                    fieldAggregationResults.Select(fieldAggResult =>
+                var totalCount = fieldAggregationResults.Count;
+                var currentOffset = offset.GetValueOrDefault(0);
+
+                // Apply paging to field aggregation results
+                var pagedResults = fieldAggregationResults
+                    .Skip(currentOffset)
+                    .Take(context.First ?? totalCount)
+                    .Select(fieldAggResult =>
                         RtGroupingAggregationQueryRowDtoType.CreateRtQueryRowDto(tenantRepository.TenantId,
                             groupingAggregationRtQuery.QueryCkTypeId, fieldAggResult,
-                            queryUserContext.CkTypeQueryColumns)),
-                    context, 0, fieldAggregationResults.Count);
+                            queryUserContext.CkTypeQueryColumns));
+
+                return ConnectionUtils.ToConnection(pagedResults, context,
+                    totalCount > 0 ? currentOffset : 0, totalCount);
             }
 
             _logger.LogDebug("GraphQL query handling returning data");
