@@ -184,7 +184,7 @@ internal sealed class RtTransientQueryDtoType : ObjectGraphType<RtTransientQuery
             {
                 _logger.LogDebug("GraphQL query handling returning grouping aggregation data");
 
-                if (resultSet.FieldAggregationResult == null || !resultSet.FieldAggregationResult.Any())
+                if (resultSet.FieldAggregationResult == null)
                 {
                     throw AssetRepositoryException.FieldAggregationResultNull();
                 }
