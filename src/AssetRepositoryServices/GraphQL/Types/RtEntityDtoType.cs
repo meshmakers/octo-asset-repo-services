@@ -14,6 +14,7 @@ using Meshmakers.Octo.ConstructionKit.Contracts.DependencyGraph;
 using Meshmakers.Octo.ConstructionKit.Contracts.Services;
 using Meshmakers.Octo.Runtime.Contracts.RepositoryEntities;
 using Microsoft.Extensions.Options;
+using Statics = Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Statics;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
 
@@ -85,8 +86,16 @@ internal sealed class RtEntityDtoType : ObjectGraphType<RtEntityDto>
             }
 
             this.AssociationField(graphTypesCache, ckTypeAssociationGraph.Key,
-                allowedTypes, _ckTypeGraph.CkTypeId.ToRtCkId(),
-                ckTypeAssociationGraph.First().CkRoleId.ToRtCkId(), GraphDirections.Outbound);
+                    allowedTypes, _ckTypeGraph.CkTypeId.ToRtCkId(),
+                    ckTypeAssociationGraph.First().CkRoleId.ToRtCkId(), GraphDirections.Outbound)
+                .Argument<StringGraphType>(Statics.CkTypeIdArg, "Filter by specific CK type ID. If not specified, returns all allowed types.")
+                .Argument<OctoObjectIdType>(Statics.RtIdArg, "Returns the entity with the given rtId.")
+                .Argument<ListGraphType<OctoObjectIdType>>(Statics.RtIdsArg, "Returns entities with the given rtIds.")
+                .Argument<SearchFilterDtoType>(Statics.SearchFilterArg, "Filters items based on text search")
+                .Argument<ListGraphType<SortDtoType>>(Statics.SortOrderArg, "Sort order for items")
+                .Argument<ListGraphType<FieldFilterDtoType>>(Statics.FieldFilterArg, "Filters items based on field compare")
+                .Argument<ResultAggregationInputDtoType>(Statics.AggregationsArg, AssetTexts.Graphql_Type_Filter_Aggregations_Description)
+                .ResolveAsync(ResolveAssociationQuery);
         }
 
         foreach (var ckTypeAssociationGraph in _ckTypeGraph.Associations.In.All.GroupBy(x => x.NavigationPropertyName))
@@ -102,8 +111,90 @@ internal sealed class RtEntityDtoType : ObjectGraphType<RtEntityDto>
             }
 
             this.AssociationField(graphTypesCache, ckTypeAssociationGraph.Key,
-                allowedTypes, _ckTypeGraph.CkTypeId.ToRtCkId(),
-                ckTypeAssociationGraph.First().CkRoleId.ToRtCkId(), GraphDirections.Inbound);
+                    allowedTypes, _ckTypeGraph.CkTypeId.ToRtCkId(),
+                    ckTypeAssociationGraph.First().CkRoleId.ToRtCkId(), GraphDirections.Inbound)
+                .Argument<StringGraphType>(Statics.CkTypeIdArg, "Filter by specific CK type ID. If not specified, returns all allowed types.")
+                .Argument<OctoObjectIdType>(Statics.RtIdArg, "Returns the entity with the given rtId.")
+                .Argument<ListGraphType<OctoObjectIdType>>(Statics.RtIdsArg, "Returns entities with the given rtIds.")
+                .Argument<SearchFilterDtoType>(Statics.SearchFilterArg, "Filters items based on text search")
+                .Argument<ListGraphType<SortDtoType>>(Statics.SortOrderArg, "Sort order for items")
+                .Argument<ListGraphType<FieldFilterDtoType>>(Statics.FieldFilterArg, "Filters items based on field compare")
+                .Argument<ResultAggregationInputDtoType>(Statics.AggregationsArg, AssetTexts.Graphql_Type_Filter_Aggregations_Description)
+                .ResolveAsync(ResolveAssociationQuery);
+        }
+    }
+
+    private async Task<object?> ResolveAssociationQuery(IResolveConnectionContext<RtEntityDto> ctx)
+    {
+        try
+        {
+            var sessionAccessor = ctx.GetSessionAccessor();
+            var graphQlUserContext = (GraphQlUserContext)ctx.UserContext;
+
+            var offset = ctx.GetOffset();
+            var queryOptions = ctx.GetQueryOptions();
+
+            // Get metadata from field
+            var originCkId = (RtCkId<CkTypeId>)ctx.FieldDefinition.Metadata[Statics.OriginCkId]!;
+            var roleId = (RtCkId<CkAssociationRoleId>)ctx.FieldDefinition.Metadata[Statics.RoleId]!;
+            var graphDirection = (GraphDirections)ctx.FieldDefinition.Metadata[Statics.GraphDirection]!;
+            var allowedTypes = (IReadOnlyList<RtCkId<CkTypeId>>)ctx.FieldDefinition.Metadata[Statics.AllowedTypes]!;
+
+            // Get optional ckTypeId filter argument
+            ctx.TryGetArgument(Statics.CkTypeIdArg, out string? ckTypeIdFilter);
+
+            // Determine target CK type - use filter if provided, otherwise query all allowed types
+            RtCkId<CkTypeId>? targetCkId = null;
+            if (!string.IsNullOrEmpty(ckTypeIdFilter))
+            {
+                var parsedCkId = new RtCkId<CkTypeId>(ckTypeIdFilter);
+                // Validate that the requested type is in the allowed list
+                if (!allowedTypes.Contains(parsedCkId))
+                {
+                    var allowedTypeNames = allowedTypes.Select(t => t.SemanticVersionedFullName).ToArray();
+                    throw new ArgumentException($"Type '{ckTypeIdFilter}' is not allowed for this association. Allowed types: {string.Join(", ", allowedTypeNames)}");
+                }
+                targetCkId = parsedCkId;
+            }
+
+            // Get optional rtId filters
+            ctx.TryGetArgument(Statics.RtIdArg, out OctoObjectId? key);
+            ctx.TryGetArgument(Statics.RtIdsArg, null, out IEnumerable<OctoObjectId>? keys);
+            var keysList = keys?.ToList();
+            if (key != null)
+            {
+                keysList ??= new List<OctoObjectId>();
+                keysList.Add(key.Value);
+            }
+
+            var tenantRepository = graphQlUserContext.TenantContext.GetTenantRepository();
+
+            // If no specific type filter, query for the first allowed type (base type)
+            // The resolver returns entities of any derived type
+            var queryTargetCkId = targetCkId ?? allowedTypes.First();
+
+            var result = await tenantRepository.GetRtAssociationTargetsAsync(
+                sessionAccessor.Session,
+                [ctx.Source.RtId],
+                originCkId,
+                roleId,
+                queryTargetCkId,
+                graphDirection,
+                keysList,
+                queryOptions,
+                offset,
+                ctx.First);
+
+            var items = result.First().Value;
+            return ConnectionUtils.ToOctoConnection(
+                items.Items.Select(CreateRtEntityDto),
+                ctx,
+                items.TotalCount > 0 ? offset.GetValueOrDefault(0) : 0,
+                (int)items.TotalCount);
+        }
+        catch (Exception e)
+        {
+            return ctx.HandleException(e);
         }
     }
 

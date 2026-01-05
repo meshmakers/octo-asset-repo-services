@@ -44,6 +44,13 @@ internal static class Statics
     internal const string ItemsQueryArg = "items";
 
     internal const string AggregationsArg = "aggregations";
+    internal const string CkTypeIdArg = "ckTypeId";
+
+    // Metadata keys for association fields
+    internal const string OriginCkId = "OriginCkId";
+    internal const string RoleId = "RoleId";
+    internal const string GraphDirection = "GraphDirection";
+    internal const string AllowedTypes = "AllowedTypes";
 
     public const string GraphQlConnectionSuffix = "Connection";
     public const string GraphQlEdgeSuffix = "Edge";
