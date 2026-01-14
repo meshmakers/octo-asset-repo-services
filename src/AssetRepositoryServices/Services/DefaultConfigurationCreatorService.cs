@@ -21,7 +21,11 @@ internal class DefaultConfigurationCreatorService(
     OctoAssetRepositoryServicesOptions octoAssetRepositoryServicesOptions)
     : DefaultConfigurationCreatorServiceStandardized(logger, systemContext, createIdentityDataCommandClient,
         AssetRepositoryServiceConstants.AssetServiceIdentityDataVersionKey,
-        AssetRepositoryServiceConstants.AssetServiceIdentityDataVersionValue)
+        AssetRepositoryServiceConstants.AssetServiceIdentityDataVersionValue,
+        null, // migrationService - we don't need migrations here
+        null, // ckModelUpgradeService - we don't need CK model migrations
+        null, // runtimeRepositoryProvider - not needed without CK model migrations
+        null) // serviceEnabledKey - the service is auto-enabled
 {
     public override async Task InitializeAsync()
     {
