@@ -21,6 +21,8 @@ internal sealed class CkRecordDtoType : ObjectGraphType<CkRecordDto>
 
         Field(x => x.CkRecordId, typeof(NonNullGraphType<CkIdGraph<CkRecordId>>))
             .Description(AssetTexts.Graphql_Record_CkRecordId_Description);
+        Field(x => x.RtCkRecordId, typeof(NonNullGraphType<RtCkIdGraph<CkRecordId>>))
+            .Description(AssetTexts.Graphql_Record_RtCkRecordId_Description);
         Field(x => x.IsAbstract).Description(AssetTexts.Graphql_Record_IsAbstract_Description);
         Field(x => x.IsFinal).Description(AssetTexts.Graphql_Record_IsFinal_Description);
         Field(x => x.Description, true).Description(AssetTexts.Graphql_Record_Description_Description);
@@ -40,7 +42,7 @@ internal sealed class CkRecordDtoType : ObjectGraphType<CkRecordDto>
                     var result = ckCacheService.GetCkRecord(graphQlContext.TenantId, ctx.Source.CkRecordId)
                         .DerivedRecords
                         .Select(k => ckCacheService.GetCkRecord(graphQlContext.TenantId, k.InheritorCkRecordId));
-                    return ConnectionUtils.ToConnection(result.Select(CreateCkRecordDto), ctx);
+                    return ConnectionUtils.ToOctoConnection(result.Select(CreateCkRecordDto), ctx);
                 }
             );
 
@@ -84,7 +86,7 @@ internal sealed class CkRecordDtoType : ObjectGraphType<CkRecordDto>
                     filterAttributeNames.Contains(a.AttributeName.ToCamelCase()));
         }
 
-        return ConnectionUtils.ToConnection(resultList.Select(CreateCkTypeAttributeDto), ctx);
+        return ConnectionUtils.ToOctoConnection(resultList.Select(CreateCkTypeAttributeDto), ctx);
     }
 
     internal static CkRecordDto CreateCkRecordDto(CkRecordGraph ckRecord)

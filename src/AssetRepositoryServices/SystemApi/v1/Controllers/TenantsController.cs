@@ -5,6 +5,7 @@ using Meshmakers.Octo.Backend.AssetRepositoryServices.Services;
 using Meshmakers.Octo.Common.DistributionEventHub.Services;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects.ApiErrors;
+using Meshmakers.Octo.ConstructionKit.Contracts.BlueprintCatalogs;
 using Meshmakers.Octo.Runtime.Contracts;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb;
 using Meshmakers.Octo.Services.Contracts.DistributionEventHub.Messages;
@@ -109,30 +110,59 @@ public class TenantsController : ControllerBase
         }
     }
 
-    // POST: system/v1/tenants?tenantId=abc&databaseName=xyz
+    // POST: system/v1/tenants?tenantId=abc&databaseName=xyz&blueprintId=MyBlueprint-1.0.0
     /// <summary>
-    ///     Creates new tenants
+    ///     Creates new tenants, optionally with a blueprint applied
     /// </summary>
     /// <param name="tenantId">ID of tenant</param>
     /// <param name="databaseName">Name of the database</param>
+    /// <param name="blueprintId">Optional blueprint ID to apply (e.g., "MyBlueprint-1.0.0")</param>
     /// <returns></returns>
     [HttpPost]
     [Authorize(AssetRepositoryServiceConstants.SystemAssetApiReadWritePolicy)]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(typeof(OperationFailedErrorDto), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(InternalServerErrorDto), StatusCodes.Status500InternalServerError)]
-    public async Task<IActionResult> Post([Required] string tenantId, [Required] string databaseName)
+    public async Task<IActionResult> Post(
+        [Required] string tenantId,
+        [Required] string databaseName,
+        string? blueprintId = null)
     {
         try
         {
             using var session = await _octoService.SystemContext.GetAdminSessionAsync();
             session.StartTransaction();
 
-            await _octoService.SystemContext.CreateChildTenantAsync(session, databaseName, tenantId);
+            if (!string.IsNullOrEmpty(blueprintId))
+            {
+                var bpId = new BlueprintId(blueprintId);
+                var result = await _octoService.SystemContext.CreateChildTenantAsync(session, databaseName, tenantId, bpId);
+
+                if (result != null && !result.IsSuccess)
+                {
+                    await session.AbortTransactionAsync();
+                    var messages = result.OperationResult?.Messages?.Select(m => m.MessageText) ?? [];
+                    return BadRequest(new OperationFailedErrorDto(
+                        $"Blueprint application failed: {string.Join(", ", messages)}"));
+                }
+            }
+            else
+            {
+                await _octoService.SystemContext.CreateChildTenantAsync(session, databaseName, tenantId);
+            }
+
             await session.CommitTransactionAsync();
             return NoContent();
         }
         catch (PersistenceException e)
+        {
+            return BadRequest(new OperationFailedErrorDto(e.Message));
+        }
+        catch (ArgumentException e)
+        {
+            return BadRequest(new OperationFailedErrorDto(e.Message));
+        }
+        catch (InvalidOperationException e)
         {
             return BadRequest(new OperationFailedErrorDto(e.Message));
         }

@@ -8,9 +8,10 @@ using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Utils;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
 using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.ConstructionKit.Contracts.DependencyGraph;
-using Meshmakers.Octo.ConstructionKit.Models.System.Generated.System.v1;
+using Meshmakers.Octo.ConstructionKit.Models.System.Generated.System.v2;
 using Meshmakers.Octo.Runtime.Contracts;
 using Meshmakers.Octo.Runtime.Contracts.Repositories.Query;
+using ZstdSharp.Unsafe;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
 
@@ -35,7 +36,8 @@ internal sealed class RtQueryDtoType : ObjectGraphType<RtQueryDto>
         Field(d => d.Columns, typeof(NonNullGraphType<ListGraphType<NonNullGraphType<RtQueryColumnType>>>));
 
         Connection<NonNullGraphType<RtQueryRowDtoType>>("Rows")
-            .Argument<GlobalQueryOptionsDtoType>(Statics.OptionsArg, "Global options to apply to the query, for example to include archived items.")
+            .Argument<GlobalQueryOptionsDtoType>(Statics.OptionsArg,
+                "Global options to apply to the query, for example to include archived items.")
             .Argument<OctoObjectIdType>(Statics.RtIdArg, "Returns the entity with the given rtId.")
             .Argument<ListGraphType<OctoObjectIdType>>(Statics.RtIdsArg,
                 "Returns entities with the given rtIds.")
@@ -89,7 +91,7 @@ internal sealed class RtQueryDtoType : ObjectGraphType<RtQueryDto>
             }
 
             _logger.LogDebug("GraphQL query handling returning data");
-            return ConnectionUtils.ToConnection([
+            return ConnectionUtils.ToOctoConnection([
                     new QueryAggregationResult(
                         resultSet.TotalCount,
                         resultSet.AggregationResult.CountStatistics,
@@ -132,23 +134,99 @@ internal sealed class RtQueryDtoType : ObjectGraphType<RtQueryDto>
             var tenantRepository = graphQlUserContext.TenantContext.GetTenantRepository();
 
             var offset = context.GetOffset();
-            var queryOptions = context.GetQueryOptions();
+            // Use query options from the persistent query definition, then enhance with runtime options
+            var queryOptions = context.GetQueryOptions(queryUserContext.QueryOptions);
+
+            // For aggregation queries, paging is applied in-memory to the results, not server-side
+            var isAggregationQuery = queryUserContext.RtPersistentQuery is RtAggregationRtQuery
+                                     or RtGroupingAggregationRtQuery;
+
+            if (queryUserContext.RtPersistentQuery is RtAggregationRtQuery)
+            {
+                var aggregateResult = queryOptions.AggregateResult();
+
+                // Add aggregation definitions to query options
+                foreach (var tuple in queryUserContext.CkTypeQueryColumns)
+                {
+                    AddAggregationToResult(aggregateResult, tuple);
+                }
+            }
+            else if (queryUserContext.RtPersistentQuery is RtGroupingAggregationRtQuery)
+            {
+                if (queryUserContext.GroupByColumnPaths == null || queryUserContext.GroupByColumnPaths.Count == 0)
+                {
+                    throw AssetRepositoryException.GroupByColumnPathsRequired();
+                }
+
+                var aggregateFieldGroupBy = queryOptions.AggregateFieldGroupBy(queryUserContext.GroupByColumnPaths.ToArray());
+
+                // Add aggregation definitions to query options
+                foreach (var tuple in queryUserContext.CkTypeQueryColumns)
+                {
+                    AddAggregationToGroupBy(aggregateFieldGroupBy, tuple);
+                }
+            }
 
             var roleIdDirectionPairs = RtPathEvaluator.TokenizeAndGetNavigationPairsByRtCkId(ckCacheService,
                 tenantRepository.TenantId, rtQueryDto.AssociatedCkTypeId,
                 rtQueryDto.Columns.Select(column => column.AttributePath));
 
+            // For aggregation queries, don't pass paging parameters to the database query
             var resultSet = await tenantRepository.GetRtEntitiesGraphByTypeAsync(sessionAccessor.Session,
-                rtQueryDto.AssociatedCkTypeId, queryOptions, roleIdDirectionPairs, offset,
-                context.First);
+                rtQueryDto.AssociatedCkTypeId, queryOptions, roleIdDirectionPairs,
+                isAggregationQuery ? null : offset,
+                isAggregationQuery ? null : context.First);
+
+
+            if (queryUserContext.RtPersistentQuery is RtAggregationRtQuery aggregationRtQuery)
+            {
+                _logger.LogDebug("GraphQL query handling returning aggregation data");
+
+                if (resultSet.AggregationResult == null)
+                {
+                    throw AssetRepositoryException.AggregationResultNull();
+                }
+
+                return ConnectionUtils.ToConnection(
+                [
+                    RtAggregationQueryRowDtoType.CreateRtQueryRowDto(tenantRepository.TenantId,
+                        aggregationRtQuery.QueryCkTypeId, resultSet.AggregationResult,
+                        queryUserContext.CkTypeQueryColumns)
+                ], context, 0, 1);
+            }
+
+            if (queryUserContext.RtPersistentQuery is RtGroupingAggregationRtQuery groupingAggregationRtQuery)
+            {
+                _logger.LogDebug("GraphQL query handling returning grouping aggregation data");
+
+                if (resultSet.FieldAggregationResult == null)
+                {
+                    throw AssetRepositoryException.FieldAggregationResultNull();
+                }
+
+                var fieldAggregationResults = resultSet.FieldAggregationResult.ToList();
+                var totalCount = fieldAggregationResults.Count;
+                var currentOffset = offset.GetValueOrDefault(0);
+
+                // Apply paging to field aggregation results
+                var pagedResults = fieldAggregationResults
+                    .Skip(currentOffset)
+                    .Take(context.First ?? totalCount)
+                    .Select(fieldAggResult =>
+                        RtGroupingAggregationQueryRowDtoType.CreateRtQueryRowDto(tenantRepository.TenantId,
+                            groupingAggregationRtQuery.QueryCkTypeId, fieldAggResult,
+                            queryUserContext.CkTypeQueryColumns));
+
+                return ConnectionUtils.ToConnection(pagedResults, context,
+                    totalCount > 0 ? currentOffset : 0, totalCount);
+            }
 
             _logger.LogDebug("GraphQL query handling returning data");
             return ConnectionUtils.ToConnection(
                 resultSet.Items.Select((entity, _) =>
-                    RtQueryRowDtoType.CreateRtQueryRowDto(tenantRepository.TenantId, entity,
+                    RtSimpleQueryRowDtoType.CreateRtQueryRowDto(tenantRepository.TenantId, entity,
                         queryUserContext.CkTypeQueryColumns)), context,
-                resultSet.TotalCount > 0 ? offset.GetValueOrDefault(0) : 0, (int)resultSet.TotalCount,
-                resultSet.AggregationResult, resultSet.FieldAggregationResult);
+                resultSet.TotalCount > 0 ? offset.GetValueOrDefault(0) : 0, (int)resultSet.TotalCount);
         }
         catch (Exception e)
         {
@@ -156,8 +234,34 @@ internal sealed class RtQueryDtoType : ObjectGraphType<RtQueryDto>
         }
     }
 
-    public static RtQueryDto CreateRtQueryDto(RtQuery rtQuery,
-        IReadOnlyList<CkTypeQueryColumn> ckTypeQueryColumns)
+    public static RtQueryDto CreateRtQueryDto(RtAggregationRtQuery rtAggregationRtQuery,
+        IReadOnlyList<Tuple<CkTypeQueryColumn, AggregationTypesDto>> ckTypeQueryColumns)
+    {
+        var queryOptions = RtEntityQueryOptions.Create();
+        if (rtAggregationRtQuery.FieldFilter != null)
+        {
+            foreach (var fieldFilter in rtAggregationRtQuery.FieldFilter)
+            {
+                queryOptions.FieldFilter(fieldFilter.AttributePath.ToPascalCase(),
+                    (FieldFilterOperator)fieldFilter.Operator,
+                    fieldFilter.ComparisonValue);
+            }
+        }
+
+        var rtQueryDto = new RtQueryDto
+        {
+            QueryRtId = rtAggregationRtQuery.RtId,
+            AssociatedCkTypeId = rtAggregationRtQuery.QueryCkTypeId,
+            Columns = ckTypeQueryColumns.Select(c => RtQueryColumnType.CreateRtQueryColumnDto(c.Item1, c.Item2))
+                .ToList(),
+            UserContext = new QueryUserContext(rtAggregationRtQuery, queryOptions, ckTypeQueryColumns)
+        };
+
+        return rtQueryDto;
+    }
+
+    public static RtQueryDto CreateRtQueryDto(RtSimpleRtQuery rtQuery,
+        IReadOnlyList<Tuple<CkTypeQueryColumn, AggregationTypesDto>> ckTypeQueryColumns)
     {
         var queryOptions = RtEntityQueryOptions.Create();
         if (rtQuery.FieldFilter != null)
@@ -182,15 +286,107 @@ internal sealed class RtQueryDtoType : ObjectGraphType<RtQueryDto>
         {
             QueryRtId = rtQuery.RtId,
             AssociatedCkTypeId = rtQuery.QueryCkTypeId,
-            Columns = ckTypeQueryColumns.Select(RtQueryColumnType.CreateRtQueryColumnDto).ToList(),
-            UserContext = new QueryUserContext(ckTypeQueryColumns)
+            Columns = ckTypeQueryColumns
+                .Select(c => RtQueryColumnType.CreateRtQueryColumnDto(c.Item1, c.Item2)).ToList(),
+            UserContext = new QueryUserContext(rtQuery, queryOptions, ckTypeQueryColumns)
         };
 
         return rtQueryDto;
     }
 
-    private class QueryUserContext(IReadOnlyList<CkTypeQueryColumn> ckTypeQueryColumns)
+    private static void AddAggregationToResult(AggregationInput aggregateResult,
+        Tuple<CkTypeQueryColumn, AggregationTypesDto> tuple)
     {
-        public IReadOnlyList<CkTypeQueryColumn> CkTypeQueryColumns { get; } = ckTypeQueryColumns;
+        switch (tuple.Item2)
+        {
+            case AggregationTypesDto.Count:
+                aggregateResult.CountAttributePaths(tuple.Item1.Path);
+                break;
+            case AggregationTypesDto.Minimum:
+                aggregateResult.MinAttributePaths(tuple.Item1.Path);
+                break;
+            case AggregationTypesDto.Maximum:
+                aggregateResult.MaxAttributePaths(tuple.Item1.Path);
+                break;
+            case AggregationTypesDto.Average:
+                aggregateResult.AvgAttributePaths(tuple.Item1.Path);
+                break;
+            case AggregationTypesDto.Sum:
+                aggregateResult.SumAttributePaths(tuple.Item1.Path);
+                break;
+            default:
+                throw AssetRepositoryException.AggregationTypeUnknown(tuple.Item2);
+        }
+    }
+
+    private static void AddAggregationToGroupBy(FieldAggregationInput aggregateFieldGroupBy,
+        Tuple<CkTypeQueryColumn, AggregationTypesDto> tuple)
+    {
+        switch (tuple.Item2)
+        {
+            case AggregationTypesDto.Count:
+                aggregateFieldGroupBy.CountAttributePaths(tuple.Item1.Path);
+                break;
+            case AggregationTypesDto.Minimum:
+                aggregateFieldGroupBy.MinAttributePaths(tuple.Item1.Path);
+                break;
+            case AggregationTypesDto.Maximum:
+                aggregateFieldGroupBy.MaxAttributePaths(tuple.Item1.Path);
+                break;
+            case AggregationTypesDto.Average:
+                aggregateFieldGroupBy.AvgAttributePaths(tuple.Item1.Path);
+                break;
+            case AggregationTypesDto.Sum:
+                aggregateFieldGroupBy.SumAttributePaths(tuple.Item1.Path);
+                break;
+            default:
+                throw AssetRepositoryException.AggregationTypeUnknown(tuple.Item2);
+        }
+    }
+
+    public static RtQueryDto CreateRtQueryDto(RtGroupingAggregationRtQuery rtGroupingAggregationRtQuery,
+        IReadOnlyList<Tuple<CkTypeQueryColumn, AggregationTypesDto>> ckTypeQueryColumns,
+        IReadOnlyList<string> groupByColumnPaths)
+    {
+        var queryOptions = RtEntityQueryOptions.Create();
+        if (rtGroupingAggregationRtQuery.FieldFilter != null)
+        {
+            foreach (var fieldFilter in rtGroupingAggregationRtQuery.FieldFilter)
+            {
+                queryOptions.FieldFilter(fieldFilter.AttributePath.ToPascalCase(),
+                    (FieldFilterOperator)fieldFilter.Operator,
+                    fieldFilter.ComparisonValue);
+            }
+        }
+
+        // Build columns list: groupBy columns first, then aggregation columns
+        var columns = new List<RtQueryColumnDto>();
+        columns.AddRange(groupByColumnPaths.Select(RtQueryColumnType.CreateGroupByColumnDto));
+        columns.AddRange(ckTypeQueryColumns.Select(c => RtQueryColumnType.CreateRtQueryColumnDto(c.Item1, c.Item2)));
+
+        var rtQueryDto = new RtQueryDto
+        {
+            QueryRtId = rtGroupingAggregationRtQuery.RtId,
+            AssociatedCkTypeId = rtGroupingAggregationRtQuery.QueryCkTypeId,
+            Columns = columns,
+            UserContext = new QueryUserContext(rtGroupingAggregationRtQuery, queryOptions, ckTypeQueryColumns, groupByColumnPaths)
+        };
+
+        return rtQueryDto;
+    }
+
+    private class QueryUserContext(
+        RtPersistentQuery rtPersistentQuery,
+        RtEntityQueryOptions queryOptions,
+        IReadOnlyList<Tuple<CkTypeQueryColumn, AggregationTypesDto>> ckTypeQueryColumns,
+        IReadOnlyList<string>? groupByColumnPaths = null)
+    {
+        public RtPersistentQuery RtPersistentQuery { get; } = rtPersistentQuery;
+        public RtEntityQueryOptions QueryOptions { get; } = queryOptions;
+
+        public IReadOnlyList<Tuple<CkTypeQueryColumn, AggregationTypesDto>> CkTypeQueryColumns { get; } =
+            ckTypeQueryColumns;
+
+        public IReadOnlyList<string>? GroupByColumnPaths { get; } = groupByColumnPaths;
     }
 }

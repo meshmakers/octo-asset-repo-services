@@ -9,7 +9,7 @@ using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Scalars;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Utils;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
 using Meshmakers.Octo.ConstructionKit.Contracts;
-using Meshmakers.Octo.ConstructionKit.Models.System.Generated.System.v1;
+using Meshmakers.Octo.ConstructionKit.Models.System.Generated.System.v2;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL;
 
@@ -25,7 +25,8 @@ internal sealed class RuntimeModelQuery : ObjectGraphType
 
         Connection<RtEntityGenericDtoType>("RuntimeEntities")
             .Argument<StringGraphType>(Statics.CkIdArg, "The construction kit type with the given id.")
-            .Argument<GlobalQueryOptionsDtoType>(Statics.OptionsArg, "Global options to apply to the query, for example to include archived items.")
+            .Argument<GlobalQueryOptionsDtoType>(Statics.OptionsArg,
+                "Global options to apply to the query, for example to include archived items.")
             .Argument<OctoObjectIdType>(Statics.RtIdArg, "Returns the entity with the given rtId.")
             .Argument<ListGraphType<OctoObjectIdType>>(Statics.RtIdsArg,
                 "Returns entities with the given rtIds.")
@@ -42,22 +43,16 @@ internal sealed class RuntimeModelQuery : ObjectGraphType
             .Argument<NonNullGraphType<OctoObjectIdType>>(Statics.RtIdArg, "The query runtime id.")
             .ResolveAsync(ResolveRtQueryAsync);
 
-        Connection<NonNullGraphType<RtTransientQueryDtoType>>("TransientRuntimeQuery")
-            .Argument<NonNullGraphType<StringGraphType>>(Statics.CkIdArg,
-                "The construction kit type with the given id.")
-            .Argument<NonNullGraphType<ListGraphType<NonNullGraphType<StringGraphType>>>>(Statics.ColumnPathsArg,
-                "The column paths to include in the result.")
-            .Argument<SearchFilterDtoType>(Statics.SearchFilterArg, "Filters items based on text search")
-            .Argument<ListGraphType<SortDtoType>>(Statics.SortOrderArg, "Sort order for items")
-            .Argument<ListGraphType<FieldFilterDtoType>>(Statics.FieldFilterArg,
-                "Filters items based on field compare")
-            .Resolve(ResolveTransientRtQuery);
+        Field<NonNullGraphType<RtTransientQuery>>("TransientQuery")
+            .Description("Transient runtime queries")
+            .Resolve(_ => new { });
 
         foreach (var rtEntityDtoType in graphTypesCache.GetTypes())
         {
             this.Connection<object?, IGraphType, RtEntityDto>(graphTypesCache, rtEntityDtoType, rtEntityDtoType.Name)
                 .AddMetadata(Statics.CkId, rtEntityDtoType.CkTypeId.ToRtCkId())
-                .Argument<GlobalQueryOptionsDtoType>(Statics.OptionsArg, "Global options to apply to the query, for example to include archived items.")
+                .Argument<GlobalQueryOptionsDtoType>(Statics.OptionsArg,
+                    "Global options to apply to the query, for example to include archived items.")
                 .Argument<OctoObjectIdType>(Statics.RtIdArg, "Returns the entity with the given rtId.")
                 .Argument<ListGraphType<OctoObjectIdType>>(Statics.RtIdsArg,
                     "Returns entities with the given rtIds.")
@@ -73,53 +68,20 @@ internal sealed class RuntimeModelQuery : ObjectGraphType
         }
     }
 
-    private object ResolveTransientRtQuery(IResolveConnectionContext<object?> arg)
-    {
-        _logger.LogDebug("GraphQL query handling for transient runtime query started");
-
-        var ckCacheService = arg.GetCkCacheService();
-
-        var graphQlUserContext = (GraphQlUserContext)arg.UserContext;
-        var ckTypeId = arg.GetArgument<RtCkId<CkTypeId>>(Statics.CkId);
-
-        var columnPaths = arg.GetArgument<IEnumerable<string>>(Statics.ColumnPathsArg);
-        var columnPathList = columnPaths.ToList();
-
-        var typeQueryColumnPaths = ckCacheService.GetCkTypeQueryColumnPathsByRtCkId(graphQlUserContext.TenantId, ckTypeId);
-        var invalidColumnPaths = columnPathList
-            .Where(cp => typeQueryColumnPaths.All(ckTypeQueryColumn => ckTypeQueryColumn.Path != cp)).ToList();
-        if (invalidColumnPaths.Any())
-        {
-            throw AssetRepositoryException.InvalidColumnPaths(invalidColumnPaths);
-        }
-
-        var selectedTypeQueryColumns = typeQueryColumnPaths
-            .Where(ckTypeQueryColumn => columnPathList.Contains(ckTypeQueryColumn.Path)).ToList();
-
-        var queryOptions = arg.GetQueryOptions();
-
-        _logger.LogDebug("GraphQL query handling returning data");
-        return ConnectionUtils.ToConnection(
-            [RtTransientQueryDtoType.CreateTransientRtQueryDto(ckTypeId, queryOptions, selectedTypeQueryColumns)],
-            arg,
-            0, 1);
-    }
-
     private async Task<object?> ResolveRtQueryAsync(IResolveConnectionContext<object?> arg)
     {
         try
         {
             _logger.LogDebug("GraphQL query handling for runtime query started");
 
-            var ckCacheService = arg.GetCkCacheService();
             var sessionAccessor = arg.GetSessionAccessor();
 
-            var graphQlUserContext = (GraphQlUserContext)arg.UserContext;
             var queryRtId = arg.GetArgument<OctoObjectId>(Statics.RtIdArg);
 
+            var graphQlUserContext = (GraphQlUserContext)arg.UserContext;
             var tenantRepository = graphQlUserContext.TenantContext.GetTenantRepository();
             var rtQuery =
-                await tenantRepository.GetRtEntityByRtIdAsync<RtQuery>(
+                await tenantRepository.GetRtEntityByRtIdAsync<RtPersistentQuery>(
                     sessionAccessor.Session, queryRtId);
 
             if (rtQuery == null)
@@ -127,27 +89,123 @@ internal sealed class RuntimeModelQuery : ObjectGraphType
                 throw AssetRepositoryException.RtQueryNotFound(queryRtId);
             }
 
-            var typeQueryColumnPaths =
-                ckCacheService.GetCkTypeQueryColumnPaths(graphQlUserContext.TenantId, rtQuery.QueryCkTypeId);
-            var invalidColumnPaths = rtQuery.Columns
-                .Where(cp => typeQueryColumnPaths.All(ckTypeQueryColumn => ckTypeQueryColumn.Path != cp)).ToList();
-            if (invalidColumnPaths.Any())
+            // Check the type of rtQuery
+            if (rtQuery.GetType() == typeof(RtSimpleRtQuery))
             {
-                throw AssetRepositoryException.InvalidColumnPaths(invalidColumnPaths);
+                return ResolveRtSimpleRtQueryAsync(arg, (RtSimpleRtQuery)rtQuery);
             }
 
-            var selectedTypeQueryColumns = typeQueryColumnPaths
-                .Where(ckTypeQueryColumn => rtQuery.Columns.Contains(ckTypeQueryColumn.Path)).ToList();
+            if (rtQuery.GetType() == typeof(RtAggregationRtQuery))
+            {
+                return ResolveRtAggregationRtQueryAsync(arg, (RtAggregationRtQuery)rtQuery);
+            }
 
-            _logger.LogDebug("GraphQL query handling returning data");
-            return ConnectionUtils.ToConnection(
-                [RtQueryDtoType.CreateRtQueryDto(rtQuery, selectedTypeQueryColumns)], arg,
-                0, 1);
+            if (rtQuery.GetType() == typeof(RtGroupingAggregationRtQuery))
+            {
+                return ResolveRtGroupingAggregationRtQueryAsync(arg, (RtGroupingAggregationRtQuery)rtQuery);
+            }
+
+            throw AssetRepositoryException.RtQueryTypeUnknown(rtQuery.GetType().Name);
         }
         catch (Exception e)
         {
             return arg.HandleException(e);
         }
+    }
+
+    private OctoConnection<RtQueryDto> ResolveRtGroupingAggregationRtQueryAsync(IResolveConnectionContext<object?> arg,
+        RtGroupingAggregationRtQuery rtGroupingAggregationRtQuery)
+    {
+        var ckCacheService = arg.GetCkCacheService();
+        var graphQlUserContext = (GraphQlUserContext)arg.UserContext;
+
+        var typeQueryColumnPaths =
+            ckCacheService.GetCkTypeQueryColumnPathsByRtCkId(graphQlUserContext.TenantId,
+                rtGroupingAggregationRtQuery.QueryCkTypeId);
+
+        // Validate grouping columns
+        var groupingColumns = rtGroupingAggregationRtQuery.GroupingColumns?.ToList() ?? [];
+        var invalidGroupingColumns = groupingColumns
+            .Where(cp => typeQueryColumnPaths.All(ckTypeQueryColumn => ckTypeQueryColumn.Path != cp)).ToList();
+        if (invalidGroupingColumns.Any())
+        {
+            throw AssetRepositoryException.InvalidColumnPaths(invalidGroupingColumns);
+        }
+
+        // Validate aggregation columns
+        var invalidColumnPaths = rtGroupingAggregationRtQuery.Columns
+            .Where(cp => typeQueryColumnPaths.All(ckTypeQueryColumn => ckTypeQueryColumn.Path != cp.AttributePath)).ToList();
+        if (invalidColumnPaths.Any())
+        {
+            throw AssetRepositoryException.InvalidColumnPaths(invalidColumnPaths.Select(p => p.AttributePath).ToList());
+        }
+
+        var selectedTypeQueryColumns = typeQueryColumnPaths
+            .Join(rtGroupingAggregationRtQuery.Columns,
+                ckTypeQueryColumn => ckTypeQueryColumn.Path,
+                column => column.AttributePath,
+                (ckTypeQueryColumn, column) => Tuple.Create(ckTypeQueryColumn, MapAggregationType(column.AggregationType)))
+            .ToList();
+
+        _logger.LogDebug("GraphQL query handling returning data");
+        return ConnectionUtils.ToOctoConnection(
+            [RtQueryDtoType.CreateRtQueryDto(rtGroupingAggregationRtQuery, selectedTypeQueryColumns, groupingColumns)], arg,
+            0, 1);
+    }
+
+    private OctoConnection<RtQueryDto> ResolveRtAggregationRtQueryAsync(IResolveConnectionContext<object?> arg,
+        RtAggregationRtQuery rtAggregationRtQuery)
+    {
+        var ckCacheService = arg.GetCkCacheService();
+        var graphQlUserContext = (GraphQlUserContext)arg.UserContext;
+
+        var typeQueryColumnPaths =
+            ckCacheService.GetCkTypeQueryColumnPathsByRtCkId(graphQlUserContext.TenantId,
+                rtAggregationRtQuery.QueryCkTypeId);
+        var invalidColumnPaths = rtAggregationRtQuery.Columns.Where(cp => typeQueryColumnPaths.All(ckTypeQueryColumn => ckTypeQueryColumn.Path != cp.AttributePath)).ToList();
+        if (invalidColumnPaths.Any())
+        {
+            throw AssetRepositoryException.InvalidColumnPaths(invalidColumnPaths.Select(p=> p.AttributePath).ToList());
+        }
+
+        var selectedTypeQueryColumns = typeQueryColumnPaths
+            .Join(rtAggregationRtQuery.Columns,
+                ckTypeQueryColumn => ckTypeQueryColumn.Path,
+                column => column.AttributePath,
+                (ckTypeQueryColumn, column) => Tuple.Create(ckTypeQueryColumn, MapAggregationType(column.AggregationType)))
+            .ToList();
+
+        _logger.LogDebug("GraphQL query handling returning data");
+        return ConnectionUtils.ToOctoConnection(
+            [RtQueryDtoType.CreateRtQueryDto(rtAggregationRtQuery, selectedTypeQueryColumns)], arg,
+            0, 1);
+    }
+
+    private OctoConnection<RtQueryDto> ResolveRtSimpleRtQueryAsync(IResolveConnectionContext<object?> arg,
+        RtSimpleRtQuery rtSimpleRtQuery)
+    {
+        var ckCacheService = arg.GetCkCacheService();
+        var graphQlUserContext = (GraphQlUserContext)arg.UserContext;
+
+        var typeQueryColumnPaths =
+            ckCacheService.GetCkTypeQueryColumnPathsByRtCkId(graphQlUserContext.TenantId,
+                rtSimpleRtQuery.QueryCkTypeId);
+        var invalidColumnPaths = rtSimpleRtQuery.Columns
+            .Where(cp => typeQueryColumnPaths.All(ckTypeQueryColumn => ckTypeQueryColumn.Path != cp)).ToList();
+        if (invalidColumnPaths.Any())
+        {
+            throw AssetRepositoryException.InvalidColumnPaths(invalidColumnPaths);
+        }
+
+        var selectedTypeQueryColumns = typeQueryColumnPaths
+            .Where(ckTypeQueryColumn => rtSimpleRtQuery.Columns.Contains(ckTypeQueryColumn.Path))
+            .Select(ckTypeQueryColumn => Tuple.Create(ckTypeQueryColumn, AggregationTypesDto.None))
+            .ToList();
+
+        _logger.LogDebug("GraphQL query handling returning data");
+        return ConnectionUtils.ToOctoConnection(
+            [RtQueryDtoType.CreateRtQueryDto(rtSimpleRtQuery, selectedTypeQueryColumns)], arg,
+            0, 1);
     }
 
     private async Task<object?> ResolveGenericRtEntitiesQuery(IResolveConnectionContext<object?> arg)
@@ -179,7 +237,7 @@ internal sealed class RuntimeModelQuery : ObjectGraphType
             // That must be a mistake by client (otherwise all entities are returned).
             if (!keysList.Any() && (arg.HasArgument(Statics.RtIdArg) || arg.HasArgument(Statics.RtIdsArg)))
             {
-                return ConnectionUtils.ToConnection(new List<RtEntityDto>(), arg);
+                return ConnectionUtils.ToOctoConnection(new List<RtEntityDto>(), arg);
             }
 
             var tenantRepository = graphQlUserContext.TenantContext.GetTenantRepository();
@@ -190,7 +248,7 @@ internal sealed class RuntimeModelQuery : ObjectGraphType
                     offset, arg.First);
 
                 _logger.LogDebug("GraphQL query handling returning data by keys");
-                return ConnectionUtils.ToConnection(resultSetIds.Items.Select(RtEntityDtoType.CreateRtEntityDto), arg,
+                return ConnectionUtils.ToOctoConnection(resultSetIds.Items.Select(RtEntityDtoType.CreateRtEntityDto), arg,
                     resultSetIds.TotalCount > 0 ? offset.GetValueOrDefault(0) : 0, (int)resultSetIds.TotalCount,
                     resultSetIds.AggregationResult, resultSetIds.FieldAggregationResult);
             }
@@ -200,7 +258,7 @@ internal sealed class RuntimeModelQuery : ObjectGraphType
                 arg.First);
 
             _logger.LogDebug("GraphQL query handling returning data");
-            return ConnectionUtils.ToConnection(resultSet.Items.Select(RtEntityDtoType.CreateRtEntityDto), arg,
+            return ConnectionUtils.ToOctoConnection(resultSet.Items.Select(RtEntityDtoType.CreateRtEntityDto), arg,
                 resultSet.TotalCount > 0 ? offset.GetValueOrDefault(0) : 0, (int)resultSet.TotalCount,
                 resultSet.AggregationResult, resultSet.FieldAggregationResult);
         }
@@ -239,7 +297,7 @@ internal sealed class RuntimeModelQuery : ObjectGraphType
             // That must be a mistake by client (otherwise all entities are returned)
             if (!keysList.Any() && (arg.HasArgument(Statics.RtIdArg) || arg.HasArgument(Statics.RtIdsArg)))
             {
-                return ConnectionUtils.ToConnection(new List<RtEntityDto>(), arg);
+                return ConnectionUtils.ToOctoConnection(new List<RtEntityDto>(), arg);
             }
 
             var tenantRepository = graphQlUserContext.TenantContext.GetTenantRepository();
@@ -251,7 +309,7 @@ internal sealed class RuntimeModelQuery : ObjectGraphType
                         offset, arg.First);
 
                 _logger.LogDebug("GraphQL query handling returning data by keys");
-                return ConnectionUtils.ToConnection(resultSetIds.Items.Select(RtEntityDtoType.CreateRtEntityDto), arg,
+                return ConnectionUtils.ToOctoConnection(resultSetIds.Items.Select(RtEntityDtoType.CreateRtEntityDto), arg,
                     resultSetIds.TotalCount > 0 ? offset.GetValueOrDefault(0) : 0, (int)resultSetIds.TotalCount,
                     resultSetIds.AggregationResult, resultSetIds.FieldAggregationResult);
             }
@@ -262,7 +320,7 @@ internal sealed class RuntimeModelQuery : ObjectGraphType
                     arg.First);
 
             _logger.LogDebug("GraphQL query handling returning data");
-            return ConnectionUtils.ToConnection(resultSet.Items.Select(RtEntityDtoType.CreateRtEntityDto), arg,
+            return ConnectionUtils.ToOctoConnection(resultSet.Items.Select(RtEntityDtoType.CreateRtEntityDto), arg,
                 resultSet.TotalCount > 0 ? offset.GetValueOrDefault(0) : 0, (int)resultSet.TotalCount,
                 resultSet.AggregationResult, resultSet.FieldAggregationResult);
         }
@@ -270,5 +328,20 @@ internal sealed class RuntimeModelQuery : ObjectGraphType
         {
             return arg.HandleException(e);
         }
+    }
+
+    private static AggregationTypesDto MapAggregationType(Enum aggregationType)
+    {
+        // Map by name since the generated System enum has different numeric values than AggregationTypesDto
+        var typeName = aggregationType.ToString();
+        return typeName switch
+        {
+            "Count" => AggregationTypesDto.Count,
+            "Sum" => AggregationTypesDto.Sum,
+            "Average" => AggregationTypesDto.Average,
+            "Minimum" => AggregationTypesDto.Minimum,
+            "Maximum" => AggregationTypesDto.Maximum,
+            _ => throw new ArgumentOutOfRangeException(nameof(aggregationType), aggregationType, $"Unknown aggregation type: {typeName}")
+        };
     }
 }

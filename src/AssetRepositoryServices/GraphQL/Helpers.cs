@@ -10,6 +10,7 @@ using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Utils;
 using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb;
+using Meshmakers.Octo.Runtime.Contracts.RepositoryEntities;
 using ObjectExtensions = GraphQL.ObjectExtensions;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL;
@@ -85,20 +86,35 @@ internal static class Helpers
         return connectionBuilder;
     }
 
-    public static FieldType AssociationField<TSourceType>(
+    public static ConnectionBuilder<TSourceType> AssociationField<TSourceType>(
         this ComplexGraphType<TSourceType> complexGraphType,
         IGraphTypesCache graphTypesCache, string name, IReadOnlyList<RtCkId<CkTypeId>> allowedTypes,
         RtCkId<CkTypeId> originCkId,
         RtCkId<CkAssociationRoleId> roleId, GraphDirections graphDirection)
     {
-        var graphTypes = allowedTypes.Select(graphTypesCache.GetType);
+        var graphTypes = allowedTypes.Select(graphTypesCache.GetType).ToList();
 
-        var unionType = new RtEntityAssociationType(
+        // Create a union type for all allowed target types
+        var unionType = new RtEntityUnionType(
             $"{complexGraphType.Name}_{name}{Statics.GraphQlUnionSuffix}",
-            $"Association {roleId} ({graphDirection}) of entity type {complexGraphType.Name}", graphTypesCache,
-            graphTypes, originCkId, roleId, graphDirection);
+            $"Union of allowed types for association {roleId} ({graphDirection}) of {complexGraphType.Name}",
+            graphTypes);
 
-        return complexGraphType.Field(name, null, unionType, resolve: context => context.Source);
+        // Create connection type for the union
+        var connectionType = graphTypesCache.GetOrCreateConnection(unionType);
+
+        // Create a single connection field with ckTypeId filter argument
+        var connectionBuilder = ConnectionBuilder<TSourceType>.Create<RtEntityUnionType>(name);
+        connectionBuilder.FieldType.ResolvedType = connectionType;
+
+        // Add metadata for resolver
+        connectionBuilder.FieldType.Metadata[Statics.OriginCkId] = originCkId;
+        connectionBuilder.FieldType.Metadata[Statics.RoleId] = roleId;
+        connectionBuilder.FieldType.Metadata[Statics.GraphDirection] = graphDirection;
+        connectionBuilder.FieldType.Metadata[Statics.AllowedTypes] = allowedTypes;
+
+        complexGraphType.AddField(connectionBuilder.FieldType);
+        return connectionBuilder;
     }
 
     public static ConnectionBuilder<TSourceType> AddMetadata<TSourceType>(

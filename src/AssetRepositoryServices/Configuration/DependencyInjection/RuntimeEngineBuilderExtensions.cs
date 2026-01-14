@@ -328,7 +328,8 @@ public static class RuntimeEngineBuilderExtensions
 
         // Add the basic services of Octo
         builder.Services.AddRuntimeEngine()
-            .AddMongoDbRuntimeRepository();
+            .AddMongoDbRuntimeRepository()
+            .AddMongoBlueprintSupport();
         builder.Services.AddSingleton<IOctoService, OctoService>();
     }
 }

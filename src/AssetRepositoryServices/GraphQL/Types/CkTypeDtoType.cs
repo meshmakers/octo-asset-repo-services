@@ -2,6 +2,7 @@
 using GraphQL.Builders;
 using GraphQL.Types;
 using Meshmakers.Common.Shared;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Scalars;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Utils;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
 using Meshmakers.Octo.ConstructionKit.Contracts;
@@ -22,6 +23,8 @@ internal sealed class CkTypeDtoType : ObjectGraphType<CkTypeDto>
 
         Field(x => x.CkTypeId, typeof(NonNullGraphType<CkIdGraph<CkTypeId>>))
             .Description(AssetTexts.Graphql_Type_CkTypeId_Description);
+        Field(x => x.RtCkTypeId, typeof(NonNullGraphType<RtCkIdGraph<CkTypeId>>))
+            .Description(AssetTexts.Graphql_Type_RtCkTypeId_Description);
         Field(x => x.IsAbstract).Description(AssetTexts.Graphql_Type_IsAbstract_Description);
         Field(x => x.IsFinal).Description(AssetTexts.Graphql_Type_IsFinal_Description);
         Field(x => x.Description, true).Description(AssetTexts.Graphql_Type_Description_Description);
@@ -62,7 +65,7 @@ internal sealed class CkTypeDtoType : ObjectGraphType<CkTypeDto>
                     var result = ckCacheService.GetCkType(graphQlContext.TenantId, ctx.Source.CkTypeId).DerivedTypes
                         .Select(k => ckCacheService.GetCkType(graphQlContext.TenantId, k.InheritorCkTypeId))
                         .Where(t => !t.IsAbstract || !ignoreAbstractTypes.Value);
-                    return ConnectionUtils.ToConnection(result.Select(CreateCkTypeDto), ctx);
+                    return ConnectionUtils.ToOctoConnection(result.Select(CreateCkTypeDto), ctx);
                 }
             );
 
@@ -93,7 +96,7 @@ internal sealed class CkTypeDtoType : ObjectGraphType<CkTypeDto>
                         .GetAllDerivedTypes(includeSelf.Value)
                         .Select(derivedCkTypeId => ckCacheService.GetCkType(graphQlContext.TenantId, derivedCkTypeId))
                         .Where(t => !t.IsAbstract || !ignoreAbstractTypes.Value);
-                    return ConnectionUtils.ToConnection(result.Select(CreateCkTypeDto), ctx);
+                    return ConnectionUtils.ToOctoConnection(result.Select(CreateCkTypeDto), ctx);
                 }
             );
 
@@ -142,7 +145,7 @@ internal sealed class CkTypeDtoType : ObjectGraphType<CkTypeDto>
         }
 
 
-        return ConnectionUtils.ToConnection(resultList.OrderBy(a => a.AttributePath), arg);
+        return ConnectionUtils.ToOctoConnection(resultList.OrderBy(a => a.AttributePath), arg);
     }
 
     private object ResolveAttributes(IResolveConnectionContext<CkTypeDto> ctx)
@@ -172,36 +175,38 @@ internal sealed class CkTypeDtoType : ObjectGraphType<CkTypeDto>
         }
 
 
-        return ConnectionUtils.ToConnection(resultList.Select(CreateCkTypeAttributeDto), ctx);
+        return ConnectionUtils.ToOctoConnection(resultList.Select(CreateCkTypeAttributeDto), ctx);
     }
 
     internal static CkTypeDto CreateCkTypeDto(CkTypeGraph ckTypeGraph)
     {
-        var ckEntityDto = new CkTypeDto
+        var ckTypeDto = new CkTypeDto
         {
             CkTypeId = ckTypeGraph.CkTypeId,
+            RtCkTypeId = ckTypeGraph.CkTypeId.ToRtCkId(),
             Description = ckTypeGraph.Description,
             IsFinal = ckTypeGraph.IsFinal,
             IsAbstract = ckTypeGraph.IsAbstract
         };
-        return ckEntityDto;
+        return ckTypeDto;
     }
 
     internal static CkTypeDto CreateCkTypeDto(CkType ckEntity)
     {
-        var ckEntityDto = new CkTypeDto
+        var ckTypeDto = new CkTypeDto
         {
             CkTypeId = ckEntity.CkTypeId,
+            RtCkTypeId = ckEntity.CkTypeId.ToRtCkId(),
             Description = ckEntity.Description,
             IsFinal = ckEntity.IsFinal,
             IsAbstract = ckEntity.IsAbstract
         };
-        return ckEntityDto;
+        return ckTypeDto;
     }
 
     private CkTypeAttributeDto CreateCkTypeAttributeDto(CkTypeAttributeGraph ckTypeAttributeGraph)
     {
-        var ckEntityAttributeDto = new CkTypeAttributeDto
+        var ckTypeAttributeDto = new CkTypeAttributeDto
         {
             CkAttributeId = ckTypeAttributeGraph.CkAttributeId,
             AttributeName = ckTypeAttributeGraph.AttributeName.ToCamelCase(),
@@ -211,7 +216,7 @@ internal sealed class CkTypeDtoType : ObjectGraphType<CkTypeDto>
             IsOptional = ckTypeAttributeGraph.IsOptional,
             Attribute = CkAttributeDtoType.CreateCkAttributeDto(ckTypeAttributeGraph)
         };
-        return ckEntityAttributeDto;
+        return ckTypeAttributeDto;
     }
 
     private CkTypeQueryColumnDto CreateCkTypeQueryColumnDto(CkTypeQueryColumn ckTypeQueryColumn)

@@ -6,7 +6,7 @@ using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.ConstructionKit.Contracts.DataTransferObjects;
 using Meshmakers.Octo.ConstructionKit.Contracts.DependencyGraph;
 using Meshmakers.Octo.ConstructionKit.Contracts.Services;
-using Meshmakers.Octo.ConstructionKit.Models.System.Generated.System.v1;
+using Meshmakers.Octo.ConstructionKit.Models.System.Generated.System.v2;
 using Meshmakers.Octo.Runtime.Contracts;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb.Repositories;
 using Meshmakers.Octo.Runtime.Contracts.Repositories;
@@ -64,12 +64,12 @@ internal abstract class RtMutationBase : ObjectGraphType
         return resultSetComplete.Select(RtEntityDtoType.CreateRtEntityDto);
     }
 
-    protected async Task<IEnumerable<RtQueryRowDto>> GetRtQueryRowResultSet(IOctoSession session,
+    protected async Task<IEnumerable<RtSimpleQueryRowDto>> GetRtQueryRowResultSet(IOctoSession session,
         ICkCacheService ckCacheService, ITenantRepository repository,
         List<EntityUpdateInfo<RtEntity>> entityUpdateInfos, OctoObjectId queryRtId)
     {
         var rtQuery =
-            await repository.GetRtEntityByRtIdAsync<RtQuery>(session,
+            await repository.GetRtEntityByRtIdAsync<RtSimpleRtQuery>(session,
                 queryRtId);
         if (rtQuery == null)
         {
@@ -99,10 +99,12 @@ internal abstract class RtMutationBase : ObjectGraphType
         }
 
         var selectedTypeQueryColumns = typeQueryColumnPaths
-            .Where(ckTypeQueryColumn => rtQuery.Columns.Contains(ckTypeQueryColumn.Path)).ToList();
+            .Where(ckTypeQueryColumn => rtQuery.Columns.Contains(ckTypeQueryColumn.Path))
+            .Select(ckTypeQueryColumn => Tuple.Create(ckTypeQueryColumn, AggregationTypesDto.None))
+            .ToList();
 
         return resultSetComplete.Select((entity, _) =>
-            RtQueryRowDtoType.CreateRtQueryRowDto(repository.TenantId, entity, selectedTypeQueryColumns));
+            RtSimpleQueryRowDtoType.CreateRtQueryRowDto(repository.TenantId, entity, selectedTypeQueryColumns));
     }
 
 

@@ -2,6 +2,7 @@ using FluentAssertions;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Fixtures;
 using Newtonsoft.Json.Linq;
 using System.Text.Json;
+using Meshmakers.Octo.ConstructionKit.Models.System.Generated.System.v2;
 using Xunit;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.GraphQL.Queries;
@@ -15,12 +16,6 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Graph
 public class CkTypesQueryTests : IClassFixture<CkQueryTestFixture>
 {
     private readonly CkQueryTestFixture _fixture;
-
-    // Well-known System model types for testing (rtCkId format - without version)
-    private const string SystemModelId = "System";
-    private const string EntityTypeRtCkId = "System/Entity";
-    private const string TenantTypeRtCkId = "System/Tenant";
-    private const string QueryTypeRtCkId = "System/Query";
 
     public CkTypesQueryTests(CkQueryTestFixture fixture, ITestOutputHelper output)
     {
@@ -115,7 +110,7 @@ public class CkTypesQueryTests : IClassFixture<CkQueryTestFixture>
     public async Task CkTypes_QueryByCkId_ReturnsSingleType()
     {
         // Arrange - first get the full ckId (with version) using rtCkId
-        var fullCkId = await GetFullCkIdForRtCkId(EntityTypeRtCkId);
+        var fullCkId = await GetFullCkIdForRtCkId(SystemCkIds.RtCkEntityTypeIdString);
         fullCkId.Should().NotBeNullOrEmpty("Should be able to resolve Entity type");
 
         var query = @"
@@ -162,8 +157,8 @@ public class CkTypesQueryTests : IClassFixture<CkQueryTestFixture>
     public async Task CkTypes_QueryByCkIds_ReturnsMultipleTypes()
     {
         // Arrange - first get the full ckIds (with version) using rtCkId
-        var entityFullCkId = await GetFullCkIdForRtCkId(EntityTypeRtCkId);
-        var tenantFullCkId = await GetFullCkIdForRtCkId(TenantTypeRtCkId);
+        var entityFullCkId = await GetFullCkIdForRtCkId(SystemCkIds.RtCkEntityTypeIdString);
+        var tenantFullCkId = await GetFullCkIdForRtCkId(SystemCkIds.RtCkTenantTypeIdString);
         entityFullCkId.Should().NotBeNullOrEmpty("Should be able to resolve Entity type");
         tenantFullCkId.Should().NotBeNullOrEmpty("Should be able to resolve Tenant type");
 
@@ -227,7 +222,7 @@ public class CkTypesQueryTests : IClassFixture<CkQueryTestFixture>
             }";
 
         // rtCkId is the semantic versioned full name (e.g., "System/Entity" without version for latest)
-        var variables = JsonSerializer.Serialize(new { rtCkId = EntityTypeRtCkId });
+        var variables = JsonSerializer.Serialize(new { rtCkId = SystemCkIds.RtCkEntityTypeIdString });
 
         // Act
         var result = await _fixture.ExecuteGraphQlAsync(query, variables);
@@ -266,7 +261,8 @@ public class CkTypesQueryTests : IClassFixture<CkQueryTestFixture>
                 }
             }";
 
-        var variables = JsonSerializer.Serialize(new { rtCkIds = new[] { EntityTypeRtCkId, QueryTypeRtCkId } });
+        var variables = JsonSerializer.Serialize(new
+            { rtCkIds = new[] { SystemCkIds.RtCkEntityTypeIdString, SystemCkIds.RtCkSimpleRtQueryTypeIdString } });
 
         // Act
         var result = await _fixture.ExecuteGraphQlAsync(query, variables);
@@ -294,7 +290,7 @@ public class CkTypesQueryTests : IClassFixture<CkQueryTestFixture>
     public async Task CkTypes_QueryWithCkModelIdsFilter_ReturnsFilteredTypes()
     {
         // Arrange - first get the fully qualified ModelId from an existing type
-        var fullCkId = await GetFullCkIdForRtCkId(EntityTypeRtCkId);
+        var fullCkId = await GetFullCkIdForRtCkId(SystemCkIds.RtCkEntityTypeIdString);
         fullCkId.Should().NotBeNullOrEmpty("Should be able to resolve Entity type");
         var systemModelId = GetModelIdFromFullCkId(fullCkId);
 
@@ -560,7 +556,7 @@ public class CkTypesQueryTests : IClassFixture<CkQueryTestFixture>
     public async Task CkTypes_QueryWithCkIdAndRtCkId_ReturnsError()
     {
         // Arrange - first get the full ckId (with version) using rtCkId
-        var entityFullCkId = await GetFullCkIdForRtCkId(EntityTypeRtCkId);
+        var entityFullCkId = await GetFullCkIdForRtCkId(SystemCkIds.RtCkEntityTypeIdString);
         entityFullCkId.Should().NotBeNullOrEmpty("Should be able to resolve Entity type");
 
         // Using both ckId and rtCkId should fail
@@ -577,7 +573,8 @@ public class CkTypesQueryTests : IClassFixture<CkQueryTestFixture>
                 }
             }";
 
-        var variables = JsonSerializer.Serialize(new { ckId = entityFullCkId, rtCkId = TenantTypeRtCkId });
+        var variables = JsonSerializer.Serialize(new
+            { ckId = entityFullCkId, rtCkId = SystemCkIds.RtCkTenantTypeIdString });
 
         // Act
         var result = await _fixture.ExecuteGraphQlAsync(query, variables);
@@ -591,7 +588,7 @@ public class CkTypesQueryTests : IClassFixture<CkQueryTestFixture>
     public async Task CkTypes_QueryWithCkIdAndCkModelIds_ReturnsError()
     {
         // Arrange - first get the full ckId (with version) using rtCkId
-        var entityFullCkId = await GetFullCkIdForRtCkId(EntityTypeRtCkId);
+        var entityFullCkId = await GetFullCkIdForRtCkId(SystemCkIds.RtCkEntityTypeIdString);
         entityFullCkId.Should().NotBeNullOrEmpty("Should be able to resolve Entity type");
 
         // Using both ckId and ckModelIds should fail
@@ -611,7 +608,7 @@ public class CkTypesQueryTests : IClassFixture<CkQueryTestFixture>
         var variables = JsonSerializer.Serialize(new
         {
             ckId = entityFullCkId,
-            modelIds = new[] { SystemModelId }
+            modelIds = new[] { SystemCkIds.ModelIdName }
         });
 
         // Act
@@ -681,7 +678,7 @@ public class CkTypesQueryTests : IClassFixture<CkQueryTestFixture>
                 }
             }";
 
-        var variables = JsonSerializer.Serialize(new { rtCkId = EntityTypeRtCkId });
+        var variables = JsonSerializer.Serialize(new { rtCkId = SystemCkIds.RtCkEntityTypeIdString });
 
         // Act
         var result = await _fixture.ExecuteGraphQlAsync(query, variables);
@@ -725,7 +722,7 @@ public class CkTypesQueryTests : IClassFixture<CkQueryTestFixture>
                 }
             }";
 
-        var variables = JsonSerializer.Serialize(new { rtCkId = EntityTypeRtCkId });
+        var variables = JsonSerializer.Serialize(new { rtCkId = SystemCkIds.RtCkEntityTypeIdString });
 
         // Act
         var result = await _fixture.ExecuteGraphQlAsync(query, variables);
@@ -768,7 +765,7 @@ public class CkTypesQueryTests : IClassFixture<CkQueryTestFixture>
                 }
             }";
 
-        var variables = JsonSerializer.Serialize(new { rtCkId = TenantTypeRtCkId });
+        var variables = JsonSerializer.Serialize(new { rtCkId = SystemCkIds.RtCkTenantTypeIdString });
 
         // Act
         var result = await _fixture.ExecuteGraphQlAsync(query, variables);
@@ -915,7 +912,7 @@ public class CkTypesQueryTests : IClassFixture<CkQueryTestFixture>
                 }
             }";
 
-        var variables = JsonSerializer.Serialize(new { rtCkId = EntityTypeRtCkId });
+        var variables = JsonSerializer.Serialize(new { rtCkId = SystemCkIds.RtCkEntityTypeIdString });
 
         // Act
         var result = await _fixture.ExecuteGraphQlAsync(query, variables);
@@ -989,7 +986,7 @@ public class CkTypesQueryTests : IClassFixture<CkQueryTestFixture>
                 }
             }";
 
-        var variables = JsonSerializer.Serialize(new { rtCkId = EntityTypeRtCkId });
+        var variables = JsonSerializer.Serialize(new { rtCkId = SystemCkIds.RtCkEntityTypeIdString });
 
         // Act
         var result = await _fixture.ExecuteGraphQlAsync(query, variables);
@@ -1067,7 +1064,7 @@ public class CkTypesQueryTests : IClassFixture<CkQueryTestFixture>
                 }
             }";
 
-        var variables = JsonSerializer.Serialize(new { rtCkId = EntityTypeRtCkId });
+        var variables = JsonSerializer.Serialize(new { rtCkId = SystemCkIds.RtCkEntityTypeIdString });
 
         // Act
         var result = await _fixture.ExecuteGraphQlAsync(query, variables);
@@ -1142,7 +1139,7 @@ public class CkTypesQueryTests : IClassFixture<CkQueryTestFixture>
                 }
             }";
 
-        var variables = JsonSerializer.Serialize(new { rtCkId = EntityTypeRtCkId });
+        var variables = JsonSerializer.Serialize(new { rtCkId = SystemCkIds.RtCkEntityTypeIdString });
 
         // Act
         var result = await _fixture.ExecuteGraphQlAsync(query, variables);
@@ -1167,17 +1164,20 @@ public class CkTypesQueryTests : IClassFixture<CkQueryTestFixture>
             var roleId = firstAssociation["roleId"];
             roleId.Should().NotBeNull("roleId should exist");
             roleId["fullName"]?.Value<string>().Should().NotBeNullOrEmpty("roleId.fullName should exist");
-            roleId["semanticVersionedFullName"]?.Value<string>().Should().NotBeNullOrEmpty("roleId.semanticVersionedFullName should exist");
+            roleId["semanticVersionedFullName"]?.Value<string>().Should()
+                .NotBeNullOrEmpty("roleId.semanticVersionedFullName should exist");
 
             // Verify originCkTypeId structure
             var originCkTypeId = firstAssociation["originCkTypeId"];
             originCkTypeId.Should().NotBeNull("originCkTypeId should exist");
-            originCkTypeId["fullName"]?.Value<string>().Should().NotBeNullOrEmpty("originCkTypeId.fullName should exist");
+            originCkTypeId["fullName"]?.Value<string>().Should()
+                .NotBeNullOrEmpty("originCkTypeId.fullName should exist");
 
             // Verify targetCkTypeId structure
             var targetCkTypeId = firstAssociation["targetCkTypeId"];
             targetCkTypeId.Should().NotBeNull("targetCkTypeId should exist");
-            targetCkTypeId["fullName"]?.Value<string>().Should().NotBeNullOrEmpty("targetCkTypeId.fullName should exist");
+            targetCkTypeId["fullName"]?.Value<string>().Should()
+                .NotBeNullOrEmpty("targetCkTypeId.fullName should exist");
 
             // Verify navigationPropertyName
             var navigationPropertyName = firstAssociation["navigationPropertyName"]?.Value<string>();
@@ -1225,7 +1225,7 @@ public class CkTypesQueryTests : IClassFixture<CkQueryTestFixture>
                 }
             }";
 
-        var variables = JsonSerializer.Serialize(new { rtCkId = EntityTypeRtCkId });
+        var variables = JsonSerializer.Serialize(new { rtCkId = SystemCkIds.RtCkEntityTypeIdString });
 
         // Act
         var result = await _fixture.ExecuteGraphQlAsync(query, variables);
@@ -1294,7 +1294,7 @@ public class CkTypesQueryTests : IClassFixture<CkQueryTestFixture>
                 }
             }";
 
-        var variables = JsonSerializer.Serialize(new { rtCkId = EntityTypeRtCkId });
+        var variables = JsonSerializer.Serialize(new { rtCkId = SystemCkIds.RtCkEntityTypeIdString });
 
         // Act
         var result = await _fixture.ExecuteGraphQlAsync(query, variables);
@@ -1364,7 +1364,7 @@ public class CkTypesQueryTests : IClassFixture<CkQueryTestFixture>
                 }
             }";
 
-        var variables = JsonSerializer.Serialize(new { rtCkId = EntityTypeRtCkId });
+        var variables = JsonSerializer.Serialize(new { rtCkId = SystemCkIds.RtCkEntityTypeIdString });
 
         // Act
         var result = await _fixture.ExecuteGraphQlAsync(query, variables);
@@ -1412,7 +1412,7 @@ public class CkTypesQueryTests : IClassFixture<CkQueryTestFixture>
                 }
             }";
 
-        var variables = JsonSerializer.Serialize(new { rtCkId = EntityTypeRtCkId });
+        var variables = JsonSerializer.Serialize(new { rtCkId = SystemCkIds.RtCkEntityTypeIdString });
 
         // Act
         var result = await _fixture.ExecuteGraphQlAsync(query, variables);
@@ -1460,7 +1460,7 @@ public class CkTypesQueryTests : IClassFixture<CkQueryTestFixture>
                 }
             }";
 
-        var variables = JsonSerializer.Serialize(new { rtCkId = EntityTypeRtCkId });
+        var variables = JsonSerializer.Serialize(new { rtCkId = SystemCkIds.RtCkEntityTypeIdString });
 
         // Act
         var result = await _fixture.ExecuteGraphQlAsync(query, variables);
@@ -1509,7 +1509,7 @@ public class CkTypesQueryTests : IClassFixture<CkQueryTestFixture>
                 }
             }";
 
-        var variables = JsonSerializer.Serialize(new { rtCkId = TenantTypeRtCkId });
+        var variables = JsonSerializer.Serialize(new { rtCkId = SystemCkIds.RtCkTenantTypeIdString });
 
         // Act
         var result = await _fixture.ExecuteGraphQlAsync(query, variables);
@@ -1563,7 +1563,8 @@ public class CkTypesQueryTests : IClassFixture<CkQueryTestFixture>
                 }
             }";
 
-        var variables = JsonSerializer.Serialize(new { rtCkIds = new[] { EntityTypeRtCkId, TenantTypeRtCkId } });
+        var variables = JsonSerializer.Serialize(new
+            { rtCkIds = new[] { SystemCkIds.RtCkEntityTypeIdString, SystemCkIds.RtCkTenantTypeIdString } });
 
         // Act
         var result = await _fixture.ExecuteGraphQlAsync(query, variables);

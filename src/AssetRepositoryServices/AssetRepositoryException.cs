@@ -1,3 +1,4 @@
+using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
 using Meshmakers.Octo.ConstructionKit.Contracts;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices;
@@ -130,5 +131,25 @@ internal class AssetRepositoryException : Exception
     public static Exception InvalidArgumentsCkIdOrRtCkIdAndModelIdInSameQuery()
     {
         return new AssetRepositoryException("Invalid arguments: Cannot use both ckId or rtCkId and ckModelIds in the same query");
+    }
+
+    public static Exception RtQueryTypeUnknown(string name)
+    {
+        return new AssetRepositoryException("RtQuery type unknown: " + name);
+    }
+
+    public static Exception AggregationTypeUnknown(AggregationTypesDto aggregationType)
+    {
+        return new AssetRepositoryException("Aggregation type unknown: " + aggregationType);
+    }
+
+    public static Exception GroupByColumnPathsRequired()
+    {
+        return new AssetRepositoryException("GroupBy column paths are required for grouping aggregation queries");
+    }
+
+    public static Exception FieldAggregationResultNull()
+    {
+        return new AssetRepositoryException("Field aggregation result is null");
     }
 }

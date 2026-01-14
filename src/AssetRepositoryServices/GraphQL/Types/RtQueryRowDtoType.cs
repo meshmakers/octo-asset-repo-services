@@ -1,4 +1,5 @@
 using AssetRepositoryServices.Resources;
+using GraphQL;
 using GraphQL.Builders;
 using GraphQL.Types;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Scalars;
@@ -9,14 +10,15 @@ using Meshmakers.Octo.ConstructionKit.Contracts.DependencyGraph;
 using Meshmakers.Octo.ConstructionKit.Contracts.Services;
 using Meshmakers.Octo.Runtime.Contracts;
 using Meshmakers.Octo.Runtime.Contracts.Repositories;
+using Meshmakers.Octo.Runtime.Contracts.Repositories.Query;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
 
 /// <summary>
-///     Implements a GraphQL runtime query row type for a runtime query
+///     Implements a GraphQL runtime query row interface type for a runtime query
 /// </summary>
 // ReSharper disable once ClassNeverInstantiated.Global
-internal sealed class RtQueryRowDtoType : ObjectGraphType<RtQueryRowDto>
+internal sealed class RtQueryRowDtoType : InterfaceGraphType<IRtQueryRowDto>
 {
     /// <summary>
     ///     Constructor
@@ -25,6 +27,31 @@ internal sealed class RtQueryRowDtoType : ObjectGraphType<RtQueryRowDto>
     {
         Name = "RtQueryRow";
         Description = AssetTexts.Graphql_RtQueryRow_Description;
+        Field(d => d.CkTypeId, typeof(RtCkIdGraph<CkTypeId>));
+        Connection<NonNullGraphType<RtQueryCellDtoType>>("Cells")
+            .Argument<ListGraphType<StringGraphType>>(Statics.AttributePathsFilterArg,
+                AssetTexts.Graphql_Arguments_AttributePathsFilter_Description)
+            .Argument<BooleanGraphType>(Statics.ResolveEnumValuesToNames,
+                "When true, enum integer values are resolved to their label names. Defaults to true.");
+    }
+}
+
+/// <summary>
+///     Implements a GraphQL runtime simple query row type for a runtime query
+/// </summary>
+// ReSharper disable once ClassNeverInstantiated.Global
+internal sealed class RtSimpleQueryRowDtoType : ObjectGraphType<RtSimpleQueryRowDto>
+{
+    /// <summary>
+    ///     Constructor
+    /// </summary>
+    public RtSimpleQueryRowDtoType()
+    {
+        Name = "RtSimpleQueryRow";
+        Description = AssetTexts.Graphql_RtQueryRow_Description;
+
+        Interface<RtQueryRowDtoType>();
+
         Field(d => d.RtId, typeof(OctoObjectIdType));
         Field(d => d.CkTypeId, typeof(RtCkIdGraph<CkTypeId>));
         Field(x => x.RtCreationDateTime, true);
@@ -40,22 +67,27 @@ internal sealed class RtQueryRowDtoType : ObjectGraphType<RtQueryRowDto>
             .Resolve(ResolveCells);
     }
 
-    private object ResolveCells(IResolveConnectionContext<RtQueryRowDto> context)
+    private object ResolveCells(IResolveConnectionContext<RtSimpleQueryRowDto> context)
     {
         var ckCacheService = context.GetCkCacheService();
-        var rtQueryRowUserContext = (RtQueryRowUserContext)context.Source.UserContext!;
 
-        // Default to true for backward compatibility with existing behavior
-        context.TryGetArgument(Statics.ResolveEnumValuesToNames, true, out bool resolveEnumValuesToNames);
+        if (context.Source.UserContext is RtQueryRowUserContext rtQueryRowUserContext)
+        {
+            // Default to true for backward compatibility with existing behavior
+            context.TryGetArgument(Statics.ResolveEnumValuesToNames, true, out bool resolveEnumValuesToNames);
 
-        return ConnectionUtils.ToConnection(
-            rtQueryRowUserContext.CkTypeQueryColumns.Select(item =>
-                CreateRtQueryCellDto(ckCacheService, rtQueryRowUserContext.TenantId, rtQueryRowUserContext.RtEntity,
-                    item, resolveEnumValuesToNames)),
-            context);
+            return ConnectionUtils.ToOctoConnection(
+                rtQueryRowUserContext.CkTypeQueryColumns.Select(item =>
+                    CreateRtSimpleQueryCellDto(ckCacheService, rtQueryRowUserContext.TenantId,
+                        rtQueryRowUserContext.RtEntity,
+                        item.Item1, resolveEnumValuesToNames)),
+                context);
+        }
+
+        throw OctoGraphQLException.UnknownUserContextType();
     }
 
-    private RtQueryCellDto CreateRtQueryCellDto(ICkCacheService ckCacheService, string tenantId,
+    private RtQueryCellDto CreateRtSimpleQueryCellDto(ICkCacheService ckCacheService, string tenantId,
         RtEntityGraphItem rtEntity,
         CkTypeQueryColumn ckTypeQueryColumn, bool resolveEnumValuesToNames)
     {
@@ -77,10 +109,10 @@ internal sealed class RtQueryRowDtoType : ObjectGraphType<RtQueryRowDto>
         return cellDto;
     }
 
-    public static RtQueryRowDto CreateRtQueryRowDto(string tenantId, RtEntityGraphItem rtEntityGraphItem,
-        IReadOnlyList<CkTypeQueryColumn> ckTypeQueryColumns)
+    public static RtSimpleQueryRowDto CreateRtQueryRowDto(string tenantId, RtEntityGraphItem rtEntityGraphItem,
+        IReadOnlyList<Tuple<CkTypeQueryColumn, AggregationTypesDto>> ckTypeQueryColumns)
     {
-        var rtQueryRowDto = new RtQueryRowDto
+        var rtQueryRowDto = new RtSimpleQueryRowDto
         {
             RtId = rtEntityGraphItem.RtId,
             CkTypeId = rtEntityGraphItem.CkTypeId ?? throw OctoGraphQLException.CkTypeIdUndefined(),
@@ -95,14 +127,230 @@ internal sealed class RtQueryRowDtoType : ObjectGraphType<RtQueryRowDto>
     }
 }
 
+/// <summary>
+///     Implements a GraphQL runtime aggregation query row type for a runtime query
+/// </summary>
+// ReSharper disable once ClassNeverInstantiated.Global
+internal sealed class RtAggregationQueryRowDtoType : ObjectGraphType<RtAggregationQueryRowDto>
+{
+    /// <summary>
+    ///     Constructor
+    /// </summary>
+    public RtAggregationQueryRowDtoType()
+    {
+        Name = "RtAggregationQueryRow";
+        Description = AssetTexts.Graphql_RtQueryRow_Description;
+
+        Interface<RtQueryRowDtoType>();
+
+        Field(d => d.CkTypeId, typeof(RtCkIdGraph<CkTypeId>));
+
+        Connection<NonNullGraphType<RtQueryCellDtoType>>("Cells")
+            .Argument<ListGraphType<StringGraphType>>(Statics.AttributePathsFilterArg,
+                AssetTexts.Graphql_Arguments_AttributePathsFilter_Description)
+            .Argument<BooleanGraphType>(Statics.ResolveEnumValuesToNames,
+                "When true, enum integer values are resolved to their label names. Defaults to true.")
+            .Resolve(ResolveCells);
+    }
+
+    private object ResolveCells(IResolveConnectionContext<RtAggregationQueryRowDto> context)
+    {
+        context.GetCkCacheService();
+
+        if (context.Source.UserContext is RtAggregatedQueryRowUserContext rtAggregatedQueryRowUserContext)
+        {
+            return ConnectionUtils.ToConnection(
+                rtAggregatedQueryRowUserContext.CkTypeQueryColumns.Select(item =>
+                    CreateRtAggregatedQueryCellDto(rtAggregatedQueryRowUserContext.ResultSetAggregationResult,
+                        item)),
+                context);
+        }
+
+        throw OctoGraphQLException.UnknownUserContextType();
+    }
+
+    private RtQueryCellDto CreateRtAggregatedQueryCellDto(AggregationResult resultSetAggregationResult,
+        Tuple<CkTypeQueryColumn, AggregationTypesDto> ckTypeQueryColumnTuple)
+    {
+        object? value;
+        switch (ckTypeQueryColumnTuple.Item2)
+        {
+            case AggregationTypesDto.Count:
+                value = resultSetAggregationResult.CountStatistics.FirstOrDefault(a=> a.AttributePath == ckTypeQueryColumnTuple.Item1.Path)?.Value;
+                break;
+            case AggregationTypesDto.Sum:
+                value = resultSetAggregationResult.SumStatistics.FirstOrDefault(a=> a.AttributePath == ckTypeQueryColumnTuple.Item1.Path)?.Value;
+                break;
+            case AggregationTypesDto.Average:
+                value = resultSetAggregationResult.AvgStatistics.FirstOrDefault(a=> a.AttributePath == ckTypeQueryColumnTuple.Item1.Path)?.Value;
+                break;
+            case AggregationTypesDto.Minimum:
+                value = resultSetAggregationResult.MinStatistics.FirstOrDefault(a=> a.AttributePath == ckTypeQueryColumnTuple.Item1.Path)?.Value;
+                break;
+            case AggregationTypesDto.Maximum:
+                value = resultSetAggregationResult.MaxStatistics.FirstOrDefault(a=> a.AttributePath == ckTypeQueryColumnTuple.Item1.Path)?.Value;
+                break;
+            default:
+                throw OctoGraphQLException.UnknownUserContextType();
+        }
+
+        var cellDto = new RtQueryCellDto
+        {
+            AttributePath = ckTypeQueryColumnTuple.Item1.Path,
+            Value = value
+        };
+
+        return cellDto;
+    }
+
+    public static RtAggregationQueryRowDto CreateRtQueryRowDto(string tenantId, RtCkId<CkTypeId> queryCkTypeId, AggregationResult resultSetAggregationResult, IReadOnlyList<Tuple<CkTypeQueryColumn, AggregationTypesDto>> ckTypeQueryColumns)
+    {
+        var rtQueryRowDto = new RtAggregationQueryRowDto
+        {
+            CkTypeId = queryCkTypeId,
+            UserContext = new RtAggregatedQueryRowUserContext(tenantId, resultSetAggregationResult, ckTypeQueryColumns)
+        };
+
+        return rtQueryRowDto;
+    }
+}
+
 internal class RtQueryRowUserContext(
     string tenantId,
     RtEntityGraphItem rtEntity,
-    IReadOnlyList<CkTypeQueryColumn> ckTypeQueryColumns)
+    IReadOnlyList<Tuple<CkTypeQueryColumn, AggregationTypesDto>> ckTypeQueryColumns)
 {
     public string TenantId { get; } = tenantId;
 
-    public IReadOnlyList<CkTypeQueryColumn> CkTypeQueryColumns { get; } = ckTypeQueryColumns;
+    public IReadOnlyList<Tuple<CkTypeQueryColumn, AggregationTypesDto>> CkTypeQueryColumns { get; } = ckTypeQueryColumns;
 
     public RtEntityGraphItem RtEntity { get; } = rtEntity;
+}
+
+internal class RtAggregatedQueryRowUserContext(
+    string tenantId,
+    AggregationResult resultSetAggregationResult,
+    IReadOnlyList<Tuple<CkTypeQueryColumn, AggregationTypesDto>> ckTypeQueryColumns)
+{
+    public string TenantId { get; } = tenantId;
+
+    public IReadOnlyList<Tuple<CkTypeQueryColumn, AggregationTypesDto>> CkTypeQueryColumns { get; } = ckTypeQueryColumns;
+
+    public AggregationResult ResultSetAggregationResult { get; } = resultSetAggregationResult;
+}
+
+
+
+/// <summary>
+///     Implements a GraphQL runtime grouping aggregation query row type for a runtime query
+/// </summary>
+// ReSharper disable once ClassNeverInstantiated.Global
+internal sealed class RtGroupingAggregationQueryRowDtoType : ObjectGraphType<RtGroupingAggregationQueryRowDto>
+{
+    /// <summary>
+    ///     Constructor
+    /// </summary>
+    public RtGroupingAggregationQueryRowDtoType()
+    {
+        Name = "RtGroupingAggregationQueryRow";
+        Description = AssetTexts.Graphql_RtQueryRow_Description;
+
+        Interface<RtQueryRowDtoType>();
+
+        Field(d => d.CkTypeId, typeof(RtCkIdGraph<CkTypeId>));
+
+        Connection<NonNullGraphType<RtQueryCellDtoType>>("Cells")
+            .Argument<ListGraphType<StringGraphType>>(Statics.AttributePathsFilterArg,
+                AssetTexts.Graphql_Arguments_AttributePathsFilter_Description)
+            .Argument<BooleanGraphType>(Statics.ResolveEnumValuesToNames,
+                "When true, enum integer values are resolved to their label names. Defaults to true.")
+            .Resolve(ResolveCells);
+    }
+
+    private object ResolveCells(IResolveConnectionContext<RtGroupingAggregationQueryRowDto> context)
+    {
+        if (context.Source.UserContext is RtGroupingAggregatedQueryRowUserContext groupingContext)
+        {
+            var cells = new List<RtQueryCellDto>();
+
+            // First, add cells for the GroupBy columns with their key values
+            var groupByPaths = groupingContext.FieldAggregationResult.GroupByAttributePaths.ToList();
+            var keys = groupingContext.FieldAggregationResult.Keys.ToList();
+
+            for (var i = 0; i < groupByPaths.Count; i++)
+            {
+                cells.Add(new RtQueryCellDto
+                {
+                    AttributePath = groupByPaths[i],
+                    Value = i < keys.Count ? keys[i] : null
+                });
+            }
+
+            // Then, add cells for the aggregation columns
+            cells.AddRange(groupingContext.CkTypeQueryColumns.Select(item =>
+                CreateRtGroupingAggregatedQueryCellDto(groupingContext.FieldAggregationResult, item)));
+
+            return ConnectionUtils.ToConnection(cells, context);
+        }
+
+        throw OctoGraphQLException.UnknownUserContextType();
+    }
+
+    private RtQueryCellDto CreateRtGroupingAggregatedQueryCellDto(FieldAggregationResult fieldAggregationResult,
+        Tuple<CkTypeQueryColumn, AggregationTypesDto> ckTypeQueryColumnTuple)
+    {
+        object? value;
+        switch (ckTypeQueryColumnTuple.Item2)
+        {
+            case AggregationTypesDto.Count:
+                value = fieldAggregationResult.CountStatistics.FirstOrDefault(a => a.AttributePath == ckTypeQueryColumnTuple.Item1.Path)?.Value;
+                break;
+            case AggregationTypesDto.Sum:
+                value = fieldAggregationResult.SumStatistics.FirstOrDefault(a => a.AttributePath == ckTypeQueryColumnTuple.Item1.Path)?.Value;
+                break;
+            case AggregationTypesDto.Average:
+                value = fieldAggregationResult.AvgStatistics.FirstOrDefault(a => a.AttributePath == ckTypeQueryColumnTuple.Item1.Path)?.Value;
+                break;
+            case AggregationTypesDto.Minimum:
+                value = fieldAggregationResult.MinStatistics.FirstOrDefault(a => a.AttributePath == ckTypeQueryColumnTuple.Item1.Path)?.Value;
+                break;
+            case AggregationTypesDto.Maximum:
+                value = fieldAggregationResult.MaxStatistics.FirstOrDefault(a => a.AttributePath == ckTypeQueryColumnTuple.Item1.Path)?.Value;
+                break;
+            default:
+                throw OctoGraphQLException.UnknownUserContextType();
+        }
+
+        var cellDto = new RtQueryCellDto
+        {
+            AttributePath = ckTypeQueryColumnTuple.Item1.Path,
+            Value = value
+        };
+
+        return cellDto;
+    }
+
+    public static RtGroupingAggregationQueryRowDto CreateRtQueryRowDto(string tenantId, RtCkId<CkTypeId> queryCkTypeId,
+        FieldAggregationResult fieldAggregationResult, IReadOnlyList<Tuple<CkTypeQueryColumn, AggregationTypesDto>> ckTypeQueryColumns)
+    {
+        var rtQueryRowDto = new RtGroupingAggregationQueryRowDto
+        {
+            CkTypeId = queryCkTypeId,
+            UserContext = new RtGroupingAggregatedQueryRowUserContext(tenantId, fieldAggregationResult, ckTypeQueryColumns)
+        };
+
+        return rtQueryRowDto;
+    }
+}
+
+internal class RtGroupingAggregatedQueryRowUserContext(
+    string tenantId,
+    FieldAggregationResult fieldAggregationResult,
+    IReadOnlyList<Tuple<CkTypeQueryColumn, AggregationTypesDto>> ckTypeQueryColumns)
+{
+    public string TenantId { get; } = tenantId;
+
+    public IReadOnlyList<Tuple<CkTypeQueryColumn, AggregationTypesDto>> CkTypeQueryColumns { get; } = ckTypeQueryColumns;
+
+    public FieldAggregationResult FieldAggregationResult { get; } = fieldAggregationResult;
 }

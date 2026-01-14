@@ -65,7 +65,7 @@ internal sealed class RtEntityGenericDtoType : ObjectGraphType<RtEntityDto>
 
         context.TryGetArgument(Statics.ResolveEnumValuesToNames, out bool resolveEnumValuesToNames);
 
-        return ConnectionUtils.ToConnection(
+        return ConnectionUtils.ToOctoConnection(
             resultList.Select(item => CreateRtEntityAttributeDto(ckCacheService, graphQlContext.TenantId,
                 (RtEntity)context.Source.UserContext!, item, resolveEnumValuesToNames, filterAttributeNames)),
             context);

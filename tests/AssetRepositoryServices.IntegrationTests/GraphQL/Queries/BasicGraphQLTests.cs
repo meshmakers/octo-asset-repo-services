@@ -182,7 +182,8 @@ public class BasicGraphQlTests
     [Fact]
     public async Task GraphQL_QueryCustomersWithOwnedFacilities_NavigatesAssociations()
     {
-        // Arrange
+        // Arrange - Using inline fragments with the new union-based association pattern
+        // For union types, all fields must be queried within inline fragments
         var query = @"
             query {
               runtime {
@@ -190,11 +191,13 @@ public class BasicGraphQlTests
                   items {
                     rtId
                     rtWellKnownName
-                    owns {
-                      assetRepositoryIntegrationTestOperatingFacility {
-                        items {
-                          rtId
-                          rtWellKnownName
+                    owns(first: 10) {
+                      edges {
+                        node {
+                          ... on AssetRepositoryIntegrationTestOperatingFacility {
+                            rtId
+                            rtWellKnownName
+                          }
                         }
                       }
                     }
@@ -227,26 +230,28 @@ public class BasicGraphQlTests
             var rtWellKnownName = customer["rtWellKnownName"]?.Value<string>();
             rtWellKnownName.Should().NotBeNullOrEmpty();
 
-            var owns = customer.SelectToken("owns.assetRepositoryIntegrationTestOperatingFacility.items");
-            owns.Should().NotBeNull($"Customer {rtWellKnownName} should have owns.assetRepositoryIntegrationTestOperatingFacility.items");
-            owns.Type.Should().Be(JTokenType.Array);
+            var ownsEdges = customer.SelectToken("owns.edges");
+            ownsEdges.Should().NotBeNull($"Customer {rtWellKnownName} should have owns.edges");
+            ownsEdges.Type.Should().Be(JTokenType.Array);
 
-            var ownedFacilities = (JArray)owns;
+            var ownedFacilities = (JArray)ownsEdges;
             ownedFacilities.Should().HaveCount(1, $"Customer {rtWellKnownName} should own exactly 1 facility");
 
-            var facility = ownedFacilities[0];
+            var facilityEdge = ownedFacilities[0];
+            var facility = facilityEdge["node"];
+            facility.Should().NotBeNull($"Facility edge for {rtWellKnownName} should have node");
             facility["rtWellKnownName"].Should().NotBeNull($"Facility owned by {rtWellKnownName} should have rtWellKnownName");
         }
 
         // Verify specific customer-facility relationships
         var maxMustermann = customersArray.FirstOrDefault(c => c["rtWellKnownName"]?.Value<string>() == "CustomerMaxMustermann");
         maxMustermann.Should().NotBeNull();
-        var maxFacility = maxMustermann.SelectToken("owns.assetRepositoryIntegrationTestOperatingFacility.items[0].rtWellKnownName")?.Value<string>();
+        var maxFacility = maxMustermann.SelectToken("owns.edges[0].node.rtWellKnownName")?.Value<string>();
         maxFacility.Should().Be("FacilityHauptstrasse42");
 
         var annaMueller = customersArray.FirstOrDefault(c => c["rtWellKnownName"]?.Value<string>() == "CustomerAnnaMueller");
         annaMueller.Should().NotBeNull();
-        var annaFacility = annaMueller.SelectToken("owns.assetRepositoryIntegrationTestOperatingFacility.items[0].rtWellKnownName")?.Value<string>();
+        var annaFacility = annaMueller.SelectToken("owns.edges[0].node.rtWellKnownName")?.Value<string>();
         annaFacility.Should().Be("FacilityLinzerStrasse15");
     }
 
