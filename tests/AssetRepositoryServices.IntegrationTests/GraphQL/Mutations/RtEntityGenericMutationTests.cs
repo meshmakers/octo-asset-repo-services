@@ -38,10 +38,7 @@ public class RtEntityGenericMutationTests : IClassFixture<GraphQlTestFixture>
                     runtimeEntities {
                         create(entities: $entities) {
                             rtId
-                            ckTypeId {
-                                fullName
-                                semanticVersionedFullName
-                            }
+                            ckTypeId
                             attributes(first: 10) {
                                 items {
                                     attributeName
@@ -91,7 +88,7 @@ public class RtEntityGenericMutationTests : IClassFixture<GraphQlTestFixture>
 
         var createdEntity = createdEntities[0];
         createdEntity["rtId"].Should().NotBeNull();
-        createdEntity["ckTypeId"]?["semanticVersionedFullName"]?.Value<string>().Should().Contain("Customer");
+        createdEntity["ckTypeId"]?.Value<string>().Should().Contain("Customer");
     }
 
     [Fact]
@@ -104,9 +101,7 @@ public class RtEntityGenericMutationTests : IClassFixture<GraphQlTestFixture>
                     runtimeEntities {
                         create(entities: $entities) {
                             rtId
-                            ckTypeId {
-                                semanticVersionedFullName
-                            }
+                            ckTypeId
                         }
                     }
                 }
@@ -263,9 +258,7 @@ public class RtEntityGenericMutationTests : IClassFixture<GraphQlTestFixture>
                     runtimeEntities {
                         create(entities: $entities) {
                             rtId
-                            ckTypeId {
-                                semanticVersionedFullName
-                            }
+                            ckTypeId
                             attributes(first: 20) {
                                 items {
                                     attributeName
@@ -640,7 +633,7 @@ public class RtEntityGenericMutationTests : IClassFixture<GraphQlTestFixture>
         var createAnswer = JObject.Parse(createJson);
         var customerRtId = createAnswer.SelectToken("data.runtime.runtimeEntities.create[0].rtId")?.Value<string>();
 
-        // Create a metering point
+        // Create a metering point - must include all mandatory attributes
         var createMeteringPointVariables = JsonSerializer.Serialize(new
         {
             entities = new[]
@@ -649,9 +642,13 @@ public class RtEntityGenericMutationTests : IClassFixture<GraphQlTestFixture>
                 {
                     ckTypeId = MeteringPointCkTypeId,
                     rtWellKnownName = "TestMeteringPoint_Update_DifferentTypes",
-                    attributes = new[]
+                    attributes = new object[]
                     {
-                        new { attributeName = "meteringPointNumber", value = "AT001234567890" }
+                        new { attributeName = "meteringPointNumber", value = "AT001234567890" },
+                        new { attributeName = "meterReading", value = 100.0 },
+                        new { attributeName = "operatingStatus", value = 0 },
+                        new { attributeName = "name", value = "Test MeteringPoint" },
+                        new { attributeName = "description", value = "Test description" }
                     }
                 }
             }
@@ -730,9 +727,7 @@ public class RtEntityGenericMutationTests : IClassFixture<GraphQlTestFixture>
                     runtimeEntities {
                         create(entities: $entities) {
                             rtId
-                            ckTypeId {
-                                fullName
-                            }
+                            ckTypeId
                         }
                     }
                 }
@@ -765,7 +760,7 @@ public class RtEntityGenericMutationTests : IClassFixture<GraphQlTestFixture>
         var createJson = _fixture.SerializeGraphQl(createResult);
         var createAnswer = JObject.Parse(createJson);
         var rtId = createAnswer.SelectToken("data.runtime.runtimeEntities.create[0].rtId")?.Value<string>();
-        var ckTypeIdFullName = createAnswer.SelectToken("data.runtime.runtimeEntities.create[0].ckTypeId.fullName")?.Value<string>();
+        var ckTypeId = createAnswer.SelectToken("data.runtime.runtimeEntities.create[0].ckTypeId")?.Value<string>();
 
         // Now delete the entity
         var deleteMutation = @"
@@ -781,7 +776,7 @@ public class RtEntityGenericMutationTests : IClassFixture<GraphQlTestFixture>
         {
             entities = new[]
             {
-                new { rtId, ckTypeId = ckTypeIdFullName }
+                new { rtId, ckTypeId }
             }
         });
 
@@ -798,6 +793,159 @@ public class RtEntityGenericMutationTests : IClassFixture<GraphQlTestFixture>
 
         var deleteResult = answer.SelectToken("data.runtime.runtimeEntities.delete")?.Value<bool>();
         deleteResult.Should().BeTrue();
+    }
+
+    #endregion
+
+    #region Association Tests
+
+    [Fact]
+    public async Task Create_WithAssociation_CreatesEntityAndAssociation()
+    {
+        // Arrange - first create a customer to link to
+        var createCustomerMutation = @"
+            mutation ($entities: [RtEntityInput!]!) {
+                runtime {
+                    runtimeEntities {
+                        create(entities: $entities) {
+                            rtId
+                            ckTypeId
+                        }
+                    }
+                }
+            }";
+
+        var customerVariables = JsonSerializer.Serialize(new
+        {
+            entities = new[]
+            {
+                new
+                {
+                    ckTypeId = CustomerCkTypeId,
+                    rtWellKnownName = "TestCustomer_Association",
+                    attributes = new[]
+                    {
+                        new { attributeName = "firstName", value = "Association" },
+                        new { attributeName = "lastName", value = "Test" },
+                        new { attributeName = "street", value = "Test Street" },
+                        new { attributeName = "postalCode", value = "12345" },
+                        new { attributeName = "city", value = "Test City" },
+                        new { attributeName = "country", value = "Austria" }
+                    }
+                }
+            }
+        });
+
+        var customerResult = await _fixture.ExecuteGraphQlAsync(createCustomerMutation, customerVariables);
+        customerResult.Errors.Should().BeNullOrEmpty();
+
+        var customerJson = _fixture.SerializeGraphQl(customerResult);
+        var customerAnswer = JObject.Parse(customerJson);
+        var customerRtId = customerAnswer.SelectToken("data.runtime.runtimeEntities.create[0].rtId")?.Value<string>();
+        var customerCkTypeId = customerAnswer.SelectToken("data.runtime.runtimeEntities.create[0].ckTypeId")?.Value<string>();
+        customerRtId.Should().NotBeNullOrEmpty();
+
+        // Now create an OperatingFacility with association to the customer
+        var operatingFacilityCkTypeId = "AssetRepositoryIntegrationTest/OperatingFacility";
+        var createFacilityMutation = @"
+            mutation ($entities: [RtEntityInput!]!) {
+                runtime {
+                    runtimeEntities {
+                        create(entities: $entities) {
+                            rtId
+                            ckTypeId
+                        }
+                    }
+                }
+            }";
+
+        var facilityVariables = JsonSerializer.Serialize(new
+        {
+            entities = new[]
+            {
+                new
+                {
+                    ckTypeId = operatingFacilityCkTypeId,
+                    rtWellKnownName = "TestFacility_WithAssociation",
+                    attributes = new[]
+                    {
+                        new { attributeName = "name", value = "Test Facility" },
+                        new { attributeName = "description", value = "Test Description" }
+                    },
+                    associations = new[]
+                    {
+                        new
+                        {
+                            roleName = "OwnedBy",
+                            targets = new[]
+                            {
+                                new
+                                {
+                                    target = new { rtId = customerRtId, ckTypeId = customerCkTypeId },
+                                    modOption = "CREATE"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        });
+
+        // Act
+        var result = await _fixture.ExecuteGraphQlAsync(createFacilityMutation, facilityVariables);
+
+        // Assert
+        result.Should().NotBeNull();
+        result.Errors.Should().BeNullOrEmpty();
+        result.Data.Should().NotBeNull();
+
+        var json = _fixture.SerializeGraphQl(result);
+        var answer = JObject.Parse(json);
+
+        var createdEntities = answer.SelectToken("data.runtime.runtimeEntities.create") as JArray;
+        createdEntities.Should().NotBeNull();
+        createdEntities.Should().HaveCount(1);
+
+        var createdEntity = createdEntities![0];
+        var facilityRtId = createdEntity["rtId"]?.Value<string>();
+        facilityRtId.Should().NotBeNullOrEmpty();
+
+        // Verify the association was created by querying the customer to check its inverse association
+        var queryMutation = $@"
+            query {{
+                runtime {{
+                    assetRepositoryIntegrationTestCustomer(first: 100, after: null) {{
+                        items {{
+                            rtId
+                            owns(first: 10) {{
+                                items {{
+                                    ... on AssetRepositoryIntegrationTestOperatingFacility {{
+                                        rtId
+                                    }}
+                                }}
+                            }}
+                        }}
+                    }}
+                }}
+            }}";
+
+        var queryResult = await _fixture.ExecuteGraphQlAsync(queryMutation, "{}");
+        queryResult.Errors.Should().BeNullOrEmpty();
+
+        var queryJson = _fixture.SerializeGraphQl(queryResult);
+        var queryAnswer = JObject.Parse(queryJson);
+
+        // Find the customer we created
+        var customers = queryAnswer.SelectToken("data.runtime.assetRepositoryIntegrationTestCustomer.items") as JArray;
+        customers.Should().NotBeNull();
+
+        var ourCustomer = customers!.FirstOrDefault(c => c["rtId"]?.Value<string>() == customerRtId);
+        ourCustomer.Should().NotBeNull("The created customer should be found");
+
+        var owns = ourCustomer!["owns"]?["items"] as JArray;
+        owns.Should().NotBeNull();
+        owns.Should().HaveCount(1);
+        owns![0]["rtId"]?.Value<string>().Should().Be(facilityRtId);
     }
 
     #endregion

@@ -73,6 +73,25 @@ internal static class Helpers
         });
     }
 
+    internal static FieldType FieldAsyncByType<TSourceType>(this ComplexGraphType<TSourceType> complexGraphType,
+        string name,
+        string? description = null,
+        Type? graphType = null,
+        QueryArguments? arguments = null,
+        Func<IResolveFieldContext<TSourceType>, ValueTask<object?>>? resolve = null,
+        string? deprecationReason = null)
+    {
+        return complexGraphType.AddField(new FieldType
+        {
+            Name = name,
+            Description = description,
+            DeprecationReason = deprecationReason,
+            Type = graphType,
+            Arguments = arguments,
+            Resolver = resolve != null ? new FuncFieldResolver<TSourceType, object>(resolve) : null
+        });
+    }
+
     public static ConnectionBuilder<TSourceType> Connection<TNodeType, TGraphType, TSourceType>(
         this ComplexGraphType<TNodeType> complexGraphType, IGraphTypesCache graphTypesCache, TGraphType itemType,
         string connectionName)

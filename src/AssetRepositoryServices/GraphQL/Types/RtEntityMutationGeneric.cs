@@ -18,22 +18,22 @@ internal sealed class RtEntityMutationGeneric : RtMutationBase
     {
         Name = "RtEntityMutations";
 
-        // Create mutation
+        // Create mutation - use Type to let GraphQL.NET resolve the type from the schema
         var createArgument =
             new QueryArgument(typeof(NonNullGraphType<ListGraphType<RtEntityDtoGenericInputType>>))
                 { Name = Statics.EntitiesArg, Description = AssetTexts.Graphql_Arguments_Entities_Description };
-        this.FieldAsync("create",
+        this.FieldAsyncByType("create",
             AssetTexts.Graphql_RtEntityMutationGeneric_CreateOperation_Description,
-            new ListGraphType(new RtEntityGenericDtoType()),
+            typeof(ListGraphType<RtEntityGenericDtoType>),
             new QueryArguments(createArgument), ResolveCreate);
 
-        // Update mutation
+        // Update mutation - use Type to let GraphQL.NET resolve the type from the schema
         var updateArgument =
             new QueryArgument(typeof(NonNullGraphType<ListGraphType<RtEntityDtoGenericUpdateType>>))
                 { Name = Statics.EntitiesArg, Description = AssetTexts.Graphql_Arguments_Entities_Description };
-        this.FieldAsync("update",
+        this.FieldAsyncByType("update",
             AssetTexts.Graphql_RtEntityMutationGeneric_UpdateOperation_Description,
-            new ListGraphType(new RtEntityGenericDtoType()),
+            typeof(ListGraphType<RtEntityGenericDtoType>),
             new QueryArguments(updateArgument), ResolveUpdate);
 
         // Delete mutation

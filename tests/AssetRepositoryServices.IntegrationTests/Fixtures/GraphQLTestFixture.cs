@@ -1,8 +1,8 @@
+using System.Text.Json;
 using GraphQL;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Utils;
 using Microsoft.Extensions.DependencyInjection;
-using JsonSerializer = System.Text.Json.JsonSerializer;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Fixtures;
 
@@ -34,9 +34,12 @@ public class GraphQlTestFixture : SampleDataFixture
             throw new InvalidOperationException("GraphQL services not initialized");
         }
 
-        var inputs = variables != null
-            ? JsonSerializer.Deserialize<Dictionary<string, object?>>(variables)
-            : null;
+        Dictionary<string, object?>? inputs = null;
+        if (variables != null)
+        {
+            using var doc = JsonDocument.Parse(variables);
+            inputs = ConvertJsonElement(doc.RootElement) as Dictionary<string, object?>;
+        }
 
         var result = await _documentExecuter.ExecuteAsync(options =>
         {
@@ -48,6 +51,27 @@ public class GraphQlTestFixture : SampleDataFixture
         });
 
         return result;
+    }
+
+    /// <summary>
+    /// Recursively converts JsonElement to native .NET types that GraphQL.NET can process.
+    /// </summary>
+    private static object? ConvertJsonElement(JsonElement element)
+    {
+        return element.ValueKind switch
+        {
+            JsonValueKind.Object => element.EnumerateObject()
+                .ToDictionary(p => p.Name, p => ConvertJsonElement(p.Value)),
+            JsonValueKind.Array => element.EnumerateArray()
+                .Select(ConvertJsonElement)
+                .ToList(),
+            JsonValueKind.String => element.GetString(),
+            JsonValueKind.Number => element.TryGetInt64(out var l) ? l : element.GetDouble(),
+            JsonValueKind.True => true,
+            JsonValueKind.False => false,
+            JsonValueKind.Null => null,
+            _ => element.GetRawText()
+        };
     }
 
     public string SerializeGraphQl(ExecutionResult result)
