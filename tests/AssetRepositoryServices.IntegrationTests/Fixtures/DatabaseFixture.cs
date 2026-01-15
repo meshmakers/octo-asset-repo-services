@@ -21,8 +21,7 @@ public class DatabaseFixture : ConfigurationFixture
     protected override async Task InitializeServicesAsync()
     {
         // Start MongoDB test container with authentication
-        _mongoDbContainer = new MongoDbBuilder()
-            .WithImage(_options.MongoDbImage)
+        _mongoDbContainer = new MongoDbBuilder(_options.MongoDbImage)
             .WithReplicaSet()
             .WithName($"mongodb-test-{Guid.NewGuid():N}")
             .WithUsername(_options.AdminUser)

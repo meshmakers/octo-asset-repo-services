@@ -458,5 +458,17 @@ namespace AssetRepositoryServices.Resources {
                 return ResourceManager.GetString("Graphql_Enum_RtCkEnumId_Description", resourceCulture);
             }
         }
+        
+        public static string Graphql_RtEntityMutationGeneric_CreateOperation_Description {
+            get {
+                return ResourceManager.GetString("Graphql_RtEntityMutationGeneric_CreateOperation_Description", resourceCulture);
+            }
+        }
+        
+        public static string Graphql_RtEntityMutationGeneric_UpdateOperation_Description {
+            get {
+                return ResourceManager.GetString("Graphql_RtEntityMutationGeneric_UpdateOperation_Description", resourceCulture);
+            }
+        }
     }
 }

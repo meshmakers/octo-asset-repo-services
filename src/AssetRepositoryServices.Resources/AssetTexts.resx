@@ -225,4 +225,10 @@
     <data name="Graphql_Enum_RtCkEnumId_Description" xml:space="preserve">
         <value>Runtime construction kit enum id, the unique identifier of the enum.</value>
     </data>
+    <data name="Graphql_RtEntityMutationGeneric_CreateOperation_Description" xml:space="preserve">
+        <value>Creates new runtime entities generically.</value>
+    </data>
+    <data name="Graphql_RtEntityMutationGeneric_UpdateOperation_Description" xml:space="preserve">
+        <value>Updates existing runtime entities generically.</value>
+    </data>
 </root>
