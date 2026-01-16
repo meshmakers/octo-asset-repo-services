@@ -31,6 +31,13 @@ internal interface IGraphTypesCache
     RtEntityDtoType GetType(RtCkId<CkTypeId> ckTypeId);
 
     /// <summary>
+    ///     Returns the interface types that a given type implements (based on its type hierarchy).
+    /// </summary>
+    /// <param name="ckTypeId">The construction kit type id</param>
+    /// <returns>List of interface types the type implements</returns>
+    IReadOnlyList<RtEntityInterfaceType> GetImplementedInterfaces(RtCkId<CkTypeId> ckTypeId);
+
+    /// <summary>
     ///     Returns the construction kit type input graph type for the given construction kit type id
     /// </summary>
     /// <returns></returns>
@@ -71,4 +78,29 @@ internal interface IGraphTypesCache
     /// </summary>
     /// <returns></returns>
     StreamDataEntityDtoType[] GetStreamTypes();
+
+    /// <summary>
+    ///     Gets or creates a connection type for an interface association field.
+    ///     This ensures that implementing types use the same connection type as the interface.
+    /// </summary>
+    /// <param name="baseCkTypeId">The CK type ID of the base type where the association is defined</param>
+    /// <param name="navigationPropertyName">The name of the navigation property</param>
+    /// <param name="factory">Factory function to create the connection type if not cached</param>
+    /// <returns>The cached or newly created connection type</returns>
+    DynamicConnectionType GetOrCreateInterfaceAssociationConnection(
+        RtCkId<CkTypeId> baseCkTypeId,
+        string navigationPropertyName,
+        Func<DynamicConnectionType> factory);
+
+    /// <summary>
+    ///     Tries to get a cached interface association connection type.
+    /// </summary>
+    /// <param name="baseCkTypeId">The CK type ID of the base type where the association is defined</param>
+    /// <param name="navigationPropertyName">The name of the navigation property</param>
+    /// <param name="connectionType">The cached connection type if found</param>
+    /// <returns>True if found, false otherwise</returns>
+    bool TryGetInterfaceAssociationConnection(
+        RtCkId<CkTypeId> baseCkTypeId,
+        string navigationPropertyName,
+        out DynamicConnectionType? connectionType);
 }

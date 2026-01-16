@@ -377,3 +377,85 @@ entities:
       - roleId: System/ParentChild
         targetRtId: 67000002bbbb2222cccc0005
         targetCkTypeId: AssetRepositoryIntegrationTest/OperatingFacility
+
+  # === VEHICLES (for testing fragment inheritance on union types) ===
+
+  # Car 1 - Owned by Max Mustermann
+  - rtId: 67000004dddd4444eeee0001
+    ckTypeId: AssetRepositoryIntegrationTest/Car
+    rtWellKnownName: "CarSalzburgABC123"
+    attributes:
+      - id: System/Name
+        value: BMW 320i
+      - id: System/Description
+        value: Blue sedan, company car
+      - id: AssetRepositoryIntegrationTest/LicensePlate
+        value: S-ABC123
+      - id: AssetRepositoryIntegrationTest/Year
+        value: 2022
+      - id: AssetRepositoryIntegrationTest/NumberOfDoors
+        value: 4
+    associations:
+      - roleId: AssetRepositoryIntegrationTest/VehicleOwnership
+        targetRtId: 67000001aaaa1111bbbb0001
+        targetCkTypeId: AssetRepositoryIntegrationTest/Customer
+
+  # Car 2 - Owned by Anna Mueller
+  - rtId: 67000004dddd4444eeee0002
+    ckTypeId: AssetRepositoryIntegrationTest/Car
+    rtWellKnownName: "CarSalzburgXYZ789"
+    attributes:
+      - id: System/Name
+        value: VW Golf
+      - id: System/Description
+        value: Red compact car
+      - id: AssetRepositoryIntegrationTest/LicensePlate
+        value: S-XYZ789
+      - id: AssetRepositoryIntegrationTest/Year
+        value: 2021
+      - id: AssetRepositoryIntegrationTest/NumberOfDoors
+        value: 5
+    associations:
+      - roleId: AssetRepositoryIntegrationTest/VehicleOwnership
+        targetRtId: 67000001aaaa1111bbbb0002
+        targetCkTypeId: AssetRepositoryIntegrationTest/Customer
+
+  # Truck 1 - Owned by Tech Solutions GmbH
+  - rtId: 67000004dddd4444eeee0003
+    ckTypeId: AssetRepositoryIntegrationTest/Truck
+    rtWellKnownName: "TruckSalzburgDEF456"
+    attributes:
+      - id: System/Name
+        value: Mercedes Sprinter
+      - id: System/Description
+        value: White delivery truck
+      - id: AssetRepositoryIntegrationTest/LicensePlate
+        value: S-DEF456
+      - id: AssetRepositoryIntegrationTest/Year
+        value: 2020
+      - id: AssetRepositoryIntegrationTest/LoadCapacity
+        value: 3500.0
+    associations:
+      - roleId: AssetRepositoryIntegrationTest/VehicleOwnership
+        targetRtId: 67000001aaaa1111bbbb0003
+        targetCkTypeId: AssetRepositoryIntegrationTest/Customer
+
+  # Truck 2 - Owned by Peter Weber
+  - rtId: 67000004dddd4444eeee0004
+    ckTypeId: AssetRepositoryIntegrationTest/Truck
+    rtWellKnownName: "TruckElsbethenGHI012"
+    attributes:
+      - id: System/Name
+        value: Ford Transit
+      - id: System/Description
+        value: Silver pickup truck
+      - id: AssetRepositoryIntegrationTest/LicensePlate
+        value: S-GHI012
+      - id: AssetRepositoryIntegrationTest/Year
+        value: 2023
+      - id: AssetRepositoryIntegrationTest/LoadCapacity
+        value: 1500.0
+    associations:
+      - roleId: AssetRepositoryIntegrationTest/VehicleOwnership
+        targetRtId: 67000001aaaa1111bbbb0004
+        targetCkTypeId: AssetRepositoryIntegrationTest/Customer

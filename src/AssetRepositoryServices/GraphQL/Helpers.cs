@@ -108,19 +108,31 @@ internal static class Helpers
     public static ConnectionBuilder<TSourceType> AssociationField<TSourceType>(
         this ComplexGraphType<TSourceType> complexGraphType,
         IGraphTypesCache graphTypesCache, string name, IReadOnlyList<RtCkId<CkTypeId>> allowedTypes,
-        RtCkId<CkTypeId> originCkId,
+        RtCkId<CkTypeId> originCkId, RtCkId<CkTypeId> queryBaseType,
         RtCkId<CkAssociationRoleId> roleId, GraphDirections graphDirection)
     {
-        var graphTypes = allowedTypes.Select(graphTypesCache.GetType).ToList();
+        DynamicConnectionType connectionType;
 
-        // Create a union type for all allowed target types
-        var unionType = new RtEntityUnionType(
-            $"{complexGraphType.Name}_{name}{Statics.GraphQlUnionSuffix}",
-            $"Union of allowed types for association {roleId} ({graphDirection}) of {complexGraphType.Name}",
-            graphTypes);
+        // Check if there's a cached connection type from an interface (for inherited associations)
+        // This ensures implementing types use the same connection type as the interface
+        if (graphTypesCache.TryGetInterfaceAssociationConnection(queryBaseType, name, out var cachedConnectionType) &&
+            cachedConnectionType != null)
+        {
+            connectionType = cachedConnectionType;
+        }
+        else
+        {
+            var graphTypes = allowedTypes.Select(graphTypesCache.GetType).ToList();
 
-        // Create connection type for the union
-        var connectionType = graphTypesCache.GetOrCreateConnection(unionType);
+            // Create a union type for all allowed target types
+            var unionType = new RtEntityUnionType(
+                $"{complexGraphType.Name}_{name}{Statics.GraphQlUnionSuffix}",
+                $"Union of allowed types for association {roleId} ({graphDirection}) of {complexGraphType.Name}",
+                graphTypes);
+
+            // Create connection type for the union
+            connectionType = graphTypesCache.GetOrCreateConnection(unionType);
+        }
 
         // Create a single connection field with ckTypeId filter argument
         var connectionBuilder = ConnectionBuilder<TSourceType>.Create<RtEntityUnionType>(name);
@@ -131,6 +143,7 @@ internal static class Helpers
         connectionBuilder.FieldType.Metadata[Statics.RoleId] = roleId;
         connectionBuilder.FieldType.Metadata[Statics.GraphDirection] = graphDirection;
         connectionBuilder.FieldType.Metadata[Statics.AllowedTypes] = allowedTypes;
+        connectionBuilder.FieldType.Metadata[Statics.QueryBaseType] = queryBaseType;
 
         complexGraphType.AddField(connectionBuilder.FieldType);
         return connectionBuilder;
@@ -142,6 +155,50 @@ internal static class Helpers
     {
         builder.FieldType.Metadata.Add(key, value);
         return builder;
+    }
+
+    /// <summary>
+    ///     Adds an association field to an interface type.
+    ///     Similar to AssociationField but without resolvers (interfaces don't have resolvers).
+    ///     The connection type is cached so implementing types can reuse it.
+    /// </summary>
+    public static FieldType InterfaceAssociationField<TSourceType>(
+        this InterfaceGraphType<TSourceType> interfaceGraphType,
+        IGraphTypesCache graphTypesCache, string name, IReadOnlyList<RtCkId<CkTypeId>> allowedTypes,
+        RtCkId<CkTypeId> baseCkTypeId)
+    {
+        // Get or create the connection type, caching it so implementing types can reuse it
+        var connectionType = graphTypesCache.GetOrCreateInterfaceAssociationConnection(
+            baseCkTypeId, name, () =>
+            {
+                var graphTypes = allowedTypes.Select(graphTypesCache.GetType).ToList();
+
+                // Create a union type for all allowed target types
+                var unionType = new RtEntityUnionType(
+                    $"{interfaceGraphType.Name}_{name}{Statics.GraphQlUnionSuffix}",
+                    $"Union of allowed types for association {name} of {interfaceGraphType.Name}",
+                    graphTypes);
+
+                // Create connection type for the union
+                return graphTypesCache.GetOrCreateConnection(unionType);
+            });
+
+        // Add field to interface without a resolver (implementing types provide resolution)
+        // Note: Only add 'first' and 'after' arguments, as these are the default arguments
+        // that ConnectionBuilder creates. 'last' and 'before' require .Bidirectional() which
+        // our implementing types don't use.
+        var fieldType = new FieldType
+        {
+            Name = name,
+            ResolvedType = connectionType,
+            Arguments = new QueryArguments(
+                new QueryArgument<IntGraphType> { Name = "first", Description = "Returns the first n elements from the list." },
+                new QueryArgument<StringGraphType> { Name = "after", Description = "Returns the elements in the list that come after the specified cursor." }
+            )
+        };
+
+        interfaceGraphType.AddField(fieldType);
+        return fieldType;
     }
 
     public static FieldBuilder<TSourceType, TReturnType> Metadata<TSourceType, TReturnType>(

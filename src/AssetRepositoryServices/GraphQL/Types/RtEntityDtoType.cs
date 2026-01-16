@@ -12,9 +12,9 @@ using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
 using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.ConstructionKit.Contracts.DependencyGraph;
 using Meshmakers.Octo.ConstructionKit.Contracts.Services;
+using Meshmakers.Octo.Runtime.Contracts.Repositories.Query;
 using Meshmakers.Octo.Runtime.Contracts.RepositoryEntities;
 using Microsoft.Extensions.Options;
-using Statics = Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Statics;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
 
@@ -73,10 +73,17 @@ internal sealed class RtEntityDtoType : ObjectGraphType<RtEntityDto>
             builder.Attribute(graphTypesCache, attribute, false);
         }
 
+        // Get implemented interfaces - we'll add them after association fields are created
+        // This enables fragment inheritance where a fragment on a base type matches derived types
+        var implementedInterfaces = graphTypesCache.GetImplementedInterfaces(CkTypeId.ToRtCkId());
+
         foreach (var ckTypeAssociationGraph in _ckTypeGraph.Associations.Out.All.GroupBy(x => x.NavigationPropertyName))
         {
+            // Get all derived types but filter out abstract types since they can't have instances
+            // The union should only contain concrete types that can actually be returned
             var allowedTypes = ckTypeAssociationGraph
                 .SelectMany(x => ckCacheService.GetCkType(tenantId, x.TargetCkTypeId).GetAllDerivedTypes(true))
+                .Where(x => !ckCacheService.GetCkType(tenantId, x).IsAbstract)
                 .Select(x => x.ToRtCkId())
                 .Distinct()
                 .ToList();
@@ -85,10 +92,15 @@ internal sealed class RtEntityDtoType : ObjectGraphType<RtEntityDto>
                 continue; // All Ck types are abstract for that association
             }
 
+            // The query base type is the target type where the association points to
+            // (may be abstract, but repository will query for all derived types)
+            var queryBaseType = ckTypeAssociationGraph.First().TargetCkTypeId.ToRtCkId();
+
             this.AssociationField(graphTypesCache, ckTypeAssociationGraph.Key,
-                    allowedTypes, _ckTypeGraph.CkTypeId.ToRtCkId(),
+                    allowedTypes, _ckTypeGraph.CkTypeId.ToRtCkId(), queryBaseType,
                     ckTypeAssociationGraph.First().CkRoleId.ToRtCkId(), GraphDirections.Outbound)
-                .Argument<StringGraphType>(Statics.CkTypeIdArg, "Filter by specific CK type ID. If not specified, returns all allowed types.")
+                .Argument<StringGraphType>(Statics.CkTypeIdArg, "Filter by specific CK type ID (can be a base type to include all derived types). If not specified, returns all allowed types.")
+                .Argument<ListGraphType<StringGraphType>>(Statics.CkTypeIdsArg, "Filter by multiple CK type IDs (can include base types to include all derived types).")
                 .Argument<OctoObjectIdType>(Statics.RtIdArg, "Returns the entity with the given rtId.")
                 .Argument<ListGraphType<OctoObjectIdType>>(Statics.RtIdsArg, "Returns entities with the given rtIds.")
                 .Argument<SearchFilterDtoType>(Statics.SearchFilterArg, "Filters items based on text search")
@@ -100,8 +112,11 @@ internal sealed class RtEntityDtoType : ObjectGraphType<RtEntityDto>
 
         foreach (var ckTypeAssociationGraph in _ckTypeGraph.Associations.In.All.GroupBy(x => x.NavigationPropertyName))
         {
+            // Get all derived types but filter out abstract types since they can't have instances
+            // The union should only contain concrete types that can actually be returned
             var allowedTypes = ckTypeAssociationGraph
                 .SelectMany(x => ckCacheService.GetCkType(tenantId, x.OriginCkTypeId).GetAllDerivedTypes(true))
+                .Where(x => !ckCacheService.GetCkType(tenantId, x).IsAbstract)
                 .Select(x => x.ToRtCkId())
                 .Distinct()
                 .ToList();
@@ -110,10 +125,15 @@ internal sealed class RtEntityDtoType : ObjectGraphType<RtEntityDto>
                 continue; // All Ck types are abstract for that association
             }
 
+            // The query base type is the origin type where the association was defined
+            // (may be abstract like Vehicle, but repository will query for all derived types)
+            var queryBaseType = ckTypeAssociationGraph.First().OriginCkTypeId.ToRtCkId();
+
             this.AssociationField(graphTypesCache, ckTypeAssociationGraph.Key,
-                    allowedTypes, _ckTypeGraph.CkTypeId.ToRtCkId(),
+                    allowedTypes, _ckTypeGraph.CkTypeId.ToRtCkId(), queryBaseType,
                     ckTypeAssociationGraph.First().CkRoleId.ToRtCkId(), GraphDirections.Inbound)
-                .Argument<StringGraphType>(Statics.CkTypeIdArg, "Filter by specific CK type ID. If not specified, returns all allowed types.")
+                .Argument<StringGraphType>(Statics.CkTypeIdArg, "Filter by specific CK type ID (can be a base type to include all derived types). If not specified, returns all allowed types.")
+                .Argument<ListGraphType<StringGraphType>>(Statics.CkTypeIdsArg, "Filter by multiple CK type IDs (can include base types to include all derived types).")
                 .Argument<OctoObjectIdType>(Statics.RtIdArg, "Returns the entity with the given rtId.")
                 .Argument<ListGraphType<OctoObjectIdType>>(Statics.RtIdsArg, "Returns entities with the given rtIds.")
                 .Argument<SearchFilterDtoType>(Statics.SearchFilterArg, "Filters items based on text search")
@@ -121,6 +141,42 @@ internal sealed class RtEntityDtoType : ObjectGraphType<RtEntityDto>
                 .Argument<ListGraphType<FieldFilterDtoType>>(Statics.FieldFilterArg, "Filters items based on field compare")
                 .Argument<ResultAggregationInputDtoType>(Statics.AggregationsArg, AssetTexts.Graphql_Type_Filter_Aggregations_Description)
                 .ResolveAsync(ResolveAssociationQuery);
+        }
+
+        // Now that all fields are added, implement interfaces from abstract parent types
+        // Only add interfaces if we have all required fields (some may be missing if all target types were abstract)
+        foreach (var interfaceType in implementedInterfaces)
+        {
+            // Check if we have all interface fields
+            var canImplementInterface = true;
+            foreach (var interfaceField in interfaceType.Fields)
+            {
+                var ourField = Fields.FirstOrDefault(f => f.Name == interfaceField.Name);
+                if (ourField == null)
+                {
+                    // We're missing this field, can't implement the interface
+                    canImplementInterface = false;
+                    break;
+                }
+            }
+
+            if (!canImplementInterface)
+            {
+                continue;
+            }
+
+            // For each field on the interface, ensure our field has the same resolved type
+            foreach (var interfaceField in interfaceType.Fields)
+            {
+                var ourField = Fields.FirstOrDefault(f => f.Name == interfaceField.Name);
+                if (ourField != null && interfaceField.ResolvedType != null)
+                {
+                    // Use the interface's resolved type to ensure type compatibility
+                    ourField.ResolvedType = interfaceField.ResolvedType;
+                }
+            }
+
+            AddResolvedInterface(interfaceType);
         }
     }
 
@@ -139,22 +195,112 @@ internal sealed class RtEntityDtoType : ObjectGraphType<RtEntityDto>
             var roleId = (RtCkId<CkAssociationRoleId>)ctx.FieldDefinition.Metadata[Statics.RoleId]!;
             var graphDirection = (GraphDirections)ctx.FieldDefinition.Metadata[Statics.GraphDirection]!;
             var allowedTypes = (IReadOnlyList<RtCkId<CkTypeId>>)ctx.FieldDefinition.Metadata[Statics.AllowedTypes]!;
+            var queryBaseType = (RtCkId<CkTypeId>)ctx.FieldDefinition.Metadata[Statics.QueryBaseType]!;
 
-            // Get optional ckTypeId filter argument
+            // Get optional ckTypeId and ckTypeIds filter arguments
             ctx.TryGetArgument(Statics.CkTypeIdArg, out string? ckTypeIdFilter);
+            ctx.TryGetArgument(Statics.CkTypeIdsArg, null, out IEnumerable<string>? ckTypeIdsFilter);
+            var ckTypeIdsList = ckTypeIdsFilter?.ToList();
 
-            // Determine target CK type - use filter if provided, otherwise query all allowed types
-            RtCkId<CkTypeId>? targetCkId = null;
+            // Combine single and list filters
+            var requestedTypeIds = new List<string>();
             if (!string.IsNullOrEmpty(ckTypeIdFilter))
             {
-                var parsedCkId = new RtCkId<CkTypeId>(ckTypeIdFilter);
-                // Validate that the requested type is in the allowed list
-                if (!allowedTypes.Contains(parsedCkId))
+                requestedTypeIds.Add(ckTypeIdFilter);
+            }
+            if (ckTypeIdsList != null)
+            {
+                requestedTypeIds.AddRange(ckTypeIdsList);
+            }
+
+            // Get the CK cache service for type validation
+            var ckCacheService = ctx.GetCkCacheService();
+
+            // Determine target CK type - use filter if provided, otherwise use the base type
+            // to query for all derived types
+            RtCkId<CkTypeId>? targetCkId = null;
+            if (requestedTypeIds.Count > 0)
+            {
+                // Validate all requested types
+                foreach (var requestedTypeId in requestedTypeIds)
                 {
-                    var allowedTypeNames = allowedTypes.Select(t => t.SemanticVersionedFullName).ToArray();
-                    throw new ArgumentException($"Type '{ckTypeIdFilter}' is not allowed for this association. Allowed types: {string.Join(", ", allowedTypeNames)}");
+                    var parsedCkId = new RtCkId<CkTypeId>(requestedTypeId);
+
+                    // Check if the type is directly in the allowed list (concrete type)
+                    if (allowedTypes.Contains(parsedCkId))
+                    {
+                        continue; // Valid concrete type
+                    }
+
+                    // Check if the type is a base type whose derived types are in allowedTypes
+                    // This allows filtering by abstract types like "System.Communication/Pipeline"
+                    try
+                    {
+                        var ckTypeGraph = ckCacheService.GetRtCkType(graphQlUserContext.TenantId, parsedCkId);
+                        var derivedTypes = ckTypeGraph.GetAllDerivedTypes(false)
+                            .Select(t => t.ToRtCkId())
+                            .ToList();
+
+                        var hasAllowedDerivedType = derivedTypes.Any(derivedType => allowedTypes.Contains(derivedType));
+                        if (!hasAllowedDerivedType)
+                        {
+                            var allowedTypeNames = allowedTypes.Select(t => t.SemanticVersionedFullName).ToArray();
+                            throw new ArgumentException($"Type '{requestedTypeId}' has no derived types that are allowed for this association. Allowed types: {string.Join(", ", allowedTypeNames)}");
+                        }
+                    }
+                    catch (KeyNotFoundException)
+                    {
+                        throw new ArgumentException($"Type '{requestedTypeId}' does not exist.");
+                    }
                 }
-                targetCkId = parsedCkId;
+
+                // If single type, use it directly (repository will query all derived types)
+                // If multiple types, expand each to concrete types and filter (if needed)
+                if (requestedTypeIds.Count == 1)
+                {
+                    targetCkId = new RtCkId<CkTypeId>(requestedTypeIds[0]);
+                }
+                else
+                {
+                    // For multiple types, we need to:
+                    // 1. Use the query base type to get all potential targets
+                    // 2. Add a field filter to restrict to only the requested types (if not all allowed)
+                    targetCkId = queryBaseType;
+
+                    // Expand each requested type to its concrete derived types
+                    // (base types like "Vehicle" need to be expanded to ["Car", "Truck"])
+                    var concreteTypeIds = new HashSet<RtCkId<CkTypeId>>();
+                    foreach (var requestedTypeId in requestedTypeIds)
+                    {
+                        var parsedCkId = new RtCkId<CkTypeId>(requestedTypeId);
+                        var ckTypeGraph = ckCacheService.GetRtCkType(graphQlUserContext.TenantId, parsedCkId);
+
+                        // Get all derived types (including self if it's concrete)
+                        var derivedTypes = ckTypeGraph.GetAllDerivedTypes(true);
+                        foreach (var derivedType in derivedTypes)
+                        {
+                            var derivedCkTypeGraph = ckCacheService.GetCkType(graphQlUserContext.TenantId, derivedType);
+                            // Only include concrete (non-abstract) types that are in the allowed list
+                            if (!derivedCkTypeGraph.IsAbstract)
+                            {
+                                var rtCkId = derivedType.ToRtCkId();
+                                if (allowedTypes.Contains(rtCkId))
+                                {
+                                    concreteTypeIds.Add(rtCkId);
+                                }
+                            }
+                        }
+                    }
+
+                    // Only add filter if the requested types are a subset of allowed types
+                    // If all allowed types are covered, no filter is needed
+                    if (concreteTypeIds.Count > 0 && concreteTypeIds.Count < allowedTypes.Count)
+                    {
+                        // Use the RtCkId objects directly for the filter - the repository will serialize correctly
+                        var ckTypeIdValues = concreteTypeIds.ToArray();
+                        queryOptions = queryOptions.FieldFilter("ckTypeId", FieldFilterOperator.In, ckTypeIdValues);
+                    }
+                }
             }
 
             // Get optional rtId filters
@@ -169,9 +315,10 @@ internal sealed class RtEntityDtoType : ObjectGraphType<RtEntityDto>
 
             var tenantRepository = graphQlUserContext.TenantContext.GetTenantRepository();
 
-            // If no specific type filter, query for the first allowed type (base type)
-            // The resolver returns entities of any derived type
-            var queryTargetCkId = targetCkId ?? allowedTypes.First();
+            // If no specific type filter, use the base type (may be abstract) so the repository
+            // will query for all derived types. This ensures associations to derived types like
+            // Car and Truck are included when querying via the abstract Vehicle type.
+            var queryTargetCkId = targetCkId ?? queryBaseType;
 
             var result = await tenantRepository.GetRtAssociationTargetsAsync(
                 sessionAccessor.Session,

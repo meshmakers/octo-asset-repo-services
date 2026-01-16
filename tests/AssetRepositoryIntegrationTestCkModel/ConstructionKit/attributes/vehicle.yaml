@@ -1,0 +1,10 @@
+$schema: https://schemas.meshmakers.cloud/construction-kit-elements.schema.json
+attributes:
+- id: LicensePlate
+  valueType: String
+- id: Year
+  valueType: Int
+- id: NumberOfDoors
+  valueType: Int
+- id: LoadCapacity
+  valueType: Double

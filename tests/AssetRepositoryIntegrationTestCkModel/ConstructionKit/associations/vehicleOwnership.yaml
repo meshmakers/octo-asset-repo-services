@@ -1,0 +1,7 @@
+$schema: https://schemas.meshmakers.cloud/construction-kit-elements.schema.json
+associationRoles:
+- id: VehicleOwnership
+  inboundName: OwnsVehicles
+  inboundMultiplicity: ZeroOrOne
+  outboundName: VehicleOwnedBy
+  outboundMultiplicity: N

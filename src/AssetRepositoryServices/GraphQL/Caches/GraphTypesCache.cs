@@ -23,6 +23,7 @@ internal class GraphTypesCache : IGraphTypesCache
     private readonly ConcurrentDictionary<RtCkId<CkEnumId>, RtEnumScalarType> _enumTypes;
     private readonly ConcurrentDictionary<RtCkId<CkRecordId>, RtRecordDtoInputType> _inputRecordTypes;
     private readonly ConcurrentDictionary<RtCkId<CkTypeId>, RtEntityDtoInputType> _inputTypes;
+    private readonly ConcurrentDictionary<RtCkId<CkTypeId>, RtEntityInterfaceType> _interfaceTypes;
     private readonly IOctoService _octoService;
     private readonly IOptions<OctoAssetRepositoryServicesOptions> _options;
 
@@ -30,6 +31,7 @@ internal class GraphTypesCache : IGraphTypesCache
     private readonly string _tenantId;
     private readonly ConcurrentDictionary<RtCkId<CkTypeId>, StreamDataEntityDtoType> _tsTypes;
     private readonly ConcurrentDictionary<RtCkId<CkTypeId>, RtEntityDtoType> _types;
+    private readonly ConcurrentDictionary<(RtCkId<CkTypeId>, string), DynamicConnectionType> _interfaceAssociationConnections;
 
 
     /// <summary>
@@ -49,10 +51,12 @@ internal class GraphTypesCache : IGraphTypesCache
         _enumTypes = new ConcurrentDictionary<RtCkId<CkEnumId>, RtEnumScalarType>();
         _types = new ConcurrentDictionary<RtCkId<CkTypeId>, RtEntityDtoType>();
         _inputTypes = new ConcurrentDictionary<RtCkId<CkTypeId>, RtEntityDtoInputType>();
+        _interfaceTypes = new ConcurrentDictionary<RtCkId<CkTypeId>, RtEntityInterfaceType>();
         _recordTypes = new ConcurrentDictionary<RtCkId<CkRecordId>, RtRecordDtoType>();
         _inputRecordTypes = new ConcurrentDictionary<RtCkId<CkRecordId>, RtRecordDtoInputType>();
         _connectionTypes = new ConcurrentDictionary<IGraphType, DynamicConnectionType>();
         _tsTypes = new ConcurrentDictionary<RtCkId<CkTypeId>, StreamDataEntityDtoType>();
+        _interfaceAssociationConnections = new ConcurrentDictionary<(RtCkId<CkTypeId>, string), DynamicConnectionType>();
     }
 
 
@@ -93,6 +97,29 @@ internal class GraphTypesCache : IGraphTypesCache
         return _types[ckTypeId];
     }
 
+    /// <inheritdoc />
+    public IReadOnlyList<RtEntityInterfaceType> GetImplementedInterfaces(RtCkId<CkTypeId> ckTypeId)
+    {
+        var interfaces = new List<RtEntityInterfaceType>();
+        var ckTypeGraph = _ckCacheService.GetRtCkType(_tenantId, ckTypeId);
+
+        // Walk through all base types and collect abstract ones as interfaces
+        foreach (var baseType in ckTypeGraph.BaseTypes)
+        {
+            var baseCkTypeGraph = _ckCacheService.GetCkType(_tenantId, baseType.BaseCkTypeId);
+            if (baseCkTypeGraph.IsAbstract)
+            {
+                var rtCkId = baseType.BaseCkTypeId.ToRtCkId();
+                if (_interfaceTypes.TryGetValue(rtCkId, out var interfaceType))
+                {
+                    interfaces.Add(interfaceType);
+                }
+            }
+        }
+
+        return interfaces;
+    }
+
     public RtEntityDtoInputType GetInputType(RtCkId<CkTypeId> ckTypeId)
     {
         return _inputTypes[ckTypeId];
@@ -121,11 +148,30 @@ internal class GraphTypesCache : IGraphTypesCache
     }
 
     /// <inheritdoc />
+    public DynamicConnectionType GetOrCreateInterfaceAssociationConnection(
+        RtCkId<CkTypeId> baseCkTypeId,
+        string navigationPropertyName,
+        Func<DynamicConnectionType> factory)
+    {
+        return _interfaceAssociationConnections.GetOrAdd((baseCkTypeId, navigationPropertyName), _ => factory());
+    }
+
+    /// <inheritdoc />
+    public bool TryGetInterfaceAssociationConnection(
+        RtCkId<CkTypeId> baseCkTypeId,
+        string navigationPropertyName,
+        out DynamicConnectionType? connectionType)
+    {
+        return _interfaceAssociationConnections.TryGetValue((baseCkTypeId, navigationPropertyName), out connectionType);
+    }
+
+    /// <inheritdoc />
     public IGraphType[] GetKnownGraphTypes()
     {
         var inputTypes = new List<IGraphType>();
         inputTypes.AddRange(_types.Values);
         inputTypes.AddRange(_inputTypes.Values);
+        inputTypes.AddRange(_interfaceTypes.Values);
         inputTypes.AddRange(_enumTypes.Values);
         inputTypes.AddRange(_recordTypes.Values);
         inputTypes.AddRange(_inputRecordTypes.Values);
@@ -186,10 +232,20 @@ internal class GraphTypesCache : IGraphTypesCache
         foreach (var ckTypeGraph in _ckCacheService.GetCkTypes(_tenantId))
         {
             var rtCkTypeId = ckTypeGraph.CkTypeId.ToRtCkId();
+
+            // Create object types for ALL types (including abstract) to enable query endpoints
             _types.TryAdd(rtCkTypeId, new RtEntityDtoType(ckTypeGraph));
 
-            if (!ckTypeGraph.IsAbstract)
+            if (ckTypeGraph.IsAbstract)
             {
+                // For abstract types, ALSO create interface types
+                // This enables fragment inheritance where a fragment on a base type matches derived types
+                // The interface has a different name (suffix "Interface") to avoid GraphQL name collision
+                _interfaceTypes.TryAdd(rtCkTypeId, new RtEntityInterfaceType(ckTypeGraph));
+            }
+            else
+            {
+                // For concrete types, also create input types (abstract types can't have input types)
                 var rtEntityDtoInputType =
                     _inputTypes.GetOrAdd(rtCkTypeId, new RtEntityDtoInputType(rtCkTypeId));
                 rtEntityDtoInputType.Populate(_options, _ckCacheService, _tenantId, this, ckTypeGraph);
@@ -199,6 +255,13 @@ internal class GraphTypesCache : IGraphTypesCache
             {
                 _tsTypes.TryAdd(rtCkTypeId, new StreamDataEntityDtoType(ckTypeGraph));
             }
+        }
+
+        // Populate interface types first (they need to be populated before object types
+        // so that object types can implement them)
+        foreach (var rtEntityInterfaceType in _interfaceTypes.Values)
+        {
+            rtEntityInterfaceType.Populate(_options, _ckCacheService, _tenantId, this);
         }
 
         foreach (var rtEntityDtoType in _types.Values)

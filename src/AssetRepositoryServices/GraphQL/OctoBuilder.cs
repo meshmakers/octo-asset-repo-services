@@ -28,7 +28,7 @@ internal class OctoBuilder<TSourceType>(
     }
 
     internal OctoBuilder<TSourceType> Attribute(IGraphTypesCache graphTypesCache,
-        CkTypeAttributeGraph typeAttributeGraph, bool isInputType)
+        CkTypeAttributeGraph typeAttributeGraph, bool isInputType, bool isInterface = false)
     {
         var attributeName = typeAttributeGraph.AttributeName;
 
@@ -53,7 +53,8 @@ internal class OctoBuilder<TSourceType>(
         }
 
         builder = builder.Metadata(Statics.AttributeGraphType, typeAttributeGraph);
-        if (!isInputType)
+        // Interface fields cannot have resolvers - only object types can
+        if (!isInputType && !isInterface)
         {
             builder.Resolve(ResolveAttributeValue);
         }
