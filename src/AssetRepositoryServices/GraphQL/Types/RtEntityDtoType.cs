@@ -1,6 +1,7 @@
 ﻿using AssetRepositoryServices.Resources;
 using GraphQL;
 using GraphQL.Builders;
+using GraphQL.DataLoader;
 using GraphQL.Types;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.Configuration.DependencyInjection.Options;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Caches;
@@ -107,7 +108,7 @@ internal sealed class RtEntityDtoType : ObjectGraphType<RtEntityDto>
                 .Argument<ListGraphType<SortDtoType>>(Statics.SortOrderArg, "Sort order for items")
                 .Argument<ListGraphType<FieldFilterDtoType>>(Statics.FieldFilterArg, "Filters items based on field compare")
                 .Argument<ResultAggregationInputDtoType>(Statics.AggregationsArg, AssetTexts.Graphql_Type_Filter_Aggregations_Description)
-                .ResolveAsync(ResolveAssociationQuery);
+                .Resolve(ResolveAssociationQuery);
         }
 
         foreach (var ckTypeAssociationGraph in _ckTypeGraph.Associations.In.All.GroupBy(x => x.NavigationPropertyName))
@@ -140,7 +141,7 @@ internal sealed class RtEntityDtoType : ObjectGraphType<RtEntityDto>
                 .Argument<ListGraphType<SortDtoType>>(Statics.SortOrderArg, "Sort order for items")
                 .Argument<ListGraphType<FieldFilterDtoType>>(Statics.FieldFilterArg, "Filters items based on field compare")
                 .Argument<ResultAggregationInputDtoType>(Statics.AggregationsArg, AssetTexts.Graphql_Type_Filter_Aggregations_Description)
-                .ResolveAsync(ResolveAssociationQuery);
+                .Resolve(ResolveAssociationQuery);
         }
 
         // Now that all fields are added, implement interfaces from abstract parent types
@@ -180,7 +181,7 @@ internal sealed class RtEntityDtoType : ObjectGraphType<RtEntityDto>
         }
     }
 
-    private async Task<object?> ResolveAssociationQuery(IResolveConnectionContext<RtEntityDto> ctx)
+    private object? ResolveAssociationQuery(IResolveConnectionContext<RtEntityDto> ctx)
     {
         try
         {
@@ -320,24 +321,40 @@ internal sealed class RtEntityDtoType : ObjectGraphType<RtEntityDto>
             // Car and Truck are included when querying via the abstract Vehicle type.
             var queryTargetCkId = targetCkId ?? queryBaseType;
 
-            var result = await tenantRepository.GetRtAssociationTargetsAsync(
-                sessionAccessor.Session,
-                [ctx.Source.RtId],
-                originCkId,
-                roleId,
-                queryTargetCkId,
-                graphDirection,
-                keysList,
-                queryOptions,
-                offset,
-                ctx.First);
+            // Get DataLoader context
+            var dataLoaderAccessor = ctx.RequestServices?.GetRequiredService<IDataLoaderContextAccessor>();
+            if (dataLoaderAccessor?.Context == null)
+            {
+                throw AssetRepositoryException.DataLoaderContextUnavailable();
+            }
 
-            var items = result.First().Value;
-            return ConnectionUtils.ToOctoConnection(
-                items.Items.Select(CreateRtEntityDto),
+            // Create a unique cache key for this batch loader based on all query parameters
+            // This ensures different filter combinations use separate batch loaders
+            var cacheKey = $"Assoc_{originCkId}_{queryTargetCkId}_{roleId}_{graphDirection}_{offset}_{ctx.First}_{queryOptions.GetHashCode()}_{string.Join(",", keysList?.Select(k => k.ToString()) ?? [])}";
+
+            // Use DataLoader to batch association queries for multiple entities
+            var loader = dataLoaderAccessor.Context.GetOrAddBatchLoader<RtEntityId, IResultSet<RtEntity>>(
+                cacheKey,
+                async rtEntityIds =>
+                    await tenantRepository.GetRtAssociationTargetsAsync(
+                        sessionAccessor.Session,
+                        rtEntityIds.Select(x => x.RtId),
+                        originCkId,
+                        roleId,
+                        queryTargetCkId,
+                        graphDirection,
+                        keysList,
+                        queryOptions,
+                        offset,
+                        ctx.First));
+
+            var dataLoaderResult = loader.LoadAsync(ctx.Source.ToRtEntityId());
+
+            return dataLoaderResult.Then(resultSet => ConnectionUtils.ToOctoConnection(
+                resultSet.Items.Select(CreateRtEntityDto),
                 ctx,
-                items.TotalCount > 0 ? offset.GetValueOrDefault(0) : 0,
-                (int)items.TotalCount);
+                resultSet.TotalCount > 0 ? offset.GetValueOrDefault(0) : 0,
+                (int)resultSet.TotalCount));
         }
         catch (Exception e)
         {
@@ -367,10 +384,10 @@ internal sealed class RtEntityDtoType : ObjectGraphType<RtEntityDto>
             .Argument<ListGraphType<SortDtoType>>(Statics.SortOrderArg, "Sort order for items")
             .Argument<ListGraphType<FieldFilterDtoType>>(Statics.FieldFilterArg,
                 "Filters items based on field compare")
-            .ResolveAsync(ResolveGenericRtAssociationsQuery);
+            .Resolve(ResolveGenericRtAssociationsQuery);
     }
 
-    private async Task<object?> ResolveGenericRtAssociationsQuery(IResolveConnectionContext<RtEntityDto> arg)
+    private object? ResolveGenericRtAssociationsQuery(IResolveConnectionContext<RtEntityDto> arg)
     {
         try
         {
@@ -385,30 +402,76 @@ internal sealed class RtEntityDtoType : ObjectGraphType<RtEntityDto>
                 indirectAssociations = false;
             }
 
-
             var roleId = arg.GetArgument<RtCkId<CkAssociationRoleId>>(Statics.RoleIdArg);
             var direction = arg.GetArgument<GraphDirections>(Statics.DirectionArg);
             var targetCkId = arg.GetArgument<RtCkId<CkTypeId>>(Statics.CkId);
 
             var tenantRepository = graphQlUserContext.TenantContext.GetTenantRepository();
 
+            // Get DataLoader context
+            var dataLoaderAccessor = arg.RequestServices?.GetRequiredService<IDataLoaderContextAccessor>();
+            if (dataLoaderAccessor?.Context == null)
+            {
+                throw AssetRepositoryException.DataLoaderContextUnavailable();
+            }
+
+            var originCkId = CkTypeId.ToRtCkId();
+
             if (indirectAssociations.Value)
             {
-                var result = await tenantRepository.GetIndirectRtAssociationTargetsAsync(
-                    sessionAccessor.Session, [arg.Source.RtId], CkTypeId.ToRtCkId(), roleId,
-                    direction,
-                    null, targetCkId, queryOptions, offset, arg.First);
+                // Create a unique cache key for indirect associations
+                var cacheKey = $"GenericAssocIndirect_{originCkId}_{targetCkId}_{roleId}_{direction}_{offset}_{arg.First}_{queryOptions.GetHashCode()}";
 
-                return ConnectionUtils.ToOctoConnection(result.First().Value.Items.Select(CreateRtEntityDto), arg);
+                var loader = dataLoaderAccessor.Context.GetOrAddBatchLoader<RtEntityId, IResultSet<RtEntity>>(
+                    cacheKey,
+                    async rtEntityIds =>
+                        await tenantRepository.GetIndirectRtAssociationTargetsAsync(
+                            sessionAccessor.Session,
+                            rtEntityIds.Select(x => x.RtId),
+                            originCkId,
+                            roleId,
+                            direction,
+                            null,
+                            targetCkId,
+                            queryOptions,
+                            offset,
+                            arg.First));
+
+                var dataLoaderResult = loader.LoadAsync(arg.Source.ToRtEntityId());
+
+                return dataLoaderResult.Then(resultSet => ConnectionUtils.ToOctoConnection(
+                    resultSet.Items.Select(CreateRtEntityDto),
+                    arg,
+                    resultSet.TotalCount > 0 ? offset.GetValueOrDefault(0) : 0,
+                    (int)resultSet.TotalCount));
             }
             else
             {
-                var result = await tenantRepository.GetRtAssociationTargetsAsync(
-                    sessionAccessor.Session, [arg.Source.RtId], CkTypeId.ToRtCkId(), roleId,
-                    targetCkId, direction,
-                    null, queryOptions, offset, arg.First);
+                // Create a unique cache key for direct associations
+                var cacheKey = $"GenericAssocDirect_{originCkId}_{targetCkId}_{roleId}_{direction}_{offset}_{arg.First}_{queryOptions.GetHashCode()}";
 
-                return ConnectionUtils.ToOctoConnection(result.First().Value.Items.Select(CreateRtEntityDto), arg);
+                var loader = dataLoaderAccessor.Context.GetOrAddBatchLoader<RtEntityId, IResultSet<RtEntity>>(
+                    cacheKey,
+                    async rtEntityIds =>
+                        await tenantRepository.GetRtAssociationTargetsAsync(
+                            sessionAccessor.Session,
+                            rtEntityIds.Select(x => x.RtId),
+                            originCkId,
+                            roleId,
+                            targetCkId,
+                            direction,
+                            null,
+                            queryOptions,
+                            offset,
+                            arg.First));
+
+                var dataLoaderResult = loader.LoadAsync(arg.Source.ToRtEntityId());
+
+                return dataLoaderResult.Then(resultSet => ConnectionUtils.ToOctoConnection(
+                    resultSet.Items.Select(CreateRtEntityDto),
+                    arg,
+                    resultSet.TotalCount > 0 ? offset.GetValueOrDefault(0) : 0,
+                    (int)resultSet.TotalCount));
             }
         }
         catch (Exception e)
