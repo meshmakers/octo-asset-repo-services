@@ -87,7 +87,9 @@ internal sealed class RtEntityInterfaceType : InterfaceGraphType<RtEntityDto>
             // Use the OriginCkTypeId as the cache key - this is where the association is defined
             // This ensures all interfaces that inherit this association use the same connection type
             var originCkTypeId = ckTypeAssociationGraph.First().OriginCkTypeId.ToRtCkId();
-            this.InterfaceAssociationField(graphTypesCache, ckTypeAssociationGraph.Key, allowedTypes, originCkTypeId);
+            // The queryBaseType is the target of the association (used for union naming)
+            var queryBaseType = ckTypeAssociationGraph.First().TargetCkTypeId.ToRtCkId();
+            this.InterfaceAssociationField(graphTypesCache, ckTypeAssociationGraph.Key, allowedTypes, originCkTypeId, queryBaseType);
         }
 
         // Add inbound association fields
@@ -107,7 +109,9 @@ internal sealed class RtEntityInterfaceType : InterfaceGraphType<RtEntityDto>
 
             // For inbound associations, use the TargetCkTypeId as the cache key
             var targetCkTypeId = ckTypeAssociationGraph.First().TargetCkTypeId.ToRtCkId();
-            this.InterfaceAssociationField(graphTypesCache, ckTypeAssociationGraph.Key, allowedTypes, targetCkTypeId);
+            // The queryBaseType is the origin of the inbound association (the types that point to this type)
+            var queryBaseType = ckTypeAssociationGraph.First().OriginCkTypeId.ToRtCkId();
+            this.InterfaceAssociationField(graphTypesCache, ckTypeAssociationGraph.Key, allowedTypes, targetCkTypeId, queryBaseType);
         }
     }
 }

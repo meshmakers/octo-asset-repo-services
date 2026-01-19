@@ -31,7 +31,7 @@ internal class GraphTypesCache : IGraphTypesCache
     private readonly string _tenantId;
     private readonly ConcurrentDictionary<RtCkId<CkTypeId>, StreamDataEntityDtoType> _tsTypes;
     private readonly ConcurrentDictionary<RtCkId<CkTypeId>, RtEntityDtoType> _types;
-    private readonly ConcurrentDictionary<(RtCkId<CkTypeId>, string), DynamicConnectionType> _interfaceAssociationConnections;
+    private readonly ConcurrentDictionary<(RtCkId<CkTypeId>, string, string), DynamicConnectionType> _interfaceAssociationConnections;
 
 
     /// <summary>
@@ -56,7 +56,7 @@ internal class GraphTypesCache : IGraphTypesCache
         _inputRecordTypes = new ConcurrentDictionary<RtCkId<CkRecordId>, RtRecordDtoInputType>();
         _connectionTypes = new ConcurrentDictionary<IGraphType, DynamicConnectionType>();
         _tsTypes = new ConcurrentDictionary<RtCkId<CkTypeId>, StreamDataEntityDtoType>();
-        _interfaceAssociationConnections = new ConcurrentDictionary<(RtCkId<CkTypeId>, string), DynamicConnectionType>();
+        _interfaceAssociationConnections = new ConcurrentDictionary<(RtCkId<CkTypeId>, string, string), DynamicConnectionType>();
     }
 
 
@@ -153,16 +153,40 @@ internal class GraphTypesCache : IGraphTypesCache
         string navigationPropertyName,
         Func<DynamicConnectionType> factory)
     {
-        return _interfaceAssociationConnections.GetOrAdd((baseCkTypeId, navigationPropertyName), _ => factory());
+        // Use empty string for allowedTypesKey since InterfaceAssociationField doesn't pass allowedTypes
+        // This maintains backward compatibility with interface type creation
+        return _interfaceAssociationConnections.GetOrAdd((baseCkTypeId, navigationPropertyName, string.Empty), _ => factory());
     }
 
     /// <inheritdoc />
     public bool TryGetInterfaceAssociationConnection(
         RtCkId<CkTypeId> baseCkTypeId,
         string navigationPropertyName,
+        IReadOnlyList<RtCkId<CkTypeId>> allowedTypes,
         out DynamicConnectionType? connectionType)
     {
-        return _interfaceAssociationConnections.TryGetValue((baseCkTypeId, navigationPropertyName), out connectionType);
+        // Create a stable key from the sorted allowedTypes to ensure consistent cache hits
+        // This prevents using a cached connection with different allowedTypes
+        var allowedTypesKey = CreateAllowedTypesKey(allowedTypes);
+        return _interfaceAssociationConnections.TryGetValue((baseCkTypeId, navigationPropertyName, allowedTypesKey), out connectionType);
+    }
+
+    /// <summary>
+    ///     Creates a stable string key from a list of allowed types for cache lookup.
+    ///     The types are sorted to ensure consistent keys regardless of input order.
+    /// </summary>
+    private static string CreateAllowedTypesKey(IReadOnlyList<RtCkId<CkTypeId>> allowedTypes)
+    {
+        if (allowedTypes.Count == 0)
+            return string.Empty;
+
+        // Sort by the full name to ensure consistent ordering
+        var sortedNames = allowedTypes
+            .Select(t => t.SemanticVersionedFullName)
+            .OrderBy(n => n, StringComparer.Ordinal)
+            .ToArray();
+
+        return string.Join("|", sortedNames);
     }
 
     /// <inheritdoc />

@@ -1,0 +1,23 @@
+$schema: https://schemas.meshmakers.cloud/construction-kit-elements.schema.json
+types:
+# VehicleReading - represents a measurement/reading for a vehicle
+# Has a ParentChild association to the abstract Vehicle type
+# This tests the scenario where:
+# - VehicleReading -> ParentChild -> Vehicle (abstract)
+# - Vehicle -> Car, Truck (derived concrete types)
+# - Vehicle -> ParentChild -> OperatingFacility
+# When querying parent(ckTypeId: "Vehicle") on VehicleReading,
+# we should get Car/Truck, not OperatingFacility
+- typeId: VehicleReading
+  derivedFromCkTypeId: ${System}/Entity
+  description: "A reading/measurement associated with a vehicle"
+  attributes:
+    - id: ${System}/Name
+      name: Name
+    - id: ${this}/ReadingValue
+      name: ReadingValue
+    - id: ${this}/ReadingTimestamp
+      name: ReadingTimestamp
+  associations:
+    - id: ${System}/ParentChild
+      targetCkTypeId: ${this}/Vehicle

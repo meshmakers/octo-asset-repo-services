@@ -1,0 +1,8 @@
+$schema: https://schemas.meshmakers.cloud/construction-kit-elements.schema.json
+attributes:
+- id: ReadingValue
+  valueType: Double
+  description: "The reading value"
+- id: ReadingTimestamp
+  valueType: DateTime
+  description: "The timestamp of the reading"

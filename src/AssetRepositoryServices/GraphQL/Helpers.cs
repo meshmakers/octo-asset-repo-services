@@ -115,7 +115,10 @@ internal static class Helpers
 
         // Check if there's a cached connection type from an interface (for inherited associations)
         // This ensures implementing types use the same connection type as the interface
-        if (graphTypesCache.TryGetInterfaceAssociationConnection(queryBaseType, name, out var cachedConnectionType) &&
+        // IMPORTANT: We must also check that the cached connection has the same allowedTypes,
+        // because different types may have associations with the same queryBaseType and name
+        // but different target types (e.g., VehicleReading->parent->Vehicle vs Vehicle->parent->OperatingFacility)
+        if (graphTypesCache.TryGetInterfaceAssociationConnection(queryBaseType, name, allowedTypes, out var cachedConnectionType) &&
             cachedConnectionType != null)
         {
             connectionType = cachedConnectionType;
@@ -125,9 +128,12 @@ internal static class Helpers
             var graphTypes = allowedTypes.Select(graphTypesCache.GetType).ToList();
 
             // Create a union type for all allowed target types
+            // Use queryBaseType for the name since it describes the target types (e.g., Vehicle -> Car, Truck)
+            // This makes the union name consistent regardless of which type creates it first
+            var unionTypeName = $"{queryBaseType.GetGraphQlPascalCaseName()}_{name}{Statics.GraphQlUnionSuffix}";
             var unionType = new RtEntityUnionType(
-                $"{complexGraphType.Name}_{name}{Statics.GraphQlUnionSuffix}",
-                $"Union of allowed types for association {roleId} ({graphDirection}) of {complexGraphType.Name}",
+                unionTypeName,
+                $"Union of types derived from {queryBaseType.SemanticVersionedFullName} for {name} association",
                 graphTypes);
 
             // Create connection type for the union
@@ -162,10 +168,16 @@ internal static class Helpers
     ///     Similar to AssociationField but without resolvers (interfaces don't have resolvers).
     ///     The connection type is cached so implementing types can reuse it.
     /// </summary>
+    /// <param name="interfaceGraphType">The interface type to add the field to</param>
+    /// <param name="graphTypesCache">The graph types cache</param>
+    /// <param name="name">The field name (navigation property name)</param>
+    /// <param name="allowedTypes">The concrete types that can be returned</param>
+    /// <param name="baseCkTypeId">The CK type ID used for cache key (origin for outbound, target for inbound)</param>
+    /// <param name="queryBaseType">The target type of the association (used for union naming)</param>
     public static FieldType InterfaceAssociationField<TSourceType>(
         this InterfaceGraphType<TSourceType> interfaceGraphType,
         IGraphTypesCache graphTypesCache, string name, IReadOnlyList<RtCkId<CkTypeId>> allowedTypes,
-        RtCkId<CkTypeId> baseCkTypeId)
+        RtCkId<CkTypeId> baseCkTypeId, RtCkId<CkTypeId> queryBaseType)
     {
         // Get or create the connection type, caching it so implementing types can reuse it
         var connectionType = graphTypesCache.GetOrCreateInterfaceAssociationConnection(
@@ -174,9 +186,11 @@ internal static class Helpers
                 var graphTypes = allowedTypes.Select(graphTypesCache.GetType).ToList();
 
                 // Create a union type for all allowed target types
+                // Use queryBaseType for the name since it describes the target types
+                var unionTypeName = $"{queryBaseType.GetGraphQlPascalCaseName()}_{name}{Statics.GraphQlUnionSuffix}";
                 var unionType = new RtEntityUnionType(
-                    $"{interfaceGraphType.Name}_{name}{Statics.GraphQlUnionSuffix}",
-                    $"Union of allowed types for association {name} of {interfaceGraphType.Name}",
+                    unionTypeName,
+                    $"Union of types derived from {queryBaseType.SemanticVersionedFullName} for {name} association",
                     graphTypes);
 
                 // Create connection type for the union

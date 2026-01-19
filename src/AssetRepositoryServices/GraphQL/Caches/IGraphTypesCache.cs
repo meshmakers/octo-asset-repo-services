@@ -94,13 +94,16 @@ internal interface IGraphTypesCache
 
     /// <summary>
     ///     Tries to get a cached interface association connection type.
+    ///     Only returns a cached connection if the allowedTypes match.
     /// </summary>
     /// <param name="baseCkTypeId">The CK type ID of the base type where the association is defined</param>
     /// <param name="navigationPropertyName">The name of the navigation property</param>
-    /// <param name="connectionType">The cached connection type if found</param>
-    /// <returns>True if found, false otherwise</returns>
+    /// <param name="allowedTypes">The allowed types for this association - must match the cached types</param>
+    /// <param name="connectionType">The cached connection type if found and types match</param>
+    /// <returns>True if found and types match, false otherwise</returns>
     bool TryGetInterfaceAssociationConnection(
         RtCkId<CkTypeId> baseCkTypeId,
         string navigationPropertyName,
+        IReadOnlyList<RtCkId<CkTypeId>> allowedTypes,
         out DynamicConnectionType? connectionType);
 }

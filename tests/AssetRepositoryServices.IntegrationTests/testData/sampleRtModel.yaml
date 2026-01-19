@@ -380,7 +380,7 @@ entities:
 
   # === VEHICLES (for testing fragment inheritance on union types) ===
 
-  # Car 1 - Owned by Max Mustermann
+  # Car 1 - Owned by Max Mustermann, located at Facility Hauptstrasse 42
   - rtId: 67000004dddd4444eeee0001
     ckTypeId: AssetRepositoryIntegrationTest/Car
     rtWellKnownName: "CarSalzburgABC123"
@@ -399,8 +399,11 @@ entities:
       - roleId: AssetRepositoryIntegrationTest/VehicleOwnership
         targetRtId: 67000001aaaa1111bbbb0001
         targetCkTypeId: AssetRepositoryIntegrationTest/Customer
+      - roleId: System/ParentChild
+        targetRtId: 67000002bbbb2222cccc0001
+        targetCkTypeId: AssetRepositoryIntegrationTest/OperatingFacility
 
-  # Car 2 - Owned by Anna Mueller
+  # Car 2 - Owned by Anna Mueller, located at Facility Linzer Strasse 15
   - rtId: 67000004dddd4444eeee0002
     ckTypeId: AssetRepositoryIntegrationTest/Car
     rtWellKnownName: "CarSalzburgXYZ789"
@@ -419,8 +422,11 @@ entities:
       - roleId: AssetRepositoryIntegrationTest/VehicleOwnership
         targetRtId: 67000001aaaa1111bbbb0002
         targetCkTypeId: AssetRepositoryIntegrationTest/Customer
+      - roleId: System/ParentChild
+        targetRtId: 67000002bbbb2222cccc0002
+        targetCkTypeId: AssetRepositoryIntegrationTest/OperatingFacility
 
-  # Truck 1 - Owned by Tech Solutions GmbH
+  # Truck 1 - Owned by Tech Solutions GmbH, located at Facility Gewerbepark 7
   - rtId: 67000004dddd4444eeee0003
     ckTypeId: AssetRepositoryIntegrationTest/Truck
     rtWellKnownName: "TruckSalzburgDEF456"
@@ -439,8 +445,11 @@ entities:
       - roleId: AssetRepositoryIntegrationTest/VehicleOwnership
         targetRtId: 67000001aaaa1111bbbb0003
         targetCkTypeId: AssetRepositoryIntegrationTest/Customer
+      - roleId: System/ParentChild
+        targetRtId: 67000002bbbb2222cccc0003
+        targetCkTypeId: AssetRepositoryIntegrationTest/OperatingFacility
 
-  # Truck 2 - Owned by Peter Weber
+  # Truck 2 - Owned by Peter Weber, located at Facility Bergstrasse 88
   - rtId: 67000004dddd4444eeee0004
     ckTypeId: AssetRepositoryIntegrationTest/Truck
     rtWellKnownName: "TruckElsbethenGHI012"
@@ -459,3 +468,78 @@ entities:
       - roleId: AssetRepositoryIntegrationTest/VehicleOwnership
         targetRtId: 67000001aaaa1111bbbb0004
         targetCkTypeId: AssetRepositoryIntegrationTest/Customer
+      - roleId: System/ParentChild
+        targetRtId: 67000002bbbb2222cccc0004
+        targetCkTypeId: AssetRepositoryIntegrationTest/OperatingFacility
+
+  # === VEHICLE READINGS (for testing parent association with abstract type filter) ===
+  # These test the scenario where:
+  # - VehicleReading -> ParentChild -> Vehicle (abstract)
+  # - Vehicle -> Car, Truck (derived concrete types)
+  # - Vehicle -> ParentChild -> OperatingFacility
+  # When querying parent(ckTypeId: "Vehicle") on VehicleReading,
+  # we should get Car/Truck, NOT OperatingFacility
+
+  # VehicleReading 1 - Reading for Car 1 (BMW 320i)
+  - rtId: 67000005eeee5555ffff0001
+    ckTypeId: AssetRepositoryIntegrationTest/VehicleReading
+    rtWellKnownName: "ReadingBMW320i_001"
+    attributes:
+      - id: System/Name
+        value: Mileage Reading BMW
+      - id: AssetRepositoryIntegrationTest/ReadingValue
+        value: 45678.5
+      - id: AssetRepositoryIntegrationTest/ReadingTimestamp
+        value: 2024-01-15T10:30:00Z
+    associations:
+      - roleId: System/ParentChild
+        targetRtId: 67000004dddd4444eeee0001
+        targetCkTypeId: AssetRepositoryIntegrationTest/Car
+
+  # VehicleReading 2 - Another reading for Car 1 (BMW 320i)
+  - rtId: 67000005eeee5555ffff0002
+    ckTypeId: AssetRepositoryIntegrationTest/VehicleReading
+    rtWellKnownName: "ReadingBMW320i_002"
+    attributes:
+      - id: System/Name
+        value: Fuel Level Reading BMW
+      - id: AssetRepositoryIntegrationTest/ReadingValue
+        value: 75.0
+      - id: AssetRepositoryIntegrationTest/ReadingTimestamp
+        value: 2024-01-15T10:35:00Z
+    associations:
+      - roleId: System/ParentChild
+        targetRtId: 67000004dddd4444eeee0001
+        targetCkTypeId: AssetRepositoryIntegrationTest/Car
+
+  # VehicleReading 3 - Reading for Truck 1 (Mercedes Sprinter)
+  - rtId: 67000005eeee5555ffff0003
+    ckTypeId: AssetRepositoryIntegrationTest/VehicleReading
+    rtWellKnownName: "ReadingSprinter_001"
+    attributes:
+      - id: System/Name
+        value: Load Weight Reading Sprinter
+      - id: AssetRepositoryIntegrationTest/ReadingValue
+        value: 2500.0
+      - id: AssetRepositoryIntegrationTest/ReadingTimestamp
+        value: 2024-01-16T08:00:00Z
+    associations:
+      - roleId: System/ParentChild
+        targetRtId: 67000004dddd4444eeee0003
+        targetCkTypeId: AssetRepositoryIntegrationTest/Truck
+
+  # VehicleReading 4 - Reading for Truck 2 (Ford Transit)
+  - rtId: 67000005eeee5555ffff0004
+    ckTypeId: AssetRepositoryIntegrationTest/VehicleReading
+    rtWellKnownName: "ReadingTransit_001"
+    attributes:
+      - id: System/Name
+        value: Mileage Reading Transit
+      - id: AssetRepositoryIntegrationTest/ReadingValue
+        value: 12345.0
+      - id: AssetRepositoryIntegrationTest/ReadingTimestamp
+        value: 2024-01-17T14:20:00Z
+    associations:
+      - roleId: System/ParentChild
+        targetRtId: 67000004dddd4444eeee0004
+        targetCkTypeId: AssetRepositoryIntegrationTest/Truck

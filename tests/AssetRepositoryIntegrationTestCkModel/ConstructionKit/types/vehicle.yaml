@@ -16,6 +16,8 @@ types:
   associations:
     - id: ${this}/VehicleOwnership
       targetCkTypeId: ${this}/Customer
+    - id: ${System}/ParentChild
+      targetCkTypeId: ${this}/OperatingFacility
 
 # Concrete derived type: Car
 - typeId: Car
