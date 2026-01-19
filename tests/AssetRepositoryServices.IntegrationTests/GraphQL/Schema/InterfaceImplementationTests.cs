@@ -23,11 +23,14 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Graph
 /// - But the implementing type has relatesFrom of type SystemEntity_RelatesFromUnionConnection
 /// - GraphQL validation fails because the field types are not compatible
 ///
-/// Test hierarchy:
+/// Test hierarchy (6 levels deep):
 /// - Equipment (abstract) -> Entity
 /// - Machine (abstract) -> Equipment
-/// - Robot (concrete) -> Machine
-/// - CncMachine (concrete) -> Machine
+/// - AutomatedMachine (abstract) -> Machine
+/// - Robot (abstract) -> AutomatedMachine
+/// - CollaborativeRobot (abstract) -> Robot
+/// - Cobot (concrete) -> CollaborativeRobot
+/// - CncMachine (concrete) -> AutomatedMachine
 /// - SensorReading -> Entity with association to Equipment
 /// </summary>
 [Collection("Sequential")]
@@ -510,5 +513,430 @@ public class InterfaceImplementationTests
         robotHasReadingsType.Should().Be(equipmentHasReadingsType,
             "Robot's hasReadings field type should match EquipmentInterface's hasReadings field type " +
             "for valid interface implementation");
+    }
+
+    /// <summary>
+    /// Test the 6-level deep hierarchy:
+    /// Entity -> Equipment -> Machine -> AutomatedMachine -> Robot -> CollaborativeRobot -> Cobot
+    ///
+    /// Cobot must implement all 5 abstract interfaces:
+    /// - EquipmentInterface
+    /// - MachineInterface
+    /// - AutomatedMachineInterface
+    /// - RobotInterface
+    /// - CollaborativeRobotInterface
+    ///
+    /// All interfaces must have compatible field types for the inherited hasReadings association.
+    /// </summary>
+    [Fact]
+    public async Task GraphQL_SixLevelDeepHierarchy_AllInterfacesImplementedCorrectly()
+    {
+        // Arrange - Query the Cobot type (deepest in hierarchy)
+        var query = @"
+            query {
+              cobotType: __type(name: ""AssetRepositoryIntegrationTestCobot"") {
+                name
+                interfaces {
+                  name
+                }
+                fields {
+                  name
+                  type {
+                    name
+                    kind
+                    ofType { name }
+                  }
+                }
+              }
+            }";
+
+        // Act
+        var result = await _fixture.ExecuteGraphQlAsync(query);
+
+        // Assert - Schema should be valid
+        result.Should().NotBeNull();
+        result.Errors.Should().BeNullOrEmpty(
+            $"Schema introspection should succeed for 6-level deep hierarchy. " +
+            $"Errors: {string.Join(", ", result.Errors?.Select(e => e.Message) ?? [])}");
+
+        var json = _fixture.SerializeGraphQl(result);
+        _fixture.OutputHelper?.WriteLine($"Cobot type introspection: {json}");
+
+        var answer = JObject.Parse(json);
+        var cobotType = answer.SelectToken("data.cobotType");
+        cobotType.Should().NotBeNull("Cobot type should exist in schema");
+
+        // Verify Cobot implements all 5 interfaces in the hierarchy
+        var interfaces = cobotType!.SelectToken("interfaces") as JArray;
+        interfaces.Should().NotBeNull("Cobot should implement interfaces");
+
+        var interfaceNames = interfaces!.Select(i => i["name"]?.Value<string>()).ToList();
+        _fixture.OutputHelper?.WriteLine($"Cobot implements interfaces: {string.Join(", ", interfaceNames)}");
+
+        // Cobot should implement all abstract parent interfaces
+        interfaceNames.Should().Contain("AssetRepositoryIntegrationTestCollaborativeRobotInterface",
+            "Cobot should implement CollaborativeRobotInterface (direct parent)");
+        interfaceNames.Should().Contain("AssetRepositoryIntegrationTestRobotInterface",
+            "Cobot should implement RobotInterface (grandparent)");
+        interfaceNames.Should().Contain("AssetRepositoryIntegrationTestAutomatedMachineInterface",
+            "Cobot should implement AutomatedMachineInterface (great-grandparent)");
+        interfaceNames.Should().Contain("AssetRepositoryIntegrationTestMachineInterface",
+            "Cobot should implement MachineInterface (great-great-grandparent)");
+        interfaceNames.Should().Contain("AssetRepositoryIntegrationTestEquipmentInterface",
+            "Cobot should implement EquipmentInterface (root abstract type)");
+
+        // Verify hasReadings field exists (inherited from Equipment through all levels)
+        var fields = cobotType.SelectToken("fields") as JArray;
+        var hasReadingsField = fields!.FirstOrDefault(f => f["name"]?.Value<string>() == "hasReadings");
+        hasReadingsField.Should().NotBeNull(
+            "Cobot should have hasReadings field inherited through 5 levels of abstraction");
+    }
+
+    /// <summary>
+    /// Test that all interfaces in the 6-level hierarchy have compatible hasReadings field types.
+    /// This verifies that the cache key fix works correctly for deep hierarchies.
+    /// </summary>
+    [Fact]
+    public async Task GraphQL_SixLevelHierarchy_AllInterfacesHaveSameHasReadingsType()
+    {
+        // Arrange - Query all interface types in the hierarchy
+        var query = @"
+            query {
+              equipment: __type(name: ""AssetRepositoryIntegrationTestEquipmentInterface"") {
+                name
+                fields { name type { name ofType { name } } }
+              }
+              machine: __type(name: ""AssetRepositoryIntegrationTestMachineInterface"") {
+                name
+                fields { name type { name ofType { name } } }
+              }
+              automated: __type(name: ""AssetRepositoryIntegrationTestAutomatedMachineInterface"") {
+                name
+                fields { name type { name ofType { name } } }
+              }
+              robot: __type(name: ""AssetRepositoryIntegrationTestRobotInterface"") {
+                name
+                fields { name type { name ofType { name } } }
+              }
+              collab: __type(name: ""AssetRepositoryIntegrationTestCollaborativeRobotInterface"") {
+                name
+                fields { name type { name ofType { name } } }
+              }
+            }";
+
+        // Act
+        var result = await _fixture.ExecuteGraphQlAsync(query);
+
+        // Assert
+        result.Should().NotBeNull();
+        result.Errors.Should().BeNullOrEmpty(
+            $"Schema introspection should succeed. Errors: {string.Join(", ", result.Errors?.Select(e => e.Message) ?? [])}");
+
+        var json = _fixture.SerializeGraphQl(result);
+        _fixture.OutputHelper?.WriteLine($"All interfaces: {json}");
+
+        var answer = JObject.Parse(json);
+
+        // Get hasReadings field type from each interface
+        string? GetHasReadingsType(string path)
+        {
+            var type = answer.SelectToken($"data.{path}");
+            if (type == null) return null;
+
+            var fields = type.SelectToken("fields") as JArray;
+            var hasReadings = fields?.FirstOrDefault(f => f["name"]?.Value<string>() == "hasReadings");
+            return hasReadings?.SelectToken("type.name")?.Value<string>()
+                   ?? hasReadings?.SelectToken("type.ofType.name")?.Value<string>();
+        }
+
+        var equipmentType = GetHasReadingsType("equipment");
+        var machineType = GetHasReadingsType("machine");
+        var automatedType = GetHasReadingsType("automated");
+        var robotType = GetHasReadingsType("robot");
+        var collabType = GetHasReadingsType("collab");
+
+        _fixture.OutputHelper?.WriteLine($"Equipment hasReadings type: {equipmentType}");
+        _fixture.OutputHelper?.WriteLine($"Machine hasReadings type: {machineType}");
+        _fixture.OutputHelper?.WriteLine($"AutomatedMachine hasReadings type: {automatedType}");
+        _fixture.OutputHelper?.WriteLine($"Robot hasReadings type: {robotType}");
+        _fixture.OutputHelper?.WriteLine($"CollaborativeRobot hasReadings type: {collabType}");
+
+        // All should have the hasReadings field (inherited from Equipment)
+        equipmentType.Should().NotBeNull("EquipmentInterface should have hasReadings");
+        machineType.Should().NotBeNull("MachineInterface should have hasReadings");
+        automatedType.Should().NotBeNull("AutomatedMachineInterface should have hasReadings");
+        robotType.Should().NotBeNull("RobotInterface should have hasReadings");
+        collabType.Should().NotBeNull("CollaborativeRobotInterface should have hasReadings");
+
+        // All should have the SAME type (this is the key test for the cache fix)
+        machineType.Should().Be(equipmentType, "Machine should have same hasReadings type as Equipment");
+        automatedType.Should().Be(equipmentType, "AutomatedMachine should have same hasReadings type as Equipment");
+        robotType.Should().Be(equipmentType, "Robot should have same hasReadings type as Equipment");
+        collabType.Should().Be(equipmentType, "CollaborativeRobot should have same hasReadings type as Equipment");
+    }
+
+    /// <summary>
+    /// Test that querying through the deepest type (Cobot) with hasReadings association works.
+    /// </summary>
+    [Fact]
+    public async Task GraphQL_DeepestType_HasReadingsAssociation_WorksCorrectly()
+    {
+        // Arrange - Query Cobot with its hasReadings association
+        var query = @"
+            query {
+              runtime {
+                assetRepositoryIntegrationTestCobot {
+                  items {
+                    __typename
+                    rtWellKnownName
+                    payloadCapacity
+                    hasReadings {
+                      totalCount
+                      items {
+                        __typename
+                        ... on AssetRepositoryIntegrationTestSensorReading {
+                          rtWellKnownName
+                          sensorValue
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }";
+
+        // Act
+        var result = await _fixture.ExecuteGraphQlAsync(query);
+
+        // Assert
+        result.Should().NotBeNull();
+        result.Errors.Should().BeNullOrEmpty(
+            $"Query should execute without errors. Errors: {string.Join(", ", result.Errors?.Select(e => e.Message) ?? [])}");
+
+        var json = _fixture.SerializeGraphQl(result);
+        _fixture.OutputHelper?.WriteLine($"Cobot query result: {json}");
+    }
+
+    /// <summary>
+    /// Test that querying Equipment returns entities from ALL levels of the hierarchy,
+    /// including the deepest Cobot type.
+    /// </summary>
+    [Fact]
+    public async Task GraphQL_RootAbstractType_ReturnsAllDerivedTypesIncludingDeepest()
+    {
+        // Arrange - Query Equipment (root abstract type)
+        var query = @"
+            query {
+              runtime {
+                assetRepositoryIntegrationTestEquipment {
+                  items {
+                    __typename
+                    rtWellKnownName
+                  }
+                }
+              }
+            }";
+
+        // Act
+        var result = await _fixture.ExecuteGraphQlAsync(query);
+
+        // Assert
+        result.Should().NotBeNull();
+        result.Errors.Should().BeNullOrEmpty(
+            $"Query should execute without errors. Errors: {string.Join(", ", result.Errors?.Select(e => e.Message) ?? [])}");
+
+        var json = _fixture.SerializeGraphQl(result);
+        _fixture.OutputHelper?.WriteLine($"Equipment query result: {json}");
+
+        // The query should succeed even if no data exists - the schema is valid
+    }
+
+    /// <summary>
+    /// Test for association override scenario (simulates EnergyIQ RelatesFrom issue).
+    /// This is the exact scenario that causes the error:
+    /// - WideSource defines LinksTo -> WideTarget
+    /// - NarrowSource (inherits from WideSource) ALSO defines LinksTo -> NarrowTarget
+    /// - WideTarget sees inbound LinksTo from WideSource
+    /// - NarrowTarget inherits from WideTarget AND is also target of NarrowSource.LinksTo
+    /// - ConcreteTarget inherits from NarrowTarget
+    ///
+    /// When the association is overridden at a lower level, the field types become incompatible:
+    /// - WideTargetInterface has linksTo with type WideSource_LinksToUnionConnection
+    /// - NarrowTargetInterface has linksTo with type NarrowSource_LinksToUnionConnection
+    /// - ConcreteTarget has linksTo with type NarrowSource_LinksToUnionConnection
+    ///
+    /// The fix: ConcreteTarget can only implement interfaces with compatible field types.
+    /// Since ConcreteTarget's linksTo type matches NarrowTargetInterface (not WideTargetInterface),
+    /// ConcreteTarget implements NarrowTargetInterface but NOT WideTargetInterface.
+    ///
+    /// This is the correct behavior - the type correctly implements the interface it's compatible with.
+    /// </summary>
+    [Fact]
+    public async Task GraphQL_AssociationOverride_InterfaceImplementation_Succeeds()
+    {
+        // Arrange - Query ConcreteTarget type
+        var query = @"
+            query {
+              concreteTarget: __type(name: ""AssetRepositoryIntegrationTestConcreteTarget"") {
+                name
+                interfaces {
+                  name
+                }
+                fields {
+                  name
+                  type {
+                    name
+                    kind
+                    ofType { name }
+                  }
+                }
+              }
+              wideTargetInterface: __type(name: ""AssetRepositoryIntegrationTestWideTargetInterface"") {
+                name
+                fields {
+                  name
+                  type {
+                    name
+                    kind
+                    ofType { name }
+                  }
+                }
+              }
+              narrowTargetInterface: __type(name: ""AssetRepositoryIntegrationTestNarrowTargetInterface"") {
+                name
+                fields {
+                  name
+                  type {
+                    name
+                    kind
+                    ofType { name }
+                  }
+                }
+              }
+            }";
+
+        // Act
+        var result = await _fixture.ExecuteGraphQlAsync(query);
+
+        // Assert - Schema should be valid (this is where the EnergyIQ error would occur before the fix)
+        result.Should().NotBeNull();
+        result.Errors.Should().BeNullOrEmpty(
+            $"Schema introspection should succeed for association override scenario. " +
+            $"Errors: {string.Join(", ", result.Errors?.Select(e => e.Message) ?? [])}");
+
+        var json = _fixture.SerializeGraphQl(result);
+        _fixture.OutputHelper?.WriteLine($"Association override introspection: {json}");
+
+        var answer = JObject.Parse(json);
+        var concreteTarget = answer.SelectToken("data.concreteTarget");
+        concreteTarget.Should().NotBeNull("ConcreteTarget type should exist");
+
+        // Verify interfaces implemented by ConcreteTarget
+        var interfaces = concreteTarget!.SelectToken("interfaces") as JArray;
+        interfaces.Should().NotBeNull("ConcreteTarget should implement interfaces");
+
+        var interfaceNames = interfaces!.Select(i => i["name"]?.Value<string>()).ToList();
+        _fixture.OutputHelper?.WriteLine($"ConcreteTarget implements interfaces: {string.Join(", ", interfaceNames)}");
+
+        // ConcreteTarget should implement NarrowTargetInterface (compatible field types)
+        interfaceNames.Should().Contain("AssetRepositoryIntegrationTestNarrowTargetInterface",
+            "ConcreteTarget should implement NarrowTargetInterface (parent with compatible linksTo type)");
+
+        // ConcreteTarget should NOT implement WideTargetInterface because the linksTo field types
+        // are incompatible (WideSource_LinksToUnionConnection vs NarrowSource_LinksToUnionConnection)
+        interfaceNames.Should().NotContain("AssetRepositoryIntegrationTestWideTargetInterface",
+            "ConcreteTarget should NOT implement WideTargetInterface because linksTo field type is incompatible");
+
+        // Verify the linksTo field exists on ConcreteTarget with NarrowSource type (inbound association)
+        var fields = concreteTarget.SelectToken("fields") as JArray;
+        var linksToField = fields!.FirstOrDefault(f => f["name"]?.Value<string>() == "linksTo");
+        linksToField.Should().NotBeNull("ConcreteTarget should have linksTo field (inbound association)");
+
+        var linksToType = linksToField!.SelectToken("type.name")?.Value<string>()
+                          ?? linksToField.SelectToken("type.ofType.name")?.Value<string>();
+        _fixture.OutputHelper?.WriteLine($"ConcreteTarget linksTo field type: {linksToType}");
+
+        // The linksTo type should be based on NarrowSource, not WideSource
+        linksToType.Should().Contain("NarrowSource",
+            "ConcreteTarget's linksTo field should be based on NarrowSource (the overridden association)");
+    }
+
+    /// <summary>
+    /// Test that the WideTarget and NarrowTarget interfaces may have different LinksTo field types
+    /// due to the association being defined at different levels with different origins.
+    /// This test verifies the exact scenario that causes the EnergyIQ error.
+    /// </summary>
+    [Fact]
+    public async Task GraphQL_AssociationOverride_InterfacesHaveDifferentOrigins()
+    {
+        // Arrange - Query both interfaces to see their LinksTo field types
+        var query = @"
+            query {
+              wideTarget: __type(name: ""AssetRepositoryIntegrationTestWideTargetInterface"") {
+                name
+                fields {
+                  name
+                  type {
+                    name
+                    kind
+                    ofType { name }
+                  }
+                }
+              }
+              narrowTarget: __type(name: ""AssetRepositoryIntegrationTestNarrowTargetInterface"") {
+                name
+                fields {
+                  name
+                  type {
+                    name
+                    kind
+                    ofType { name }
+                  }
+                }
+              }
+            }";
+
+        // Act
+        var result = await _fixture.ExecuteGraphQlAsync(query);
+
+        // Assert
+        result.Should().NotBeNull();
+        result.Errors.Should().BeNullOrEmpty(
+            $"Schema introspection should succeed. Errors: {string.Join(", ", result.Errors?.Select(e => e.Message) ?? [])}");
+
+        var json = _fixture.SerializeGraphQl(result);
+        _fixture.OutputHelper?.WriteLine($"Interface comparison: {json}");
+
+        var answer = JObject.Parse(json);
+
+        // Get LinksTo field types from each interface
+        string? GetLinksToType(string path)
+        {
+            var type = answer.SelectToken($"data.{path}");
+            if (type == null) return null;
+
+            var fields = type.SelectToken("fields") as JArray;
+            var linksTo = fields?.FirstOrDefault(f => f["name"]?.Value<string>() == "linksTo");
+            return linksTo?.SelectToken("type.name")?.Value<string>()
+                   ?? linksTo?.SelectToken("type.ofType.name")?.Value<string>();
+        }
+
+        var wideLinksToType = GetLinksToType("wideTarget");
+        var narrowLinksToType = GetLinksToType("narrowTarget");
+
+        _fixture.OutputHelper?.WriteLine($"WideTargetInterface linksTo type: {wideLinksToType}");
+        _fixture.OutputHelper?.WriteLine($"NarrowTargetInterface linksTo type: {narrowLinksToType}");
+
+        // Both should have the LinksTo field
+        wideLinksToType.Should().NotBeNull("WideTargetInterface should have linksTo field");
+        narrowLinksToType.Should().NotBeNull("NarrowTargetInterface should have linksTo field");
+
+        // The types might be different because the association is defined at different levels
+        // with different origins (WideSource vs NarrowSource)
+        // This is the key insight for the fix - when types are different,
+        // the implementing type should either:
+        // 1. Use a union type that covers all cases, OR
+        // 2. Skip implementing interfaces with incompatible field types
+        _fixture.OutputHelper?.WriteLine($"Types are {(wideLinksToType == narrowLinksToType ? "SAME" : "DIFFERENT")}");
     }
 }

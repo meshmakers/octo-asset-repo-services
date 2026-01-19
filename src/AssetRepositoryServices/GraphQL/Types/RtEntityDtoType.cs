@@ -145,11 +145,32 @@ internal sealed class RtEntityDtoType : ObjectGraphType<RtEntityDto>
         }
 
         // Now that all fields are added, implement interfaces from abstract parent types
-        // Only add interfaces if we have all required fields (some may be missing if all target types were abstract)
+        // Only add interfaces if we have all required fields with compatible types.
+        //
+        // Important considerations:
+        // 1. When an association is INHERITED (same definition at all levels), all interfaces
+        //    should have the same field type, and we use the first interface's type as canonical.
+        //
+        // 2. When an association is OVERRIDDEN at a lower level (e.g., WideSource.LinksTo -> WideTarget,
+        //    but NarrowSource.LinksTo -> NarrowTarget), the interfaces at different levels will have
+        //    DIFFERENT field types. In this case, we can only implement the interface that matches
+        //    our actual field type.
+        //
+        // For the override scenario (EnergyIQ RelatesFrom issue):
+        // - WideSourceInterface has LinkedFrom field with type WideTarget_LinkedFromUnionConnection
+        // - NarrowSourceInterface has LinkedFrom field with type NarrowTarget_LinkedFromUnionConnection
+        // - ConcreteSource (inherits from NarrowSource) has LinkedFrom with NarrowTarget type
+        // - ConcreteSource can implement NarrowSourceInterface but NOT WideSourceInterface
+        //   because the field types are incompatible
+
         foreach (var interfaceType in implementedInterfaces)
         {
-            // Check if we have all interface fields
+            // Check if we can implement this interface:
+            // 1. We must have all required fields
+            // 2. Field types must be compatible (same type or we can adopt the interface's type)
             var canImplementInterface = true;
+            var fieldsToUpdate = new List<(FieldType ourField, IGraphType interfaceType)>();
+
             foreach (var interfaceField in interfaceType.Fields)
             {
                 var ourField = Fields.FirstOrDefault(f => f.Name == interfaceField.Name);
@@ -159,6 +180,30 @@ internal sealed class RtEntityDtoType : ObjectGraphType<RtEntityDto>
                     canImplementInterface = false;
                     break;
                 }
+
+                // Check if field types are compatible
+                if (interfaceField.ResolvedType != null && ourField.ResolvedType != null)
+                {
+                    // Get the underlying type names (unwrap NonNull if present)
+                    var interfaceTypeName = GetUnderlyingTypeName(interfaceField.ResolvedType);
+                    var ourTypeName = GetUnderlyingTypeName(ourField.ResolvedType);
+
+                    if (interfaceTypeName != ourTypeName)
+                    {
+                        // The types are different. This happens when an association is overridden
+                        // at a lower level in the hierarchy. We cannot implement this interface
+                        // because our field type is incompatible.
+                        canImplementInterface = false;
+                        break;
+                    }
+                }
+
+                // If our field doesn't have a resolved type yet but the interface does,
+                // we can adopt the interface's type
+                if (ourField.ResolvedType == null && interfaceField.ResolvedType != null)
+                {
+                    fieldsToUpdate.Add((ourField, interfaceField.ResolvedType));
+                }
             }
 
             if (!canImplementInterface)
@@ -166,15 +211,10 @@ internal sealed class RtEntityDtoType : ObjectGraphType<RtEntityDto>
                 continue;
             }
 
-            // For each field on the interface, ensure our field has the same resolved type
-            foreach (var interfaceField in interfaceType.Fields)
+            // Update field types from the interface (for fields that didn't have a type yet)
+            foreach (var (ourField, resolvedType) in fieldsToUpdate)
             {
-                var ourField = Fields.FirstOrDefault(f => f.Name == interfaceField.Name);
-                if (ourField != null && interfaceField.ResolvedType != null)
-                {
-                    // Use the interface's resolved type to ensure type compatibility
-                    ourField.ResolvedType = interfaceField.ResolvedType;
-                }
+                ourField.ResolvedType = resolvedType;
             }
 
             AddResolvedInterface(interfaceType);
@@ -502,5 +542,20 @@ internal sealed class RtEntityDtoType : ObjectGraphType<RtEntityDto>
             UserContext = rtEntity
         };
         return rtEntityDto;
+    }
+
+    /// <summary>
+    /// Gets the underlying type name, unwrapping NonNull and List wrappers.
+    /// For example, NonNullGraphType&lt;ListGraphType&lt;MyType&gt;&gt; returns "MyType".
+    /// </summary>
+    private static string? GetUnderlyingTypeName(IGraphType graphType)
+    {
+        var current = graphType;
+        while (current is IProvideResolvedType wrapper && wrapper.ResolvedType != null)
+        {
+            current = wrapper.ResolvedType;
+        }
+
+        return current?.Name;
     }
 }

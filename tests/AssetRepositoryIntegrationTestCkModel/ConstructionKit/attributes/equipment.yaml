@@ -12,3 +12,9 @@ attributes:
   valueType: Double
 - id: SensorTimestamp
   valueType: DateTime
+- id: ProgrammingLanguage
+  valueType: String
+- id: SafetyRating
+  valueType: String
+- id: PayloadCapacity
+  valueType: Double

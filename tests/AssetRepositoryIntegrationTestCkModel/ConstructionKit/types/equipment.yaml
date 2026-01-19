@@ -32,9 +32,19 @@ types:
       name: Manufacturer
       isOptional: true
 
-# Concrete type deriving from the abstract intermediate type
-- typeId: Robot
+# Abstract type for automated machines (4th level: Equipment -> Machine -> AutomatedMachine)
+- typeId: AutomatedMachine
   derivedFromCkTypeId: ${this}/Machine
+  isAbstract: true
+  attributes:
+    - id: ${this}/ProgrammingLanguage
+      name: ProgrammingLanguage
+      isOptional: true
+
+# Abstract type for robots (5th level: Equipment -> Machine -> AutomatedMachine -> Robot)
+- typeId: Robot
+  derivedFromCkTypeId: ${this}/AutomatedMachine
+  isAbstract: true
   attributes:
     - id: ${this}/AxisCount
       name: AxisCount
@@ -42,10 +52,27 @@ types:
 
 # Another concrete type deriving from the abstract intermediate type
 - typeId: CncMachine
-  derivedFromCkTypeId: ${this}/Machine
+  derivedFromCkTypeId: ${this}/AutomatedMachine
   attributes:
     - id: ${this}/SpindleCount
       name: SpindleCount
+      isOptional: true
+
+# 5th level abstract type for collaborative robots
+- typeId: CollaborativeRobot
+  derivedFromCkTypeId: ${this}/Robot
+  isAbstract: true
+  attributes:
+    - id: ${this}/SafetyRating
+      name: SafetyRating
+      isOptional: true
+
+# 6th level concrete type - deepest in the hierarchy
+- typeId: Cobot
+  derivedFromCkTypeId: ${this}/CollaborativeRobot
+  attributes:
+    - id: ${this}/PayloadCapacity
+      name: PayloadCapacity
       isOptional: true
 
 # Sensor reading type that has an inbound association to Equipment

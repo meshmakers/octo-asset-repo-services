@@ -1,0 +1,80 @@
+$schema: https://schemas.meshmakers.cloud/construction-kit-elements.schema.json
+types:
+# Test model for association override scenario (simulates EnergyIQ RelatesFrom issue)
+# This tests the case where:
+# - WideSource defines LinksTo -> WideTarget
+# - NarrowSource (inherits from WideSource) ALSO defines LinksTo -> NarrowTarget
+# - This creates different OriginCkTypeId for the same association name at different hierarchy levels
+# - WideTarget sees inbound LinksTo from WideSource
+# - NarrowTarget sees inbound LinksTo from BOTH WideSource (inherited) AND NarrowSource (direct)
+
+# Wide source type - defines association to WideTarget
+- typeId: WideSource
+  derivedFromCkTypeId: ${System}/Entity
+  isAbstract: true
+  attributes:
+    - id: ${System}/Name
+      name: Name
+  associations:
+    # Wide association - points to WideTarget (broad target)
+    - id: ${this}/LinksTo
+      targetCkTypeId: ${this}/WideTarget
+
+# Narrow source type - inherits from WideSource, ALSO defines LinksTo with narrower target
+- typeId: NarrowSource
+  derivedFromCkTypeId: ${this}/WideSource
+  isAbstract: true
+  attributes:
+    - id: ${this}/NarrowSourceAttr
+      name: NarrowSourceAttr
+      isOptional: true
+  associations:
+    # Narrow association - points to NarrowTarget (narrower target)
+    # This OVERRIDES the parent's LinksTo with a more specific target
+    - id: ${this}/LinksTo
+      targetCkTypeId: ${this}/NarrowTarget
+
+# Concrete source - inherits from NarrowSource
+- typeId: ConcreteSource
+  derivedFromCkTypeId: ${this}/NarrowSource
+  attributes:
+    - id: ${this}/ConcreteSourceAttr
+      name: ConcreteSourceAttr
+      isOptional: true
+
+# Wide target (abstract) - is the target of WideSource.LinksTo
+# Has inbound association LinksTo from WideSource
+- typeId: WideTarget
+  derivedFromCkTypeId: ${System}/Entity
+  isAbstract: true
+  attributes:
+    - id: ${System}/Name
+      name: Name
+    - id: ${this}/WideTargetAttr
+      name: WideTargetAttr
+      isOptional: true
+
+# Narrow target (abstract) - inherits from WideTarget
+# Is ALSO the target of NarrowSource.LinksTo
+# This creates the problematic scenario:
+# - Inherits inbound LinksTo from WideSource (via WideTarget)
+# - Also has direct inbound LinksTo from NarrowSource
+- typeId: NarrowTarget
+  derivedFromCkTypeId: ${this}/WideTarget
+  isAbstract: true
+  attributes:
+    - id: ${this}/NarrowTargetAttr
+      name: NarrowTargetAttr
+      isOptional: true
+
+# Concrete target - inherits from NarrowTarget
+# When implementing interfaces:
+# - WideTargetInterface has LinksTo with type WideSource_LinksToUnionConnection
+# - NarrowTargetInterface has LinksTo with type NarrowSource_LinksToUnionConnection
+# These types are DIFFERENT, creating the interface implementation conflict
+- typeId: ConcreteTarget
+  derivedFromCkTypeId: ${this}/NarrowTarget
+  attributes:
+    - id: ${this}/ConcreteTargetAttr
+      name: ConcreteTargetAttr
+      isOptional: true

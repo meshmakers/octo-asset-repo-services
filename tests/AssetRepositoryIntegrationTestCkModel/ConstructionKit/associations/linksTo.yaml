@@ -1,0 +1,7 @@
+$schema: https://schemas.meshmakers.cloud/construction-kit-elements.schema.json
+associationRoles:
+- id: LinksTo
+  inboundName: LinksTo
+  inboundMultiplicity: N
+  outboundName: LinkedFrom
+  outboundMultiplicity: N
