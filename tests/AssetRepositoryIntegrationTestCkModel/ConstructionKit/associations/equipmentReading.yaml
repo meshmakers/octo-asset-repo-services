@@ -1,0 +1,7 @@
+$schema: https://schemas.meshmakers.cloud/construction-kit-elements.schema.json
+associationRoles:
+- id: EquipmentReading
+  inboundName: HasReadings
+  inboundMultiplicity: ZeroOrOne
+  outboundName: BelongsToEquipment
+  outboundMultiplicity: N

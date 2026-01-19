@@ -1,0 +1,69 @@
+$schema: https://schemas.meshmakers.cloud/construction-kit-elements.schema.json
+types:
+# Deep inheritance hierarchy to test interface implementation with inbound associations
+# This simulates the EnergyIQ scenario where:
+# - TechnicalSystem (abstract) -> TreeNode (abstract, from Basic) -> Asset (from Basic) -> Entity (from System)
+# - The relatesFrom association is inherited from a higher level
+# - Different interfaces have different allowedTypes for the same association
+
+# Abstract base type for equipment (simulates BasicAsset)
+- typeId: Equipment
+  derivedFromCkTypeId: ${System}/Entity
+  isAbstract: true
+  attributes:
+    - id: ${System}/Name
+      name: Name
+    - id: ${System}/Description
+      name: Description
+    - id: ${this}/SerialNumber
+      name: SerialNumber
+      isOptional: true
+  associations:
+    # Equipment can have sensor readings (outbound)
+    - id: ${this}/EquipmentReading
+      targetCkTypeId: ${this}/SensorReading
+
+# Abstract intermediate type (simulates TreeNode or TechnicalSystem)
+- typeId: Machine
+  derivedFromCkTypeId: ${this}/Equipment
+  isAbstract: true
+  attributes:
+    - id: ${this}/Manufacturer
+      name: Manufacturer
+      isOptional: true
+
+# Concrete type deriving from the abstract intermediate type
+- typeId: Robot
+  derivedFromCkTypeId: ${this}/Machine
+  attributes:
+    - id: ${this}/AxisCount
+      name: AxisCount
+      isOptional: true
+
+# Another concrete type deriving from the abstract intermediate type
+- typeId: CncMachine
+  derivedFromCkTypeId: ${this}/Machine
+  attributes:
+    - id: ${this}/SpindleCount
+      name: SpindleCount
+      isOptional: true
+
+# Sensor reading type that has an inbound association to Equipment
+# This creates the scenario where Equipment, Machine, Robot all have an inbound association
+# but with potentially different allowedTypes
+- typeId: SensorReading
+  derivedFromCkTypeId: ${System}/Entity
+  description: "A sensor reading associated with equipment"
+  attributes:
+    - id: ${System}/Name
+      name: Name
+    - id: ${this}/SensorValue
+      name: SensorValue
+      isOptional: true
+    - id: ${this}/SensorTimestamp
+      name: SensorTimestamp
+      isOptional: true
+  associations:
+    # Inbound association back to Equipment (this creates the problematic scenario)
+    - id: ${this}/EquipmentReading
+      targetCkTypeId: ${this}/Equipment

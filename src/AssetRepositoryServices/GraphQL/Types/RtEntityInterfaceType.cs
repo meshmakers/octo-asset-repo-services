@@ -107,11 +107,11 @@ internal sealed class RtEntityInterfaceType : InterfaceGraphType<RtEntityDto>
                 continue; // All CK types are abstract for that association
             }
 
-            // For inbound associations, use the TargetCkTypeId as the cache key
-            var targetCkTypeId = ckTypeAssociationGraph.First().TargetCkTypeId.ToRtCkId();
+            // For inbound associations, use the OriginCkTypeId as the cache key (queryBaseType)
+            // This must match what RtEntityDtoType uses in AssociationField for cache lookup
             // The queryBaseType is the origin of the inbound association (the types that point to this type)
             var queryBaseType = ckTypeAssociationGraph.First().OriginCkTypeId.ToRtCkId();
-            this.InterfaceAssociationField(graphTypesCache, ckTypeAssociationGraph.Key, allowedTypes, targetCkTypeId, queryBaseType);
+            this.InterfaceAssociationField(graphTypesCache, ckTypeAssociationGraph.Key, allowedTypes, queryBaseType, queryBaseType);
         }
     }
 }

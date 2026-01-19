@@ -172,7 +172,7 @@ internal static class Helpers
     /// <param name="graphTypesCache">The graph types cache</param>
     /// <param name="name">The field name (navigation property name)</param>
     /// <param name="allowedTypes">The concrete types that can be returned</param>
-    /// <param name="baseCkTypeId">The CK type ID used for cache key (origin for outbound, target for inbound)</param>
+    /// <param name="baseCkTypeId">The CK type ID used for cache key (must match queryBaseType for cache lookup to work)</param>
     /// <param name="queryBaseType">The target type of the association (used for union naming)</param>
     public static FieldType InterfaceAssociationField<TSourceType>(
         this InterfaceGraphType<TSourceType> interfaceGraphType,
@@ -180,8 +180,9 @@ internal static class Helpers
         RtCkId<CkTypeId> baseCkTypeId, RtCkId<CkTypeId> queryBaseType)
     {
         // Get or create the connection type, caching it so implementing types can reuse it
+        // Important: Use the same cache key format that AssociationField uses for lookup
         var connectionType = graphTypesCache.GetOrCreateInterfaceAssociationConnection(
-            baseCkTypeId, name, () =>
+            baseCkTypeId, name, allowedTypes, () =>
             {
                 var graphTypes = allowedTypes.Select(graphTypesCache.GetType).ToList();
 

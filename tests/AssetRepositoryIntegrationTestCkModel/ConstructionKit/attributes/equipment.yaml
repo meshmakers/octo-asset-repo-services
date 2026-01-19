@@ -1,0 +1,14 @@
+$schema: https://schemas.meshmakers.cloud/construction-kit-elements.schema.json
+attributes:
+- id: SerialNumber
+  valueType: String
+- id: Manufacturer
+  valueType: String
+- id: AxisCount
+  valueType: Int
+- id: SpindleCount
+  valueType: Int
+- id: SensorValue
+  valueType: Double
+- id: SensorTimestamp
+  valueType: DateTime

@@ -151,11 +151,13 @@ internal class GraphTypesCache : IGraphTypesCache
     public DynamicConnectionType GetOrCreateInterfaceAssociationConnection(
         RtCkId<CkTypeId> baseCkTypeId,
         string navigationPropertyName,
+        IReadOnlyList<RtCkId<CkTypeId>> allowedTypes,
         Func<DynamicConnectionType> factory)
     {
-        // Use empty string for allowedTypesKey since InterfaceAssociationField doesn't pass allowedTypes
-        // This maintains backward compatibility with interface type creation
-        return _interfaceAssociationConnections.GetOrAdd((baseCkTypeId, navigationPropertyName, string.Empty), _ => factory());
+        // Use the same allowedTypesKey format that TryGetInterfaceAssociationConnection uses
+        // This ensures implementing types can find the cached connection type
+        var allowedTypesKey = CreateAllowedTypesKey(allowedTypes);
+        return _interfaceAssociationConnections.GetOrAdd((baseCkTypeId, navigationPropertyName, allowedTypesKey), _ => factory());
     }
 
     /// <inheritdoc />

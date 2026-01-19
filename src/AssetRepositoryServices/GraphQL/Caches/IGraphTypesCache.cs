@@ -85,11 +85,13 @@ internal interface IGraphTypesCache
     /// </summary>
     /// <param name="baseCkTypeId">The CK type ID of the base type where the association is defined</param>
     /// <param name="navigationPropertyName">The name of the navigation property</param>
+    /// <param name="allowedTypes">The allowed types for this association - used as part of the cache key</param>
     /// <param name="factory">Factory function to create the connection type if not cached</param>
     /// <returns>The cached or newly created connection type</returns>
     DynamicConnectionType GetOrCreateInterfaceAssociationConnection(
         RtCkId<CkTypeId> baseCkTypeId,
         string navigationPropertyName,
+        IReadOnlyList<RtCkId<CkTypeId>> allowedTypes,
         Func<DynamicConnectionType> factory);
 
     /// <summary>
