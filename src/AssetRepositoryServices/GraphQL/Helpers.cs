@@ -209,8 +209,7 @@ internal static class Helpers
             Arguments = new QueryArguments(
                 new QueryArgument<IntGraphType> { Name = "first", Description = "Returns the first n elements from the list." },
                 new QueryArgument<StringGraphType> { Name = "after", Description = "Returns the elements in the list that come after the specified cursor." },
-                new QueryArgument<StringGraphType> { Name = Statics.CkTypeIdArg, Description = "Filter by specific CK type ID (can be a base type to include all derived types). If not specified, returns all allowed types." },
-                new QueryArgument<ListGraphType<StringGraphType>> { Name = Statics.CkTypeIdsArg, Description = "Filter by multiple CK type IDs (can include base types to include all derived types)." },
+                new QueryArgument<NonNullGraphType<ListGraphType<NonNullGraphType<StringGraphType>>>> { Name = Statics.CkTypeIdsArg, Description = "Filter by multiple CK type IDs (can include base types to include all derived types)." },
                 new QueryArgument<OctoObjectIdType> { Name = Statics.RtIdArg, Description = "Returns the entity with the given rtId." },
                 new QueryArgument<ListGraphType<OctoObjectIdType>> { Name = Statics.RtIdsArg, Description = "Returns entities with the given rtIds." },
                 new QueryArgument<SearchFilterDtoType> { Name = Statics.SearchFilterArg, Description = "Filters items based on text search" },

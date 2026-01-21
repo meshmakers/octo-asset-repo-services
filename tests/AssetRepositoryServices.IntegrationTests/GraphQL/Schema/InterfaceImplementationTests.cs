@@ -179,6 +179,7 @@ public class InterfaceImplementationTests
     {
         // Arrange - Query vehicles with their children (VehicleReadings)
         // Must use inline fragment on union type
+        // ckTypeIds is required for association fields
         var query = @"
             query {
               runtime {
@@ -186,7 +187,7 @@ public class InterfaceImplementationTests
                   items {
                     rtWellKnownName
                     __typename
-                    children {
+                    children(ckTypeIds: [""AssetRepositoryIntegrationTest/VehicleReading""]) {
                       totalCount
                       items {
                         __typename
@@ -330,6 +331,7 @@ public class InterfaceImplementationTests
     {
         // Arrange - Query Machine type with its hasReadings association
         // Must use inline fragment on union type
+        // ckTypeIds is required for association fields
         var query = @"
             query {
               runtime {
@@ -338,7 +340,7 @@ public class InterfaceImplementationTests
                     __typename
                     rtWellKnownName
                     name
-                    hasReadings {
+                    hasReadings(ckTypeIds: [""AssetRepositoryIntegrationTest/SensorReading""]) {
                       totalCount
                       items {
                         __typename
@@ -682,6 +684,7 @@ public class InterfaceImplementationTests
     public async Task GraphQL_DeepestType_HasReadingsAssociation_WorksCorrectly()
     {
         // Arrange - Query Cobot with its hasReadings association
+        // ckTypeIds is required for association fields
         var query = @"
             query {
               runtime {
@@ -690,7 +693,7 @@ public class InterfaceImplementationTests
                     __typename
                     rtWellKnownName
                     payloadCapacity
-                    hasReadings {
+                    hasReadings(ckTypeIds: [""AssetRepositoryIntegrationTest/SensorReading""]) {
                       totalCount
                       items {
                         __typename

@@ -100,8 +100,7 @@ internal sealed class RtEntityDtoType : ObjectGraphType<RtEntityDto>
             this.AssociationField(graphTypesCache, ckTypeAssociationGraph.Key,
                     allowedTypes, _ckTypeGraph.CkTypeId.ToRtCkId(), queryBaseType,
                     ckTypeAssociationGraph.First().CkRoleId.ToRtCkId(), GraphDirections.Outbound)
-                .Argument<StringGraphType>(Statics.CkTypeIdArg, "Filter by specific CK type ID (can be a base type to include all derived types). If not specified, returns all allowed types.")
-                .Argument<ListGraphType<StringGraphType>>(Statics.CkTypeIdsArg, "Filter by multiple CK type IDs (can include base types to include all derived types).")
+                .Argument<NonNullGraphType<ListGraphType<NonNullGraphType<StringGraphType>>>>(Statics.CkTypeIdsArg, "Filter by multiple CK type IDs (can include base types to include all derived types).")
                 .Argument<OctoObjectIdType>(Statics.RtIdArg, "Returns the entity with the given rtId.")
                 .Argument<ListGraphType<OctoObjectIdType>>(Statics.RtIdsArg, "Returns entities with the given rtIds.")
                 .Argument<SearchFilterDtoType>(Statics.SearchFilterArg, "Filters items based on text search")
@@ -133,8 +132,7 @@ internal sealed class RtEntityDtoType : ObjectGraphType<RtEntityDto>
             this.AssociationField(graphTypesCache, ckTypeAssociationGraph.Key,
                     allowedTypes, _ckTypeGraph.CkTypeId.ToRtCkId(), queryBaseType,
                     ckTypeAssociationGraph.First().CkRoleId.ToRtCkId(), GraphDirections.Inbound)
-                .Argument<StringGraphType>(Statics.CkTypeIdArg, "Filter by specific CK type ID (can be a base type to include all derived types). If not specified, returns all allowed types.")
-                .Argument<ListGraphType<StringGraphType>>(Statics.CkTypeIdsArg, "Filter by multiple CK type IDs (can include base types to include all derived types).")
+                .Argument<NonNullGraphType<ListGraphType<NonNullGraphType<StringGraphType>>>>(Statics.CkTypeIdsArg, "Filter by multiple CK type IDs (can include base types to include all derived types).")
                 .Argument<OctoObjectIdType>(Statics.RtIdArg, "Returns the entity with the given rtId.")
                 .Argument<ListGraphType<OctoObjectIdType>>(Statics.RtIdsArg, "Returns entities with the given rtIds.")
                 .Argument<SearchFilterDtoType>(Statics.SearchFilterArg, "Filters items based on text search")
@@ -239,16 +237,11 @@ internal sealed class RtEntityDtoType : ObjectGraphType<RtEntityDto>
             var queryBaseType = (RtCkId<CkTypeId>)ctx.FieldDefinition.Metadata[Statics.QueryBaseType]!;
 
             // Get optional ckTypeId and ckTypeIds filter arguments
-            ctx.TryGetArgument(Statics.CkTypeIdArg, out string? ckTypeIdFilter);
             ctx.TryGetArgument(Statics.CkTypeIdsArg, null, out IEnumerable<string>? ckTypeIdsFilter);
             var ckTypeIdsList = ckTypeIdsFilter?.ToList();
 
             // Combine single and list filters
             var requestedTypeIds = new List<string>();
-            if (!string.IsNullOrEmpty(ckTypeIdFilter))
-            {
-                requestedTypeIds.Add(ckTypeIdFilter);
-            }
             if (ckTypeIdsList != null)
             {
                 requestedTypeIds.AddRange(ckTypeIdsList);

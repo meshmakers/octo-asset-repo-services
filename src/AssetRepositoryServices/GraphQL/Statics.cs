@@ -44,7 +44,6 @@ internal static class Statics
     internal const string ItemsQueryArg = "items";
 
     internal const string AggregationsArg = "aggregations";
-    internal const string CkTypeIdArg = "ckTypeId";
     internal const string CkTypeIdsArg = "ckTypeIds";
 
     // Metadata keys for association fields
