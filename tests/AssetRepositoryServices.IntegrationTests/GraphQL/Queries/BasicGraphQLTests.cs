@@ -191,7 +191,7 @@ public class BasicGraphQlTests
                   items {
                     rtId
                     rtWellKnownName
-                    owns(first: 10) {
+                    owns(first: 10, ckTypeIds: [""AssetRepositoryIntegrationTest/OperatingFacility""]) {
                       edges {
                         node {
                           ... on AssetRepositoryIntegrationTestOperatingFacility {

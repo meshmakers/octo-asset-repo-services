@@ -917,7 +917,7 @@ public class RtEntityGenericMutationTests : IClassFixture<GraphQlTestFixture>
                     assetRepositoryIntegrationTestCustomer(first: 100, after: null) {{
                         items {{
                             rtId
-                            owns(first: 10) {{
+                            owns(first: 10, ckTypeIds: [""AssetRepositoryIntegrationTest/OperatingFacility""]) {{
                                 items {{
                                     ... on AssetRepositoryIntegrationTestOperatingFacility {{
                                         rtId
