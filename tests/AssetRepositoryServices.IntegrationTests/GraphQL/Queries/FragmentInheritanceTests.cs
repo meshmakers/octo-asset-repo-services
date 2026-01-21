@@ -41,7 +41,7 @@ public class FragmentInheritanceTests
                   items {
                     rtId
                     rtWellKnownName
-                    ownsVehicles(first: 10) {
+                    ownsVehicles(first: 10, ckTypeIds: [""AssetRepositoryIntegrationTest/Vehicle""]) {
                       totalCount
                       edges {
                         node {
@@ -133,7 +133,7 @@ public class FragmentInheritanceTests
                   items {
                     rtId
                     rtWellKnownName
-                    ownsVehicles(first: 10) {
+                    ownsVehicles(first: 10, ckTypeIds: [""AssetRepositoryIntegrationTest/Vehicle""]) {
                       totalCount
                       items {
                         __typename
@@ -198,11 +198,11 @@ public class FragmentInheritanceTests
 
         var name = maxVehicle["name"];
         name.Should().NotBeNull("Vehicle fragment should provide the name field");
-        name?.Value<string>().Should().Be("BMW 320i");
+        name.Value<string>().Should().Be("BMW 320i");
 
         var licensePlate = maxVehicle["licensePlate"];
         licensePlate.Should().NotBeNull("Vehicle fragment should provide the licensePlate field");
-        licensePlate?.Value<string>().Should().Be("S-ABC123");
+        licensePlate.Value<string>().Should().Be("S-ABC123");
     }
 
     /// <summary>
@@ -228,7 +228,7 @@ public class FragmentInheritanceTests
                   items {
                     rtId
                     rtWellKnownName
-                    ownsVehicles(first: 10) {
+                    ownsVehicles(first: 10, ckTypeIds: [""AssetRepositoryIntegrationTest/Vehicle""]) {
                       totalCount
                       items {
                         __typename
@@ -287,7 +287,7 @@ public class FragmentInheritanceTests
 
         var name = vehicle["name"];
         name.Should().NotBeNull("Specific type fragment should provide the name field");
-        name?.Value<string>().Should().Be("BMW 320i");
+        name.Value<string>().Should().Be("BMW 320i");
     }
 
     /// <summary>

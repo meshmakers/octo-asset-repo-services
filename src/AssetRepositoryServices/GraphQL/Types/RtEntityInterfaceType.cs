@@ -43,12 +43,9 @@ internal sealed class RtEntityInterfaceType : InterfaceGraphType<RtEntityDto>
         Field(x => x.RtVersion, true);
 
         // ResolveType determines the concrete type for a given object
-        ResolveType = obj =>
-        {
-            // The actual resolution happens in the schema's type resolution
-            // This is a fallback that returns null to let GraphQL.NET use IsTypeOf
-            return null;
-        };
+        // The actual resolution happens in the schema's type resolution
+        // This is a fallback that returns null to let GraphQL.NET use IsTypeOf
+        ResolveType = _ => null;
     }
 
     /// <summary>

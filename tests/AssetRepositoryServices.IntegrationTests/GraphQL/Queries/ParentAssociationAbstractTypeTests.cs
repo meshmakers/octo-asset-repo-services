@@ -13,7 +13,7 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Graph
 /// - MeteringPoint (abstract) -> Consumer, Producer (derived concrete types)
 /// - MeteringPoint -> ParentChild -> OperatingFacility
 ///
-/// When querying parent(ckTypeId: "MeteringPoint") on EnergyQuantity,
+/// When querying parent(ckTypeIds: ["MeteringPoint"]) on EnergyQuantity,
 /// it should return Consumer/Producer, NOT OperatingFacility.
 ///
 /// This is reproduced here with:
@@ -37,11 +37,11 @@ public class ParentAssociationAbstractTypeTests
     /// Test that querying parent with abstract type filter returns the correct derived types.
     ///
     /// VehicleReading has a ParentChild association to Vehicle (abstract).
-    /// When we query parent(ckTypeId: "Vehicle") on VehicleReading,
+    /// When we query parent(ckTypeIds: ["Vehicle"]) on VehicleReading,
     /// we should get Car or Truck (derived from Vehicle), NOT OperatingFacility.
     ///
     /// This validates the fix for the EnergyCommunity issue where:
-    /// - EnergyQuantity -> parent(ckTypeId: "MeteringPoint")
+    /// - EnergyQuantity -> parent(ckTypeIds: ["MeteringPoint"])
     /// - Should return Consumer/Producer (derived from MeteringPoint)
     /// - Previously incorrectly resolved to OperatingFacility (MeteringPoint's parent)
     /// </summary>
@@ -58,7 +58,7 @@ public class ParentAssociationAbstractTypeTests
                   items {
                     rtId
                     rtWellKnownName
-                    parent(ckTypeId: ""AssetRepositoryIntegrationTest/Vehicle"") {
+                    parent(ckTypeIds: [""AssetRepositoryIntegrationTest/Vehicle""]) {
                       totalCount
                       items {
                         __typename
@@ -99,16 +99,16 @@ public class ParentAssociationAbstractTypeTests
 
         // Verify each reading has the correct parent type (Car or Truck, NOT OperatingFacility)
         var allParentTypes = new HashSet<string>();
-        foreach (var reading in readings!)
+        foreach (var reading in readings)
         {
             var parents = reading.SelectToken("parent.items") as JArray;
             parents.Should().NotBeNull($"VehicleReading '{reading["rtWellKnownName"]}' should have parent items");
             parents.Should().HaveCount(1, $"VehicleReading '{reading["rtWellKnownName"]}' should have exactly 1 parent");
 
-            var parent = parents![0];
+            var parent = parents[0];
             var typeName = parent["__typename"]?.Value<string>();
             typeName.Should().NotBeNull();
-            allParentTypes.Add(typeName!);
+            allParentTypes.Add(typeName);
 
             // Parent should be Car or Truck, NOT OperatingFacility
             typeName.Should().BeOneOf(
@@ -140,7 +140,7 @@ public class ParentAssociationAbstractTypeTests
                 assetRepositoryIntegrationTestVehicleReading {
                   items {
                     rtWellKnownName
-                    parent {
+                    parent(ckTypeIds: [""AssetRepositoryIntegrationTest/Vehicle""]) {
                       totalCount
                       items {
                         __typename
@@ -206,7 +206,7 @@ public class ParentAssociationAbstractTypeTests
                 assetRepositoryIntegrationTestVehicleReading {
                   items {
                     rtWellKnownName
-                    parent(ckTypeId: ""AssetRepositoryIntegrationTest/Car"") {
+                    parent(ckTypeIds: [""AssetRepositoryIntegrationTest/Car""]) {
                       totalCount
                       items {
                         __typename
@@ -240,7 +240,7 @@ public class ParentAssociationAbstractTypeTests
         int readingsWithCarParent = 0;
         int readingsWithNoParent = 0;
 
-        foreach (var reading in readings!)
+        foreach (var reading in readings)
         {
             var parentCount = reading.SelectToken("parent.totalCount")?.Value<int>() ?? 0;
             var parents = reading.SelectToken("parent.items") as JArray;
@@ -285,7 +285,7 @@ public class ParentAssociationAbstractTypeTests
                 assetRepositoryIntegrationTestVehicleReading {
                   items {
                     rtWellKnownName
-                    parent(ckTypeId: ""AssetRepositoryIntegrationTest/OperatingFacility"") {
+                    parent(ckTypeIds: [""AssetRepositoryIntegrationTest/OperatingFacility""]) {
                       totalCount
                       items {
                         __typename

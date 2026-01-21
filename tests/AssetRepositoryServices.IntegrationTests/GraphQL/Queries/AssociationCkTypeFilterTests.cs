@@ -45,7 +45,7 @@ public class AssociationCkTypeFilterTests
                   items {
                     rtId
                     rtWellKnownName
-                    ownsVehicles(first: 10, ckTypeId: ""AssetRepositoryIntegrationTest/Car"") {
+                    ownsVehicles(first: 10, ckTypeIds: [""AssetRepositoryIntegrationTest/Car""]) {
                       totalCount
                       items {
                         __typename
@@ -78,12 +78,12 @@ public class AssociationCkTypeFilterTests
         customers.Should().NotBeNull();
         customers.Should().HaveCount(1);
 
-        var customer = customers![0];
+        var customer = customers[0];
         var vehicles = customer.SelectToken("ownsVehicles.items") as JArray;
         vehicles.Should().NotBeNull();
         vehicles.Should().HaveCount(1, "Max Mustermann owns one Car");
 
-        var vehicle = vehicles![0];
+        var vehicle = vehicles[0];
         vehicle["__typename"]?.Value<string>().Should().Be("AssetRepositoryIntegrationTestCar");
         vehicle["numberOfDoors"]?.Value<int>().Should().Be(4);
     }
@@ -103,7 +103,7 @@ public class AssociationCkTypeFilterTests
                   items {
                     rtId
                     rtWellKnownName
-                    ownsVehicles(first: 10, ckTypeId: ""AssetRepositoryIntegrationTest/Vehicle"") {
+                    ownsVehicles(first: 10, ckTypeIds: [""AssetRepositoryIntegrationTest/Vehicle""]) {
                       totalCount
                       items {
                         __typename
@@ -140,21 +140,20 @@ public class AssociationCkTypeFilterTests
         var allVehicles = new List<JToken>();
         var typeNames = new HashSet<string>();
 
-        foreach (var customer in customers!)
+        foreach (var customer in customers)
         {
-            var vehicles = customer.SelectToken("ownsVehicles.items") as JArray;
-            if (vehicles != null)
+          if (customer.SelectToken("ownsVehicles.items") is JArray vehicles)
+          {
+            foreach (var vehicle in vehicles)
             {
-                foreach (var vehicle in vehicles)
-                {
-                    allVehicles.Add(vehicle);
-                    var typeName = vehicle["__typename"]?.Value<string>();
-                    if (typeName != null)
-                    {
-                        typeNames.Add(typeName);
-                    }
-                }
+              allVehicles.Add(vehicle);
+              var typeName = vehicle["__typename"]?.Value<string>();
+              if (typeName != null)
+              {
+                typeNames.Add(typeName);
+              }
             }
+          }
         }
 
         allVehicles.Should().HaveCount(4, "There should be 4 vehicles total (2 cars + 2 trucks)");
@@ -217,12 +216,12 @@ public class AssociationCkTypeFilterTests
         customers.Should().NotBeNull();
         customers.Should().HaveCount(1);
 
-        var customer = customers![0];
+        var customer = customers[0];
         var vehicles = customer.SelectToken("ownsVehicles.items") as JArray;
         vehicles.Should().NotBeNull();
         vehicles.Should().HaveCount(1, "Tech GmbH owns one Truck");
 
-        var vehicle = vehicles![0];
+        var vehicle = vehicles[0];
         vehicle["__typename"]?.Value<string>().Should().Be("AssetRepositoryIntegrationTestTruck");
         vehicle["loadCapacity"]?.Value<double>().Should().Be(3500.0);
     }
@@ -283,21 +282,20 @@ public class AssociationCkTypeFilterTests
         var allVehicles = new List<JToken>();
         var typeNames = new HashSet<string>();
 
-        foreach (var customer in customers!)
+        foreach (var customer in customers)
         {
-            var vehicles = customer.SelectToken("ownsVehicles.items") as JArray;
-            if (vehicles != null)
+          if (customer.SelectToken("ownsVehicles.items") is JArray vehicles)
+          {
+            foreach (var vehicle in vehicles)
             {
-                foreach (var vehicle in vehicles)
-                {
-                    allVehicles.Add(vehicle);
-                    var typeName = vehicle["__typename"]?.Value<string>();
-                    if (typeName != null)
-                    {
-                        typeNames.Add(typeName);
-                    }
-                }
+              allVehicles.Add(vehicle);
+              var typeName = vehicle["__typename"]?.Value<string>();
+              if (typeName != null)
+              {
+                typeNames.Add(typeName);
+              }
             }
+          }
         }
 
         allVehicles.Should().HaveCount(4, "There should be 4 vehicles total (2 cars + 2 trucks)");
@@ -353,13 +351,12 @@ public class AssociationCkTypeFilterTests
 
         // Count only Car vehicles
         var allVehicles = new List<JToken>();
-        foreach (var customer in customers!)
+        foreach (var customer in customers)
         {
-            var vehicles = customer.SelectToken("ownsVehicles.items") as JArray;
-            if (vehicles != null)
-            {
-                allVehicles.AddRange(vehicles);
-            }
+          if (customer.SelectToken("ownsVehicles.items") is JArray vehicles)
+          {
+            allVehicles.AddRange(vehicles);
+          }
         }
 
         allVehicles.Should().HaveCount(2, "There should be 2 cars total");
@@ -392,7 +389,7 @@ public class AssociationCkTypeFilterTests
                 ) {
                   items {
                     rtId
-                    ownsVehicles(first: 10, ckTypeId: ""NonExistent/Type"") {
+                    ownsVehicles(first: 10, ckTypeIds: [""NonExistent/Type""]) {
                       totalCount
                       items {
                         __typename
@@ -445,7 +442,7 @@ public class AssociationCkTypeFilterTests
                 ) {
                   items {
                     rtId
-                    ownsVehicles(first: 10, ckTypeId: ""AssetRepositoryIntegrationTest/Customer"") {
+                    ownsVehicles(first: 10, ckTypeIds: [""AssetRepositoryIntegrationTest/Customer""]) {
                       totalCount
                       items {
                         __typename
@@ -495,7 +492,7 @@ public class AssociationCkTypeFilterTests
                 ) {
                   items {
                     rtId
-                    ownsVehicles(first: 10, ckTypeId: ""AssetRepositoryIntegrationTest/OperatingFacility"") {
+                    ownsVehicles(first: 10, ckTypeIds: [""AssetRepositoryIntegrationTest/OperatingFacility""]) {
                       totalCount
                       items {
                         __typename
