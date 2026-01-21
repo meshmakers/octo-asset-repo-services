@@ -7,10 +7,11 @@ using GraphQL.Resolvers;
 using GraphQL.Types;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Caches;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Inputs;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Scalars;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Utils;
 using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb;
-using Meshmakers.Octo.Runtime.Contracts.RepositoryEntities;
 using ObjectExtensions = GraphQL.ObjectExtensions;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL;
@@ -199,16 +200,23 @@ internal static class Helpers
             });
 
         // Add field to interface without a resolver (implementing types provide resolution)
-        // Note: Only add 'first' and 'after' arguments, as these are the default arguments
-        // that ConnectionBuilder creates. 'last' and 'before' require .Bidirectional() which
-        // our implementing types don't use.
+        // Include the same arguments as concrete types so that queries on interface types
+        // can use all filter capabilities (searchFilter, fieldFilter, sortOrder, etc.)
         var fieldType = new FieldType
         {
             Name = name,
             ResolvedType = connectionType,
             Arguments = new QueryArguments(
                 new QueryArgument<IntGraphType> { Name = "first", Description = "Returns the first n elements from the list." },
-                new QueryArgument<StringGraphType> { Name = "after", Description = "Returns the elements in the list that come after the specified cursor." }
+                new QueryArgument<StringGraphType> { Name = "after", Description = "Returns the elements in the list that come after the specified cursor." },
+                new QueryArgument<StringGraphType> { Name = Statics.CkTypeIdArg, Description = "Filter by specific CK type ID (can be a base type to include all derived types). If not specified, returns all allowed types." },
+                new QueryArgument<ListGraphType<StringGraphType>> { Name = Statics.CkTypeIdsArg, Description = "Filter by multiple CK type IDs (can include base types to include all derived types)." },
+                new QueryArgument<OctoObjectIdType> { Name = Statics.RtIdArg, Description = "Returns the entity with the given rtId." },
+                new QueryArgument<ListGraphType<OctoObjectIdType>> { Name = Statics.RtIdsArg, Description = "Returns entities with the given rtIds." },
+                new QueryArgument<SearchFilterDtoType> { Name = Statics.SearchFilterArg, Description = "Filters items based on text search" },
+                new QueryArgument<ListGraphType<SortDtoType>> { Name = Statics.SortOrderArg, Description = "Sort order for items" },
+                new QueryArgument<ListGraphType<FieldFilterDtoType>> { Name = Statics.FieldFilterArg, Description = "Filters items based on field compare" },
+                new QueryArgument<ResultAggregationInputDtoType> { Name = Statics.AggregationsArg, Description = "Aggregations description" }
             )
         };
 
