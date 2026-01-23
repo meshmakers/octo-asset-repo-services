@@ -147,9 +147,14 @@ internal sealed class RuntimeModelQuery : ObjectGraphType
                 (ckTypeQueryColumn, column) => Tuple.Create(ckTypeQueryColumn, MapAggregationType(column.AggregationType)))
             .ToList();
 
+        // Resolve groupBy column paths to CkTypeQueryColumn objects
+        var groupByTypeQueryColumns = typeQueryColumnPaths
+            .Where(c => groupingColumns.Contains(c.Path))
+            .ToList();
+
         _logger.LogDebug("GraphQL query handling returning data");
         return ConnectionUtils.ToOctoConnection(
-            [RtQueryDtoType.CreateRtQueryDto(rtGroupingAggregationRtQuery, selectedTypeQueryColumns, groupingColumns)], arg,
+            [RtQueryDtoType.CreateRtQueryDto(rtGroupingAggregationRtQuery, selectedTypeQueryColumns, groupByTypeQueryColumns)], arg,
             0, 1);
     }
 

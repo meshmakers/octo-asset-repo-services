@@ -153,12 +153,12 @@ internal sealed class RtQueryDtoType : ObjectGraphType<RtQueryDto>
             }
             else if (queryUserContext.RtPersistentQuery is RtGroupingAggregationRtQuery)
             {
-                if (queryUserContext.GroupByColumnPaths == null || queryUserContext.GroupByColumnPaths.Count == 0)
+                if (queryUserContext.GroupByColumns == null || queryUserContext.GroupByColumns.Count == 0)
                 {
                     throw AssetRepositoryException.GroupByColumnPathsRequired();
                 }
 
-                var aggregateFieldGroupBy = queryOptions.AggregateFieldGroupBy(queryUserContext.GroupByColumnPaths.ToArray());
+                var aggregateFieldGroupBy = queryOptions.AggregateFieldGroupBy(queryUserContext.GroupByColumns.Select(c => c.Path).ToArray());
 
                 // Add aggregation definitions to query options
                 foreach (var tuple in queryUserContext.CkTypeQueryColumns)
@@ -346,7 +346,7 @@ internal sealed class RtQueryDtoType : ObjectGraphType<RtQueryDto>
 
     public static RtQueryDto CreateRtQueryDto(RtGroupingAggregationRtQuery rtGroupingAggregationRtQuery,
         IReadOnlyList<Tuple<CkTypeQueryColumn, AggregationTypesDto>> ckTypeQueryColumns,
-        IReadOnlyList<string> groupByColumnPaths)
+        IReadOnlyList<CkTypeQueryColumn> groupByColumns)
     {
         var queryOptions = RtEntityQueryOptions.Create();
         if (rtGroupingAggregationRtQuery.FieldFilter != null)
@@ -361,7 +361,7 @@ internal sealed class RtQueryDtoType : ObjectGraphType<RtQueryDto>
 
         // Build columns list: groupBy columns first, then aggregation columns
         var columns = new List<RtQueryColumnDto>();
-        columns.AddRange(groupByColumnPaths.Select(RtQueryColumnType.CreateGroupByColumnDto));
+        columns.AddRange(groupByColumns.Select(RtQueryColumnType.CreateGroupByColumnDto));
         columns.AddRange(ckTypeQueryColumns.Select(c => RtQueryColumnType.CreateRtQueryColumnDto(c.Item1, c.Item2)));
 
         var rtQueryDto = new RtQueryDto
@@ -369,7 +369,7 @@ internal sealed class RtQueryDtoType : ObjectGraphType<RtQueryDto>
             QueryRtId = rtGroupingAggregationRtQuery.RtId,
             AssociatedCkTypeId = rtGroupingAggregationRtQuery.QueryCkTypeId,
             Columns = columns,
-            UserContext = new QueryUserContext(rtGroupingAggregationRtQuery, queryOptions, ckTypeQueryColumns, groupByColumnPaths)
+            UserContext = new QueryUserContext(rtGroupingAggregationRtQuery, queryOptions, ckTypeQueryColumns, groupByColumns)
         };
 
         return rtQueryDto;
@@ -379,7 +379,7 @@ internal sealed class RtQueryDtoType : ObjectGraphType<RtQueryDto>
         RtPersistentQuery rtPersistentQuery,
         RtEntityQueryOptions queryOptions,
         IReadOnlyList<Tuple<CkTypeQueryColumn, AggregationTypesDto>> ckTypeQueryColumns,
-        IReadOnlyList<string>? groupByColumnPaths = null)
+        IReadOnlyList<CkTypeQueryColumn>? groupByColumns = null)
     {
         public RtPersistentQuery RtPersistentQuery { get; } = rtPersistentQuery;
         public RtEntityQueryOptions QueryOptions { get; } = queryOptions;
@@ -387,6 +387,6 @@ internal sealed class RtQueryDtoType : ObjectGraphType<RtQueryDto>
         public IReadOnlyList<Tuple<CkTypeQueryColumn, AggregationTypesDto>> CkTypeQueryColumns { get; } =
             ckTypeQueryColumns;
 
-        public IReadOnlyList<string>? GroupByColumnPaths { get; } = groupByColumnPaths;
+        public IReadOnlyList<CkTypeQueryColumn>? GroupByColumns { get; } = groupByColumns;
     }
 }

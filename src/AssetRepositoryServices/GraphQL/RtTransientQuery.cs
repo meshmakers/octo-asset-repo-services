@@ -173,11 +173,16 @@ public sealed class RtTransientQuery: ObjectGraphType
                 (ckTypeQueryColumn, column) => Tuple.Create(ckTypeQueryColumn, MapAggregationType(column.AggregationType)))
             .ToList();
 
+        // Resolve groupBy column paths to CkTypeQueryColumn objects
+        var groupByTypeQueryColumns = typeQueryColumnPaths
+            .Where(c => groupByColumnPathList.Contains(c.Path))
+            .ToList();
+
         var queryOptions = arg.GetQueryOptions();
 
         _logger.LogDebug("GraphQL query handling returning data");
         return ConnectionUtils.ToOctoConnection(
-            [RtTransientQueryDtoType.CreateTransientRtQueryDto(RtTransientQueryDtoType.QueryType.GroupingAggregation, queryCkTypeId, queryOptions, selectedTypeQueryColumns, groupByColumnPathList)], arg,
+            [RtTransientQueryDtoType.CreateTransientRtQueryDto(RtTransientQueryDtoType.QueryType.GroupingAggregation, queryCkTypeId, queryOptions, selectedTypeQueryColumns, groupByTypeQueryColumns)], arg,
             0, 1);
     }
 

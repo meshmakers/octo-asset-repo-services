@@ -141,12 +141,12 @@ internal sealed class RtTransientQueryDtoType : ObjectGraphType<RtTransientQuery
             {
                 offset = null;
                 first = null;
-                if (queryUserContext.GroupByColumnPaths == null)
+                if (queryUserContext.GroupByColumns == null)
                 {
                     throw AssetRepositoryException.GroupByColumnPathsRequired();
                 }
 
-                var aggregateFieldGroupBy = queryUserContext.QueryOptions.AggregateFieldGroupBy(queryUserContext.GroupByColumnPaths.ToArray());
+                var aggregateFieldGroupBy = queryUserContext.QueryOptions.AggregateFieldGroupBy(queryUserContext.GroupByColumns.Select(c => c.Path).ToArray());
 
                 // Add aggregation definitions to query options
                 foreach (var tuple in queryUserContext.CkTypeQueryColumns)
@@ -222,14 +222,14 @@ internal sealed class RtTransientQueryDtoType : ObjectGraphType<RtTransientQuery
 
     public static RtTransientQueryDto CreateTransientRtQueryDto(QueryType queryType, RtCkId<CkTypeId> ckTypeId,
         RtEntityQueryOptions queryOptions, IReadOnlyList<Tuple<CkTypeQueryColumn, AggregationTypesDto>> ckTypeQueryColumns,
-        IReadOnlyList<string>? groupByColumnPaths = null)
+        IReadOnlyList<CkTypeQueryColumn>? groupByColumns = null)
     {
         var columns = new List<RtQueryColumnDto>();
 
         // For grouping aggregation, add the groupBy columns first
-        if (queryType == QueryType.GroupingAggregation && groupByColumnPaths != null)
+        if (queryType == QueryType.GroupingAggregation && groupByColumns != null)
         {
-            columns.AddRange(groupByColumnPaths.Select(RtQueryColumnType.CreateGroupByColumnDto));
+            columns.AddRange(groupByColumns.Select(RtQueryColumnType.CreateGroupByColumnDto));
         }
 
         // Then add the aggregation columns
@@ -239,7 +239,7 @@ internal sealed class RtTransientQueryDtoType : ObjectGraphType<RtTransientQuery
         {
             AssociatedCkTypeId = ckTypeId,
             Columns = columns,
-            UserContext = new QueryUserContext(queryType, queryOptions, ckTypeQueryColumns, groupByColumnPaths)
+            UserContext = new QueryUserContext(queryType, queryOptions, ckTypeQueryColumns, groupByColumns)
         };
 
         return rtTransientQueryDto;
@@ -299,12 +299,12 @@ internal sealed class RtTransientQueryDtoType : ObjectGraphType<RtTransientQuery
         QueryType queryType,
         RtEntityQueryOptions queryOptions,
         IReadOnlyList<Tuple<CkTypeQueryColumn, AggregationTypesDto>> ckTypeQueryColumns,
-        IReadOnlyList<string>? groupByColumnPaths = null)
+        IReadOnlyList<CkTypeQueryColumn>? groupByColumns = null)
     {
         public QueryType QueryType { get; } = queryType;
         public RtEntityQueryOptions QueryOptions { get; } = queryOptions;
         public IReadOnlyList<Tuple<CkTypeQueryColumn, AggregationTypesDto>> CkTypeQueryColumns { get; } = ckTypeQueryColumns;
-        public IReadOnlyList<string>? GroupByColumnPaths { get; } = groupByColumnPaths;
+        public IReadOnlyList<CkTypeQueryColumn>? GroupByColumns { get; } = groupByColumns;
     }
 
     internal enum QueryType

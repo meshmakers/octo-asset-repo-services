@@ -30,24 +30,40 @@ internal sealed class RtQueryColumnType : ObjectGraphType<RtQueryColumnDto>
         var rtQueryColumnDto = new RtQueryColumnDto
         {
             AttributePath = ckTypeQueryColumn.Path,
-            AttributeValueType = ckTypeQueryColumn.ValueType,
+            AttributeValueType = GetAggregationResultType(ckTypeQueryColumn.ValueType, aggregationType),
             AggregationType = aggregationType,
             UserContext = ckTypeQueryColumn
         };
         return rtQueryColumnDto;
     }
 
+    private static AttributeValueTypesDto GetAggregationResultType(
+        AttributeValueTypesDto sourceType,
+        AggregationTypesDto aggregationType)
+    {
+        return aggregationType switch
+        {
+            AggregationTypesDto.None => sourceType,
+            AggregationTypesDto.Count => AttributeValueTypesDto.Integer,
+            AggregationTypesDto.Sum => sourceType,
+            AggregationTypesDto.Average => AttributeValueTypesDto.Double,
+            AggregationTypesDto.Minimum => sourceType,
+            AggregationTypesDto.Maximum => sourceType,
+            _ => sourceType
+        };
+    }
+
     /// <summary>
     ///     Creates a simple column DTO for groupBy columns (no aggregation)
     /// </summary>
-    public static RtQueryColumnDto CreateGroupByColumnDto(string attributePath)
+    public static RtQueryColumnDto CreateGroupByColumnDto(CkTypeQueryColumn ckTypeQueryColumn)
     {
         var rtQueryColumnDto = new RtQueryColumnDto
         {
-            AttributePath = attributePath,
-            // Use String as a default since the actual type is determined by the groupBy key values
-            AttributeValueType = AttributeValueTypesDto.String,
-            AggregationType = AggregationTypesDto.None
+            AttributePath = ckTypeQueryColumn.Path,
+            AttributeValueType = ckTypeQueryColumn.ValueType,
+            AggregationType = AggregationTypesDto.None,
+            UserContext = ckTypeQueryColumn
         };
         return rtQueryColumnDto;
     }
