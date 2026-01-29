@@ -201,6 +201,37 @@ internal class OctoBuilder<TSourceType>(
                 }
 
                 break;
+            case AttributeValueTypesDto.Binary:
+                // Handle Binary data - convert from various formats to byte[]
+                if (r == null)
+                {
+                    return null;
+                }
+
+                if (r is byte[] bytes)
+                {
+                    return bytes;
+                }
+
+                // Handle List<object> from legacy storage or MongoDB deserialization issues
+                if (r is IEnumerable<object> objectList)
+                {
+                    return objectList.Select(item => Convert.ToByte(item)).ToArray();
+                }
+
+                // Handle generic IEnumerable
+                if (r is IEnumerable enumerable and not string)
+                {
+                    var byteList = new List<byte>();
+                    foreach (var item in enumerable)
+                    {
+                        byteList.Add(Convert.ToByte(item));
+                    }
+                    return byteList.ToArray();
+                }
+
+                throw new InvalidOperationException(
+                    $"Unable to convert Binary attribute value of type '{r.GetType().FullName}' to byte[].");
         }
 
         return r;

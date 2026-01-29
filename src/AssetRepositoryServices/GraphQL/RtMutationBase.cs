@@ -180,6 +180,12 @@ internal abstract class RtMutationBase : ObjectGraphType
                     }
 
                     return true;
+                case AttributeValueTypesDto.Binary:
+                    // Convert incoming data to byte[] for proper storage
+                    var binaryData = ConvertToBinaryData(value);
+                    rtTypeWithAttributes.SetAttributeValue(ckTypeAttributeGraph.AttributeName,
+                        ckTypeAttributeGraph.ValueType, binaryData);
+                    return true;
                 default:
                     rtTypeWithAttributes.SetAttributeValue(ckTypeAttributeGraph.AttributeName,
                         ckTypeAttributeGraph.ValueType, value);
@@ -225,6 +231,45 @@ internal abstract class RtMutationBase : ObjectGraphType
         throw new InvalidCastException(
             $"Unable to convert value of type '{value.GetType().FullName}' to RtRecordDto. " +
             $"Expected either RtRecordDto or Dictionary<string, object>.");
+    }
+
+    /// <summary>
+    /// Converts incoming GraphQL value to byte[] for Binary attributes.
+    /// Handles byte[], List&lt;object&gt; (from JSON arrays), and other enumerable formats.
+    /// </summary>
+    private static byte[]? ConvertToBinaryData(object? value)
+    {
+        if (value == null)
+        {
+            return null;
+        }
+
+        // Already a byte array
+        if (value is byte[] byteArray)
+        {
+            return byteArray;
+        }
+
+        // Handle List<object> or other IEnumerable from GraphQL JSON input
+        if (value is IEnumerable<object> objectList)
+        {
+            return objectList.Select(item => Convert.ToByte(item)).ToArray();
+        }
+
+        // Handle generic IEnumerable
+        if (value is System.Collections.IEnumerable enumerable)
+        {
+            var bytes = new List<byte>();
+            foreach (var item in enumerable)
+            {
+                bytes.Add(Convert.ToByte(item));
+            }
+            return bytes.ToArray();
+        }
+
+        throw new InvalidCastException(
+            $"Unable to convert value of type '{value.GetType().FullName}' to byte[]. " +
+            $"Expected byte[], List<object>, or IEnumerable.");
     }
 
     private async Task<RtRecord> HandleRecordAsync(ICkCacheService ckCacheService, string tenantId,
