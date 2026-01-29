@@ -130,7 +130,7 @@ internal abstract class RtMutationBase : ObjectGraphType
                         return true;
                     }
 
-                    var rtRecordDto = (RtRecordDto)value;
+                    var rtRecordDto = ConvertToRtRecordDto(value, ckTypeAttributeGraph.ValueCkRecordId.ToRtCkId());
                     var rtRecord = await HandleRecordAsync(ckCacheService, tenantId,
                         ckTypeAttributeGraph.ValueCkRecordId,
                         rtRecordDto);
@@ -153,12 +153,13 @@ internal abstract class RtMutationBase : ObjectGraphType
 
                     var rtRecordList = (IEnumerable<object>)value;
                     AttributeRecordValueList<RtRecord> rtRecords = new();
-                    foreach (RtRecordDto rtRecordDtoItem in rtRecordList)
+                    foreach (var rtRecordItem in rtRecordList)
                     {
-                        var rtRecordItem = await HandleRecordAsync(ckCacheService, tenantId,
+                        var rtRecordDtoItem = ConvertToRtRecordDto(rtRecordItem, ckTypeAttributeGraph.ValueCkRecordId.ToRtCkId());
+                        var rtRecordItemResult = await HandleRecordAsync(ckCacheService, tenantId,
                             ckTypeAttributeGraph.ValueCkRecordId,
                             rtRecordDtoItem);
-                        rtRecords.Add(rtRecordItem);
+                        rtRecords.Add(rtRecordItemResult);
                     }
 
                     rtTypeWithAttributes.SetAttributeValue(ckTypeAttributeGraph.AttributeName,
@@ -187,6 +188,43 @@ internal abstract class RtMutationBase : ObjectGraphType
         }
 
         return false;
+    }
+
+    /// <summary>
+    /// Converts a value to RtRecordDto. Handles both RtRecordDto instances and Dictionary&lt;string, object&gt; from GraphQL input.
+    /// </summary>
+    private static RtRecordDto ConvertToRtRecordDto(object value, RtCkId<CkRecordId> ckRecordId)
+    {
+        // If already an RtRecordDto, return it directly
+        if (value is RtRecordDto rtRecordDto)
+        {
+            return rtRecordDto;
+        }
+
+        // Handle Dictionary from generic GraphQL input (when using RtEntityAttributeDtoInputType with SimpleScalarType)
+        if (value is IDictionary<string, object> dictionary)
+        {
+            var dto = new RtRecordDto
+            {
+                CkRecordId = ckRecordId,
+                Attributes = new List<RtEntityAttributeDto>()
+            };
+
+            foreach (var (key, val) in dictionary)
+            {
+                dto.Attributes.Add(new RtEntityAttributeDto
+                {
+                    AttributeName = key,
+                    Value = val
+                });
+            }
+
+            return dto;
+        }
+
+        throw new InvalidCastException(
+            $"Unable to convert value of type '{value.GetType().FullName}' to RtRecordDto. " +
+            $"Expected either RtRecordDto or Dictionary<string, object>.");
     }
 
     private async Task<RtRecord> HandleRecordAsync(ICkCacheService ckCacheService, string tenantId,

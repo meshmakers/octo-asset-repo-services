@@ -1,0 +1,21 @@
+$schema: https://schemas.meshmakers.cloud/construction-kit-elements.schema.json
+records:
+- recordId: Specification
+  attributes:
+    - id: ${this}/SpecificationName
+      name: Name
+    - id: ${this}/SpecificationValue
+      name: Value
+    - id: ${this}/SpecificationUnit
+      name: Unit
+      isOptional: true
+- recordId: Contact
+  attributes:
+    - id: ${this}/ContactName
+      name: Name
+    - id: ${this}/ContactEmail
+      name: Email
+      isOptional: true
+    - id: ${this}/ContactPhone
+      name: Phone
+      isOptional: true

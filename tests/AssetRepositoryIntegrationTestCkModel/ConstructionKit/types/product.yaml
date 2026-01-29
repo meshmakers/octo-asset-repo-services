@@ -1,0 +1,37 @@
+$schema: https://schemas.meshmakers.cloud/construction-kit-elements.schema.json
+types:
+- typeId: Product
+  derivedFromCkTypeId: ${System}/Entity
+  description: "A product with complex attributes including Record, RecordArray and BinaryLinked types"
+  attributes:
+    - id: ${this}/ProductName
+      name: ProductName
+    - id: ${this}/ProductCode
+      name: ProductCode
+    - id: ${this}/ProductDescription
+      name: ProductDescription
+      isOptional: true
+    # Record attribute
+    - id: ${this}/MainSpecification
+      name: MainSpecification
+      isOptional: true
+    # Record attribute
+    - id: ${this}/ManufacturerContact
+      name: ManufacturerContact
+      isOptional: true
+    # RecordArray attribute
+    - id: ${this}/TechnicalSpecifications
+      name: TechnicalSpecifications
+      isOptional: true
+    # RecordArray attribute
+    - id: ${this}/Contacts
+      name: Contacts
+      isOptional: true
+    # BinaryLinked attribute
+    - id: ${this}/ProductImage
+      name: ProductImage
+      isOptional: true
+    # BinaryLinked attribute
+    - id: ${this}/ProductDatasheet
+      name: ProductDatasheet
+      isOptional: true

@@ -1,0 +1,53 @@
+$schema: https://schemas.meshmakers.cloud/construction-kit-elements.schema.json
+attributes:
+  # Simple string attributes
+  - id: ProductName
+    valueType: String
+    description: "Name of the product"
+  - id: ProductCode
+    valueType: String
+    description: "Unique product code"
+  - id: ProductDescription
+    valueType: String
+    description: "Detailed product description"
+  # Record attribute - single specification
+  - id: MainSpecification
+    valueType: Record
+    valueCkRecordId: ${this}/Specification
+    description: "Main specification of the product"
+  # Record attribute - contact
+  - id: ManufacturerContact
+    valueType: Record
+    valueCkRecordId: ${this}/Contact
+    description: "Manufacturer contact information"
+  # RecordArray attribute - multiple specifications
+  - id: TechnicalSpecifications
+    valueType: RecordArray
+    valueCkRecordId: ${this}/Specification
+    description: "List of technical specifications"
+  # RecordArray attribute - multiple contacts
+  - id: Contacts
+    valueType: RecordArray
+    valueCkRecordId: ${this}/Contact
+    description: "List of contacts"
+  # BinaryLinked attribute - file attachment
+  - id: ProductImage
+    valueType: BinaryLinked
+    description: "Product image file"
+  # BinaryLinked attribute - document
+  - id: ProductDatasheet
+    valueType: BinaryLinked
+    description: "Product datasheet document"
+  # Attribute definitions for record fields
+  - id: SpecificationName
+    valueType: String
+  - id: SpecificationValue
+    valueType: String
+  - id: SpecificationUnit
+    valueType: String
+  - id: ContactName
+    valueType: String
+  - id: ContactEmail
+    valueType: String
+  - id: ContactPhone
+    valueType: String
