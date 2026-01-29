@@ -1155,4 +1155,400 @@ public class RtEntityComplexAttributeMutationTests : IClassFixture<GraphQlTestFi
     }
 
     #endregion
+
+    #region Binary Attribute Tests
+
+    [Fact]
+    public async Task Create_WithBinaryAttribute_ReturnsCreatedEntity()
+    {
+        // Arrange - Create entity with Binary attribute (small inline binary data)
+        // Binary data is passed as an array of bytes (integers 0-255)
+        var mutation = @"
+            mutation ($entities: [RtEntityInput!]!) {
+                runtime {
+                    runtimeEntities {
+                        create(entities: $entities) {
+                            rtId
+                            ckTypeId
+                            attributes(first: 20) {
+                                items {
+                                    attributeName
+                                    value
+                                }
+                            }
+                        }
+                    }
+                }
+            }";
+
+        // Sample binary data: A simple 4-byte PNG header-like sequence
+        var binaryData = new byte[] { 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A };
+
+        var variables = JsonSerializer.Serialize(new
+        {
+            entities = new[]
+            {
+                new
+                {
+                    ckTypeId = ProductCkTypeId,
+                    rtWellKnownName = "TestProduct_BinaryAttribute",
+                    attributes = new object[]
+                    {
+                        new { attributeName = "productName", value = "Product with Thumbnail" },
+                        new { attributeName = "productCode", value = "PWT-001" },
+                        new { attributeName = "thumbnail", value = binaryData }
+                    }
+                }
+            }
+        });
+
+        // Act
+        var result = await _fixture.ExecuteGraphQlAsync(mutation, variables);
+
+        // Assert
+        result.Should().NotBeNull();
+        result.Errors.Should().BeNullOrEmpty();
+        result.Data.Should().NotBeNull();
+
+        var json = _fixture.SerializeGraphQl(result);
+        _fixture.OutputHelper?.WriteLine($"Result: {json}");
+        var answer = JObject.Parse(json);
+
+        var createdEntities = answer.SelectToken("data.runtime.runtimeEntities.create") as JArray;
+        createdEntities.Should().NotBeNull();
+        createdEntities.Should().HaveCount(1);
+
+        var createdEntity = createdEntities![0];
+        createdEntity["rtId"].Should().NotBeNull();
+
+        var attributes = createdEntity["attributes"]?["items"] as JArray;
+        attributes.Should().NotBeNull();
+
+        // Verify the Binary attribute is present
+        var thumbnail = attributes!.FirstOrDefault(a => a["attributeName"]?.Value<string>() == "thumbnail");
+        thumbnail.Should().NotBeNull("thumbnail attribute should be present");
+        thumbnail!["value"].Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task Create_WithLargerBinaryAttribute_ReturnsCreatedEntity()
+    {
+        // Arrange - Create entity with larger Binary data (e.g., small image)
+        var mutation = @"
+            mutation ($entities: [RtEntityInput!]!) {
+                runtime {
+                    runtimeEntities {
+                        create(entities: $entities) {
+                            rtId
+                            ckTypeId
+                            attributes(first: 20) {
+                                items {
+                                    attributeName
+                                    value
+                                }
+                            }
+                        }
+                    }
+                }
+            }";
+
+        // Create a 1KB binary data block (simulating a small thumbnail)
+        var binaryData = new byte[1024];
+        for (int i = 0; i < binaryData.Length; i++)
+        {
+            binaryData[i] = (byte)(i % 256);
+        }
+
+        var variables = JsonSerializer.Serialize(new
+        {
+            entities = new[]
+            {
+                new
+                {
+                    ckTypeId = ProductCkTypeId,
+                    rtWellKnownName = "TestProduct_LargerBinary",
+                    attributes = new object[]
+                    {
+                        new { attributeName = "productName", value = "Product with Large Thumbnail" },
+                        new { attributeName = "productCode", value = "PLT-001" },
+                        new { attributeName = "thumbnail", value = binaryData }
+                    }
+                }
+            }
+        });
+
+        // Act
+        var result = await _fixture.ExecuteGraphQlAsync(mutation, variables);
+
+        // Assert
+        result.Should().NotBeNull();
+        result.Errors.Should().BeNullOrEmpty();
+        result.Data.Should().NotBeNull();
+
+        var json = _fixture.SerializeGraphQl(result);
+        _fixture.OutputHelper?.WriteLine($"Result: {json}");
+        var answer = JObject.Parse(json);
+
+        var createdEntities = answer.SelectToken("data.runtime.runtimeEntities.create") as JArray;
+        createdEntities.Should().NotBeNull();
+        createdEntities.Should().HaveCount(1);
+    }
+
+    [Fact]
+    public async Task Update_BinaryAttribute_ReturnsUpdatedEntity()
+    {
+        // Arrange - First create an entity with Binary attribute
+        var createMutation = @"
+            mutation ($entities: [RtEntityInput!]!) {
+                runtime {
+                    runtimeEntities {
+                        create(entities: $entities) {
+                            rtId
+                        }
+                    }
+                }
+            }";
+
+        var initialBinaryData = new byte[] { 0x01, 0x02, 0x03, 0x04 };
+
+        var createVariables = JsonSerializer.Serialize(new
+        {
+            entities = new[]
+            {
+                new
+                {
+                    ckTypeId = ProductCkTypeId,
+                    rtWellKnownName = "TestProduct_UpdateBinary",
+                    attributes = new object[]
+                    {
+                        new { attributeName = "productName", value = "Binary Update Test" },
+                        new { attributeName = "productCode", value = "BUT-001" },
+                        new { attributeName = "thumbnail", value = initialBinaryData }
+                    }
+                }
+            }
+        });
+
+        var createResult = await _fixture.ExecuteGraphQlAsync(createMutation, createVariables);
+        createResult.Errors.Should().BeNullOrEmpty();
+
+        var createJson = _fixture.SerializeGraphQl(createResult);
+        var createAnswer = JObject.Parse(createJson);
+        var createdRtId = createAnswer.SelectToken("data.runtime.runtimeEntities.create[0].rtId")?.Value<string>();
+        createdRtId.Should().NotBeNullOrEmpty();
+
+        // Now update the Binary attribute with new data
+        var updateMutation = @"
+            mutation ($entities: [RtEntityUpdate!]!) {
+                runtime {
+                    runtimeEntities {
+                        update(entities: $entities) {
+                            rtId
+                            attributes(first: 20) {
+                                items {
+                                    attributeName
+                                    value
+                                }
+                            }
+                        }
+                    }
+                }
+            }";
+
+        var updatedBinaryData = new byte[] { 0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF };
+
+        var updateVariables = JsonSerializer.Serialize(new
+        {
+            entities = new[]
+            {
+                new
+                {
+                    rtId = createdRtId,
+                    item = new
+                    {
+                        ckTypeId = ProductCkTypeId,
+                        attributes = new object[]
+                        {
+                            new { attributeName = "thumbnail", value = updatedBinaryData }
+                        }
+                    }
+                }
+            }
+        });
+
+        // Act
+        var result = await _fixture.ExecuteGraphQlAsync(updateMutation, updateVariables);
+
+        // Assert
+        result.Should().NotBeNull();
+        result.Errors.Should().BeNullOrEmpty();
+        result.Data.Should().NotBeNull();
+
+        var json = _fixture.SerializeGraphQl(result);
+        _fixture.OutputHelper?.WriteLine($"Result: {json}");
+        var answer = JObject.Parse(json);
+
+        var updatedEntities = answer.SelectToken("data.runtime.runtimeEntities.update") as JArray;
+        updatedEntities.Should().NotBeNull();
+        updatedEntities.Should().HaveCount(1);
+
+        var attributes = updatedEntities![0]["attributes"]?["items"] as JArray;
+        attributes.Should().NotBeNull();
+
+        var thumbnail = attributes!.FirstOrDefault(a => a["attributeName"]?.Value<string>() == "thumbnail");
+        thumbnail.Should().NotBeNull();
+        thumbnail!["value"].Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task Create_WithEmptyBinaryAttribute_ReturnsCreatedEntity()
+    {
+        // Arrange - Create entity with empty Binary attribute
+        var mutation = @"
+            mutation ($entities: [RtEntityInput!]!) {
+                runtime {
+                    runtimeEntities {
+                        create(entities: $entities) {
+                            rtId
+                            ckTypeId
+                            attributes(first: 20) {
+                                items {
+                                    attributeName
+                                    value
+                                }
+                            }
+                        }
+                    }
+                }
+            }";
+
+        var emptyBinaryData = Array.Empty<byte>();
+
+        var variables = JsonSerializer.Serialize(new
+        {
+            entities = new[]
+            {
+                new
+                {
+                    ckTypeId = ProductCkTypeId,
+                    rtWellKnownName = "TestProduct_EmptyBinary",
+                    attributes = new object[]
+                    {
+                        new { attributeName = "productName", value = "Product with Empty Thumbnail" },
+                        new { attributeName = "productCode", value = "PET-001" },
+                        new { attributeName = "thumbnail", value = emptyBinaryData }
+                    }
+                }
+            }
+        });
+
+        // Act
+        var result = await _fixture.ExecuteGraphQlAsync(mutation, variables);
+
+        // Assert
+        result.Should().NotBeNull();
+        result.Errors.Should().BeNullOrEmpty();
+        result.Data.Should().NotBeNull();
+
+        var json = _fixture.SerializeGraphQl(result);
+        _fixture.OutputHelper?.WriteLine($"Result: {json}");
+        var answer = JObject.Parse(json);
+
+        var createdEntities = answer.SelectToken("data.runtime.runtimeEntities.create") as JArray;
+        createdEntities.Should().NotBeNull();
+        createdEntities.Should().HaveCount(1);
+    }
+
+    [Fact]
+    public async Task Create_WithBinaryAndOtherComplexAttributes_ReturnsCreatedEntity()
+    {
+        // Arrange - Create entity with Binary and other complex attributes together
+        var mutation = @"
+            mutation ($entities: [RtEntityInput!]!) {
+                runtime {
+                    runtimeEntities {
+                        create(entities: $entities) {
+                            rtId
+                            ckTypeId
+                            attributes(first: 30) {
+                                items {
+                                    attributeName
+                                    value
+                                }
+                            }
+                        }
+                    }
+                }
+            }";
+
+        var binaryData = new byte[] { 0x89, 0x50, 0x4E, 0x47 }; // PNG magic bytes
+
+        var variables = JsonSerializer.Serialize(new
+        {
+            entities = new[]
+            {
+                new
+                {
+                    ckTypeId = ProductCkTypeId,
+                    rtWellKnownName = "TestProduct_BinaryWithComplex",
+                    attributes = new object[]
+                    {
+                        new { attributeName = "productName", value = "Complete Product" },
+                        new { attributeName = "productCode", value = "CP-001" },
+                        // Binary attribute
+                        new { attributeName = "thumbnail", value = binaryData },
+                        // Record attribute
+                        new
+                        {
+                            attributeName = "mainSpecification",
+                            value = new
+                            {
+                                name = "Weight",
+                                value = "2.5",
+                                unit = "kg"
+                            }
+                        },
+                        // RecordArray attribute
+                        new
+                        {
+                            attributeName = "technicalSpecifications",
+                            value = new[]
+                            {
+                                new { name = "Dimensions", value = "10x20x5", unit = "cm" },
+                                new { name = "Material", value = "Aluminum", unit = "" }
+                            }
+                        }
+                    }
+                }
+            }
+        });
+
+        // Act
+        var result = await _fixture.ExecuteGraphQlAsync(mutation, variables);
+
+        // Assert
+        result.Should().NotBeNull();
+        result.Errors.Should().BeNullOrEmpty();
+        result.Data.Should().NotBeNull();
+
+        var json = _fixture.SerializeGraphQl(result);
+        _fixture.OutputHelper?.WriteLine($"Result: {json}");
+        var answer = JObject.Parse(json);
+
+        var createdEntities = answer.SelectToken("data.runtime.runtimeEntities.create") as JArray;
+        createdEntities.Should().NotBeNull();
+        createdEntities.Should().HaveCount(1);
+
+        var attributes = createdEntities![0]["attributes"]?["items"] as JArray;
+        attributes.Should().NotBeNull();
+
+        var attributeNames = attributes!.Select(a => a["attributeName"]?.Value<string>()).ToList();
+        attributeNames.Should().Contain("productName");
+        attributeNames.Should().Contain("productCode");
+        attributeNames.Should().Contain("thumbnail");
+        attributeNames.Should().Contain("mainSpecification");
+        attributeNames.Should().Contain("technicalSpecifications");
+    }
+
+    #endregion
 }

@@ -30,6 +30,10 @@ attributes:
     valueType: RecordArray
     valueCkRecordId: ${this}/Contact
     description: "List of contacts"
+  # Binary attribute - inline binary data (small files like thumbnails)
+  - id: Thumbnail
+    valueType: Binary
+    description: "Small thumbnail image stored inline"
   # BinaryLinked attribute - file attachment
   - id: ProductImage
     valueType: BinaryLinked

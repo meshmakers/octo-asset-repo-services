@@ -27,6 +27,10 @@ types:
     - id: ${this}/Contacts
       name: Contacts
       isOptional: true
+    # Binary attribute (inline)
+    - id: ${this}/Thumbnail
+      name: Thumbnail
+      isOptional: true
     # BinaryLinked attribute
     - id: ${this}/ProductImage
       name: ProductImage
