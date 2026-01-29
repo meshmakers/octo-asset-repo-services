@@ -9,6 +9,18 @@ records:
     - id: ${this}/SpecificationUnit
       name: Unit
       isOptional: true
+- recordId: Address
+  description: "Address information for nested record testing"
+  attributes:
+    - id: ${this}/AddressStreet
+      name: Street
+    - id: ${this}/AddressZipcode
+      name: Zipcode
+    - id: ${this}/AddressCityTown
+      name: CityTown
+    - id: ${this}/AddressCountry
+      name: Country
+      isOptional: true
 - recordId: Contact
   attributes:
     - id: ${this}/ContactName
@@ -18,4 +30,7 @@ records:
       isOptional: true
     - id: ${this}/ContactPhone
       name: Phone
+      isOptional: true
+    - id: ${this}/ContactAddress
+      name: Address
       isOptional: true

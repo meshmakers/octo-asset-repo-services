@@ -18,6 +18,20 @@ internal class SimpleScalarType : ScalarGraphType
 
     public override object? ParseLiteral(GraphQLValue value)
     {
+        return ParseGraphQLValue(value);
+    }
+
+    /// <summary>
+    /// Recursively parses a GraphQL AST value into a CLR object.
+    /// Handles strings, integers, floats, booleans, lists, and objects (for nested records).
+    /// </summary>
+    private static object? ParseGraphQLValue(GraphQLValue value)
+    {
+        if (value is GraphQLNullValue)
+        {
+            return null;
+        }
+
         if (value is GraphQLStringValue str)
         {
             return str.Value.ToString();
@@ -38,42 +52,63 @@ internal class SimpleScalarType : ScalarGraphType
             return boolValue.Value;
         }
 
+        // Handle object values (for Record attributes with nested objects)
+        if (value is GraphQLObjectValue objectValue)
+        {
+            return ParseObjectValue(objectValue);
+        }
+
+        // Handle list values (for RecordArray attributes or arrays of primitives)
         if (value is GraphQLListValue list)
         {
-            var items = new List<object?>();
-            if (list.Values == null)
-            {
-                return items; // Return an empty list if the list is empty or null
-            }
+            return ParseListValue(list);
+        }
 
-            foreach (var item in list.Values)
-            {
-                if (item is GraphQLStringValue stringItem)
-                {
-                    items.Add(stringItem.Value.ToString());
-                }
-                else if (item is GraphQLIntValue intItem)
-                {
-                    items.Add(int.Parse(intItem.Value));
-                }
-                else if (item is GraphQLFloatValue floatItem)
-                {
-                    items.Add(double.Parse(floatItem.Value, NumberStyles.Float, CultureInfo.InvariantCulture));
-                }
-                else if (item is GraphQLBooleanValue boolItem)
-                {
-                    items.Add(boolItem.Value);
-                }
-                else
-                    // Handle other types as needed
-                {
-                    items.Add(item.ToString());
-                }
-            }
+        // Fallback for unknown types
+        return null;
+    }
 
+    /// <summary>
+    /// Parses a GraphQL object value into a Dictionary&lt;string, object&gt;.
+    /// This is used for Record attributes where the value is an inline object literal.
+    /// </summary>
+    private static Dictionary<string, object?> ParseObjectValue(GraphQLObjectValue objectValue)
+    {
+        var result = new Dictionary<string, object?>();
+
+        if (objectValue.Fields == null)
+        {
+            return result;
+        }
+
+        foreach (var field in objectValue.Fields)
+        {
+            var fieldName = field.Name.StringValue;
+            var fieldValue = ParseGraphQLValue(field.Value);
+            result[fieldName] = fieldValue;
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Parses a GraphQL list value into a List&lt;object?&gt;.
+    /// Handles nested objects and primitives within the list.
+    /// </summary>
+    private static List<object?> ParseListValue(GraphQLListValue list)
+    {
+        var items = new List<object?>();
+
+        if (list.Values == null)
+        {
             return items;
         }
 
-        return null;
+        foreach (var item in list.Values)
+        {
+            items.Add(ParseGraphQLValue(item));
+        }
+
+        return items;
     }
 }

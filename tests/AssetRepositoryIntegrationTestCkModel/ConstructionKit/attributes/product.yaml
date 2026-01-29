@@ -55,3 +55,21 @@ attributes:
     valueType: String
   - id: ContactPhone
     valueType: String
+  # Nested record: Contact contains Address
+  - id: ContactAddress
+    valueType: Record
+    valueCkRecordId: ${this}/Address
+    description: "Address within Contact (nested record)"
+  # Address record fields
+  - id: AddressStreet
+    valueType: String
+    description: "Street name and number"
+  - id: AddressZipcode
+    valueType: String
+    description: "Postal/ZIP code"
+  - id: AddressCityTown
+    valueType: String
+    description: "City or town name"
+  - id: AddressCountry
+    valueType: String
+    description: "Country name"

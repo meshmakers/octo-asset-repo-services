@@ -1551,4 +1551,336 @@ public class RtEntityComplexAttributeMutationTests : IClassFixture<GraphQlTestFi
     }
 
     #endregion
+
+    #region Nested Record Attribute Tests
+
+    [Fact]
+    public async Task Create_WithNestedRecordAttribute_ReturnsCreatedEntity()
+    {
+        // Arrange - Create entity with a Record attribute containing a nested Record (Contact with Address)
+        var mutation = @"
+            mutation ($entities: [RtEntityInput!]!) {
+                runtime {
+                    runtimeEntities {
+                        create(entities: $entities) {
+                            rtId
+                            ckTypeId
+                            attributes(first: 30) {
+                                items {
+                                    attributeName
+                                    value
+                                }
+                            }
+                        }
+                    }
+                }
+            }";
+
+        var variables = JsonSerializer.Serialize(new
+        {
+            entities = new[]
+            {
+                new
+                {
+                    ckTypeId = ProductCkTypeId,
+                    rtWellKnownName = "TestProduct_NestedRecord",
+                    attributes = new object[]
+                    {
+                        new { attributeName = "productName", value = "Industrial Controller IC-500" },
+                        new { attributeName = "productCode", value = "IC-500" },
+                        new
+                        {
+                            attributeName = "manufacturerContact",
+                            value = new
+                            {
+                                name = "TechCorp Support",
+                                email = "support@techcorp.com",
+                                phone = "+1-555-0100",
+                                // Nested record: Address inside Contact
+                                address = new
+                                {
+                                    street = "456 Oak Avenue",
+                                    zipcode = "80331",
+                                    cityTown = "Munich",
+                                    country = "Germany"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        });
+
+        // Act
+        var result = await _fixture.ExecuteGraphQlAsync(mutation, variables);
+
+        // Assert
+        result.Should().NotBeNull();
+        result.Errors.Should().BeNullOrEmpty();
+        result.Data.Should().NotBeNull();
+
+        var json = _fixture.SerializeGraphQl(result);
+        _fixture.OutputHelper?.WriteLine($"Result: {json}");
+        var answer = JObject.Parse(json);
+
+        var createdEntities = answer.SelectToken("data.runtime.runtimeEntities.create") as JArray;
+        createdEntities.Should().NotBeNull();
+        createdEntities.Should().HaveCount(1);
+
+        var createdEntity = createdEntities![0];
+        createdEntity["rtId"].Should().NotBeNull();
+
+        var attributes = createdEntity["attributes"]?["items"] as JArray;
+        attributes.Should().NotBeNull();
+
+        // Verify the nested Record attribute is present
+        var contact = attributes!.FirstOrDefault(a => a["attributeName"]?.Value<string>() == "manufacturerContact");
+        contact.Should().NotBeNull("manufacturerContact attribute should be present");
+        contact!["value"].Should().NotBeNull();
+
+        // The nested address should be included in the contact value
+        var contactValue = contact["value"]?.ToString();
+        contactValue.Should().Contain("TechCorp Support");
+        contactValue.Should().Contain("Munich");
+    }
+
+    [Fact]
+    public async Task Create_WithRecordArrayContainingNestedRecords_ReturnsCreatedEntity()
+    {
+        // Arrange - Create entity with RecordArray where each record contains a nested Record
+        var mutation = @"
+            mutation ($entities: [RtEntityInput!]!) {
+                runtime {
+                    runtimeEntities {
+                        create(entities: $entities) {
+                            rtId
+                            ckTypeId
+                            attributes(first: 30) {
+                                items {
+                                    attributeName
+                                    value
+                                }
+                            }
+                        }
+                    }
+                }
+            }";
+
+        var variables = JsonSerializer.Serialize(new
+        {
+            entities = new[]
+            {
+                new
+                {
+                    ckTypeId = ProductCkTypeId,
+                    rtWellKnownName = "TestProduct_RecordArrayWithNestedRecords",
+                    attributes = new object[]
+                    {
+                        new { attributeName = "productName", value = "Multi-Site Controller MSC-1000" },
+                        new { attributeName = "productCode", value = "MSC-1000" },
+                        new
+                        {
+                            attributeName = "contacts",
+                            value = new[]
+                            {
+                                new
+                                {
+                                    name = "Head Office",
+                                    email = "hq@company.com",
+                                    phone = "+1-800-555-0001",
+                                    address = new
+                                    {
+                                        street = "100 Main Street",
+                                        zipcode = "10001",
+                                        cityTown = "New York",
+                                        country = "USA"
+                                    }
+                                },
+                                new
+                                {
+                                    name = "European Office",
+                                    email = "eu@company.com",
+                                    phone = "+49-89-555-0002",
+                                    address = new
+                                    {
+                                        street = "50 Marienplatz",
+                                        zipcode = "80331",
+                                        cityTown = "Munich",
+                                        country = "Germany"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        });
+
+        // Act
+        var result = await _fixture.ExecuteGraphQlAsync(mutation, variables);
+
+        // Assert
+        result.Should().NotBeNull();
+        result.Errors.Should().BeNullOrEmpty();
+        result.Data.Should().NotBeNull();
+
+        var json = _fixture.SerializeGraphQl(result);
+        _fixture.OutputHelper?.WriteLine($"Result: {json}");
+        var answer = JObject.Parse(json);
+
+        var createdEntities = answer.SelectToken("data.runtime.runtimeEntities.create") as JArray;
+        createdEntities.Should().NotBeNull();
+        createdEntities.Should().HaveCount(1);
+
+        var attributes = createdEntities![0]["attributes"]?["items"] as JArray;
+        attributes.Should().NotBeNull();
+
+        // Verify the RecordArray with nested records is present
+        var contacts = attributes!.FirstOrDefault(a => a["attributeName"]?.Value<string>() == "contacts");
+        contacts.Should().NotBeNull("contacts attribute should be present");
+        contacts!["value"].Should().NotBeNull();
+
+        // Both addresses should be included
+        var contactsValue = contacts["value"]?.ToString();
+        contactsValue.Should().Contain("New York");
+        contactsValue.Should().Contain("Munich");
+    }
+
+    [Fact]
+    public async Task Update_NestedRecordAttribute_ReturnsUpdatedEntity()
+    {
+        // Arrange - First create an entity with nested record
+        var createMutation = @"
+            mutation ($entities: [RtEntityInput!]!) {
+                runtime {
+                    runtimeEntities {
+                        create(entities: $entities) {
+                            rtId
+                        }
+                    }
+                }
+            }";
+
+        var createVariables = JsonSerializer.Serialize(new
+        {
+            entities = new[]
+            {
+                new
+                {
+                    ckTypeId = ProductCkTypeId,
+                    rtWellKnownName = "TestProduct_UpdateNestedRecord",
+                    attributes = new object[]
+                    {
+                        new { attributeName = "productName", value = "Controller X" },
+                        new { attributeName = "productCode", value = "CX-001" },
+                        new
+                        {
+                            attributeName = "manufacturerContact",
+                            value = new
+                            {
+                                name = "Old Contact",
+                                email = "old@example.com",
+                                address = new
+                                {
+                                    street = "Old Street 1",
+                                    zipcode = "11111",
+                                    cityTown = "Old City"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        });
+
+        var createResult = await _fixture.ExecuteGraphQlAsync(createMutation, createVariables);
+        createResult.Errors.Should().BeNullOrEmpty();
+
+        var createJson = _fixture.SerializeGraphQl(createResult);
+        var createAnswer = JObject.Parse(createJson);
+        var createdRtId = createAnswer.SelectToken("data.runtime.runtimeEntities.create[0].rtId")?.Value<string>();
+        createdRtId.Should().NotBeNullOrEmpty();
+
+        // Update with new nested record data
+        var updateMutation = @"
+            mutation ($entities: [RtEntityUpdate!]!) {
+                runtime {
+                    runtimeEntities {
+                        update(entities: $entities) {
+                            rtId
+                            attributes(first: 30) {
+                                items {
+                                    attributeName
+                                    value
+                                }
+                            }
+                        }
+                    }
+                }
+            }";
+
+        var updateVariables = JsonSerializer.Serialize(new
+        {
+            entities = new[]
+            {
+                new
+                {
+                    rtId = createdRtId,
+                    item = new
+                    {
+                        ckTypeId = ProductCkTypeId,
+                        attributes = new object[]
+                        {
+                            new
+                            {
+                                attributeName = "manufacturerContact",
+                                value = new
+                                {
+                                    name = "New Contact",
+                                    email = "new@example.com",
+                                    phone = "+1-999-0000",
+                                    address = new
+                                    {
+                                        street = "New Street 999",
+                                        zipcode = "99999",
+                                        cityTown = "New City",
+                                        country = "New Country"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        });
+
+        // Act
+        var result = await _fixture.ExecuteGraphQlAsync(updateMutation, updateVariables);
+
+        // Assert
+        result.Should().NotBeNull();
+        result.Errors.Should().BeNullOrEmpty();
+        result.Data.Should().NotBeNull();
+
+        var json = _fixture.SerializeGraphQl(result);
+        _fixture.OutputHelper?.WriteLine($"Result: {json}");
+        var answer = JObject.Parse(json);
+
+        var updatedEntities = answer.SelectToken("data.runtime.runtimeEntities.update") as JArray;
+        updatedEntities.Should().NotBeNull();
+        updatedEntities.Should().HaveCount(1);
+
+        var attributes = updatedEntities![0]["attributes"]?["items"] as JArray;
+        attributes.Should().NotBeNull();
+
+        var contact = attributes!.FirstOrDefault(a => a["attributeName"]?.Value<string>() == "manufacturerContact");
+        contact.Should().NotBeNull();
+
+        var contactValue = contact!["value"]?.ToString();
+        contactValue.Should().Contain("New Contact");
+        contactValue.Should().Contain("New City");
+        contactValue.Should().Contain("New Country");
+    }
+
+    #endregion
 }
