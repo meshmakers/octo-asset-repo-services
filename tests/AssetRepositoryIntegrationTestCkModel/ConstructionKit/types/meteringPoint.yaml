@@ -17,3 +17,6 @@ types:
   - id: ${this}/NetworkOperator
     name: NetworkOperator
     isOptional: true
+  # Non-optional attribute with default value - for testing AB#3306
+  - id: ${this}/SyncSequenceNumber
+    name: SyncSequenceNumber

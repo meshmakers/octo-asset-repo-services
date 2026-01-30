@@ -3,6 +3,8 @@ using GraphQL;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Utils;
 using Microsoft.Extensions.DependencyInjection;
+using MongoDB.Bson;
+using MongoDB.Driver;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Fixtures;
 
@@ -15,6 +17,7 @@ public class GraphQlTestFixture : SampleDataFixture
 {
     private IDocumentExecuter<OctoSchema>? _documentExecuter;
     private IGraphQLTextSerializer? _serializer;
+    private IMongoClient? _mongoClient;
 
     protected override async Task InitializeServicesAsync()
     {
@@ -22,6 +25,7 @@ public class GraphQlTestFixture : SampleDataFixture
 
         _documentExecuter = Provider?.GetRequiredService<IDocumentExecuter<OctoSchema>>();
         _serializer = Provider?.GetRequiredService<IGraphQLTextSerializer>();
+        _mongoClient = new MongoClient(GetConnectionString());
     }
 
     /// <summary>
@@ -81,5 +85,46 @@ public class GraphQlTestFixture : SampleDataFixture
             throw new InvalidOperationException("GraphQL services not initialized");
         }
         return _serializer.Serialize(result);
+    }
+
+    /// <summary>
+    /// Removes an attribute from a MongoDB document to simulate legacy data
+    /// that was created before the attribute was added to the schema.
+    /// </summary>
+    /// <param name="rtId">The RtId of the entity</param>
+    /// <param name="attributeName">The attribute name to remove</param>
+    /// <param name="collectionSuffix">The collection suffix (e.g., "AssetRepositoryIntegrationTestAsset" for MeteringPoint)</param>
+    public async Task RemoveAttributeFromMongoDb(string rtId, string attributeName, string collectionSuffix)
+    {
+        if (_mongoClient == null)
+        {
+            throw new InvalidOperationException("MongoDB client not initialized");
+        }
+
+        // The database name follows the system tenant convention (not the test tenant)
+        // GraphQL queries are executed against the system context
+        var database = _mongoClient.GetDatabase(SystemDatabaseName);
+
+        // Runtime entities are stored in collections with "RtEntity_" prefix followed by the base type
+        var collectionName = $"RtEntity_{collectionSuffix}";
+        var collection = database.GetCollection<BsonDocument>(collectionName);
+
+        // Build filter for the rtId
+        var objectId = ObjectId.Parse(rtId);
+        var filter = Builders<BsonDocument>.Filter.Eq("_id", objectId);
+
+        // Build update to unset the attribute
+        // Attributes are stored in an "attributes" subdocument
+        var attributePath = $"attributes.{attributeName}";
+        var update = Builders<BsonDocument>.Update.Unset(attributePath);
+
+        var result = await collection.UpdateOneAsync(filter, update);
+
+        if (result.ModifiedCount == 0)
+        {
+            throw new InvalidOperationException(
+                $"Failed to remove attribute '{attributePath}' from document with rtId '{rtId}' in collection '{collectionName}'. " +
+                $"Modified count: {result.ModifiedCount}, Matched count: {result.MatchedCount}");
+        }
     }
 }

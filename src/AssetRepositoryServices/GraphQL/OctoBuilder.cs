@@ -234,6 +234,14 @@ internal class OctoBuilder<TSourceType>(
                     $"Unable to convert Binary attribute value of type '{r.GetType().FullName}' to byte[].");
         }
 
+        // If value is null and attribute has default values, use the first default value.
+        // This handles the case where legacy data was created before an attribute with default value
+        // was added to the schema (bug AB#3307).
+        if (r == null && typeAttributeGraph.DefaultValues is { Count: > 0 })
+        {
+            return typeAttributeGraph.DefaultValues.First();
+        }
+
         return r;
     }
 }

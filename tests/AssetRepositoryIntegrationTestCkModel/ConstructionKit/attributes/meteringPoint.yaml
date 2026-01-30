@@ -1,7 +1,7 @@
 $schema: https://schemas.meshmakers.cloud/construction-kit-elements.schema.json
 attributes:
   - id: MeteringPointNumber
-    valueType: String      
+    valueType: String
   - id: MeterReading
     valueType: Int
   - id: OperatingStatus
@@ -9,4 +9,11 @@ attributes:
     valueType: Enum
   - id: NetworkOperator
     valueCkEnumId: ${this}/NetworkOperator
-    valueType: Enum 
+    valueType: Enum
+  # Attribute with default value for testing non-null GraphQL field resolution
+  # This attribute is NOT optional but has a default value - simulating the LastSyncedSequenceNumber scenario
+  - id: SyncSequenceNumber
+    valueType: Int
+    description: Sync sequence number for testing default value handling
+    defaultValues:
+      - 0
