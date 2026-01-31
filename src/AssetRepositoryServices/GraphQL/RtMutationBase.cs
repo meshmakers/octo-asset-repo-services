@@ -79,7 +79,7 @@ internal abstract class RtMutationBase : ObjectGraphType
         var resultSetComplete = new List<RtEntityGraphItem>();
         foreach (var grouping in entityUpdateInfos.GroupBy(x => x.CkTypeId))
         {
-            var roleIdDirectionPairs = RtPathEvaluator.TokenizeAndGetNavigationPairs(ckCacheService,
+            var roleIdDirectionPairs = RtPathEvaluator.TokenizeAndGetNavigationPairsByRtCkId(ckCacheService,
                 repository.TenantId, rtQuery.QueryCkTypeId,
                 rtQuery.Columns.Select(column => column));
 
@@ -90,7 +90,7 @@ internal abstract class RtMutationBase : ObjectGraphType
             resultSetComplete.AddRange(resultSet.Items);
         }
 
-        var typeQueryColumnPaths = ckCacheService.GetCkTypeQueryColumnPaths(repository.TenantId, rtQuery.QueryCkTypeId);
+        var typeQueryColumnPaths = ckCacheService.GetCkTypeQueryColumnPathsByRtCkId(repository.TenantId, rtQuery.QueryCkTypeId);
         var invalidColumnPaths = rtQuery.Columns
             .Where(cp => typeQueryColumnPaths.All(ckTypeQueryColumn => ckTypeQueryColumn.Path != cp)).ToList();
         if (invalidColumnPaths.Any())

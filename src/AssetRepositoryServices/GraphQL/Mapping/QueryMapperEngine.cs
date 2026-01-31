@@ -32,7 +32,7 @@ internal class QueryMapperEngine
         RtSimpleRtQuery rtQuery, ITenantRepository tenantRepository, List<RtSimpleQueryRowDto> inputObjects,
         IOctoSessionAccessor sessionAccessor)
     {
-        var navigationPairs = RtPathEvaluator.TokenizeAndGetNavigationPairs(ckCacheService, graphQlUserContext.TenantId,
+        var navigationPairs = RtPathEvaluator.TokenizeAndGetNavigationPairsByRtCkId(ckCacheService, graphQlUserContext.TenantId,
             rtQuery.QueryCkTypeId,
             rtQuery.Columns);
 
