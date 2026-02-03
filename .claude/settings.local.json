@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(find:*)",
+      "Bash(dotnet build:*)",
+      "Bash(dotnet test:*)",
+      "Bash(docker version:*)",
+      "Bash($env:USE_LOCAL_MONGODB = \"true\")",
+      "Bash(USE_LOCAL_MONGODB=true dotnet test:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push)",
+      "Bash(git pull:*)"
+    ]
+  }
+}
