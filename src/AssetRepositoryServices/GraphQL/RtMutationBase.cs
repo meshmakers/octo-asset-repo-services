@@ -178,6 +178,24 @@ internal abstract class RtMutationBase : ObjectGraphType
                         rtTypeWithAttributes.SetAttributeValue(ckTypeAttributeGraph.AttributeName,
                             ckTypeAttributeGraph.ValueType, entityBinaryInfo);
                     }
+                    else if (value != null)
+                    {
+                        // Handle byte arrays passed via JSON (base64 decoded or raw byte array)
+                        // This creates an EntityBinaryInfo with the raw bytes as a MemoryStream
+                        var binaryLinkedData = ConvertToBinaryData(value);
+                        if (binaryLinkedData != null && binaryLinkedData.Length > 0)
+                        {
+                            var entityBinaryInfo = new EntityBinaryInfo
+                            {
+                                ContentType = "application/octet-stream",
+                                Filename = $"{ckTypeAttributeGraph.AttributeName}.bin",
+                                Size = binaryLinkedData.Length,
+                                Stream = new MemoryStream(binaryLinkedData)
+                            };
+                            rtTypeWithAttributes.SetAttributeValue(ckTypeAttributeGraph.AttributeName,
+                                ckTypeAttributeGraph.ValueType, entityBinaryInfo);
+                        }
+                    }
 
                     return true;
                 case AttributeValueTypesDto.Binary:
