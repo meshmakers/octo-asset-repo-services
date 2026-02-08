@@ -200,10 +200,11 @@ internal static class ResolveConnectionContextExtensions
 
         if (ctx.TryGetArgument(Statics.SearchFilterArg, out SearchFilterDto? filterDto))
         {
-            queryOptions = queryOptions.UseLanguage(filterDto.Language ?? "en");
+            var language = filterDto.Language ?? "en";
+            queryOptions = queryOptions.UseLanguage(language);
             if (filterDto.Type == null || filterDto.Type == SearchFilterTypesDto.TextSearch)
             {
-                ArgumentValidation.ValidateString(nameof(filterDto.Language), filterDto.Language);
+                ArgumentValidation.ValidateString(nameof(filterDto.Language), language);
 
                 if (filterDto.SearchTerm != null)
                 {
