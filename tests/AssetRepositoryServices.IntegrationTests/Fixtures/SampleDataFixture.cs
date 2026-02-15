@@ -1,5 +1,4 @@
 using Meshmakers.Octo.ConstructionKit.Contracts;
-using Meshmakers.Octo.ConstructionKit.Contracts.Services;
 using Meshmakers.Octo.Runtime.Contracts.Exchange;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Fixtures;
@@ -28,9 +27,6 @@ public class SampleDataFixture : AssetRepoFixture
         {
             throw new InvalidOperationException("Failed to import AssetRepositoryIntegrationTest CK model");
         }
-
-        var ckCacheService = GetService<ICkCacheService>();
-        ckCacheService.Unload(systemContext.TenantId);
 
         // Import Sample Runtime Data
         var importRtModelCommand = GetService<IImportRtModelCommand>();
