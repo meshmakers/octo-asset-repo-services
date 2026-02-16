@@ -1,6 +1,8 @@
 using GraphQL.Execution;
 using GraphQL.Validation;
 
+using GraphQLParser.AST;
+
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.RequestHandling;
 
 /// <inheritdoc />
@@ -30,7 +32,16 @@ internal class OctoSessionListener : IDocumentExecutionListener
         var tenantContext = Helpers.GetTenantContext(context.UserContext);
         var tenantRepository = tenantContext.GetTenantRepository();
         _accessor.Session = tenantRepository.GetSession();
-        _accessor.Session.StartTransaction();
+
+        // Only start a transaction for mutations. Read-only queries do not need
+        // transactional guarantees and can avoid the MongoDB transactionLifetimeLimitSeconds
+        // timeout that occurs when complex nested queries (e.g. with multiple DataLoader
+        // batches) take longer than the configured limit.
+        if (context.Operation?.Operation == OperationType.Mutation)
+        {
+            _accessor.Session.StartTransaction();
+        }
+
         return Task.CompletedTask;
     }
 
@@ -42,13 +53,16 @@ internal class OctoSessionListener : IDocumentExecutionListener
             return;
         }
 
-        if (context.Errors.Count == 0)
+        if (context.Operation?.Operation == OperationType.Mutation)
         {
-            await _accessor.CommitAsync().ConfigureAwait(false);
-        }
-        else
-        {
-            await _accessor.AbortAsync().ConfigureAwait(false);
+            if (context.Errors.Count == 0)
+            {
+                await _accessor.CommitAsync().ConfigureAwait(false);
+            }
+            else
+            {
+                await _accessor.AbortAsync().ConfigureAwait(false);
+            }
         }
     }
 }
