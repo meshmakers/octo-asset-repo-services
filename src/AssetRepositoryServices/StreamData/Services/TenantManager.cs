@@ -135,8 +135,10 @@ internal class TenantManager : ITenantManager
 
         if (streamDataGlobalSettings.IsEnabled)
         {
-            _logger.LogDebug("Tenant '{TenantId}' is already enabled", tenantId);
             await session.CommitTransactionAsync();
+
+            _logger.LogInformation("Stream data config for tenant '{TenantId}' is already enabled, starting tenant to ensure CrateDB table exists", tenantId);
+            await StartTenantAsync(tenantId);
         }
     }
 

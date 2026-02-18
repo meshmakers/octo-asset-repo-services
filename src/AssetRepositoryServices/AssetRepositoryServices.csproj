@@ -21,6 +21,7 @@
 
     <ItemGroup>
         <InternalsVisibleTo Include="Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests" />
+        <InternalsVisibleTo Include="DynamicProxyGenAssembly2" />
     </ItemGroup>
 
     <ItemGroup>
