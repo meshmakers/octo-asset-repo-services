@@ -421,6 +421,280 @@ public class RtPersistentQueryTests : IClassFixture<GraphQlTestFixture>
         }
     }
 
+    [Fact]
+    public async Task SimpleQuery_WithPagination_ReturnsCorrectRowCount()
+    {
+        // Arrange - Create a simple query on MeteringPoint (8 active items)
+        var createMutation = """
+            mutation {
+              runtime {
+                systemSimpleRtQuerys {
+                  create(entities: [
+                    {
+                      name: "TestPaginationRowCount"
+                      description: "Test pagination row count"
+                      queryCkTypeId: "AssetRepositoryIntegrationTest/MeteringPoint"
+                      columns: ["rtWellKnownName", "meterReading"]
+                    }
+                  ]) {
+                    rtId
+                  }
+                }
+              }
+            }
+            """;
+
+        var createResult = await _fixture.ExecuteGraphQlAsync(createMutation);
+        createResult.Errors.Should().BeNullOrEmpty();
+
+        var createJson = _fixture.SerializeGraphQl(createResult);
+        var createAnswer = JObject.Parse(createJson);
+
+        var queryRtId = createAnswer.SelectToken("data.runtime.systemSimpleRtQuerys.create[0].rtId")?.Value<string>();
+        queryRtId.Should().NotBeNullOrEmpty();
+
+        try
+        {
+            // Act - Query with first: 2
+            var query = $$"""
+                query {
+                  runtime {
+                    runtimeQuery(rtId: "{{queryRtId}}") {
+                      items {
+                        rows(first: 2) {
+                          items {
+                            ... on RtSimpleQueryRow {
+                              rtId
+                            }
+                          }
+                          pageInfo {
+                            hasNextPage
+                            endCursor
+                          }
+                          totalCount
+                        }
+                      }
+                    }
+                  }
+                }
+                """;
+
+            var result = await _fixture.ExecuteGraphQlAsync(query);
+
+            // Assert
+            result.Should().NotBeNull();
+            result.Errors.Should().BeNullOrEmpty();
+
+            var json = _fixture.SerializeGraphQl(result);
+            var answer = JObject.Parse(json);
+
+            var rows = answer.SelectToken("data.runtime.runtimeQuery.items[0].rows.items");
+            rows.Should().NotBeNull();
+            ((JArray)rows!).Should().HaveCount(2);
+
+            var totalCount = answer.SelectToken("data.runtime.runtimeQuery.items[0].rows.totalCount")?.Value<int>();
+            totalCount.Should().Be(8);
+        }
+        finally
+        {
+            await DeletePersistentQuery(queryRtId!);
+        }
+    }
+
+    [Fact]
+    public async Task SimpleQuery_WithPagination_HasNextPage_IsTrue()
+    {
+        // Arrange - Create a simple query on MeteringPoint (8 active items)
+        var createMutation = """
+            mutation {
+              runtime {
+                systemSimpleRtQuerys {
+                  create(entities: [
+                    {
+                      name: "TestPaginationHasNextPage"
+                      description: "Test pagination hasNextPage"
+                      queryCkTypeId: "AssetRepositoryIntegrationTest/MeteringPoint"
+                      columns: ["rtWellKnownName"]
+                    }
+                  ]) {
+                    rtId
+                  }
+                }
+              }
+            }
+            """;
+
+        var createResult = await _fixture.ExecuteGraphQlAsync(createMutation);
+        createResult.Errors.Should().BeNullOrEmpty();
+
+        var createJson = _fixture.SerializeGraphQl(createResult);
+        var createAnswer = JObject.Parse(createJson);
+
+        var queryRtId = createAnswer.SelectToken("data.runtime.systemSimpleRtQuerys.create[0].rtId")?.Value<string>();
+        queryRtId.Should().NotBeNullOrEmpty();
+
+        try
+        {
+            // Act - Query with first: 2 (less than total 8)
+            var query = $$"""
+                query {
+                  runtime {
+                    runtimeQuery(rtId: "{{queryRtId}}") {
+                      items {
+                        rows(first: 2) {
+                          pageInfo {
+                            hasNextPage
+                            hasPreviousPage
+                            endCursor
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+                """;
+
+            var result = await _fixture.ExecuteGraphQlAsync(query);
+
+            // Assert
+            result.Should().NotBeNull();
+            result.Errors.Should().BeNullOrEmpty();
+
+            var json = _fixture.SerializeGraphQl(result);
+            var answer = JObject.Parse(json);
+
+            var hasNextPage = answer.SelectToken("data.runtime.runtimeQuery.items[0].rows.pageInfo.hasNextPage")?.Value<bool>();
+            hasNextPage.Should().BeTrue();
+
+            var hasPreviousPage = answer.SelectToken("data.runtime.runtimeQuery.items[0].rows.pageInfo.hasPreviousPage")?.Value<bool>();
+            hasPreviousPage.Should().BeFalse();
+
+            var endCursor = answer.SelectToken("data.runtime.runtimeQuery.items[0].rows.pageInfo.endCursor")?.Value<string>();
+            endCursor.Should().NotBeNullOrEmpty();
+        }
+        finally
+        {
+            await DeletePersistentQuery(queryRtId!);
+        }
+    }
+
+    [Fact]
+    public async Task SimpleQuery_WithPagination_SecondPage()
+    {
+        // Arrange - Create a simple query on MeteringPoint (8 active items)
+        var createMutation = """
+            mutation {
+              runtime {
+                systemSimpleRtQuerys {
+                  create(entities: [
+                    {
+                      name: "TestPaginationSecondPage"
+                      description: "Test pagination second page"
+                      queryCkTypeId: "AssetRepositoryIntegrationTest/MeteringPoint"
+                      columns: ["rtWellKnownName"]
+                    }
+                  ]) {
+                    rtId
+                  }
+                }
+              }
+            }
+            """;
+
+        var createResult = await _fixture.ExecuteGraphQlAsync(createMutation);
+        createResult.Errors.Should().BeNullOrEmpty();
+
+        var createJson = _fixture.SerializeGraphQl(createResult);
+        var createAnswer = JObject.Parse(createJson);
+
+        var queryRtId = createAnswer.SelectToken("data.runtime.systemSimpleRtQuerys.create[0].rtId")?.Value<string>();
+        queryRtId.Should().NotBeNullOrEmpty();
+
+        try
+        {
+            // Act - First page
+            var firstPageQuery = $$"""
+                query {
+                  runtime {
+                    runtimeQuery(rtId: "{{queryRtId}}") {
+                      items {
+                        rows(first: 3) {
+                          items {
+                            ... on RtSimpleQueryRow {
+                              rtId
+                            }
+                          }
+                          pageInfo {
+                            hasNextPage
+                            endCursor
+                          }
+                          totalCount
+                        }
+                      }
+                    }
+                  }
+                }
+                """;
+
+            var firstResult = await _fixture.ExecuteGraphQlAsync(firstPageQuery);
+            firstResult.Errors.Should().BeNullOrEmpty();
+
+            var firstJson = _fixture.SerializeGraphQl(firstResult);
+            var firstAnswer = JObject.Parse(firstJson);
+
+            var endCursor = firstAnswer.SelectToken("data.runtime.runtimeQuery.items[0].rows.pageInfo.endCursor")?.Value<string>();
+            endCursor.Should().NotBeNullOrEmpty();
+
+            var firstPageItems = (JArray)firstAnswer.SelectToken("data.runtime.runtimeQuery.items[0].rows.items")!;
+            firstPageItems.Should().HaveCount(3);
+
+            // Act - Second page using endCursor from first page
+            var secondPageQuery = $$"""
+                query {
+                  runtime {
+                    runtimeQuery(rtId: "{{queryRtId}}") {
+                      items {
+                        rows(first: 3, after: "{{endCursor}}") {
+                          items {
+                            ... on RtSimpleQueryRow {
+                              rtId
+                            }
+                          }
+                          pageInfo {
+                            hasNextPage
+                            endCursor
+                          }
+                          totalCount
+                        }
+                      }
+                    }
+                  }
+                }
+                """;
+
+            var secondResult = await _fixture.ExecuteGraphQlAsync(secondPageQuery);
+            secondResult.Errors.Should().BeNullOrEmpty();
+
+            var secondJson = _fixture.SerializeGraphQl(secondResult);
+            var secondAnswer = JObject.Parse(secondJson);
+
+            var secondPageItems = (JArray)secondAnswer.SelectToken("data.runtime.runtimeQuery.items[0].rows.items")!;
+            secondPageItems.Should().HaveCount(3);
+
+            var secondTotalCount = secondAnswer.SelectToken("data.runtime.runtimeQuery.items[0].rows.totalCount")?.Value<int>();
+            secondTotalCount.Should().Be(8);
+
+            // Verify items are different between pages
+            var firstPageRtIds = firstPageItems.Select(i => i["rtId"]?.Value<string>()).ToList();
+            var secondPageRtIds = secondPageItems.Select(i => i["rtId"]?.Value<string>()).ToList();
+            firstPageRtIds.Should().NotIntersectWith(secondPageRtIds);
+        }
+        finally
+        {
+            await DeletePersistentQuery(queryRtId!);
+        }
+    }
+
     #endregion
 
     #region Aggregation Persistent Queries

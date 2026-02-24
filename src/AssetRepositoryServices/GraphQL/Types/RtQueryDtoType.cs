@@ -2,6 +2,7 @@ using AssetRepositoryServices.Resources;
 using GraphQL;
 using GraphQL.Builders;
 using GraphQL.Types;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Enums;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Inputs;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Scalars;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Utils;
@@ -49,6 +50,8 @@ internal sealed class RtQueryDtoType : ObjectGraphType<RtQueryDto>
                 "Geospatial filter for items, that searches for items near a point")
             .Argument<ListGraphType<FieldFilterDtoType>>(Statics.FieldFilterArg,
                 "Filters items based on field compare")
+            .Argument<NavigationFilterModeDtoType>("navigationFilterMode",
+                "Controls how navigation properties affect the result set. Default: FILTER")
             .ResolveAsync(ResolveRtQueryRowsAsync);
         Connection<NonNullGraphType<QueryAggregationResultType>>("Aggregations")
             .Argument<NonNullGraphType<ResultAggregationInputDtoType>>(Statics.AggregationsArg,
@@ -136,6 +139,13 @@ internal sealed class RtQueryDtoType : ObjectGraphType<RtQueryDto>
             var offset = context.GetOffset();
             // Use query options from the persistent query definition, then enhance with runtime options
             var queryOptions = context.GetQueryOptions(queryUserContext.QueryOptions);
+
+            // Apply navigation filter mode if specified
+            var navigationFilterMode = context.GetArgument<NavigationFilterMode?>("navigationFilterMode");
+            if (navigationFilterMode.HasValue)
+            {
+                queryOptions.UseNavigationFilterMode(navigationFilterMode.Value);
+            }
 
             // For aggregation queries, paging is applied in-memory to the results, not server-side
             var isAggregationQuery = queryUserContext.RtPersistentQuery is RtAggregationRtQuery
