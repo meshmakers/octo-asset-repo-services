@@ -166,6 +166,13 @@ internal abstract class RtMutationBase : ObjectGraphType
                         ckTypeAttributeGraph.ValueType, rtRecords);
                     return true;
                 case AttributeValueTypesDto.BinaryLinked:
+                    if (value == null)
+                    {
+                        rtTypeWithAttributes.SetAttributeValue(ckTypeAttributeGraph.AttributeName,
+                            ckTypeAttributeGraph.ValueType, null);
+                        return true;
+                    }
+
                     if (value is IFormFile file)
                     {
                         var entityBinaryInfo = new EntityBinaryInfo
@@ -178,7 +185,7 @@ internal abstract class RtMutationBase : ObjectGraphType
                         rtTypeWithAttributes.SetAttributeValue(ckTypeAttributeGraph.AttributeName,
                             ckTypeAttributeGraph.ValueType, entityBinaryInfo);
                     }
-                    else if (value != null)
+                    else
                     {
                         // Handle byte arrays passed via JSON (base64 decoded or raw byte array)
                         // This creates an EntityBinaryInfo with the raw bytes as a MemoryStream
