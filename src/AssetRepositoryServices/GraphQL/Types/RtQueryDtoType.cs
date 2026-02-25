@@ -258,6 +258,12 @@ internal sealed class RtQueryDtoType : ObjectGraphType<RtQueryDto>
             }
         }
 
+        if (rtAggregationRtQuery.NavigationFilterMode.HasValue)
+        {
+            queryOptions.UseNavigationFilterMode(
+                (NavigationFilterMode)(int)rtAggregationRtQuery.NavigationFilterMode.Value);
+        }
+
         var rtQueryDto = new RtQueryDto
         {
             QueryRtId = rtAggregationRtQuery.RtId,
@@ -290,6 +296,12 @@ internal sealed class RtQueryDtoType : ObjectGraphType<RtQueryDto>
             {
                 queryOptions.SortOrder(sort.AttributePath.ToPascalCase(), (SortOrders)sort.SortOrder);
             }
+        }
+
+        if (rtQuery.NavigationFilterMode.HasValue)
+        {
+            queryOptions.UseNavigationFilterMode(
+                (NavigationFilterMode)(int)rtQuery.NavigationFilterMode.Value);
         }
 
         var rtQueryDto = new RtQueryDto
@@ -367,6 +379,12 @@ internal sealed class RtQueryDtoType : ObjectGraphType<RtQueryDto>
                     (FieldFilterOperator)fieldFilter.Operator,
                     fieldFilter.ComparisonValue);
             }
+        }
+
+        if (rtGroupingAggregationRtQuery.NavigationFilterMode.HasValue)
+        {
+            queryOptions.UseNavigationFilterMode(
+                (NavigationFilterMode)(int)rtGroupingAggregationRtQuery.NavigationFilterMode.Value);
         }
 
         // Build columns list: groupBy columns first, then aggregation columns
