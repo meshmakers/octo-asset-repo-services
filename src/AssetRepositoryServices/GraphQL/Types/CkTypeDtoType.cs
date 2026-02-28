@@ -2,9 +2,11 @@
 using GraphQL.Builders;
 using GraphQL.Types;
 using Meshmakers.Common.Shared;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Enums;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Scalars;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Utils;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
+using Meshmakers.Octo.ConstructionKit.Contracts.DataTransferObjects;
 using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.ConstructionKit.Contracts.DependencyGraph;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb.Repositories.Entities;
@@ -45,6 +47,10 @@ internal sealed class CkTypeDtoType : ObjectGraphType<CkTypeDto>
                 AssetTexts.Graphql_Type_Filter_AttributePathContainsFilter_Description)
             .Argument<ListGraphType<StringGraphType>>(Statics.AttributePathsFilterArg,
                 AssetTexts.Graphql_Type_Filter_AttributePaths_Description)
+            .Argument<AttributeValueTypesDtoType>(Statics.AttributeValueTypeFilterArg,
+                AssetTexts.Graphql_Type_Filter_AttributeValueType_Description)
+            .Argument<StringGraphType>(Statics.SearchTermArg,
+                AssetTexts.Graphql_Type_Filter_SearchTerm_Description)
             .Resolve(ResolveAvailableQueryColumns);
 
         Connection<CkTypeDtoType>("derivedTypes")
@@ -126,6 +132,10 @@ internal sealed class CkTypeDtoType : ObjectGraphType<CkTypeDto>
             out IEnumerable<string>? filterAttributePaths);
         arg.TryGetArgument(Statics.AttributePathContainsFilterArg,
             out string? attributePathContainsFilter);
+        arg.TryGetArgument(Statics.AttributeValueTypeFilterArg,
+            out AttributeValueTypesDto? attributeValueTypeFilter);
+        arg.TryGetArgument(Statics.SearchTermArg,
+            out string? searchTerm);
 
         var resultList =
             ckCacheService.GetCkTypeQueryColumnPaths(graphQlContext.TenantId, arg.Source.CkTypeId)
@@ -144,6 +154,18 @@ internal sealed class CkTypeDtoType : ObjectGraphType<CkTypeDto>
                     .ToList();
         }
 
+        if (attributeValueTypeFilter.HasValue)
+        {
+            resultList = resultList.Where(a => a.AttributeValueType == attributeValueTypeFilter.Value).ToList();
+        }
+
+        if (!string.IsNullOrWhiteSpace(searchTerm))
+        {
+            var lowerTerm = searchTerm.ToLower();
+            resultList = resultList.Where(a =>
+                a.AttributePath.ToLower().Contains(lowerTerm) ||
+                (a.Description != null && a.Description.ToLower().Contains(lowerTerm))).ToList();
+        }
 
         return ConnectionUtils.ToOctoConnection(resultList.OrderBy(a => a.AttributePath), arg);
     }
@@ -224,7 +246,8 @@ internal sealed class CkTypeDtoType : ObjectGraphType<CkTypeDto>
         var ckTypeQueryColumnDto = new CkTypeQueryColumnDto
         {
             AttributePath = ckTypeQueryColumn.Path,
-            AttributeValueType = ckTypeQueryColumn.ValueType
+            AttributeValueType = ckTypeQueryColumn.ValueType,
+            Description = ckTypeQueryColumn.Description
         };
         return ckTypeQueryColumnDto;
     }
