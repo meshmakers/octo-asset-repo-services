@@ -45,6 +45,9 @@ internal static class Statics
     internal const string StreamDataAttributeArgument = "arg";
     internal const string ItemsQueryArg = "items";
 
+    internal const string IncludeNavigationPropertiesArg = "includeNavigationProperties";
+    internal const string MaxDepthArg = "maxDepth";
+
     internal const string AggregationsArg = "aggregations";
     internal const string CkTypeIdsArg = "ckTypeIds";
 

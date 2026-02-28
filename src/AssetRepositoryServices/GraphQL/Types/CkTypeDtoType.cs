@@ -51,6 +51,10 @@ internal sealed class CkTypeDtoType : ObjectGraphType<CkTypeDto>
                 AssetTexts.Graphql_Type_Filter_AttributeValueType_Description)
             .Argument<StringGraphType>(Statics.SearchTermArg,
                 AssetTexts.Graphql_Type_Filter_SearchTerm_Description)
+            .Argument<BooleanGraphType>(Statics.IncludeNavigationPropertiesArg,
+                "When false, navigation properties are excluded. Default: true.")
+            .Argument<IntGraphType>(Statics.MaxDepthArg,
+                "Limits the depth of navigation property traversal.")
             .Resolve(ResolveAvailableQueryColumns);
 
         Connection<CkTypeDtoType>("derivedTypes")
@@ -136,9 +140,19 @@ internal sealed class CkTypeDtoType : ObjectGraphType<CkTypeDto>
             out AttributeValueTypesDto? attributeValueTypeFilter);
         arg.TryGetArgument(Statics.SearchTermArg,
             out string? searchTerm);
+        arg.TryGetArgument(Statics.IncludeNavigationPropertiesArg,
+            out bool? includeNavigationProperties);
+        arg.TryGetArgument(Statics.MaxDepthArg,
+            out int? maxDepth);
+
+        var options = new CkTypeQueryColumnOptions
+        {
+            IgnoreNavigationProperties = includeNavigationProperties.HasValue && !includeNavigationProperties.Value,
+            MaxDepth = maxDepth
+        };
 
         var resultList =
-            ckCacheService.GetCkTypeQueryColumnPaths(graphQlContext.TenantId, arg.Source.CkTypeId)
+            ckCacheService.GetCkTypeQueryColumnPaths(graphQlContext.TenantId, arg.Source.CkTypeId, options)
                 .Select(CreateCkTypeQueryColumnDto).ToList();
 
         if (filterAttributePaths != null)
