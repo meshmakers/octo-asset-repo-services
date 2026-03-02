@@ -64,9 +64,11 @@ internal sealed class RtTransientQueryDtoType : ObjectGraphType<RtTransientQuery
             var offset = context.GetOffset();
             var queryOptions = context.GetQueryOptions(queryUserContext.QueryOptions);
 
+            var columnPaths = rtTransientQueryDto.Columns.Select(column => column.AttributePath);
+            var fieldFilterPaths = queryOptions.FieldFilters?.Select(ff => ff.AttributePath) ?? [];
             var roleIdDirectionPairs = RtPathEvaluator.TokenizeAndGetNavigationPairsByRtCkId(ckCacheService,
                 tenantRepository.TenantId, rtTransientQueryDto.AssociatedCkTypeId,
-                rtTransientQueryDto.Columns.Select(column => column.AttributePath));
+                columnPaths.Concat(fieldFilterPaths));
 
             var resultSet = await tenantRepository.GetRtEntitiesGraphByTypeAsync(sessionAccessor.Session,
                 rtTransientQueryDto.AssociatedCkTypeId, queryOptions,
@@ -155,9 +157,11 @@ internal sealed class RtTransientQueryDtoType : ObjectGraphType<RtTransientQuery
                 }
             }
 
+            var columnPaths = rtTransientQueryDto.Columns.Select(column => column.AttributePath);
+            var fieldFilterPaths = queryUserContext.QueryOptions.FieldFilters?.Select(ff => ff.AttributePath) ?? [];
             var roleIdDirectionPairs = RtPathEvaluator.TokenizeAndGetNavigationPairsByRtCkId(ckCacheService,
                 tenantRepository.TenantId, rtTransientQueryDto.AssociatedCkTypeId,
-                rtTransientQueryDto.Columns.Select(column => column.AttributePath));
+                columnPaths.Concat(fieldFilterPaths));
 
             var resultSet = await tenantRepository.GetRtEntitiesGraphByTypeAsync(sessionAccessor.Session,
                 rtTransientQueryDto.AssociatedCkTypeId, queryUserContext.QueryOptions,
