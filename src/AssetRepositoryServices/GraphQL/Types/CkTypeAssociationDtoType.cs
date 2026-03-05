@@ -1,5 +1,6 @@
 using GraphQL.Types;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Enums;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Scalars;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
 using Meshmakers.Octo.ConstructionKit.Contracts;
 
@@ -14,10 +15,14 @@ internal sealed class CkTypeAssociationDtoType : ObjectGraphType<CkTypeAssociati
 
         Field(x => x.RoleId, typeof(NonNullGraphType<CkIdGraph<CkAssociationRoleId>>))
             .Description("Construction kit attribute id.");
+        Field(x => x.RtRoleId, typeof(NonNullGraphType<RtCkIdGraph<CkAssociationRoleId>>))
+            .Description("Runtime construction kit id of the association role.");
         Field(x => x.OriginCkTypeId, typeof(NonNullGraphType<CkIdGraph<CkTypeId>>))
             .Description("Type id of the construction kit type of the origin side of the association");
         Field(x => x.TargetCkTypeId, typeof(NonNullGraphType<CkIdGraph<CkTypeId>>))
             .Description("Type id of the construction kit type of the target side of the association");
+        Field(x => x.RtTargetCkTypeId, typeof(NonNullGraphType<RtCkIdGraph<CkTypeId>>))
+            .Description("Runtime construction kit type id of the target side of the association");
         Field(x => x.NavigationPropertyName, typeof(NonNullGraphType<StringGraphType>))
             .Description("Navigation property name of the association for the current side");
         Field(x => x.Multiplicity, typeof(NonNullGraphType<MultiplicitiesDtoType>))

@@ -15,5 +15,7 @@ internal sealed class CkTypeQueryColumnDtoType : ObjectGraphType<CkTypeQueryColu
             .Description("Attribute path within the entity.");
         Field(x => x.AttributeValueType, typeof(NonNullGraphType<AttributeValueTypesDtoType>))
             .Description("Value type of the attribute.");
+        Field(x => x.Description, true)
+            .Description("Description of the attribute.");
     }
 }

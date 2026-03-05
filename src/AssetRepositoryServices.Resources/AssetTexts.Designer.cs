@@ -380,7 +380,19 @@ namespace AssetRepositoryServices.Resources {
                 return ResourceManager.GetString("Graphql_Type_Filter_Aggregations_Description", resourceCulture);
             }
         }
-        
+
+        public static string Graphql_Type_Filter_AttributeValueType_Description {
+            get {
+                return ResourceManager.GetString("Graphql_Type_Filter_AttributeValueType_Description", resourceCulture);
+            }
+        }
+
+        public static string Graphql_Type_Filter_SearchTerm_Description {
+            get {
+                return ResourceManager.GetString("Graphql_Type_Filter_SearchTerm_Description", resourceCulture);
+            }
+        }
+
         public static string Graphql_RtEntityMutationGeneric_DeleteOperation_Description {
             get {
                 return ResourceManager.GetString("Graphql_RtEntityMutationGeneric_DeleteOperation_Description", resourceCulture);

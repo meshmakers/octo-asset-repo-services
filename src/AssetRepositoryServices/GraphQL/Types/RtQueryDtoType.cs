@@ -80,9 +80,11 @@ internal sealed class RtQueryDtoType : ObjectGraphType<RtQueryDto>
             var offset = context.GetOffset();
             var queryOptions = context.GetQueryOptions();
 
+            var columnPaths = rtQueryDto.Columns.Select(column => column.AttributePath);
+            var fieldFilterPaths = queryOptions.FieldFilters?.Select(ff => ff.AttributePath) ?? [];
             var roleIdDirectionPairs = RtPathEvaluator.TokenizeAndGetNavigationPairsByRtCkId(ckCacheService,
                 tenantRepository.TenantId, rtQueryDto.AssociatedCkTypeId,
-                rtQueryDto.Columns.Select(column => column.AttributePath));
+                columnPaths.Concat(fieldFilterPaths));
 
             var resultSet = await tenantRepository.GetRtEntitiesGraphByTypeAsync(sessionAccessor.Session,
                 rtQueryDto.AssociatedCkTypeId, queryOptions, roleIdDirectionPairs, offset,
@@ -177,9 +179,11 @@ internal sealed class RtQueryDtoType : ObjectGraphType<RtQueryDto>
                 }
             }
 
+            var columnPaths = rtQueryDto.Columns.Select(column => column.AttributePath);
+            var fieldFilterPaths = queryOptions.FieldFilters?.Select(ff => ff.AttributePath) ?? [];
             var roleIdDirectionPairs = RtPathEvaluator.TokenizeAndGetNavigationPairsByRtCkId(ckCacheService,
                 tenantRepository.TenantId, rtQueryDto.AssociatedCkTypeId,
-                rtQueryDto.Columns.Select(column => column.AttributePath));
+                columnPaths.Concat(fieldFilterPaths));
 
             // For aggregation queries, don't pass paging parameters to the database query
             var resultSet = await tenantRepository.GetRtEntitiesGraphByTypeAsync(sessionAccessor.Session,
