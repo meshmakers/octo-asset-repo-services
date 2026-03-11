@@ -9,6 +9,7 @@ using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Utils;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
 using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.ConstructionKit.Contracts.DependencyGraph;
+using Meshmakers.Octo.ConstructionKit.Models.System.Generated.System.v2;
 using Meshmakers.Octo.Services.StreamData;
 using Meshmakers.Octo.Services.StreamData.Dtos;
 using Meshmakers.Octo.Services.StreamData.QueryBuilder;
@@ -24,6 +25,11 @@ internal sealed class StreamDataQuery : ObjectGraphType
     {
         _logger = logger;
         Name = "StreamDataModelQuery";
+
+        Connection<NonNullGraphType<StreamDataQueryRowDtoType>>("StreamDataQuery")
+            .Argument<NonNullGraphType<OctoObjectIdType>>(Statics.RtIdArg, "The persisted stream data query runtime id.")
+            .Argument<StreamDataArgumentsGraphType>(Statics.StreamDataArgument, "Override time filter and limit at execution time.")
+            .ResolveAsync(ResolveStreamDataRtQueryAsync);
 
         foreach (var rtEntityDtoType in graphTypesCache.GetStreamTypes())
         {
@@ -224,5 +230,199 @@ internal sealed class StreamDataQuery : ObjectGraphType
                 q.AddVariable(name, name, null, isDataVariable);
             }
         }
+    }
+
+    private async Task<object?> ResolveStreamDataRtQueryAsync(IResolveConnectionContext<object?> arg)
+    {
+        try
+        {
+            _logger.LogDebug("GraphQL query handling for persisted stream data query started");
+
+            var sessionAccessor = arg.GetSessionAccessor();
+            var graphQlUserContext = (GraphQlUserContext)arg.UserContext;
+            var tenantId = graphQlUserContext.TenantId;
+            var tenantRepository = graphQlUserContext.TenantContext.GetTenantRepository();
+
+            // Load the persisted stream data query entity
+            var queryRtId = arg.GetArgument<OctoObjectId>(Statics.RtIdArg);
+            var rtQuery = await tenantRepository.GetRtEntityByRtIdAsync<RtStreamDataSimpleQuery>(
+                sessionAccessor.Session, queryRtId);
+
+            if (rtQuery == null)
+            {
+                throw AssetRepositoryException.RtQueryNotFound(queryRtId);
+            }
+
+            // Build the CrateDB query from the persisted entity
+            var q = new CrateQueryBuilder(tenantId);
+            q.IncludeDefaultVariables();
+
+            // CK type filter
+            var ckTypeId = new RtCkId<CkTypeId>(rtQuery.QueryCkTypeId);
+            q.WithCkTypeIdFilter(ckTypeId);
+
+            // Resolve column names against the CK model to get the correct casing
+            // (GraphQL camelCases attribute names, but CrateDB uses the original CK attribute names)
+            var ckCacheService = arg.GetCkCacheService();
+            var requestedType = ckCacheService.GetRtCkType(tenantId, ckTypeId);
+            var dataStreamAttributes = requestedType.AllAttributes
+                .Where(x => x.Value.IsDataStream)
+                .ToList();
+
+            var columnNames = rtQuery.Columns?.ToList() ?? [];
+            var resolvedColumnNames = new List<string>(columnNames.Count);
+            foreach (var column in columnNames)
+            {
+                // Skip default fields (RtId, CkTypeId, Timestamp, etc.) - already included by IncludeDefaultVariables()
+                var standardField = Constants.DefaultStreamDataFields.FirstOrDefault(x =>
+                    string.Equals(x, column, StringComparison.InvariantCultureIgnoreCase));
+                if (standardField != null)
+                {
+                    resolvedColumnNames.Add(standardField.ToCamelCase());
+                    continue;
+                }
+
+                // Resolve data stream attribute names: PascalCase for CrateDB access, camelCase for alias + resolvedColumnNames
+                var matchedAttribute = dataStreamAttributes
+                    .FirstOrDefault(x => string.Equals(x.Value.AttributeName, column,
+                        StringComparison.InvariantCultureIgnoreCase));
+
+                var resolvedName = matchedAttribute.Value?.AttributeName ?? column;
+                var camelCaseName = resolvedName.ToCamelCase();
+                resolvedColumnNames.Add(camelCaseName);
+                q.AddVariable(resolvedName, camelCaseName, null, true);
+            }
+
+            // Execution-time overrides take precedence over persisted defaults
+            var execOverride = arg.GetArgument<StreamDataArguments?>(Statics.StreamDataArgument);
+
+            // Query mode (from persisted query)
+            var queryMode = rtQuery.QueryMode;
+            var isDownsampling = queryMode is RtStreamDataQueryModesEnum.Downsampling
+                                 || execOverride is { QueryMode: QueryModeDto.Downsampling };
+
+            // Time filter: execution override > persisted defaults
+            var from = execOverride?.From ?? rtQuery.From;
+            var to = execOverride?.To ?? rtQuery.To;
+
+            // Limit: execution override > persisted defaults
+            var limit = execOverride?.Limit ?? (rtQuery.Limit.HasValue ? (int)rtQuery.Limit.Value : null);
+
+            if (isDownsampling)
+            {
+                if (from is null || to is null || limit is null)
+                {
+                    throw AssetRepositoryException.InvalidStreamDataQueryParams();
+                }
+
+                q.WithDownsampling(limit.Value, from.Value, to.Value);
+            }
+            else
+            {
+                if (from is not null && to is not null)
+                {
+                    q.WithTimeFilter(from.Value, to.Value);
+                }
+
+                if (limit is not null)
+                {
+                    q.WithLimit(limit.Value);
+                }
+            }
+
+            // RtId scope filter
+            var rtIds = rtQuery.RtIds?.ToList();
+            if (rtIds is { Count: > 0 })
+            {
+                q.AddWhereIn("RtId", rtIds.ToArray());
+            }
+
+            // Sorting - resolve attribute paths to correct CK casing
+            var sorting = rtQuery.Sorting?.ToList();
+            if (sorting is { Count: > 0 })
+            {
+                foreach (var sortItem in sorting)
+                {
+                    var sortOrder = sortItem.SortOrder switch
+                    {
+                        RtSortOrdersEnum.Descending => SortOrderDto.Descending,
+                        _ => SortOrderDto.Ascending
+                    };
+                    var matchedSortAttr = dataStreamAttributes
+                        .FirstOrDefault(x => string.Equals(x.Value.AttributeName, sortItem.AttributePath,
+                            StringComparison.InvariantCultureIgnoreCase));
+                    var resolvedSortPath = matchedSortAttr.Value?.AttributeName.ToCamelCase() ?? sortItem.AttributePath;
+                    q.OrderBy(resolvedSortPath, sortOrder);
+                }
+            }
+
+            // Field filters
+            var fieldFilters = rtQuery.FieldFilter?.ToList();
+            if (fieldFilters is { Count: > 0 })
+            {
+                foreach (var filter in fieldFilters)
+                {
+                    if (filter.ComparisonValue == null)
+                    {
+                        continue;
+                    }
+
+                    var op = MapFieldFilterOperator(filter.Operator);
+                    // Check if the field is a data column (in the selected columns list) or a standard field
+                    // Use case-insensitive matching since filter paths may also be camelCased
+                    var isDataField = resolvedColumnNames.Any(c =>
+                        string.Equals(c, filter.AttributePath, StringComparison.InvariantCultureIgnoreCase));
+
+                    // Resolve the filter attribute path to the correct CK casing
+                    var resolvedFilterPath = filter.AttributePath;
+                    if (isDataField)
+                    {
+                        var matchedFilterAttr = dataStreamAttributes
+                            .FirstOrDefault(x => string.Equals(x.Value.AttributeName, filter.AttributePath,
+                                StringComparison.InvariantCultureIgnoreCase));
+                        resolvedFilterPath = matchedFilterAttr.Value?.AttributeName.ToCamelCase() ?? filter.AttributePath;
+                    }
+
+                    q.AddFieldFilter(resolvedFilterPath, op, filter.ComparisonValue, isDataField);
+                }
+            }
+
+            // Compile and execute
+            var compiler = new CrateQueryCompiler();
+            var sql = compiler.CompileQuery(q);
+
+            _logger.LogDebug("Executing persisted stream data SQL query: {Sql}", sql);
+
+            var streamDataDatabaseClient = arg.GetStreamDataDatabaseClient();
+            var data = await streamDataDatabaseClient.GetDataAsync(tenantId, sql);
+
+            _logger.LogDebug("Persisted stream data query executed. Got {Count} rows", data.Count);
+
+            var result = data.Select(dp => StreamDataQueryRowDtoType.CreateFromDataPoint(dp, resolvedColumnNames)).ToList();
+
+            var offset = arg.GetOffset();
+            return ConnectionUtils.ToOctoConnection(result, arg,
+                result.Count != 0 ? offset.GetValueOrDefault(0) : 0, result.Count);
+        }
+        catch (Exception e)
+        {
+            return arg.HandleException(e);
+        }
+    }
+
+    private static StreamDataFieldFilterOperator MapFieldFilterOperator(RtFieldFilterOperatorEnum op)
+    {
+        return op switch
+        {
+            RtFieldFilterOperatorEnum.Equals => StreamDataFieldFilterOperator.Equals,
+            RtFieldFilterOperatorEnum.NotEquals => StreamDataFieldFilterOperator.NotEquals,
+            RtFieldFilterOperatorEnum.LessThan => StreamDataFieldFilterOperator.LessThan,
+            RtFieldFilterOperatorEnum.LessEqualThan => StreamDataFieldFilterOperator.LessThanOrEqual,
+            RtFieldFilterOperatorEnum.GreaterThan => StreamDataFieldFilterOperator.GreaterThan,
+            RtFieldFilterOperatorEnum.GreaterEqualThan => StreamDataFieldFilterOperator.GreaterThanOrEqual,
+            RtFieldFilterOperatorEnum.Like => StreamDataFieldFilterOperator.Like,
+            _ => throw new ArgumentOutOfRangeException(nameof(op), op,
+                $"Field filter operator '{op}' is not supported for stream data queries")
+        };
     }
 }
