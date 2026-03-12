@@ -296,11 +296,6 @@ internal sealed class StreamDataQuery : ObjectGraphType
             // Execution-time overrides take precedence over persisted defaults
             var execOverride = arg.GetArgument<StreamDataArguments?>(Statics.StreamDataArgument);
 
-            // Query mode (from persisted query)
-            var queryMode = rtQuery.QueryMode;
-            var isDownsampling = queryMode is RtStreamDataQueryModesEnum.Downsampling
-                                 || execOverride is { QueryMode: QueryModeDto.Downsampling };
-
             // Time filter: execution override > persisted defaults
             var from = execOverride?.From ?? rtQuery.From;
             var to = execOverride?.To ?? rtQuery.To;
@@ -308,26 +303,14 @@ internal sealed class StreamDataQuery : ObjectGraphType
             // Limit: execution override > persisted defaults
             var limit = execOverride?.Limit ?? (rtQuery.Limit.HasValue ? (int)rtQuery.Limit.Value : null);
 
-            if (isDownsampling)
+            if (from is not null && to is not null)
             {
-                if (from is null || to is null || limit is null)
-                {
-                    throw AssetRepositoryException.InvalidStreamDataQueryParams();
-                }
-
-                q.WithDownsampling(limit.Value, from.Value, to.Value);
+                q.WithTimeFilter(from.Value, to.Value);
             }
-            else
-            {
-                if (from is not null && to is not null)
-                {
-                    q.WithTimeFilter(from.Value, to.Value);
-                }
 
-                if (limit is not null)
-                {
-                    q.WithLimit(limit.Value);
-                }
+            if (limit is not null)
+            {
+                q.WithLimit(limit.Value);
             }
 
             // RtId scope filter
