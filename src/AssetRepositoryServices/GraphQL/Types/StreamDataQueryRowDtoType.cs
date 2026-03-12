@@ -61,6 +61,8 @@ internal sealed class StreamDataQueryRowDtoType : ObjectGraphType<StreamDataQuer
                 "ckTypeId" => row.CkTypeId,
                 "timestamp" => row.Timestamp,
                 "rtWellKnownName" => row.RtWellKnownName,
+                "rtCreationDateTime" => row.DataPoint.RtCreationDateTime,
+                "rtChangedDateTime" => row.DataPoint.RtChangedDateTime,
                 _ => GetAttributeValue(row.DataPoint, columnName)
             };
 

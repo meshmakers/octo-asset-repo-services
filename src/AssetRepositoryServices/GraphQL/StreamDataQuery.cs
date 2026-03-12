@@ -261,36 +261,34 @@ internal sealed class StreamDataQuery : ObjectGraphType
             var ckTypeId = new RtCkId<CkTypeId>(rtQuery.QueryCkTypeId);
             q.WithCkTypeIdFilter(ckTypeId);
 
-            // Resolve column names against the CK model to get the correct casing
-            // (GraphQL camelCases attribute names, but CrateDB uses the original CK attribute names)
+            // Resolve column names against the CK model using the central field resolver
             var ckCacheService = arg.GetCkCacheService();
             var requestedType = ckCacheService.GetRtCkType(tenantId, ckTypeId);
-            var dataStreamAttributes = requestedType.AllAttributes
+            var dataStreamAttributeNames = requestedType.AllAttributes
                 .Where(x => x.Value.IsDataStream)
-                .ToList();
+                .Select(x => x.Value.AttributeName);
+            var fieldResolver = new StreamDataFieldResolver(dataStreamAttributeNames);
 
             var columnNames = rtQuery.Columns?.ToList() ?? [];
             var resolvedColumnNames = new List<string>(columnNames.Count);
             foreach (var column in columnNames)
             {
-                // Skip default fields (RtId, CkTypeId, Timestamp, etc.) - already included by IncludeDefaultVariables()
-                var standardField = Constants.DefaultStreamDataFields.FirstOrDefault(x =>
-                    string.Equals(x, column, StringComparison.InvariantCultureIgnoreCase));
-                if (standardField != null)
+                var resolved = fieldResolver.Resolve(column);
+                if (resolved == null)
                 {
-                    resolvedColumnNames.Add(standardField.ToCamelCase());
+                    _logger.LogWarning("Stream data column '{Column}' not found in CK model or default fields, skipping", column);
                     continue;
                 }
 
-                // Resolve data stream attribute names: PascalCase for CrateDB access, camelCase for alias + resolvedColumnNames
-                var matchedAttribute = dataStreamAttributes
-                    .FirstOrDefault(x => string.Equals(x.Value.AttributeName, column,
-                        StringComparison.InvariantCultureIgnoreCase));
+                resolvedColumnNames.Add(resolved.GraphQlAlias);
 
-                var resolvedName = matchedAttribute.Value?.AttributeName ?? column;
-                var camelCaseName = resolvedName.ToCamelCase();
-                resolvedColumnNames.Add(camelCaseName);
-                q.AddVariable(resolvedName, camelCaseName, null, true);
+                if (resolved.Category == StreamDataFieldCategory.Default)
+                {
+                    // Default fields are already included by IncludeDefaultVariables()
+                    continue;
+                }
+
+                q.AddVariable(resolved.CrateDbName, resolved.GraphQlAlias, null, true);
             }
 
             // Execution-time overrides take precedence over persisted defaults
@@ -320,7 +318,7 @@ internal sealed class StreamDataQuery : ObjectGraphType
                 q.AddWhereIn("RtId", rtIds.ToArray());
             }
 
-            // Sorting - resolve attribute paths to correct CK casing
+            // Sorting - resolve attribute paths via the central field resolver
             var sorting = rtQuery.Sorting?.ToList();
             if (sorting is { Count: > 0 })
             {
@@ -331,15 +329,23 @@ internal sealed class StreamDataQuery : ObjectGraphType
                         RtSortOrdersEnum.Descending => SortOrderDto.Descending,
                         _ => SortOrderDto.Ascending
                     };
-                    var matchedSortAttr = dataStreamAttributes
-                        .FirstOrDefault(x => string.Equals(x.Value.AttributeName, sortItem.AttributePath,
-                            StringComparison.InvariantCultureIgnoreCase));
-                    var resolvedSortPath = matchedSortAttr.Value?.AttributeName.ToCamelCase() ?? sortItem.AttributePath;
+                    var resolved = fieldResolver.Resolve(sortItem.AttributePath);
+                    if (resolved == null)
+                    {
+                        _logger.LogWarning("Stream data sort field '{AttributePath}' not found in CK model or default fields, skipping", sortItem.AttributePath);
+                        continue;
+                    }
+
+                    // For defaults, use CrateDbName (PascalCase) to match the variable Name;
+                    // for data fields, use GraphQlAlias (camelCase) to match the variable Alias
+                    var resolvedSortPath = resolved.Category == StreamDataFieldCategory.Default
+                        ? resolved.CrateDbName
+                        : resolved.GraphQlAlias;
                     q.OrderBy(resolvedSortPath, sortOrder);
                 }
             }
 
-            // Field filters
+            // Field filters - resolve via the central field resolver
             var fieldFilters = rtQuery.FieldFilter?.ToList();
             if (fieldFilters is { Count: > 0 })
             {
@@ -351,20 +357,10 @@ internal sealed class StreamDataQuery : ObjectGraphType
                     }
 
                     var op = MapFieldFilterOperator(filter.Operator);
-                    // Check if the field is a data column (in the selected columns list) or a standard field
-                    // Use case-insensitive matching since filter paths may also be camelCased
-                    var isDataField = resolvedColumnNames.Any(c =>
-                        string.Equals(c, filter.AttributePath, StringComparison.InvariantCultureIgnoreCase));
-
-                    // Resolve the filter attribute path to the correct CK casing
-                    var resolvedFilterPath = filter.AttributePath;
-                    if (isDataField)
-                    {
-                        var matchedFilterAttr = dataStreamAttributes
-                            .FirstOrDefault(x => string.Equals(x.Value.AttributeName, filter.AttributePath,
-                                StringComparison.InvariantCultureIgnoreCase));
-                        resolvedFilterPath = matchedFilterAttr.Value?.AttributeName.ToCamelCase() ?? filter.AttributePath;
-                    }
+                    var resolved = fieldResolver.Resolve(filter.AttributePath);
+                    // Always use PascalCase CrateDbName for filters; IsDataField determines SQL syntax
+                    var resolvedFilterPath = resolved?.CrateDbName ?? filter.AttributePath;
+                    var isDataField = resolved?.IsDataField ?? false;
 
                     q.AddFieldFilter(resolvedFilterPath, op, filter.ComparisonValue, isDataField);
                 }
