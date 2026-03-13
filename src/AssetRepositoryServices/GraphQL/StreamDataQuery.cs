@@ -66,6 +66,7 @@ internal sealed class StreamDataQuery : ObjectGraphType
 
             var entityTimeFilter = fieldContext.GetArgument<StreamDataArguments>(Statics.StreamDataArgument);
 
+            // Downsampling: keep existing behavior unchanged (LIMIT = bucket count, no pagination)
             if (entityTimeFilter is { QueryMode: QueryModeDto.Downsampling })
             {
                 if (entityTimeFilter.From is null || entityTimeFilter.To is null || entityTimeFilter.Limit is null)
@@ -75,42 +76,51 @@ internal sealed class StreamDataQuery : ObjectGraphType
 
                 q.WithDownsampling(entityTimeFilter.Limit.Value, entityTimeFilter.From.Value,
                     entityTimeFilter.To.Value);
+
+                HandleRequestedAttributes(fieldContext, requestedType, q);
+
+                if (!HandleRequestedRtIds(arg, q))
+                {
+                    return ConnectionUtils.ToOctoConnection(new List<RtEntityDto>(), arg);
+                }
+
+                var comp = new CrateQueryCompiler();
+                var sql = comp.CompileQuery(q);
+                _logger.LogDebug("Executing SQL query: {Sql}", sql);
+                var streamDataDatabaseClient = arg.GetStreamDataDatabaseClient();
+                var data = await streamDataDatabaseClient.GetDataAsync(tenantId, sql);
+                _logger.LogDebug("SQL query executed. Got {Count} rows", data.Count);
+                var result = data.Select(StreamDataEntityDtoType.CreateStreamDataEntityDto).ToList();
+                return ConnectionUtils.ToOctoConnection(result, arg, 0, result.Count);
             }
 
-            else if (entityTimeFilter is { From: not null, To: not null })
+            // Normal mode: store rowCap, apply time filter
+            int? rowCap = null;
+            if (entityTimeFilter is { From: not null, To: not null })
             {
                 q.WithTimeFilter(entityTimeFilter.From.Value, entityTimeFilter.To.Value);
             }
-
             else if (entityTimeFilter is { Limit: not null })
             {
-                q.WithLimit(entityTimeFilter.Limit.Value);
+                rowCap = entityTimeFilter.Limit.Value;
             }
 
             HandleRequestedAttributes(fieldContext, requestedType, q);
 
             if (!HandleRequestedRtIds(arg, q))
-                // we got an empty array of rtIds so we return an empty connection
             {
                 return ConnectionUtils.ToOctoConnection(new List<RtEntityDto>(), arg);
             }
 
-            var comp = new CrateQueryCompiler();
-            var sql = comp.CompileQuery(q);
+            // Database-level pagination
+            var (pagedData, totalCount, effectiveOffset) = await ExecutePaginatedStreamDataQueryAsync(
+                q, arg.GetStreamDataDatabaseClient(), tenantId, arg.GetOffset(), arg.First, rowCap);
 
-            _logger.LogDebug("Executing SQL query: {Sql}", sql);
+            _logger.LogDebug("SQL query executed. Got {Count} rows, totalCount={TotalCount}", pagedData.Count, totalCount);
 
-            var streamDataDatabaseClient = arg.GetStreamDataDatabaseClient();
-
-            var data = await streamDataDatabaseClient.GetDataAsync(tenantId, sql);
-
-            _logger.LogDebug("SQL query executed. Got {Count} rows", data.Count);
-
-            var result = data.Select(StreamDataEntityDtoType.CreateStreamDataEntityDto).ToList();
-
-            var offset = arg.GetOffset();
-            return ConnectionUtils.ToOctoConnection(result, arg, result.Count != 0 ? offset.GetValueOrDefault(0) : 0,
-                result.Count);
+            var pagedResult = pagedData.Select(StreamDataEntityDtoType.CreateStreamDataEntityDto).ToList();
+            return ConnectionUtils.ToOctoConnection(pagedResult, arg,
+                pagedResult.Count != 0 ? effectiveOffset : 0, totalCount);
         }
         catch (Exception e)
         {
@@ -299,17 +309,12 @@ internal sealed class StreamDataQuery : ObjectGraphType
             var from = execOverride?.From ?? rtQuery.From;
             var to = execOverride?.To ?? rtQuery.To;
 
-            // Limit: execution override > persisted defaults
-            var limit = execOverride?.Limit ?? (rtQuery.Limit.HasValue ? (int)rtQuery.Limit.Value : null);
+            // Limit: execution override > persisted defaults — stored as rowCap, not set on query builder
+            var rowCap = execOverride?.Limit ?? (rtQuery.Limit.HasValue ? (int)rtQuery.Limit.Value : null);
 
             if (from is not null && to is not null)
             {
                 q.WithTimeFilter(from.Value, to.Value);
-            }
-
-            if (limit is not null)
-            {
-                q.WithLimit(limit.Value);
             }
 
             // RtId scope filter
@@ -391,27 +396,84 @@ internal sealed class StreamDataQuery : ObjectGraphType
                 }
             }
 
-            // Compile and execute
-            var compiler = new CrateQueryCompiler();
-            var sql = compiler.CompileQuery(q);
+            // Database-level pagination
+            var (pagedData, totalCount, effectiveOffset) = await ExecutePaginatedStreamDataQueryAsync(
+                q, arg.GetStreamDataDatabaseClient(), tenantId, arg.GetOffset(), arg.First, rowCap);
 
-            _logger.LogDebug("Executing persisted stream data SQL query: {Sql}", sql);
+            _logger.LogDebug("Persisted stream data query executed. Got {Count} rows, totalCount={TotalCount}", pagedData.Count, totalCount);
 
-            var streamDataDatabaseClient = arg.GetStreamDataDatabaseClient();
-            var data = await streamDataDatabaseClient.GetDataAsync(tenantId, sql);
-
-            _logger.LogDebug("Persisted stream data query executed. Got {Count} rows", data.Count);
-
-            var result = data.Select(dp => StreamDataQueryRowDtoType.CreateFromDataPoint(dp, resolvedColumnNames)).ToList();
-
-            var offset = arg.GetOffset();
+            var result = pagedData.Select(dp => StreamDataQueryRowDtoType.CreateFromDataPoint(dp, resolvedColumnNames)).ToList();
             return ConnectionUtils.ToOctoConnection(result, arg,
-                result.Count != 0 ? offset.GetValueOrDefault(0) : 0, result.Count);
+                result.Count != 0 ? effectiveOffset : 0, totalCount);
         }
         catch (Exception e)
         {
             return arg.HandleException(e);
         }
+    }
+
+    private async Task<(List<DataPointDto> Data, int TotalCount, int Offset)> ExecutePaginatedStreamDataQueryAsync(
+        CrateQueryBuilder q,
+        IStreamDataDatabaseClient client,
+        string tenantId,
+        int? offset,
+        int? pageSize,
+        int? rowCap)
+    {
+        var compiler = new CrateQueryCompiler();
+
+        // Compile count query BEFORE setting LIMIT/OFFSET on the query builder
+        var countSql = compiler.CompileCountQuery(q);
+
+        // Add Timestamp tiebreaker for deterministic OFFSET-based pagination.
+        // Without this, columns with many equal values (e.g., NULLs) cause
+        // rows to appear on multiple pages in CrateDB's distributed query execution.
+        q.AddOrderByTiebreaker("Timestamp", SortOrderDto.Ascending);
+
+        var effectiveOffset = offset.GetValueOrDefault(0);
+
+        // Compute effective page limit considering rowCap
+        int? effectivePageLimit = pageSize;
+        if (rowCap.HasValue && effectivePageLimit.HasValue)
+        {
+            effectivePageLimit = Math.Min(effectivePageLimit.Value, Math.Max(0, rowCap.Value - effectiveOffset));
+        }
+        else if (rowCap.HasValue)
+        {
+            effectivePageLimit = Math.Max(0, rowCap.Value - effectiveOffset);
+        }
+
+        // Edge case: offset is beyond the row cap — return empty immediately
+        if (effectivePageLimit is <= 0)
+        {
+            return ([], rowCap.GetValueOrDefault(0), effectiveOffset);
+        }
+
+        if (effectiveOffset > 0)
+        {
+            q.WithOffset(effectiveOffset);
+        }
+
+        if (effectivePageLimit is > 0)
+        {
+            q.WithLimit(effectivePageLimit.Value);
+        }
+
+        var dataSql = compiler.CompileQuery(q);
+
+        _logger.LogDebug("Executing paginated stream data SQL: {DataSql} | Count: {CountSql}", dataSql, countSql);
+
+        // Execute count + data in parallel
+        var countTask = client.GetCountAsync(tenantId, countSql);
+        var dataTask = client.GetDataAsync(tenantId, dataSql);
+        await Task.WhenAll(countTask, dataTask);
+
+        var totalCount = countTask.Result;
+        var effectiveTotalCount = rowCap.HasValue
+            ? (int)Math.Min(totalCount, rowCap.Value)
+            : (int)totalCount;
+
+        return (dataTask.Result, effectiveTotalCount, effectiveOffset);
     }
 
     private static StreamDataFieldFilterOperator MapFieldFilterOperator(RtFieldFilterOperatorEnum op)
