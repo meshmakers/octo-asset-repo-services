@@ -29,6 +29,7 @@ internal sealed class StreamDataQuery : ObjectGraphType
         Connection<NonNullGraphType<StreamDataQueryRowDtoType>>("StreamDataQuery")
             .Argument<NonNullGraphType<OctoObjectIdType>>(Statics.RtIdArg, "The persisted stream data query runtime id.")
             .Argument<StreamDataArgumentsGraphType>(Statics.StreamDataArgument, "Override time filter and limit at execution time.")
+            .Argument<ListGraphType<SortDtoType>>(Statics.SortOrderArg, "Sort order for items")
             .ResolveAsync(ResolveStreamDataRtQueryAsync);
 
         foreach (var rtEntityDtoType in graphTypesCache.GetStreamTypes())
@@ -318,30 +319,54 @@ internal sealed class StreamDataQuery : ObjectGraphType
                 q.AddWhereIn("RtId", rtIds.ToArray());
             }
 
-            // Sorting - resolve attribute paths via the central field resolver
-            var sorting = rtQuery.Sorting?.ToList();
-            if (sorting is { Count: > 0 })
+            // Sorting: runtime override from column header clicks > persisted sorting
+            if (arg.TryGetArgument(Statics.SortOrderArg, out IEnumerable<SortDto>? runtimeSortDtos))
             {
-                foreach (var sortItem in sorting)
+                foreach (var sortDto in runtimeSortDtos)
                 {
-                    var sortOrder = sortItem.SortOrder switch
+                    var sortOrder = sortDto.SortOrder switch
                     {
-                        RtSortOrdersEnum.Descending => SortOrderDto.Descending,
+                        SortOrdersDto.Descending => SortOrderDto.Descending,
                         _ => SortOrderDto.Ascending
                     };
-                    var resolved = fieldResolver.Resolve(sortItem.AttributePath);
+                    var resolved = fieldResolver.Resolve(sortDto.AttributePath);
                     if (resolved == null)
                     {
-                        _logger.LogWarning("Stream data sort field '{AttributePath}' not found in CK model or default fields, skipping", sortItem.AttributePath);
+                        _logger.LogWarning("Stream data sort field '{AttributePath}' not found in CK model or default fields, skipping", sortDto.AttributePath);
                         continue;
                     }
 
-                    // For defaults, use CrateDbName (PascalCase) to match the variable Name;
-                    // for data fields, use GraphQlAlias (camelCase) to match the variable Alias
                     var resolvedSortPath = resolved.Category == StreamDataFieldCategory.Default
                         ? resolved.CrateDbName
                         : resolved.GraphQlAlias;
                     q.OrderBy(resolvedSortPath, sortOrder);
+                }
+            }
+            else
+            {
+                // Fall back to persisted sorting from query entity
+                var sorting = rtQuery.Sorting?.ToList();
+                if (sorting is { Count: > 0 })
+                {
+                    foreach (var sortItem in sorting)
+                    {
+                        var sortOrder = sortItem.SortOrder switch
+                        {
+                            RtSortOrdersEnum.Descending => SortOrderDto.Descending,
+                            _ => SortOrderDto.Ascending
+                        };
+                        var resolved = fieldResolver.Resolve(sortItem.AttributePath);
+                        if (resolved == null)
+                        {
+                            _logger.LogWarning("Stream data sort field '{AttributePath}' not found in CK model or default fields, skipping", sortItem.AttributePath);
+                            continue;
+                        }
+
+                        var resolvedSortPath = resolved.Category == StreamDataFieldCategory.Default
+                            ? resolved.CrateDbName
+                            : resolved.GraphQlAlias;
+                        q.OrderBy(resolvedSortPath, sortOrder);
+                    }
                 }
             }
 
