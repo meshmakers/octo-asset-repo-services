@@ -87,7 +87,7 @@ internal sealed class StreamDataQueryRowDtoType : ObjectGraphType<StreamDataQuer
     {
         return new StreamDataQueryRowDto
         {
-            RtId = dataPoint.RtId ?? default,
+            RtId = dataPoint.RtId ?? throw OctoGraphQLException.RtIdUndefined(),
             CkTypeId = dataPoint.CkTypeId ?? throw OctoGraphQLException.CkTypeIdUndefined(),
             Timestamp = dataPoint.Timestamp,
             RtWellKnownName = dataPoint.RtWellKnownName,

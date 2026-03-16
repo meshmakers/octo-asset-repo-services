@@ -325,7 +325,7 @@ internal sealed class StreamDataQuery : ObjectGraphType
             }
 
             // Sorting: runtime override from column header clicks > persisted sorting
-            if (arg.TryGetArgument(Statics.SortOrderArg, out IEnumerable<SortDto>? runtimeSortDtos))
+            if (arg.TryGetArgument(Statics.SortOrderArg, out IEnumerable<SortDto>? runtimeSortDtos) && runtimeSortDtos.Any())
             {
                 foreach (var sortDto in runtimeSortDtos)
                 {
@@ -443,10 +443,14 @@ internal sealed class StreamDataQuery : ObjectGraphType
             effectivePageLimit = Math.Max(0, rowCap.Value - effectiveOffset);
         }
 
-        // Edge case: offset is beyond the row cap — return empty immediately
+        // Edge case: offset is beyond the row cap — still need actual count
         if (effectivePageLimit is <= 0)
         {
-            return ([], rowCap.GetValueOrDefault(0), effectiveOffset);
+            var emptyCountResult = await client.GetCountAsync(tenantId, countSql);
+            var emptyTotalCount = rowCap.HasValue
+                ? (int)Math.Min(emptyCountResult, rowCap.Value)
+                : (int)emptyCountResult;
+            return ([], emptyTotalCount, effectiveOffset);
         }
 
         if (effectiveOffset > 0)
