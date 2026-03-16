@@ -280,17 +280,33 @@ internal sealed class StreamDataQuery : ObjectGraphType
                 .Select(x => x.Value.AttributeName);
             var fieldResolver = new StreamDataFieldResolver(dataStreamAttributeNames);
 
+            // Extract sort and filter field names for up-front validation
+            var execOverride = arg.GetArgument<StreamDataArguments?>(Statics.StreamDataArgument);
+
+            IEnumerable<string>? sortFieldNames;
+            if (arg.TryGetArgument(Statics.SortOrderArg, out IEnumerable<SortDto>? runtimeSortDtos) && runtimeSortDtos.Any())
+            {
+                sortFieldNames = runtimeSortDtos.Select(s => s.AttributePath);
+            }
+            else
+            {
+                var sorting = rtQuery.Sorting?.ToList();
+                sortFieldNames = sorting is { Count: > 0 } ? sorting.Select(s => s.AttributePath) : null;
+            }
+
+            var fieldFilters = rtQuery.FieldFilter?.ToList();
+            var filterFieldNames = fieldFilters is { Count: > 0 }
+                ? fieldFilters.Where(f => f.ComparisonValue != null).Select(f => f.AttributePath)
+                : null;
+
             var columnNames = rtQuery.Columns?.ToList() ?? [];
+            ValidateStreamDataFields(fieldResolver, columnNames, sortFieldNames, filterFieldNames);
+
+            // Resolve validated columns
             var resolvedColumnNames = new List<string>(columnNames.Count);
             foreach (var column in columnNames)
             {
-                var resolved = fieldResolver.Resolve(column);
-                if (resolved == null)
-                {
-                    _logger.LogWarning("Stream data column '{Column}' not found in CK model or default fields, skipping", column);
-                    continue;
-                }
-
+                var resolved = fieldResolver.Resolve(column)!;
                 resolvedColumnNames.Add(resolved.GraphQlAlias);
 
                 if (resolved.Category == StreamDataFieldCategory.Default)
@@ -301,9 +317,6 @@ internal sealed class StreamDataQuery : ObjectGraphType
 
                 q.AddVariable(resolved.CrateDbName, resolved.GraphQlAlias, null, true);
             }
-
-            // Execution-time overrides take precedence over persisted defaults
-            var execOverride = arg.GetArgument<StreamDataArguments?>(Statics.StreamDataArgument);
 
             // Time filter: execution override > persisted defaults
             var from = execOverride?.From ?? rtQuery.From;
@@ -325,7 +338,7 @@ internal sealed class StreamDataQuery : ObjectGraphType
             }
 
             // Sorting: runtime override from column header clicks > persisted sorting
-            if (arg.TryGetArgument(Statics.SortOrderArg, out IEnumerable<SortDto>? runtimeSortDtos) && runtimeSortDtos.Any())
+            if (runtimeSortDtos != null && runtimeSortDtos.Any())
             {
                 foreach (var sortDto in runtimeSortDtos)
                 {
@@ -334,13 +347,7 @@ internal sealed class StreamDataQuery : ObjectGraphType
                         SortOrdersDto.Descending => SortOrderDto.Descending,
                         _ => SortOrderDto.Ascending
                     };
-                    var resolved = fieldResolver.Resolve(sortDto.AttributePath);
-                    if (resolved == null)
-                    {
-                        _logger.LogWarning("Stream data sort field '{AttributePath}' not found in CK model or default fields, skipping", sortDto.AttributePath);
-                        continue;
-                    }
-
+                    var resolved = fieldResolver.Resolve(sortDto.AttributePath)!;
                     var resolvedSortPath = resolved.Category == StreamDataFieldCategory.Default
                         ? resolved.CrateDbName
                         : resolved.GraphQlAlias;
@@ -360,13 +367,7 @@ internal sealed class StreamDataQuery : ObjectGraphType
                             RtSortOrdersEnum.Descending => SortOrderDto.Descending,
                             _ => SortOrderDto.Ascending
                         };
-                        var resolved = fieldResolver.Resolve(sortItem.AttributePath);
-                        if (resolved == null)
-                        {
-                            _logger.LogWarning("Stream data sort field '{AttributePath}' not found in CK model or default fields, skipping", sortItem.AttributePath);
-                            continue;
-                        }
-
+                        var resolved = fieldResolver.Resolve(sortItem.AttributePath)!;
                         var resolvedSortPath = resolved.Category == StreamDataFieldCategory.Default
                             ? resolved.CrateDbName
                             : resolved.GraphQlAlias;
@@ -375,8 +376,7 @@ internal sealed class StreamDataQuery : ObjectGraphType
                 }
             }
 
-            // Field filters - resolve via the central field resolver
-            var fieldFilters = rtQuery.FieldFilter?.ToList();
+            // Field filters - resolve via the central field resolver (all validated above)
             if (fieldFilters is { Count: > 0 })
             {
                 foreach (var filter in fieldFilters)
@@ -388,11 +388,12 @@ internal sealed class StreamDataQuery : ObjectGraphType
 
                     var op = MapFieldFilterOperator(filter.Operator);
                     var resolved = fieldResolver.Resolve(filter.AttributePath);
-                    // Always use PascalCase CrateDbName for filters; IsDataField determines SQL syntax
-                    var resolvedFilterPath = resolved?.CrateDbName ?? filter.AttributePath;
-                    var isDataField = resolved?.IsDataField ?? false;
+                    if (resolved == null)
+                    {
+                        continue;
+                    }
 
-                    q.AddFieldFilter(resolvedFilterPath, op, filter.ComparisonValue, isDataField);
+                    q.AddFieldFilter(resolved.CrateDbName, op, filter.ComparisonValue, resolved.IsDataField);
                 }
             }
 
@@ -478,6 +479,53 @@ internal sealed class StreamDataQuery : ObjectGraphType
             : (int)totalCount;
 
         return (dataTask.Result, effectiveTotalCount, effectiveOffset);
+    }
+
+    internal static void ValidateStreamDataFields(
+        StreamDataFieldResolver fieldResolver,
+        IEnumerable<string>? columnNames,
+        IEnumerable<string>? sortFieldNames,
+        IEnumerable<string>? filterFieldNames)
+    {
+        var unknownFields = new List<string>();
+
+        if (columnNames != null)
+        {
+            foreach (var name in columnNames)
+            {
+                if (fieldResolver.Resolve(name) == null)
+                {
+                    unknownFields.Add(name);
+                }
+            }
+        }
+
+        if (sortFieldNames != null)
+        {
+            foreach (var name in sortFieldNames)
+            {
+                if (fieldResolver.Resolve(name) == null)
+                {
+                    unknownFields.Add(name);
+                }
+            }
+        }
+
+        if (filterFieldNames != null)
+        {
+            foreach (var name in filterFieldNames)
+            {
+                if (fieldResolver.Resolve(name) == null)
+                {
+                    unknownFields.Add(name);
+                }
+            }
+        }
+
+        if (unknownFields.Count > 0)
+        {
+            throw OctoGraphQLException.InvalidColumnPaths(unknownFields);
+        }
     }
 
     private static StreamDataFieldFilterOperator MapFieldFilterOperator(RtFieldFilterOperatorEnum op)
