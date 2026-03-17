@@ -32,6 +32,15 @@ internal sealed class StreamDataQuery : ObjectGraphType
             .Argument<ListGraphType<SortDtoType>>(Statics.SortOrderArg, "Sort order for items")
             .ResolveAsync(ResolveStreamDataRtQueryAsync);
 
+        Connection<NonNullGraphType<StreamDataQueryRowDtoType>>("TransientStreamDataQuery")
+            .Argument<NonNullGraphType<StringGraphType>>(Statics.CkIdArg, "The construction kit type with the given id.")
+            .Argument<NonNullGraphType<ListGraphType<NonNullGraphType<StringGraphType>>>>(Statics.ColumnPathsArg, "Data stream attribute names to project.")
+            .Argument<StreamDataArgumentsGraphType>(Statics.StreamDataArgument, "Time filter and limit.")
+            .Argument<ListGraphType<SortDtoType>>(Statics.SortOrderArg, "Sort order for items")
+            .Argument<ListGraphType<FieldFilterDtoType>>(Statics.FieldFilterArg, "Field-level comparison filters")
+            .Argument<ListGraphType<OctoObjectIdType>>(Statics.RtIdsArg, "Scope to specific runtime entity IDs")
+            .ResolveAsync(ResolveTransientStreamDataQueryAsync);
+
         foreach (var rtEntityDtoType in graphTypesCache.GetStreamTypes())
         {
             this.Connection<object?, IGraphType, StreamDataEntityDto>(graphTypesCache, rtEntityDtoType,
@@ -411,6 +420,153 @@ internal sealed class StreamDataQuery : ObjectGraphType
         {
             return arg.HandleException(e);
         }
+    }
+
+    private async Task<object?> ResolveTransientStreamDataQueryAsync(IResolveConnectionContext<object?> arg)
+    {
+        try
+        {
+            _logger.LogDebug("GraphQL query handling for transient stream data query started");
+
+            var graphQlUserContext = (GraphQlUserContext)arg.UserContext;
+            var tenantId = graphQlUserContext.TenantId;
+
+            // Read inline arguments
+            var ckTypeId = arg.GetArgument<RtCkId<CkTypeId>>(Statics.CkIdArg);
+            var columnNames = arg.GetArgument<IEnumerable<string>>(Statics.ColumnPathsArg).ToList();
+
+            // Build the field resolver from CK model
+            var ckCacheService = arg.GetCkCacheService();
+            var requestedType = ckCacheService.GetRtCkType(tenantId, ckTypeId);
+            var dataStreamAttributeNames = requestedType.AllAttributes
+                .Where(x => x.Value.IsDataStream)
+                .Select(x => x.Value.AttributeName);
+            var fieldResolver = new StreamDataFieldResolver(dataStreamAttributeNames);
+
+            // Collect sort and filter field names for up-front validation
+            arg.TryGetArgument(Statics.SortOrderArg, out IEnumerable<SortDto>? sortDtos);
+            var sortFieldNames = sortDtos?.Select(s => s.AttributePath);
+
+            arg.TryGetArgument(Statics.FieldFilterArg, out IEnumerable<FieldFilterDto>? fieldFilterDtos);
+            var fieldFilters = fieldFilterDtos?.ToList();
+            var filterFieldNames = fieldFilters is { Count: > 0 }
+                ? fieldFilters.Where(f => f.ComparisonValue != null).Select(f => f.AttributePath)
+                : null;
+
+            ValidateStreamDataFields(fieldResolver, columnNames, sortFieldNames, filterFieldNames);
+
+            // Build CrateDB query
+            var q = new CrateQueryBuilder(tenantId);
+            q.IncludeDefaultVariables();
+            q.WithCkTypeIdFilter(ckTypeId);
+
+            // Resolve validated columns
+            var resolvedColumnNames = new List<string>(columnNames.Count);
+            foreach (var column in columnNames)
+            {
+                var resolved = fieldResolver.Resolve(column)!;
+                resolvedColumnNames.Add(resolved.GraphQlAlias);
+
+                if (resolved.Category == StreamDataFieldCategory.Default)
+                {
+                    continue;
+                }
+
+                q.AddVariable(resolved.CrateDbName, resolved.GraphQlAlias, null, true);
+            }
+
+            // Time filter and limit
+            var execArgs = arg.GetArgument<StreamDataArguments?>(Statics.StreamDataArgument);
+            int? rowCap = null;
+            if (execArgs is { From: not null, To: not null })
+            {
+                q.WithTimeFilter(execArgs.From.Value, execArgs.To.Value);
+            }
+
+            if (execArgs?.Limit is not null)
+            {
+                rowCap = execArgs.Limit.Value;
+            }
+
+            // RtId scope filter
+            if (arg.TryGetArgument(Statics.RtIdsArg, null, out IEnumerable<OctoObjectId>? rtIds))
+            {
+                var rtIdList = rtIds.ToList();
+                if (rtIdList.Count > 0)
+                {
+                    q.AddWhereIn("RtId", rtIdList.Select(x => x.ToString()).ToArray());
+                }
+            }
+
+            // Sorting
+            if (sortDtos != null)
+            {
+                foreach (var sortDto in sortDtos)
+                {
+                    var sortOrder = sortDto.SortOrder switch
+                    {
+                        SortOrdersDto.Descending => SortOrderDto.Descending,
+                        _ => SortOrderDto.Ascending
+                    };
+                    var resolved = fieldResolver.Resolve(sortDto.AttributePath)!;
+                    var resolvedSortPath = resolved.Category == StreamDataFieldCategory.Default
+                        ? resolved.CrateDbName
+                        : resolved.GraphQlAlias;
+                    q.OrderBy(resolvedSortPath, sortOrder);
+                }
+            }
+
+            // Field filters
+            if (fieldFilters is { Count: > 0 })
+            {
+                foreach (var filter in fieldFilters)
+                {
+                    if (filter.ComparisonValue == null)
+                    {
+                        continue;
+                    }
+
+                    var op = MapFieldFilterOperatorDto(filter.Operator);
+                    var resolved = fieldResolver.Resolve(filter.AttributePath);
+                    if (resolved == null)
+                    {
+                        continue;
+                    }
+
+                    q.AddFieldFilter(resolved.CrateDbName, op, filter.ComparisonValue.ToString()!, resolved.IsDataField);
+                }
+            }
+
+            // Database-level pagination
+            var (pagedData, totalCount, effectiveOffset) = await ExecutePaginatedStreamDataQueryAsync(
+                q, arg.GetStreamDataDatabaseClient(), tenantId, arg.GetOffset(), arg.First, rowCap);
+
+            _logger.LogDebug("Transient stream data query executed. Got {Count} rows, totalCount={TotalCount}", pagedData.Count, totalCount);
+
+            var result = pagedData.Select(dp => StreamDataQueryRowDtoType.CreateFromDataPoint(dp, resolvedColumnNames)).ToList();
+            return ConnectionUtils.ToOctoConnection(result, arg,
+                result.Count != 0 ? effectiveOffset : 0, totalCount);
+        }
+        catch (Exception e)
+        {
+            return arg.HandleException(e);
+        }
+    }
+
+    private static StreamDataFieldFilterOperator MapFieldFilterOperatorDto(FieldFilterOperatorDto op)
+    {
+        return op switch
+        {
+            FieldFilterOperatorDto.Equals => StreamDataFieldFilterOperator.Equals,
+            FieldFilterOperatorDto.NotEquals => StreamDataFieldFilterOperator.NotEquals,
+            FieldFilterOperatorDto.LessThan => StreamDataFieldFilterOperator.LessThan,
+            FieldFilterOperatorDto.LessEqualThan => StreamDataFieldFilterOperator.LessThanOrEqual,
+            FieldFilterOperatorDto.GreaterThan => StreamDataFieldFilterOperator.GreaterThan,
+            FieldFilterOperatorDto.GreaterEqualThan => StreamDataFieldFilterOperator.GreaterThanOrEqual,
+            FieldFilterOperatorDto.Like => StreamDataFieldFilterOperator.Like,
+            _ => throw new ArgumentOutOfRangeException(nameof(op), op,
+                $"Field filter operator '{op}' is not supported for stream data queries")
+        };
     }
 
     private async Task<(List<DataPointDto> Data, int TotalCount, int Offset)> ExecutePaginatedStreamDataQueryAsync(
