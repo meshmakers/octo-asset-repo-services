@@ -96,11 +96,12 @@ GraphQL types are dynamically created based on the tenant's construction kit mod
 Located in versioned API folders:
 
 **System APIs** (`SystemApi/v1/Controllers/`):
-- `TenantsController.cs` - Tenant management operations
+- `TenantsController.cs` - System-level tenant management (legacy, kept for backward compatibility)
 - `ModelsController.cs` - Construction kit model import/management
 - `DiagnosticsController.cs` - Health and diagnostics
 
 **Tenant APIs** (`TenantApi/v1/Controllers/`):
+- `TenantsController.cs` - Child tenant management (each tenant manages its own sub-tenants)
 - `LargeBinariesController.cs` - Binary file upload/download
 
 #### 4. Stream Data Management
