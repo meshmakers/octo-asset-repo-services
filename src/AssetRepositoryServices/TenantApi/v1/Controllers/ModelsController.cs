@@ -1,4 +1,4 @@
-﻿using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations;
 using Asp.Versioning;
 using IdentityModel;
 using Meshmakers.Octo.Common.DistributionEventHub.Services;
@@ -9,13 +9,13 @@ using Meshmakers.Octo.Services.Contracts.DistributionEventHub.Commands;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
-namespace Meshmakers.Octo.Backend.AssetRepositoryServices.SystemApi.v1.Controllers;
+namespace Meshmakers.Octo.Backend.AssetRepositoryServices.TenantApi.v1.Controllers;
 
 /// <summary>
 ///     REST Controller for CK and RT model management
 /// </summary>
 [Authorize(AuthenticationSchemes = OidcConstants.AuthenticationSchemes.AuthorizationHeaderBearer)]
-[Route("system/v{version:apiVersion}/[controller]")]
+[Route("{tenantId:tenantId}/v{version:apiVersion}/[controller]")]
 [ApiController]
 [ApiVersion("1.0")]
 public class ModelsController : ControllerBase
@@ -47,24 +47,29 @@ public class ModelsController : ControllerBase
         _importCkCommandClient = importCkCommandClient;
     }
 
-    // POST: system/Models/ExportRtByQuery
+    // POST: {tenantId}/v1/Models/ExportRtByQuery
     /// <summary>
     ///     Exports a runtime model by query
     /// </summary>
-    /// <param name="tenantId">ID of tenant the request relies on to</param>
     /// <param name="exportModelRequestByQueryDto">The query options for the export</param>
     /// <returns></returns>
     [HttpPost]
     [Route("ExportRtByQuery")]
-    [Authorize(AssetRepositoryServiceConstants.SystemAssetApiReadOnlyPolicy)]
+    [Authorize(AssetRepositoryServiceConstants.TenantAssetApiReadOnlyPolicy)]
     [ProducesResponseType(typeof(TransferModelResponseDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(InternalServerErrorDto), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(InternalServerErrorDto), StatusCodes.Status500InternalServerError)]
-    public async Task<IActionResult> ExportRtByQueryAsync([Required] string tenantId,
+    public async Task<IActionResult> ExportRtByQueryAsync(
         [FromBody] ExportModelRequestByQueryDto exportModelRequestByQueryDto)
     {
         try
         {
+            var tenantId = HttpContext.GetTenantId();
+            if (string.IsNullOrEmpty(tenantId))
+            {
+                return BadRequest(new OperationFailedErrorDto("TenantId is required"));
+            }
+
             var args = new ExportRtByQueryCommandRequest(tenantId, exportModelRequestByQueryDto.QueryId);
             var r =
                 await _exportRtByQueryCommandClient.GetResponse<JobCreatedResponse>(args);
@@ -79,27 +84,32 @@ public class ModelsController : ControllerBase
             return StatusCode(StatusCodes.Status500InternalServerError, new InternalServerErrorDto(ex.Message));
         }
     }
-    
-    // POST: system/Models/ExportRtByDeepGraph
+
+    // POST: {tenantId}/v1/Models/ExportRtByDeepGraph
     /// <summary>
-    ///     Exports a runtime model
+    ///     Exports a runtime model by deep graph
     /// </summary>
-    /// <param name="tenantId">ID of tenant the request relies on to</param>
     /// <param name="exportModelRequestByDeepGraphDto">The deep graph options for the export</param>
     /// <returns></returns>
     [HttpPost]
     [Route("ExportRtByDeepGraph")]
-    [Authorize(AssetRepositoryServiceConstants.SystemAssetApiReadOnlyPolicy)]
+    [Authorize(AssetRepositoryServiceConstants.TenantAssetApiReadOnlyPolicy)]
     [ProducesResponseType(typeof(TransferModelResponseDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(InternalServerErrorDto), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(InternalServerErrorDto), StatusCodes.Status500InternalServerError)]
-    public async Task<IActionResult> ExportRtByDeepGraphAsync([Required] string tenantId,
+    public async Task<IActionResult> ExportRtByDeepGraphAsync(
         [FromBody] ExportModelRequestByDeepGraphDto exportModelRequestByDeepGraphDto)
     {
         try
         {
+            var tenantId = HttpContext.GetTenantId();
+            if (string.IsNullOrEmpty(tenantId))
+            {
+                return BadRequest(new OperationFailedErrorDto("TenantId is required"));
+            }
+
             var args = new ExportRtByDeepGraphCommandRequest(tenantId,
-                exportModelRequestByDeepGraphDto.OriginRtIds, 
+                exportModelRequestByDeepGraphDto.OriginRtIds,
                 exportModelRequestByDeepGraphDto.OriginCkTypeId);
             var r =
                 await _exportRtByDeepGraphCommandClient.GetResponse<JobCreatedResponse>(args);
@@ -115,25 +125,30 @@ public class ModelsController : ControllerBase
         }
     }
 
-    // POST: system/Models/ImportRt
+    // POST: {tenantId}/v1/Models/ImportRt
     /// <summary>
     ///     Imports a runtime model
     /// </summary>
-    /// <param name="tenantId">ID of tenant the request relies on to</param>
     /// <param name="importStrategy">The import strategy to use for the import</param>
     /// <param name="file">The file with the RT model definition</param>
     /// <returns></returns>
     [HttpPost]
     [RequestSizeLimit(300_000_000)]
     [Route("ImportRt")]
-    [Authorize(AssetRepositoryServiceConstants.SystemAssetApiReadWritePolicy)]
+    [Authorize(AssetRepositoryServiceConstants.TenantAssetApiReadWritePolicy)]
     [ProducesResponseType(typeof(TransferModelResponseDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(InternalServerErrorDto), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(InternalServerErrorDto), StatusCodes.Status500InternalServerError)]
-    public async Task<IActionResult> ImportRt([Required] string tenantId, [Required] ImportStrategyDto importStrategy, [Required] IFormFile file)
+    public async Task<IActionResult> ImportRt([Required] ImportStrategyDto importStrategy, [Required] IFormFile file)
     {
         try
         {
+            var tenantId = HttpContext.GetTenantId();
+            if (string.IsNullOrEmpty(tenantId))
+            {
+                return BadRequest(new OperationFailedErrorDto("TenantId is required"));
+            }
+
             var insertStrategy = importStrategy switch
             {
                 ImportStrategyDto.InsertOnly => ImportStrategy.Insert,
@@ -156,24 +171,28 @@ public class ModelsController : ControllerBase
         }
     }
 
-    // POST: system/Models/ImportCk
+    // POST: {tenantId}/v1/Models/ImportCk
     /// <summary>
     ///     Imports a construction kit model
     /// </summary>
-    /// <param name="tenantId">ID of tenant the request relies on to</param>
     /// <param name="file">The file with the CK model definition</param>
     /// <returns></returns>
     [HttpPost]
-    //[Consumes("application/zip", "application/zip")]
     [Route("ImportCk")]
-    [Authorize(AssetRepositoryServiceConstants.SystemAssetApiReadWritePolicy)]
+    [Authorize(AssetRepositoryServiceConstants.TenantAssetApiReadWritePolicy)]
     [ProducesResponseType(typeof(TransferModelResponseDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(InternalServerErrorDto), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(InternalServerErrorDto), StatusCodes.Status500InternalServerError)]
-    public async Task<IActionResult> ImportCk([Required] string tenantId, IFormFile file)
+    public async Task<IActionResult> ImportCk(IFormFile file)
     {
         try
         {
+            var tenantId = HttpContext.GetTenantId();
+            if (string.IsNullOrEmpty(tenantId))
+            {
+                return BadRequest(new OperationFailedErrorDto("TenantId is required"));
+            }
+
             var cacheKey = await AddFileToCache(tenantId, file);
             var args = new ImportCkCommandRequest(tenantId, cacheKey);
             var r =
@@ -192,17 +211,11 @@ public class ModelsController : ControllerBase
 
     private async Task<string> AddFileToCache(string tenantId, IFormFile file)
     {
-        try
-        {
-            await using var memoryStream = new MemoryStream();
-            await file.CopyToAsync(memoryStream);
-            memoryStream.Position = 0;
-            var key = await _distributedCache.CreateStreamAsync(tenantId, memoryStream, file.ContentType, file.FileName, TimeSpan.FromHours(1));
-            return key;
-        }
-        catch (Exception)
-        {
-            throw;
-        }
+        await using var memoryStream = new MemoryStream();
+        await file.CopyToAsync(memoryStream);
+        memoryStream.Position = 0;
+        var key = await _distributedCache.CreateStreamAsync(tenantId, memoryStream, file.ContentType, file.FileName,
+            TimeSpan.FromHours(1));
+        return key;
     }
 }

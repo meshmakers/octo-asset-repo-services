@@ -32,7 +32,7 @@ public static class AssetRepositoryServiceConstants
     /// <summary>
     /// Expected version of identity data
     /// </summary>
-    public const int AssetServiceIdentityDataVersionValue = 4;
+    public const int AssetServiceIdentityDataVersionValue = 5;
 
     /// <summary>
     ///     The name of the cookie of cookie-based auth

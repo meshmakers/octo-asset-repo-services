@@ -1,4 +1,4 @@
-﻿using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations;
 using Asp.Versioning;
 using IdentityModel;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.Services;
@@ -13,13 +13,14 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using MongoDB.Bson;
 
-namespace Meshmakers.Octo.Backend.AssetRepositoryServices.SystemApi.v1.Controllers;
+namespace Meshmakers.Octo.Backend.AssetRepositoryServices.TenantApi.v1.Controllers;
 
 /// <summary>
-///     REST Controller for tenants management
+///     REST Controller for tenant-scoped child tenant management.
+///     Each tenant can manage its own child tenants through this API.
 /// </summary>
 [Authorize(AuthenticationSchemes = OidcConstants.AuthenticationSchemes.AuthorizationHeaderBearer)]
-[Route("system/v{version:apiVersion}/[controller]")]
+[Route("{tenantId:tenantId}/v{version:apiVersion}/[controller]")]
 [ApiController]
 [ApiVersion("1.0")]
 public class TenantsController : ControllerBase
@@ -30,32 +31,46 @@ public class TenantsController : ControllerBase
     /// <summary>
     ///     Constructor
     /// </summary>
-    /// <param name="octoService">Octo service for tenant management</param>
-    /// <param name="distributionEventHubService"></param>
     public TenantsController(IOctoService octoService, IDistributionEventHubService distributionEventHubService)
     {
         _octoService = octoService;
         _distributionEventHubService = distributionEventHubService;
     }
 
-    // GET system/v1/tenants
+    private async Task<ITenantContext?> GetTenantContextAsync()
+    {
+        var tenantId = HttpContext.GetTenantId();
+        if (string.IsNullOrEmpty(tenantId))
+        {
+            return null;
+        }
+
+        return await _octoService.SystemContext.TryFindTenantContextAsync(tenantId);
+    }
+
+    // GET {tenantId}/v1/tenants
     /// <summary>
-    ///     Returns all existing tenants using pages
+    ///     Returns all child tenants of the current tenant using pages
     /// </summary>
-    /// <returns></returns>
     [HttpGet]
-    [Authorize(AssetRepositoryServiceConstants.SystemAssetApiReadOnlyPolicy)]
+    [Authorize(AssetRepositoryServiceConstants.TenantAssetApiReadOnlyPolicy)]
     [ProducesResponseType(typeof(IEnumerable<TenantDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(OperationFailedErrorDto), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(InternalServerErrorDto), StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> Get([FromQuery] PagingParams? pagingParams)
     {
         try
         {
-            using var session = await _octoService.SystemContext.GetAdminSessionAsync();
+            var tenantContext = await GetTenantContextAsync();
+            if (tenantContext == null)
+            {
+                return BadRequest(new OperationFailedErrorDto("TenantId is required"));
+            }
+
+            using var session = await tenantContext.GetAdminSessionAsync();
             session.StartTransaction();
 
-            var result =
-                await _octoService.SystemContext.GetChildTenantsAsync(session, pagingParams?.Skip, pagingParams?.Take);
+            var result = await tenantContext.GetChildTenantsAsync(session, pagingParams?.Skip, pagingParams?.Take);
 
             if (pagingParams != null)
             {
@@ -77,30 +92,36 @@ public class TenantsController : ControllerBase
         }
     }
 
-    // GET system/v1/tenants/{id}
+    // GET {tenantId}/v1/tenants/{id}
     /// <summary>
-    ///     Returns client information based on its client id
+    ///     Returns a child tenant by its tenant ID
     /// </summary>
-    /// <param name="id">ID of the client</param>
-    /// <returns>An Object that describes the client.</returns>
+    /// <param name="id">ID of the child tenant</param>
     [HttpGet("{id}")]
-    [Authorize(AssetRepositoryServiceConstants.SystemAssetApiReadOnlyPolicy)]
+    [Authorize(AssetRepositoryServiceConstants.TenantAssetApiReadOnlyPolicy)]
     [ProducesResponseType(typeof(TenantDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(OperationFailedErrorDto), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(InternalServerErrorDto), StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> Get([Required] string id)
     {
         try
         {
-            using var session = await _octoService.SystemContext.GetAdminSessionAsync();
+            var tenantContext = await GetTenantContextAsync();
+            if (tenantContext == null)
+            {
+                return BadRequest(new OperationFailedErrorDto("TenantId is required"));
+            }
+
+            using var session = await tenantContext.GetAdminSessionAsync();
             session.StartTransaction();
 
-            if (!await _octoService.SystemContext.IsChildTenantExistingAsync(session, id))
+            if (!await tenantContext.IsChildTenantExistingAsync(session, id))
             {
                 return NotFound();
             }
 
-            var octoTenant = await _octoService.SystemContext.GetChildTenantAsync(session, id);
+            var octoTenant = await tenantContext.GetChildTenantAsync(session, id);
             await session.CommitTransactionAsync();
             return Ok(CreateTenantDto(octoTenant));
         }
@@ -110,33 +131,38 @@ public class TenantsController : ControllerBase
         }
     }
 
-    // POST: system/v1/tenants?tenantId=abc&databaseName=xyz&blueprintId=MyBlueprint-1.0.0
+    // POST: {tenantId}/v1/tenants?tenantId=abc&databaseName=xyz&blueprintId=MyBlueprint-1.0.0
     /// <summary>
-    ///     Creates new tenants, optionally with a blueprint applied
+    ///     Creates a new child tenant, optionally with a blueprint applied
     /// </summary>
-    /// <param name="tenantId">ID of tenant</param>
+    /// <param name="childTenantId">ID of the child tenant to create</param>
     /// <param name="databaseName">Name of the database</param>
-    /// <param name="blueprintId">Optional blueprint ID to apply (e.g., "MyBlueprint-1.0.0")</param>
-    /// <returns></returns>
+    /// <param name="blueprintId">Optional blueprint ID to apply</param>
     [HttpPost]
-    [Authorize(AssetRepositoryServiceConstants.SystemAssetApiReadWritePolicy)]
+    [Authorize(AssetRepositoryServiceConstants.TenantAssetApiReadWritePolicy)]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(typeof(OperationFailedErrorDto), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(InternalServerErrorDto), StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> Post(
-        [Required] string tenantId,
+        [Required] string childTenantId,
         [Required] string databaseName,
         string? blueprintId = null)
     {
         try
         {
-            using var session = await _octoService.SystemContext.GetAdminSessionAsync();
+            var tenantContext = await GetTenantContextAsync();
+            if (tenantContext == null)
+            {
+                return BadRequest(new OperationFailedErrorDto("TenantId is required"));
+            }
+
+            using var session = await tenantContext.GetAdminSessionAsync();
             session.StartTransaction();
 
             if (!string.IsNullOrEmpty(blueprintId))
             {
                 var bpId = new BlueprintId(blueprintId);
-                var result = await _octoService.SystemContext.CreateChildTenantAsync(session, databaseName, tenantId, bpId);
+                var result = await tenantContext.CreateChildTenantAsync(session, databaseName, childTenantId, bpId);
 
                 if (result != null && !result.IsSuccess)
                 {
@@ -148,7 +174,7 @@ public class TenantsController : ControllerBase
             }
             else
             {
-                await _octoService.SystemContext.CreateChildTenantAsync(session, databaseName, tenantId);
+                await tenantContext.CreateChildTenantAsync(session, databaseName, childTenantId);
             }
 
             await session.CommitTransactionAsync();
@@ -172,26 +198,31 @@ public class TenantsController : ControllerBase
         }
     }
 
-    // POST: system/v1/tenants/attach?tenantId=abc&databaseName=xyz
+    // POST: {tenantId}/v1/tenants/attach?childTenantId=abc&databaseName=xyz
     /// <summary>
-    ///     Appends an existing database as tenant
+    ///     Attaches an existing database as a child tenant
     /// </summary>
-    /// <param name="tenantId">ID tenant</param>
-    /// <param name="databaseName">Name of the database (have to exist)</param>
-    /// <returns></returns>
+    /// <param name="childTenantId">ID of the child tenant</param>
+    /// <param name="databaseName">Name of the database (must exist)</param>
     [HttpPost("attach")]
-    [Authorize(AssetRepositoryServiceConstants.SystemAssetApiReadWritePolicy)]
+    [Authorize(AssetRepositoryServiceConstants.TenantAssetApiReadWritePolicy)]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(typeof(OperationFailedErrorDto), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(InternalServerErrorDto), StatusCodes.Status500InternalServerError)]
-    public async Task<IActionResult> Attach([Required] string tenantId, [Required] string databaseName)
+    public async Task<IActionResult> Attach([Required] string childTenantId, [Required] string databaseName)
     {
         try
         {
-            using var session = await _octoService.SystemContext.GetAdminSessionAsync();
+            var tenantContext = await GetTenantContextAsync();
+            if (tenantContext == null)
+            {
+                return BadRequest(new OperationFailedErrorDto("TenantId is required"));
+            }
+
+            using var session = await tenantContext.GetAdminSessionAsync();
             session.StartTransaction();
 
-            await _octoService.SystemContext.AttachChildTenantAsync(session, databaseName, tenantId);
+            await tenantContext.AttachChildTenantAsync(session, databaseName, childTenantId);
             await session.CommitTransactionAsync();
             return NoContent();
         }
@@ -205,25 +236,30 @@ public class TenantsController : ControllerBase
         }
     }
 
-    // POST: system/v1/tenants/detach?tenantId=abc&databaseName=xyz
+    // POST: {tenantId}/v1/tenants/detach?childTenantId=abc
     /// <summary>
-    ///     Appends an existing database as tenant
+    ///     Detaches a child tenant (keeps the database)
     /// </summary>
-    /// <param name="tenantId">ID of tenant</param>
-    /// <returns></returns>
+    /// <param name="childTenantId">ID of the child tenant</param>
     [HttpPost("detach")]
-    [Authorize(AssetRepositoryServiceConstants.SystemAssetApiReadWritePolicy)]
+    [Authorize(AssetRepositoryServiceConstants.TenantAssetApiReadWritePolicy)]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(typeof(OperationFailedErrorDto), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(InternalServerErrorDto), StatusCodes.Status500InternalServerError)]
-    public async Task<IActionResult> Detach([Required] string tenantId)
+    public async Task<IActionResult> Detach([Required] string childTenantId)
     {
         try
         {
-            using var session = await _octoService.SystemContext.GetAdminSessionAsync();
+            var tenantContext = await GetTenantContextAsync();
+            if (tenantContext == null)
+            {
+                return BadRequest(new OperationFailedErrorDto("TenantId is required"));
+            }
+
+            using var session = await tenantContext.GetAdminSessionAsync();
             session.StartTransaction();
 
-            await _octoService.SystemContext.DetachChildTenantAsync(session, tenantId);
+            await tenantContext.DetachChildTenantAsync(session, childTenantId);
             await session.CommitTransactionAsync();
             return NoContent();
         }
@@ -237,25 +273,30 @@ public class TenantsController : ControllerBase
         }
     }
 
-    // PUT: system/v1/tenants/clear?tenantId=abc
+    // PUT: {tenantId}/v1/tenants/clear?childTenantId=abc
     /// <summary>
-    ///     Clears the content of a tenant
+    ///     Clears the content of a child tenant
     /// </summary>
-    /// <param name="tenantId">Name of tenant</param>
-    /// <returns></returns>
+    /// <param name="childTenantId">ID of the child tenant</param>
     [HttpPut("clear")]
-    [Authorize(AssetRepositoryServiceConstants.SystemAssetApiReadWritePolicy)]
+    [Authorize(AssetRepositoryServiceConstants.TenantAssetApiReadWritePolicy)]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(OperationFailedErrorDto), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(InternalServerErrorDto), StatusCodes.Status500InternalServerError)]
-    public async Task<IActionResult> Clear([Required] string tenantId)
+    public async Task<IActionResult> Clear([Required] string childTenantId)
     {
         try
         {
-            using var session = await _octoService.SystemContext.GetAdminSessionAsync();
+            var tenantContext = await GetTenantContextAsync();
+            if (tenantContext == null)
+            {
+                return BadRequest(new OperationFailedErrorDto("TenantId is required"));
+            }
+
+            using var session = await tenantContext.GetAdminSessionAsync();
             session.StartTransaction();
 
-            await _octoService.SystemContext.ClearChildTenantAsync(session, tenantId);
+            await tenantContext.ClearChildTenantAsync(session, childTenantId);
             await session.CommitTransactionAsync();
             return Ok();
         }
@@ -269,58 +310,26 @@ public class TenantsController : ControllerBase
         }
     }
 
-    // PUT: system/v1/tenants/update?tenantId=abc
+    // PUT: {tenantId}/v1/tenants/clearCache?childTenantId=abc
     /// <summary>
-    ///     Updates the system schema
+    ///     Clears the caches of a child tenant
     /// </summary>
-    /// <param name="tenantId">Name of tenant</param>
-    /// <returns></returns>
-    [HttpPut("update")]
-    [Authorize(AssetRepositoryServiceConstants.SystemAssetApiReadWritePolicy)]
-    [ProducesResponseType(StatusCodes.Status200OK)]
-    [ProducesResponseType(typeof(OperationFailedErrorDto), StatusCodes.Status400BadRequest)]
-    [ProducesResponseType(typeof(InternalServerErrorDto), StatusCodes.Status500InternalServerError)]
-    public async Task<IActionResult> Update([Required] string tenantId)
-    {
-        try
-        {
-            using var session = await _octoService.SystemContext.GetAdminSessionAsync();
-            session.StartTransaction();
-
-            // TODO: Implement dispose
-            // await _octoService.SystemContext.UpdateTenantSystemCkModelAsync(session, tenantId);
-            await session.CommitTransactionAsync();
-            return Ok();
-        }
-        catch (TenantException e)
-        {
-            return BadRequest(new OperationFailedErrorDto(e.Message));
-        }
-        catch (Exception ex)
-        {
-            return StatusCode(StatusCodes.Status500InternalServerError, new InternalServerErrorDto(ex.Message));
-        }
-    }
-
-    // PUT: system/v1/tenants/clearCache?tenantId=abc
-    /// <summary>
-    ///     Clears the caches of a tenant
-    /// </summary>
-    /// <param name="tenantId">ID of tenant</param>
-    /// <returns></returns>
+    /// <param name="childTenantId">ID of the child tenant</param>
     [HttpPut("clearCache")]
-    [Authorize(AssetRepositoryServiceConstants.SystemAssetApiReadWritePolicy)]
+    [Authorize(AssetRepositoryServiceConstants.TenantAssetApiReadWritePolicy)]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(OperationFailedErrorDto), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(InternalServerErrorDto), StatusCodes.Status500InternalServerError)]
-    public async Task<IActionResult> ClearCache([Required] string tenantId)
+    public async Task<IActionResult> ClearCache([Required] string childTenantId)
     {
         try
         {
             var correlationId = Guid.NewGuid();
-            await _distributionEventHubService.PublishAsync(new PreUpdateTenant(tenantId, correlationId, DateTime.Now));
+            await _distributionEventHubService.PublishAsync(
+                new PreUpdateTenant(childTenantId, correlationId, DateTime.Now));
             await Task.Delay(2000);
-            await _distributionEventHubService.PublishAsync(new PosUpdateTenant(tenantId, correlationId, DateTime.Now));
+            await _distributionEventHubService.PublishAsync(
+                new PosUpdateTenant(childTenantId, correlationId, DateTime.Now));
 
             return Ok("Cache cleared");
         }
@@ -330,25 +339,30 @@ public class TenantsController : ControllerBase
         }
     }
 
-    // DELETE: system/v1/tenants/delete?tenantId=abc
+    // DELETE: {tenantId}/v1/tenants?childTenantId=abc
     /// <summary>
-    ///     Deletes a tenant
+    ///     Deletes a child tenant
     /// </summary>
-    /// <param name="tenantId">ID of tenant</param>
-    /// <returns></returns>
+    /// <param name="childTenantId">ID of the child tenant</param>
     [HttpDelete]
-    [Authorize(AssetRepositoryServiceConstants.SystemAssetApiReadWritePolicy)]
+    [Authorize(AssetRepositoryServiceConstants.TenantAssetApiReadWritePolicy)]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(typeof(InternalServerErrorDto), StatusCodes.Status500InternalServerError)]
-    public async Task<IActionResult> Delete([Required] string tenantId)
+    public async Task<IActionResult> Delete([Required] string childTenantId)
     {
         try
         {
-            using var session = await _octoService.SystemContext.GetAdminSessionAsync();
+            var tenantContext = await GetTenantContextAsync();
+            if (tenantContext == null)
+            {
+                return BadRequest(new OperationFailedErrorDto("TenantId is required"));
+            }
+
+            using var session = await tenantContext.GetAdminSessionAsync();
             session.StartTransaction();
 
-            await _octoService.SystemContext.DropChildTenantAsync(session, tenantId);
+            await tenantContext.DropChildTenantAsync(session, childTenantId);
             await session.CommitTransactionAsync();
             return Ok();
         }
@@ -362,13 +376,12 @@ public class TenantsController : ControllerBase
         }
     }
 
-    private TenantDto CreateTenantDto(OctoTenant octoTenant)
+    private static TenantDto CreateTenantDto(OctoTenant octoTenant)
     {
-        var tenantDto = new TenantDto
+        return new TenantDto
         {
             TenantId = octoTenant.TenantId,
             Database = octoTenant.DatabaseName
         };
-        return tenantDto;
     }
 }

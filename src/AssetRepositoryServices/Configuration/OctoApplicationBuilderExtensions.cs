@@ -2,6 +2,7 @@ using GraphQL.Server.Ui.Altair;
 using Meshmakers.Octo.Backend.AssetRepositoryServices;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Middleware;
+using Meshmakers.Octo.Services.Infrastructure.Configuration;
 using Meshmakers.Octo.Services.Swagger.Configuration;
 using Microsoft.AspNetCore.HttpOverrides;
 
@@ -49,6 +50,7 @@ public static class OctoApplicationBuilderExtensions
 
         app.UseAuthentication();
         app.UseAuthorization();
+        app.UseOctoTenantAuthorization();
 
         // this is required for websockets support
         app.UseWebSockets();

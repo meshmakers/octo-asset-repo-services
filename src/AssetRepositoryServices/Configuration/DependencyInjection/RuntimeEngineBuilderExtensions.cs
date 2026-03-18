@@ -103,7 +103,7 @@ public static class RuntimeEngineBuilderExtensions
                 options.Scope.Add(CommonConstants.Scopes.Profile);
                 options.Scope.Add(CommonConstants.Scopes.Email);
                 options.Scope.Add(CommonConstants.Scopes.Role);
-                options.Scope.Add(CommonConstants.AssetTenantApiFullAccess);
+                options.Scope.Add(CommonConstants.OctoApiFullAccess);
 
                 options.SaveTokens = true;
 
@@ -139,33 +139,31 @@ public static class RuntimeEngineBuilderExtensions
             options.AddPolicy(AssetRepositoryServiceConstants.SystemAssetApiReadOnlyPolicy,
                 authorizationPolicyBuilder =>
                 {
-                    // require SystemApiFullAccess or SystemApiReadOnly
                     authorizationPolicyBuilder.RequireClaim(InfrastructureCommon.ClaimScope,
-                        CommonConstants.AssetSystemApiFullAccess,
-                        CommonConstants.AssetSystemApiReadOnly);
+                        CommonConstants.OctoApiFullAccess,
+                        CommonConstants.OctoApiReadOnly);
                 });
 
             options.AddPolicy(AssetRepositoryServiceConstants.SystemAssetApiReadWritePolicy,
                 authorizationPolicyBuilder =>
                 {
-                    // require SystemApiFullAccess
                     authorizationPolicyBuilder.RequireClaim(InfrastructureCommon.ClaimScope,
-                        CommonConstants.AssetSystemApiFullAccess);
+                        CommonConstants.OctoApiFullAccess);
                 });
 
             options.AddPolicy(AssetRepositoryServiceConstants.TenantAssetApiReadWritePolicy,
                 authorizationPolicyBuilder =>
                 {
                     authorizationPolicyBuilder.RequireClaim(InfrastructureCommon.ClaimScope,
-                        CommonConstants.AssetTenantApiFullAccess);
+                        CommonConstants.OctoApiFullAccess);
                 });
 
             options.AddPolicy(AssetRepositoryServiceConstants.TenantAssetApiReadOnlyPolicy,
                 authorizationPolicyBuilder =>
                 {
                     authorizationPolicyBuilder.RequireClaim(InfrastructureCommon.ClaimScope,
-                        CommonConstants.AssetTenantApiFullAccess,
-                        CommonConstants.AssetTenantApiReadOnly);
+                        CommonConstants.OctoApiFullAccess,
+                        CommonConstants.OctoApiReadOnly);
                 });
         });
 
@@ -176,20 +174,12 @@ public static class RuntimeEngineBuilderExtensions
             options.Scopes = new Dictionary<string, string>
             {
                 {
-                    CommonConstants.AssetSystemApiFullAccess,
-                    AssetTexts.Backend_AssetServices_Api_SystemFullAccess
+                    CommonConstants.OctoApiFullAccess,
+                    CommonConstants.OctoApiFullAccessDisplayName
                 },
                 {
-                    CommonConstants.AssetSystemApiReadOnly,
-                    AssetTexts.Backend_AssetServices_Api_SystemReadOnlyAccess
-                },
-                {
-                    CommonConstants.AssetTenantApiFullAccess,
-                    AssetTexts.Backend_AssetServices_Api_TenantFullAccess
-                },
-                {
-                    CommonConstants.AssetTenantApiReadOnly,
-                    AssetTexts.Backend_AssetServices_Api_TenantReadOnlyAccess
+                    CommonConstants.OctoApiReadOnly,
+                    CommonConstants.OctoApiReadOnlyDisplayName
                 }
             };
 
@@ -197,19 +187,19 @@ public static class RuntimeEngineBuilderExtensions
             {
                 {
                     AssetRepositoryServiceConstants.SystemAssetApiReadOnlyPolicy,
-                    new List<string> { CommonConstants.AssetSystemApiReadOnly }
+                    new List<string> { CommonConstants.OctoApiReadOnly }
                 },
                 {
                     AssetRepositoryServiceConstants.SystemAssetApiReadWritePolicy,
-                    new List<string> { CommonConstants.AssetSystemApiFullAccess }
+                    new List<string> { CommonConstants.OctoApiFullAccess }
                 },
                 {
                     AssetRepositoryServiceConstants.TenantAssetApiReadOnlyPolicy,
-                    new List<string> { CommonConstants.AssetTenantApiReadOnly }
+                    new List<string> { CommonConstants.OctoApiReadOnly }
                 },
                 {
                     AssetRepositoryServiceConstants.TenantAssetApiReadWritePolicy,
-                    new List<string> { CommonConstants.AssetTenantApiFullAccess }
+                    new List<string> { CommonConstants.OctoApiFullAccess }
                 }
             };
 

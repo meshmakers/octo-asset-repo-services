@@ -37,44 +37,12 @@ internal class DefaultConfigurationCreatorService(
 
     protected override void CreateApiScopes(CreateIdentityDataCommandRequest createIdentityDataCommandRequest)
     {
-        createIdentityDataCommandRequest.ApiScopes = new List<DistApiScopeDto>
-        {
-            new(CommonConstants.AssetSystemApiFullAccess,
-                CommonConstants.AssetSystemApiFullAccessDisplayName),
-            new(CommonConstants.AssetSystemApiReadOnly,
-                CommonConstants.AssetSystemApiReadOnlyDisplayName),
-            new(CommonConstants.AssetTenantApiFullAccess,
-                CommonConstants.AssetTenantApiFullAccessDisplayName),
-            new(CommonConstants.AssetTenantApiReadOnly,
-                CommonConstants.AssetTenantApiReadOnlyDisplayName)
-        };
+        // Scopes are now managed centrally via unified OctoApiFullAccess/OctoApiReadOnly scopes
     }
 
     protected override void CreateApiResources(CreateIdentityDataCommandRequest createIdentityDataCommandRequest)
     {
-        createIdentityDataCommandRequest.ApiResources = new List<DistApiResourcesDto>
-        {
-            new(CommonConstants.AssetSystemApi, CommonConstants.AssetSystemApiDisplayName)
-            {
-                Description = CommonConstants.AssetSystemApiDescription,
-                IsEnabled = true,
-                Scopes = new List<string>
-                {
-                    CommonConstants.AssetSystemApiFullAccess,
-                    CommonConstants.AssetSystemApiReadOnly
-                }
-            },
-            new(CommonConstants.AssetTenantApi, CommonConstants.AssetTenantApiDisplayName)
-            {
-                Description = CommonConstants.AssetTenantApiDescription,
-                IsEnabled = true,
-                Scopes = new List<string>
-                {
-                    CommonConstants.AssetTenantApiFullAccess,
-                    CommonConstants.AssetTenantApiReadOnly
-                }
-            }
-        };
+        // API resources are now managed centrally via unified OctoApiFullAccess/OctoApiReadOnly scopes
     }
 
     protected override void CreateClients(CreateIdentityDataCommandRequest createIdentityDataCommandRequest)
@@ -100,8 +68,7 @@ internal class DefaultConfigurationCreatorService(
                     CommonConstants.Scopes.Profile,
                     CommonConstants.Scopes.Email,
                     JwtClaimTypes.Role,
-                    CommonConstants.AssetSystemApiFullAccess,
-                    CommonConstants.AssetTenantApiFullAccess,
+                    CommonConstants.OctoApiFullAccess,
                 ]
             },
             new(CommonConstants.AsserRepositoryServicesSwaggerClientId,
@@ -123,10 +90,8 @@ internal class DefaultConfigurationCreatorService(
                     CommonConstants.Scopes.Profile,
                     CommonConstants.Scopes.Email,
                     JwtClaimTypes.Role,
-                    CommonConstants.AssetSystemApiFullAccess,
-                    CommonConstants.AssetSystemApiReadOnly,
-                    CommonConstants.AssetTenantApiFullAccess,
-                    CommonConstants.AssetTenantApiReadOnly
+                    CommonConstants.OctoApiFullAccess,
+                    CommonConstants.OctoApiReadOnly,
                 ]
             }
         };
