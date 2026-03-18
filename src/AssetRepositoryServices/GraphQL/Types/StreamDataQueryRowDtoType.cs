@@ -28,6 +28,11 @@ internal sealed class StreamDataQueryRowDto : GraphQlDto
     ///     The underlying data point with attribute values.
     /// </summary>
     public required DataPointDto DataPoint { get; init; }
+
+    /// <summary>
+    ///     Optional mapping from SQL aliases to original attribute paths (for aggregation queries).
+    /// </summary>
+    public Dictionary<string, string>? AliasToOriginalPath { get; init; }
 }
 
 // ReSharper disable once ClassNeverInstantiated.Global
@@ -51,20 +56,30 @@ internal sealed class StreamDataQueryRowDtoType : ObjectGraphType<StreamDataQuer
     private static object ResolveCells(IResolveConnectionContext<StreamDataQueryRowDto> context)
     {
         var row = context.Source;
+        var isAggregation = row.AliasToOriginalPath != null;
         var cells = row.ColumnNames.Select(columnName =>
         {
-            // Standard fields are top-level properties, not in DataPoint.Attributes
-            // Column names are camelCase (aligned with CkTypeQueryColumnCollector convention)
-            object? value = columnName switch
+            // For aggregation results, all values come from the Attributes dictionary
+            // (standard field names like "rtWellKnownName" are aggregated, not row-level)
+            // For simple results, standard fields are top-level properties
+            object? value;
+            if (isAggregation)
             {
-                "rtId" => row.RtId,
-                "ckTypeId" => row.CkTypeId,
-                "timestamp" => row.Timestamp,
-                "rtWellKnownName" => row.RtWellKnownName,
-                "rtCreationDateTime" => row.DataPoint.RtCreationDateTime,
-                "rtChangedDateTime" => row.DataPoint.RtChangedDateTime,
-                _ => GetAttributeValue(row.DataPoint, columnName)
-            };
+                value = GetAttributeValue(row, columnName);
+            }
+            else
+            {
+                value = columnName switch
+                {
+                    "rtId" => row.RtId,
+                    "ckTypeId" => row.CkTypeId,
+                    "timestamp" => row.Timestamp,
+                    "rtWellKnownName" => row.RtWellKnownName,
+                    "rtCreationDateTime" => row.DataPoint.RtCreationDateTime,
+                    "rtChangedDateTime" => row.DataPoint.RtChangedDateTime,
+                    _ => GetAttributeValue(row, columnName)
+                };
+            }
 
             return new RtQueryCellDto
             {
@@ -76,10 +91,25 @@ internal sealed class StreamDataQueryRowDtoType : ObjectGraphType<StreamDataQuer
         return ConnectionUtils.ToOctoConnection(cells, context);
     }
 
-    private static object? GetAttributeValue(DataPointDto dataPoint, string columnName)
+    private static object? GetAttributeValue(StreamDataQueryRowDto row, string columnName)
     {
         object? value = null;
-        dataPoint.Attributes?.TryGetValue(columnName, out value);
+
+        // For aggregation queries, the DataPoint attributes use SQL aliases (e.g., "Count_voltage")
+        // but the cell attributePath uses the original name (e.g., "voltage").
+        // Try the reverse mapping first to find the alias key in the attributes dictionary.
+        if (row.AliasToOriginalPath != null)
+        {
+            var aliasKey = row.AliasToOriginalPath
+                .FirstOrDefault(kvp => kvp.Value == columnName).Key;
+            if (aliasKey != null)
+            {
+                row.DataPoint.Attributes?.TryGetValue(aliasKey, out value);
+                return value;
+            }
+        }
+
+        row.DataPoint.Attributes?.TryGetValue(columnName, out value);
         return value;
     }
 
@@ -93,6 +123,30 @@ internal sealed class StreamDataQueryRowDtoType : ObjectGraphType<StreamDataQuer
             RtWellKnownName = dataPoint.RtWellKnownName,
             ColumnNames = columnNames,
             DataPoint = dataPoint
+        };
+    }
+
+    /// <summary>
+    ///     Creates a row DTO from an aggregation result. Aggregation rows may not have
+    ///     standard entity fields (RtId, CkTypeId, etc.) — values come from the Attributes dictionary.
+    ///     The aliasToOriginalPath mapping remaps SQL aliases (e.g., "Count_voltage") back to
+    ///     original attribute paths (e.g., "voltage") so the cell attributePaths match what the
+    ///     frontend expects — consistent with how runtime aggregation queries work.
+    /// </summary>
+    internal static StreamDataQueryRowDto CreateFromDataPointForAggregation(
+        DataPointDto dataPoint,
+        IReadOnlyList<string> columnNames,
+        Dictionary<string, string>? aliasToOriginalPath = null)
+    {
+        return new StreamDataQueryRowDto
+        {
+            RtId = dataPoint.RtId ?? OctoObjectId.Empty,
+            CkTypeId = dataPoint.CkTypeId ?? new RtCkId<CkTypeId>(""),
+            Timestamp = dataPoint.Timestamp,
+            RtWellKnownName = dataPoint.RtWellKnownName,
+            ColumnNames = columnNames,
+            DataPoint = dataPoint,
+            AliasToOriginalPath = aliasToOriginalPath
         };
     }
 }
