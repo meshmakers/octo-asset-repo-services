@@ -5,6 +5,7 @@ using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Scalars;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Utils;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
 using Meshmakers.Octo.ConstructionKit.Contracts;
+using Meshmakers.Octo.Services.StreamData;
 using Meshmakers.Octo.Services.StreamData.Dtos;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
@@ -71,12 +72,12 @@ internal sealed class StreamDataQueryRowDtoType : ObjectGraphType<StreamDataQuer
             {
                 value = columnName switch
                 {
-                    "rtId" => row.RtId,
-                    "ckTypeId" => row.CkTypeId,
-                    "timestamp" => row.Timestamp,
-                    "rtWellKnownName" => row.RtWellKnownName,
-                    "rtCreationDateTime" => row.DataPoint.RtCreationDateTime,
-                    "rtChangedDateTime" => row.DataPoint.RtChangedDateTime,
+                    Constants.RtIdAlias => row.RtId,
+                    Constants.CkTypeIdAlias => row.CkTypeId,
+                    Constants.TimestampAlias => row.Timestamp,
+                    Constants.RtWellKnownNameAlias => row.RtWellKnownName,
+                    Constants.RtCreationDateTimeAlias => row.DataPoint.RtCreationDateTime,
+                    Constants.RtChangedDateTimeAlias => row.DataPoint.RtChangedDateTime,
                     _ => GetAttributeValue(row, columnName)
                 };
             }
