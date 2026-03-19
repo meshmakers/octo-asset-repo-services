@@ -64,7 +64,12 @@ internal sealed class StreamDataQueryRowDtoType : ObjectGraphType<StreamDataQuer
             // (standard field names like "rtWellKnownName" are aggregated, not row-level)
             // For simple results, standard fields are top-level properties
             object? value;
-            if (isAggregation)
+            if (isAggregation && columnName == Constants.TimestampAlias)
+            {
+                // Downsampling bin timestamp — read from the typed property, not the Attributes dictionary
+                value = row.Timestamp;
+            }
+            else if (isAggregation)
             {
                 value = GetAttributeValue(row, columnName);
             }

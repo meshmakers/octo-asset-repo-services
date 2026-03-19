@@ -948,7 +948,7 @@ internal sealed class StreamDataQuery : ObjectGraphType
                 }
             }
 
-            return await ExecuteAggregationQueryAsync(q, arg, tenantId, resolvedColumnNames, aliasToOriginalPath);
+            return await ExecuteDownsamplingQueryAsync(q, arg, tenantId, resolvedColumnNames, aliasToOriginalPath);
         }
         catch (Exception e)
         {
@@ -1025,12 +1025,75 @@ internal sealed class StreamDataQuery : ObjectGraphType
                 }
             }
 
-            return await ExecuteAggregationQueryAsync(q, arg, tenantId, resolvedColumnNames, aliasToOriginalPath);
+            return await ExecuteDownsamplingQueryAsync(q, arg, tenantId, resolvedColumnNames, aliasToOriginalPath);
         }
         catch (Exception e)
         {
             return arg.HandleException(e);
         }
+    }
+
+    private async Task<object?> ExecuteDownsamplingQueryAsync(
+        CrateQueryBuilder q,
+        IResolveConnectionContext<object?> arg,
+        string tenantId,
+        List<string> resolvedColumnNames,
+        Dictionary<string, string>? aliasToOriginalPath = null)
+    {
+        var compiler = new CrateQueryCompiler();
+        var sql = compiler.CompileQuery(q);
+
+        _logger.LogDebug("Executing stream data downsampling SQL: {Sql}", sql);
+
+        var client = arg.GetStreamDataDatabaseClient();
+        var data = await client.GetDataAsync(tenantId, sql);
+
+        _logger.LogDebug("Stream data downsampling query executed. Got {Count} rows", data.Count);
+
+        // Detect empty bins using __binCount and mark them.
+        // The __binCount column is always present but never in resolvedColumnNames, so it won't appear in output.
+        // For empty bins, we create new DataPointDto instances with null aggregation values but preserved timestamps.
+        const string binCountKey = "__binCount";
+        for (var i = 0; i < data.Count; i++)
+        {
+            var dp = data[i];
+            if (!dp.Attributes.TryGetValue(binCountKey, out var binCountObj) ||
+                binCountObj is not (long or int) ||
+                Convert.ToInt64(binCountObj) != 0)
+            {
+                continue;
+            }
+
+            // Empty bin: create a new DataPointDto with only the timestamp, all aggregation values null
+            var emptyAttributes = new Dictionary<string, object?>();
+            foreach (var alias in resolvedColumnNames)
+            {
+                var sqlAlias = aliasToOriginalPath != null
+                    ? aliasToOriginalPath.FirstOrDefault(kvp => kvp.Value == alias).Key ?? alias
+                    : alias;
+                emptyAttributes[sqlAlias] = null;
+            }
+
+            var emptyDp = new DataPointDto(emptyAttributes) { Timestamp = dp.Timestamp };
+            data[i] = emptyDp;
+        }
+
+        // Prepend "timestamp" to column names so it appears as the first cell in each row
+        var outputColumnNames = new List<string> { Constants.TimestampAlias };
+
+        // Remap aggregation aliases back to original attribute paths
+        if (aliasToOriginalPath is { Count: > 0 })
+        {
+            outputColumnNames.AddRange(resolvedColumnNames
+                .Select(alias => aliasToOriginalPath.GetValueOrDefault(alias, alias)));
+        }
+        else
+        {
+            outputColumnNames.AddRange(resolvedColumnNames);
+        }
+
+        var result = data.Select(dp => StreamDataQueryRowDtoType.CreateFromDataPointForAggregation(dp, outputColumnNames, aliasToOriginalPath)).ToList();
+        return ConnectionUtils.ToOctoConnection(result, arg, 0, result.Count);
     }
 
     private static StreamDataFieldResolver BuildFieldResolver(
