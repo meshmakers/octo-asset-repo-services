@@ -68,6 +68,21 @@ internal sealed class StreamDataQuery : ObjectGraphType
             .Argument<ListGraphType<OctoObjectIdType>>(Statics.RtIdsArg, "Scope to specific runtime entity IDs")
             .ResolveAsync(ResolveTransientStreamDataGroupedAggregationQueryAsync);
 
+        Connection<NonNullGraphType<StreamDataQueryRowDtoType>>("StreamDataDownsamplingQuery")
+            .Argument<NonNullGraphType<OctoObjectIdType>>(Statics.RtIdArg, "The persisted stream data downsampling query runtime id.")
+            .Argument<StreamDataArgumentsGraphType>(Statics.StreamDataArgument, "Override time filter and limit at execution time.")
+            .ResolveAsync(ResolveStreamDataDownsamplingRtQueryAsync);
+
+        Connection<NonNullGraphType<StreamDataQueryRowDtoType>>("TransientStreamDataDownsamplingQuery")
+            .Argument<NonNullGraphType<StringGraphType>>(Statics.CkIdArg, "The construction kit type with the given id.")
+            .Argument<NonNullGraphType<ListGraphType<NonNullGraphType<StreamDataQueryColumnInputDtoType>>>>(Statics.ColumnPathsArg, "Aggregation columns with attribute path and aggregation type.")
+            .Argument<NonNullGraphType<IntGraphType>>("limit", "Number of time buckets to produce.")
+            .Argument<NonNullGraphType<DateTimeGraphType>>("from", "Start of time range.")
+            .Argument<NonNullGraphType<DateTimeGraphType>>("to", "End of time range.")
+            .Argument<ListGraphType<FieldFilterDtoType>>(Statics.FieldFilterArg, "Field-level comparison filters")
+            .Argument<ListGraphType<OctoObjectIdType>>(Statics.RtIdsArg, "Scope to specific runtime entity IDs")
+            .ResolveAsync(ResolveTransientStreamDataDownsamplingQueryAsync);
+
         foreach (var rtEntityDtoType in graphTypesCache.GetStreamTypes())
         {
             this.Connection<object?, IGraphType, StreamDataEntityDto>(graphTypesCache, rtEntityDtoType,
@@ -844,6 +859,171 @@ internal sealed class StreamDataQuery : ObjectGraphType
             // Apply time/rtIds/filters from args
             var execArgs = arg.GetArgument<StreamDataArguments?>(Statics.StreamDataArgument);
             ApplyTransientStreamDataQueryParams(q, arg, fieldResolver, execArgs, fieldFilters);
+
+            return await ExecuteAggregationQueryAsync(q, arg, tenantId, resolvedColumnNames, aliasToOriginalPath);
+        }
+        catch (Exception e)
+        {
+            return arg.HandleException(e);
+        }
+    }
+
+    private async Task<object?> ResolveStreamDataDownsamplingRtQueryAsync(IResolveConnectionContext<object?> arg)
+    {
+        try
+        {
+            _logger.LogDebug("GraphQL query handling for persisted stream data downsampling query started");
+
+            var sessionAccessor = arg.GetSessionAccessor();
+            var graphQlUserContext = (GraphQlUserContext)arg.UserContext;
+            var tenantId = graphQlUserContext.TenantId;
+            var tenantRepository = graphQlUserContext.TenantContext.GetTenantRepository();
+
+            var queryRtId = arg.GetArgument<OctoObjectId>(Statics.RtIdArg);
+            var rtQuery = await tenantRepository.GetRtEntityByRtIdAsync<RtStreamDataDownsamplingQuery>(
+                sessionAccessor.Session, queryRtId);
+
+            if (rtQuery == null)
+            {
+                throw AssetRepositoryException.RtQueryNotFound(queryRtId);
+            }
+
+            var ckTypeId = new RtCkId<CkTypeId>(rtQuery.QueryCkTypeId);
+            var fieldResolver = BuildFieldResolver(arg, tenantId, ckTypeId);
+
+            // Validate aggregation column attribute paths
+            var aggregationColumns = rtQuery.Columns?.ToList() ?? [];
+            var columnAttributePaths = aggregationColumns.Select(c => c.AttributePath).ToList();
+            var fieldFilterList = rtQuery.FieldFilter?.ToList();
+            var filterFieldNames = fieldFilterList is { Count: > 0 }
+                ? fieldFilterList.Where(f => f.ComparisonValue != null).Select(f => f.AttributePath)
+                : null;
+
+            ValidateStreamDataFields(fieldResolver, columnAttributePaths, null, filterFieldNames);
+
+            // Build CrateDB downsampling query
+            // Execution-time overrides for From/To/Limit take priority over persisted defaults
+            var execOverride = arg.GetArgument<StreamDataArguments?>(Statics.StreamDataArgument);
+            var from = execOverride?.From ?? rtQuery.From;
+            var to = execOverride?.To ?? rtQuery.To;
+            var limit = execOverride?.Limit ?? (int)rtQuery.Limit;
+
+            var q = new CrateQueryBuilder(tenantId);
+            q.WithCkTypeIdFilter(ckTypeId);
+            q.WithDownsampling(limit, from, to);
+
+            // Add Timestamp variable for DATE_BIN
+            q.AddVariable("Timestamp", "T", null, false);
+
+            var resolvedColumnNames = new List<string>();
+            var aliasToOriginalPath = new Dictionary<string, string>();
+            foreach (var col in aggregationColumns)
+            {
+                var resolved = fieldResolver.Resolve(col.AttributePath)!;
+                var aggFunction = MapCkAggregationType(col.AggregationType);
+                var alias = $"{aggFunction}_{resolved.GraphQlAlias}";
+                q.AddAggregationVariable(resolved.CrateDbName, aggFunction, alias, resolved.IsDataField);
+                resolvedColumnNames.Add(alias);
+                aliasToOriginalPath[alias] = resolved.GraphQlAlias;
+            }
+
+            // RtId scope filter — only add RtId variable when needed to avoid it in SELECT/GROUP BY
+            var rtIds = rtQuery.RtIds?.ToList();
+            if (rtIds is { Count: > 0 })
+            {
+                q.AddVariable("RtId", null, null, false);
+                q.AddWhereIn("RtId", rtIds.ToArray());
+            }
+
+            // Field filters
+            if (fieldFilterList is { Count: > 0 })
+            {
+                foreach (var filter in fieldFilterList)
+                {
+                    if (filter.ComparisonValue == null) continue;
+                    var op = MapFieldFilterOperator(filter.Operator);
+                    var resolved = fieldResolver.Resolve(filter.AttributePath);
+                    if (resolved == null) continue;
+                    q.AddFieldFilter(resolved.CrateDbName, op, filter.ComparisonValue, resolved.IsDataField);
+                }
+            }
+
+            return await ExecuteAggregationQueryAsync(q, arg, tenantId, resolvedColumnNames, aliasToOriginalPath);
+        }
+        catch (Exception e)
+        {
+            return arg.HandleException(e);
+        }
+    }
+
+    private async Task<object?> ResolveTransientStreamDataDownsamplingQueryAsync(IResolveConnectionContext<object?> arg)
+    {
+        try
+        {
+            _logger.LogDebug("GraphQL query handling for transient stream data downsampling query started");
+
+            var graphQlUserContext = (GraphQlUserContext)arg.UserContext;
+            var tenantId = graphQlUserContext.TenantId;
+
+            var ckTypeId = arg.GetArgument<RtCkId<CkTypeId>>(Statics.CkIdArg);
+            var columnInputs = arg.GetArgument<IEnumerable<StreamDataQueryColumnInputDto>>(Statics.ColumnPathsArg).ToList();
+            var from = arg.GetArgument<DateTime>("from");
+            var to = arg.GetArgument<DateTime>("to");
+            var limit = arg.GetArgument<int>("limit");
+
+            var fieldResolver = BuildFieldResolver(arg, tenantId, ckTypeId);
+
+            // Validate
+            var columnAttributePaths = columnInputs.Select(c => c.AttributePath).ToList();
+            arg.TryGetArgument(Statics.FieldFilterArg, out IEnumerable<FieldFilterDto>? fieldFilterDtos);
+            var fieldFilters = fieldFilterDtos?.ToList();
+            var filterFieldNames = fieldFilters is { Count: > 0 }
+                ? fieldFilters.Where(f => f.ComparisonValue != null).Select(f => f.AttributePath)
+                : null;
+
+            ValidateStreamDataFields(fieldResolver, columnAttributePaths, null, filterFieldNames);
+
+            // Build downsampling query
+            var q = new CrateQueryBuilder(tenantId);
+            q.WithCkTypeIdFilter(ckTypeId);
+            q.WithDownsampling(limit, from, to);
+
+            q.AddVariable("Timestamp", "T", null, false);
+
+            var resolvedColumnNames = new List<string>();
+            var aliasToOriginalPath = new Dictionary<string, string>();
+            foreach (var col in columnInputs)
+            {
+                var resolved = fieldResolver.Resolve(col.AttributePath)!;
+                var alias = $"{col.AggregationType}_{resolved.GraphQlAlias}";
+                q.AddAggregationVariable(resolved.CrateDbName, col.AggregationType, alias, resolved.IsDataField);
+                resolvedColumnNames.Add(alias);
+                aliasToOriginalPath[alias] = resolved.GraphQlAlias;
+            }
+
+            // RtId scope filter — only add RtId variable when needed to avoid it in SELECT/GROUP BY
+            if (arg.TryGetArgument(Statics.RtIdsArg, null, out IEnumerable<OctoObjectId>? rtIds))
+            {
+                var rtIdList = rtIds.ToList();
+                if (rtIdList.Count > 0)
+                {
+                    q.AddVariable("RtId", null, null, false);
+                    q.AddWhereIn("RtId", rtIdList.Select(x => x.ToString()).ToArray());
+                }
+            }
+
+            // Field filters
+            if (fieldFilters is { Count: > 0 })
+            {
+                foreach (var filter in fieldFilters)
+                {
+                    if (filter.ComparisonValue == null) continue;
+                    var op = MapFieldFilterOperatorDto(filter.Operator);
+                    var resolved = fieldResolver.Resolve(filter.AttributePath);
+                    if (resolved == null) continue;
+                    q.AddFieldFilter(resolved.CrateDbName, op, filter.ComparisonValue.ToString()!, resolved.IsDataField);
+                }
+            }
 
             return await ExecuteAggregationQueryAsync(q, arg, tenantId, resolvedColumnNames, aliasToOriginalPath);
         }
