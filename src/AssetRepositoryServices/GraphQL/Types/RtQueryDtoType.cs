@@ -8,9 +8,11 @@ using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Scalars;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Utils;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
 using Meshmakers.Octo.ConstructionKit.Contracts;
+using Meshmakers.Octo.ConstructionKit.Contracts.DataTransferObjects;
 using Meshmakers.Octo.ConstructionKit.Contracts.DependencyGraph;
 using Meshmakers.Octo.ConstructionKit.Models.System.Generated.System.v2;
 using Meshmakers.Octo.Runtime.Contracts;
+using Meshmakers.Octo.Runtime.Contracts.Repositories;
 using Meshmakers.Octo.Runtime.Contracts.Repositories.Query;
 using ZstdSharp.Unsafe;
 
@@ -180,10 +182,22 @@ internal sealed class RtQueryDtoType : ObjectGraphType<RtQueryDto>
             }
 
             var columnPaths = rtQueryDto.Columns.Select(column => column.AttributePath);
-            var fieldFilterPaths = queryOptions.FieldFilters?.Select(ff => ff.AttributePath) ?? [];
+
+            // RtPathEvaluator handles all paths uniformly — including :: association meta paths.
+            // Association meta field filters (::) are extracted from queryOptions.FieldFilters,
+            // tokenized into NavigationPairs with AssociationCountFilter, and removed from the filter list.
+            var fieldFilters = queryOptions.FieldFilters ?? new List<FieldFilter>();
             var roleIdDirectionPairs = RtPathEvaluator.TokenizeAndGetNavigationPairsByRtCkId(ckCacheService,
                 tenantRepository.TenantId, rtQueryDto.AssociatedCkTypeId,
-                columnPaths.Concat(fieldFilterPaths));
+                columnPaths, fieldFilters);
+
+            // For N:M column-only navigation pairs (no field filter, default totalCount >= 0),
+            // use Include mode so entities without associations are not filtered out
+            if (roleIdDirectionPairs.Any(np =>
+                    np.AssociationCountFilter is { Operator: FieldFilterOperator.GreaterEqualThan, ComparisonValue: 0 }))
+            {
+                queryOptions.UseNavigationFilterMode(NavigationFilterMode.Include);
+            }
 
             // For aggregation queries, don't pass paging parameters to the database query
             var resultSet = await tenantRepository.GetRtEntitiesGraphByTypeAsync(sessionAccessor.Session,

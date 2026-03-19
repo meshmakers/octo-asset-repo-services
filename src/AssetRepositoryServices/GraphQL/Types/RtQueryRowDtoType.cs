@@ -6,6 +6,7 @@ using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Scalars;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Utils;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
 using Meshmakers.Octo.ConstructionKit.Contracts;
+using Meshmakers.Octo.ConstructionKit.Contracts.DataTransferObjects;
 using Meshmakers.Octo.ConstructionKit.Contracts.DependencyGraph;
 using Meshmakers.Octo.ConstructionKit.Contracts.Services;
 using Meshmakers.Octo.Runtime.Contracts;
@@ -91,6 +92,26 @@ internal sealed class RtSimpleQueryRowDtoType : ObjectGraphType<RtSimpleQueryRow
         RtEntityGraphItem rtEntity,
         CkTypeQueryColumn ckTypeQueryColumn, bool resolveEnumValuesToNames)
     {
+        // For N:M associations, return totalCount or exists based on path suffix
+        if (ckTypeQueryColumn.AssociationTuple is { Multiplicity: MultiplicitiesDto.N })
+        {
+            var accessPathList = ckTypeQueryColumn.AccessPathList.ToArray();
+            var navigationTerm = accessPathList.FirstOrDefault(p => p.Type == PathType.Navigation);
+            var count = 0;
+            if (navigationTerm != null)
+            {
+                count = rtEntity.Associations
+                    .Count(a => a.NavigationPropertyName == navigationTerm.Value);
+            }
+
+            var isTotalCount = ckTypeQueryColumn.Path.EndsWith("totalCount");
+            return new RtQueryCellDto
+            {
+                AttributePath = ckTypeQueryColumn.Path,
+                Value = isTotalCount ? count : count > 0
+            };
+        }
+
         var resolveFlags = resolveEnumValuesToNames
             ? AttributeValueResolveFlags.ResolveEnumsToNames
             : AttributeValueResolveFlags.Default;

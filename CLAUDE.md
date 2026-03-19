@@ -152,6 +152,20 @@ Version resolution (from `Directory.Build.props`):
 
 ## Development Notes
 
+### N:M Association Query Columns
+N:M associations are exposed as query columns with `::totalCount` (INT64) and `::exists` (BOOLEAN).
+
+**Query column resolution** (`RtQueryRowDtoType.CreateRtSimpleQueryCellDto`):
+- Detects N:M columns via `AssociationTuple.Multiplicity == N`
+- Counts `RtEntityGraphItem.Associations` by `NavigationPropertyName`
+- Returns `int` for totalCount, `bool` for exists
+
+**Filter handling** (`RtQueryDtoType.ResolveRtQueryRowsAsync`):
+- Extracts `::` field filters from `queryOptions` before they reach `RtFieldFilterResolver`
+- Converts `exists` filters to count comparisons (e.g., `exists == true` → `count >= 1`)
+- Sets `AssociationCountFilter` on `NavigationPair` for MongoDB-level filtering
+- Determines association direction (inbound/outbound) from CK model
+
 ### When Working with GraphQL
 - Schema caching is automatic per tenant (up to 64 cached schemas)
 - Schema invalidation happens via `SchemaContext.Invalidate(tenantId)`

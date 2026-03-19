@@ -158,10 +158,18 @@ internal sealed class RtTransientQueryDtoType : ObjectGraphType<RtTransientQuery
             }
 
             var columnPaths = rtTransientQueryDto.Columns.Select(column => column.AttributePath);
-            var fieldFilterPaths = queryUserContext.QueryOptions.FieldFilters?.Select(ff => ff.AttributePath) ?? [];
+            var fieldFilters = queryUserContext.QueryOptions.FieldFilters ?? new List<FieldFilter>();
             var roleIdDirectionPairs = RtPathEvaluator.TokenizeAndGetNavigationPairsByRtCkId(ckCacheService,
                 tenantRepository.TenantId, rtTransientQueryDto.AssociatedCkTypeId,
-                columnPaths.Concat(fieldFilterPaths));
+                columnPaths, fieldFilters);
+
+            // For N:M column-only navigation pairs (no field filter, default totalCount >= 0),
+            // use Include mode so entities without associations are not filtered out
+            if (roleIdDirectionPairs.Any(np =>
+                    np.AssociationCountFilter is { Operator: FieldFilterOperator.GreaterEqualThan, ComparisonValue: 0 }))
+            {
+                queryUserContext.QueryOptions.UseNavigationFilterMode(NavigationFilterMode.Include);
+            }
 
             var resultSet = await tenantRepository.GetRtEntitiesGraphByTypeAsync(sessionAccessor.Session,
                 rtTransientQueryDto.AssociatedCkTypeId, queryUserContext.QueryOptions,
