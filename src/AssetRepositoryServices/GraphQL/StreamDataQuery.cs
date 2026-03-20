@@ -1050,27 +1050,26 @@ internal sealed class StreamDataQuery : ObjectGraphType
 
         _logger.LogDebug("Stream data downsampling query executed. Got {Count} rows", data.Count);
 
-        // Detect empty bins using __binCount and mark them.
-        // The __binCount column is always present but never in resolvedColumnNames, so it won't appear in output.
-        // For empty bins, we create new DataPointDto instances with null aggregation values but preserved timestamps.
+        // Detect empty bins using __binCount (COUNT(d."Timestamp") from the SQL).
+        // For LEFT JOIN, COUNT(d."Timestamp") returns 0 when no data rows match the bin.
+        // For empty bins, replace the DataPointDto with one that has null aggregation values.
         const string binCountKey = "__binCount";
         for (var i = 0; i < data.Count; i++)
         {
             var dp = data[i];
             if (!dp.Attributes.TryGetValue(binCountKey, out var binCountObj) ||
-                binCountObj is not (long or int) ||
+                binCountObj == null ||
                 Convert.ToInt64(binCountObj) != 0)
             {
                 continue;
             }
 
-            // Empty bin: create a new DataPointDto with only the timestamp, all aggregation values null
+            // Empty bin: create a new DataPointDto with only the timestamp, all aggregation values null.
+            // resolvedColumnNames contains the SQL aliases (e.g. "Avg_voltage") which are the keys
+            // in DataPointDto.Attributes that GetAttributeValue will look up.
             var emptyAttributes = new Dictionary<string, object?>();
-            foreach (var alias in resolvedColumnNames)
+            foreach (var sqlAlias in resolvedColumnNames)
             {
-                var sqlAlias = aliasToOriginalPath != null
-                    ? aliasToOriginalPath.FirstOrDefault(kvp => kvp.Value == alias).Key ?? alias
-                    : alias;
                 emptyAttributes[sqlAlias] = null;
             }
 
