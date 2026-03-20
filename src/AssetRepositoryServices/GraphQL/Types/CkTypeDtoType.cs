@@ -261,7 +261,8 @@ internal sealed class CkTypeDtoType : ObjectGraphType<CkTypeDto>
         {
             AttributePath = ckTypeQueryColumn.Path,
             AttributeValueType = ckTypeQueryColumn.ValueType,
-            Description = ckTypeQueryColumn.Description
+            Description = ckTypeQueryColumn.Description,
+            IsDataStream = ckTypeQueryColumn.IsDataStream
         };
         return ckTypeQueryColumnDto;
     }

@@ -17,5 +17,7 @@ internal sealed class CkTypeQueryColumnDtoType : ObjectGraphType<CkTypeQueryColu
             .Description("Value type of the attribute.");
         Field(x => x.Description, true)
             .Description("Description of the attribute.");
+        Field(x => x.IsDataStream, typeof(NonNullGraphType<BooleanGraphType>))
+            .Description("Whether this column is available in stream data (CrateDB) queries.");
     }
 }
