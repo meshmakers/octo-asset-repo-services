@@ -112,6 +112,20 @@ public static class RuntimeEngineBuilderExtensions
 
                 options.MapInboundClaims = false; // Don't rename claim types
                 options.SaveTokens = true;
+
+                options.Events = new Microsoft.AspNetCore.Authentication.OpenIdConnect.OpenIdConnectEvents
+                {
+                    OnRedirectToIdentityProvider = context =>
+                    {
+                        var tenantId = AssetRepositoryServiceConstants.GetTenantId(context.HttpContext);
+                        if (!string.IsNullOrEmpty(tenantId))
+                        {
+                            context.ProtocolMessage.AcrValues = $"tenant:{tenantId}";
+                        }
+
+                        return Task.CompletedTask;
+                    }
+                };
             })
             .AddJwtBearer(options =>
             {
