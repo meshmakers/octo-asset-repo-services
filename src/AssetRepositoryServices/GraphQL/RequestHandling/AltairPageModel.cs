@@ -4,7 +4,7 @@ using GraphQL.Server.Ui.Altair;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.RequestHandling;
 
-internal class AltairPageModel(string baseUri, string graphQlEndPoint, AltairOptions options)
+internal class AltairPageModel(string baseUri, string graphQlEndPoint, string tenantId, AltairOptions options)
 {
     private string? _altairCsHtml;
 
@@ -40,7 +40,8 @@ internal class AltairPageModel(string baseUri, string graphQlEndPoint, AltairOpt
             .Replace("@Model.SubscriptionsEndPoint", StringEncode(options.SubscriptionsEndPoint))
             .Replace("@Model.Headers", JsonSerializer.Serialize(headers))
             .Replace("@Model.SubscriptionsPayload", JsonSerializer.Serialize(options.SubscriptionsPayload))
-            .Replace("@Model.Settings", JsonSerializer.Serialize(options.Settings));
+            .Replace("@Model.Settings", JsonSerializer.Serialize(options.Settings))
+            .Replace("@Model.InstanceStorageNamespace", StringEncode($"octo-playground-{tenantId}"));
 
         _altairCsHtml = options.PostConfigure(options, builder.ToString());
         return _altairCsHtml;

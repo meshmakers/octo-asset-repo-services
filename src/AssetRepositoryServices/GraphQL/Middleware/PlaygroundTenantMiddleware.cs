@@ -18,12 +18,10 @@ public class PlaygroundTenantMiddleware
     private readonly IOctoService _octoService;
     private readonly AltairOptions _options;
 
-    private string? _lastTenantId;
-
     /// <summary>
-    ///     The page model used to render Playground
+    ///     Cached page models per tenant to avoid re-rendering.
     /// </summary>
-    private AltairPageModel? _pageModel;
+    private readonly Dictionary<string, AltairPageModel> _pageModels = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
     ///     Create a new <see cref="PlaygroundTenantMiddleware" />
@@ -81,26 +79,38 @@ public class PlaygroundTenantMiddleware
 
     private async Task InvokePlayground(HttpResponse httpResponse, string? tenantId)
     {
-        if (string.Compare(tenantId, _lastTenantId, StringComparison.OrdinalIgnoreCase) != 0)
-        {
-            _lastTenantId = tenantId;
-            _pageModel =
-                new AltairPageModel(_assetOptions.Value.PublicUrl.EnsureEndsWith("/"),
-                    _options.GraphQLEndPoint.Replace("{tenantId}", tenantId),
-                    _options);
-        }
-
-        if (_pageModel != null)
-        {
-            var data = Encoding.UTF8.GetBytes(_pageModel.Render());
-
-            httpResponse.ContentType = "text/html";
-            httpResponse.StatusCode = 200;
-            await httpResponse.Body.WriteAsync(data, 0, data.Length);
-        }
-        else
+        if (tenantId == null)
         {
             httpResponse.StatusCode = 400;
+            return;
         }
+
+        if (!_pageModels.TryGetValue(tenantId, out var pageModel))
+        {
+            // Create tenant-specific options that isolate IndexedDB storage per tenant
+            // and prevent state leaking between tenants
+            var tenantOptions = new AltairOptions
+            {
+                GraphQLEndPoint = _options.GraphQLEndPoint,
+                Headers = _options.Headers,
+                SubscriptionsEndPoint = _options.SubscriptionsEndPoint,
+                SubscriptionsPayload = _options.SubscriptionsPayload,
+                Settings = _options.Settings,
+            };
+
+            pageModel = new AltairPageModel(
+                _assetOptions.Value.PublicUrl.EnsureEndsWith("/"),
+                _options.GraphQLEndPoint.Replace("{tenantId}", tenantId),
+                tenantId,
+                tenantOptions);
+
+            _pageModels[tenantId] = pageModel;
+        }
+
+        var data = Encoding.UTF8.GetBytes(pageModel.Render());
+
+        httpResponse.ContentType = "text/html";
+        httpResponse.StatusCode = 200;
+        await httpResponse.Body.WriteAsync(data, 0, data.Length);
     }
 }
