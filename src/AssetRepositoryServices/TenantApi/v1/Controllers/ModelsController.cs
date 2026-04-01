@@ -8,6 +8,7 @@ using Meshmakers.Octo.Communication.Contracts.DataTransferObjects.ApiErrors;
 using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.ConstructionKit.Contracts.Serialization;
 using Meshmakers.Octo.ConstructionKit.Contracts.Services;
+using Meshmakers.Octo.Runtime.Contracts.CkModelMigrations;
 using Meshmakers.Octo.Runtime.Contracts.Exchange;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb;
 using Meshmakers.Octo.Services.Contracts.DistributionEventHub.Commands;
@@ -33,6 +34,7 @@ public class ModelsController : ControllerBase
     private readonly ICommandClient<ImportCkCommandRequest> _importCkCommandClient;
     private readonly ICommandClient<ImportRtCommandRequest> _importRtCommandClient;
     private readonly ISystemContext _systemContext;
+    private readonly ICkModelUpgradeService _upgradeService;
 
     /// <summary>
     ///     Constructor
@@ -45,6 +47,7 @@ public class ModelsController : ControllerBase
     /// <param name="catalogService">CK model catalog service</param>
     /// <param name="ckJsonSerializer">CK model JSON serializer</param>
     /// <param name="systemContext">System context for tenant access</param>
+    /// <param name="upgradeService">CK model upgrade service for pre-flight checks</param>
     public ModelsController(IDistributedCacheService distributedCache,
         ICommandClient<ExportRtByQueryCommandRequest> exportRtByQueryCommandClient,
         ICommandClient<ExportRtByDeepGraphCommandRequest> exportRtByDeepGraphCommandClient,
@@ -52,7 +55,8 @@ public class ModelsController : ControllerBase
         ICommandClient<ImportCkCommandRequest> importCkCommandClient,
         ICatalogService catalogService,
         ICkJsonSerializer ckJsonSerializer,
-        ISystemContext systemContext)
+        ISystemContext systemContext,
+        ICkModelUpgradeService upgradeService)
     {
         _distributedCache = distributedCache;
         _exportRtByQueryCommandClient = exportRtByQueryCommandClient;
@@ -62,6 +66,7 @@ public class ModelsController : ControllerBase
         _catalogService = catalogService;
         _ckJsonSerializer = ckJsonSerializer;
         _systemContext = systemContext;
+        _upgradeService = upgradeService;
     }
 
     // POST: {tenantId}/v1/Models/ExportRtByQuery
@@ -234,7 +239,7 @@ public class ModelsController : ControllerBase
     /// <returns>A job ID for tracking the async import operation</returns>
     [HttpPost]
     [Route("ImportFromCatalog")]
-    [Authorize(AssetRepositoryServiceConstants.TenantAssetApiReadWritePolicy)]
+    [Authorize(AssetRepositoryServiceConstants.DataModelManagementPolicy)]
     [ProducesResponseType(typeof(TransferModelResponseDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(OperationFailedErrorDto), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
@@ -352,6 +357,75 @@ public class ModelsController : ControllerBase
                 tenantContext, resolved, cancellationToken);
 
             return Ok(new DependencyResolutionResponseDto { RootModel = rootItem });
+        }
+        catch (InvalidOperationException e)
+        {
+            return BadRequest(new InternalServerErrorDto(e.Message));
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(StatusCodes.Status500InternalServerError, new InternalServerErrorDto(ex.Message));
+        }
+    }
+
+    // POST: {tenantId}/v1/Models/CheckUpgrade
+    /// <summary>
+    ///     Pre-flight check to determine if importing a CK model will trigger migrations
+    /// </summary>
+    /// <param name="request">The catalog name and model ID to check</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>Upgrade check information including migration availability and breaking changes</returns>
+    [HttpPost]
+    [Route("CheckUpgrade")]
+    [Authorize(AssetRepositoryServiceConstants.TenantAssetApiReadOnlyPolicy)]
+    [ProducesResponseType(typeof(UpgradeCheckResponseDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(OperationFailedErrorDto), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(InternalServerErrorDto), StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> CheckUpgrade(
+        [FromBody] ImportFromCatalogRequestDto request,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var tenantId = HttpContext.GetTenantId();
+            if (string.IsNullOrEmpty(tenantId))
+            {
+                return BadRequest(new OperationFailedErrorDto("TenantId is required"));
+            }
+
+            if (string.IsNullOrWhiteSpace(request.CatalogName))
+            {
+                return BadRequest(new OperationFailedErrorDto("CatalogName is required"));
+            }
+
+            if (string.IsNullOrWhiteSpace(request.ModelId))
+            {
+                return BadRequest(new OperationFailedErrorDto("ModelId is required"));
+            }
+
+            var ckModelId = new CkModelId(request.ModelId);
+
+            // Verify model exists in catalog
+            var exists = await _catalogService.IsExistingAsync(ckModelId);
+            if (!exists)
+            {
+                return NotFound();
+            }
+
+            var upgradeInfo = await _upgradeService.CheckUpgradeNeededAsync(
+                tenantId, ckModelId.Name, ckModelId.Version.ToString(), cancellationToken);
+
+            return Ok(new UpgradeCheckResponseDto
+            {
+                ModelName = upgradeInfo.CkModelName,
+                InstalledVersion = upgradeInfo.InstalledVersion,
+                TargetVersion = upgradeInfo.TargetVersion,
+                UpgradeNeeded = upgradeInfo.UpgradeNeeded,
+                MigrationPathAvailable = upgradeInfo.MigrationPathAvailable,
+                HasBreakingChanges = upgradeInfo.HasBreakingChanges,
+                ErrorMessage = upgradeInfo.ErrorMessage
+            });
         }
         catch (InvalidOperationException e)
         {

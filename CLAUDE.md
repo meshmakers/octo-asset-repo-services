@@ -237,3 +237,21 @@ Tenant-scoped endpoint to import a CK model directly from a catalog without file
 **Request body:** Same as ImportFromCatalog (`catalogName` + `modelId`).
 
 **Response:** `DependencyResolutionResponseDto` with recursive `RootModel` tree. Each item contains: `modelId`, `name`, `requiredVersion`, `installedVersion` (null if not installed), `action` ("install", "none"), and nested `dependencies`.
+
+| `POST` | `{tenantId}/v1/models/CheckUpgrade` | ReadOnly | Pre-flight check for migration impact |
+
+**Request body:** Same as ImportFromCatalog (`catalogName` + `modelId`).
+
+**Response:** `UpgradeCheckResponseDto` with: `modelName`, `installedVersion`, `targetVersion`, `upgradeNeeded`, `migrationPathAvailable`, `hasBreakingChanges`, `errorMessage`.
+
+### Authorization: Data Model Management
+
+Write operations on CK model catalogs (import, refresh) are gated by the `DataModelManagementPolicy`. This requires the `octo_api.data_model_management` or `octo_api` scope claim.
+
+| Endpoint | Policy |
+|----------|--------|
+| Catalog browsing (GET) | `SystemAssetApiReadOnlyPolicy` |
+| Catalog refresh (POST) | `DataModelManagementPolicy` |
+| ImportFromCatalog | `DataModelManagementPolicy` |
+| ResolveDependencies | `TenantAssetApiReadOnlyPolicy` |
+| CheckUpgrade | `TenantAssetApiReadOnlyPolicy` |
