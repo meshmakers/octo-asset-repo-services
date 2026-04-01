@@ -9,6 +9,7 @@ using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.ConstructionKit.Contracts.Serialization;
 using Meshmakers.Octo.ConstructionKit.Contracts.Services;
 using Meshmakers.Octo.Runtime.Contracts.Exchange;
+using Meshmakers.Octo.Runtime.Contracts.MongoDb;
 using Meshmakers.Octo.Services.Contracts.DistributionEventHub.Commands;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -31,6 +32,7 @@ public class ModelsController : ControllerBase
     private readonly ICommandClient<ExportRtByDeepGraphCommandRequest> _exportRtByDeepGraphCommandClient;
     private readonly ICommandClient<ImportCkCommandRequest> _importCkCommandClient;
     private readonly ICommandClient<ImportRtCommandRequest> _importRtCommandClient;
+    private readonly ISystemContext _systemContext;
 
     /// <summary>
     ///     Constructor
@@ -42,13 +44,15 @@ public class ModelsController : ControllerBase
     /// <param name="importCkCommandClient"></param>
     /// <param name="catalogService">CK model catalog service</param>
     /// <param name="ckJsonSerializer">CK model JSON serializer</param>
+    /// <param name="systemContext">System context for tenant access</param>
     public ModelsController(IDistributedCacheService distributedCache,
         ICommandClient<ExportRtByQueryCommandRequest> exportRtByQueryCommandClient,
         ICommandClient<ExportRtByDeepGraphCommandRequest> exportRtByDeepGraphCommandClient,
         ICommandClient<ImportRtCommandRequest> importRtCommandClient,
         ICommandClient<ImportCkCommandRequest> importCkCommandClient,
         ICatalogService catalogService,
-        ICkJsonSerializer ckJsonSerializer)
+        ICkJsonSerializer ckJsonSerializer,
+        ISystemContext systemContext)
     {
         _distributedCache = distributedCache;
         _exportRtByQueryCommandClient = exportRtByQueryCommandClient;
@@ -57,6 +61,7 @@ public class ModelsController : ControllerBase
         _importCkCommandClient = importCkCommandClient;
         _catalogService = catalogService;
         _ckJsonSerializer = ckJsonSerializer;
+        _systemContext = systemContext;
     }
 
     // POST: {tenantId}/v1/Models/ExportRtByQuery
@@ -286,6 +291,134 @@ public class ModelsController : ControllerBase
         {
             return StatusCode(StatusCodes.Status500InternalServerError, new InternalServerErrorDto(ex.Message));
         }
+    }
+
+    // POST: {tenantId}/v1/Models/ResolveDependencies
+    /// <summary>
+    ///     Resolves the full dependency tree for a CK model from a catalog and compares
+    ///     it against the tenant's installed models to determine required actions.
+    /// </summary>
+    /// <param name="request">The catalog name and model ID to resolve</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>Dependency tree with install/update/none actions per model</returns>
+    [HttpPost]
+    [Route("ResolveDependencies")]
+    [Authorize(AssetRepositoryServiceConstants.TenantAssetApiReadOnlyPolicy)]
+    [ProducesResponseType(typeof(DependencyResolutionResponseDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(OperationFailedErrorDto), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(InternalServerErrorDto), StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> ResolveDependencies(
+        [FromBody] ImportFromCatalogRequestDto request,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var tenantId = HttpContext.GetTenantId();
+            if (string.IsNullOrEmpty(tenantId))
+            {
+                return BadRequest(new OperationFailedErrorDto("TenantId is required"));
+            }
+
+            if (string.IsNullOrWhiteSpace(request.CatalogName))
+            {
+                return BadRequest(new OperationFailedErrorDto("CatalogName is required"));
+            }
+
+            if (string.IsNullOrWhiteSpace(request.ModelId))
+            {
+                return BadRequest(new OperationFailedErrorDto("ModelId is required"));
+            }
+
+            var ckModelId = new CkModelId(request.ModelId);
+            var operationResult = new OperationResult();
+
+            var compiledModel =
+                await _catalogService.GetAsync(request.CatalogName, ckModelId, operationResult,
+                    cancellationToken: cancellationToken);
+
+            if (compiledModel == null)
+            {
+                return NotFound();
+            }
+
+            // Get tenant context for checking installed models
+            var tenantContext = await _systemContext.FindTenantContextAsync(tenantId);
+
+            // Resolve the dependency tree
+            var resolved = new HashSet<string>();
+            var rootItem = await ResolveDependencyTreeAsync(
+                compiledModel.ModelId, compiledModel.Dependencies,
+                tenantContext, resolved, cancellationToken);
+
+            return Ok(new DependencyResolutionResponseDto { RootModel = rootItem });
+        }
+        catch (InvalidOperationException e)
+        {
+            return BadRequest(new InternalServerErrorDto(e.Message));
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(StatusCodes.Status500InternalServerError, new InternalServerErrorDto(ex.Message));
+        }
+    }
+
+    private async Task<DependencyResolutionItemDto> ResolveDependencyTreeAsync(
+        CkModelId modelId,
+        List<CkModelId>? dependencies,
+        ITenantContext tenantContext,
+        HashSet<string> resolved,
+        CancellationToken cancellationToken)
+    {
+        var item = new DependencyResolutionItemDto
+        {
+            ModelId = modelId.FullName,
+            Name = modelId.Name,
+            RequiredVersion = modelId.Version.ToString()
+        };
+
+        // Check if exact version is installed
+        var isInstalled = await tenantContext.IsCkModelExistingAsync(modelId);
+        if (isInstalled)
+        {
+            item.InstalledVersion = modelId.Version.ToString();
+            item.Action = "none";
+        }
+        else
+        {
+            // Check if any version of this model is installed (by checking a range)
+            // For simplicity, we check exact version only - "install" if not present
+            item.Action = "install";
+        }
+
+        // Resolve sub-dependencies
+        if (dependencies != null)
+        {
+            foreach (var dep in dependencies)
+            {
+                // Prevent circular dependencies
+                if (!resolved.Add(dep.FullName))
+                {
+                    continue;
+                }
+
+                // Fetch sub-dependency from catalog to get its dependencies
+                List<CkModelId>? subDeps = null;
+                var operationResult = new OperationResult();
+                var depModel = await _catalogService.GetAsync(dep, operationResult,
+                    cancellationToken: cancellationToken);
+                if (depModel != null)
+                {
+                    subDeps = depModel.Dependencies;
+                }
+
+                var depItem = await ResolveDependencyTreeAsync(
+                    dep, subDeps, tenantContext, resolved, cancellationToken);
+                item.Dependencies.Add(depItem);
+            }
+        }
+
+        return item;
     }
 
     private async Task<string> SerializeModelToCache(string tenantId,

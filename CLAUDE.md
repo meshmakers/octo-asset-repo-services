@@ -231,3 +231,9 @@ Tenant-scoped endpoint to import a CK model directly from a catalog without file
 **Response:** `TransferModelResponseDto` with `jobId` for async tracking.
 
 **Flow:** Fetches compiled model from catalog → serializes to JSON → caches in Redis → sends `ImportCkCommandRequest` through existing async job pipeline (RabbitMQ → Hangfire → `ITenantContext.ImportCkModelAsync`).
+
+| `POST` | `{tenantId}/v1/models/ResolveDependencies` | ReadOnly | Resolve dependency tree for a catalog model against tenant |
+
+**Request body:** Same as ImportFromCatalog (`catalogName` + `modelId`).
+
+**Response:** `DependencyResolutionResponseDto` with recursive `RootModel` tree. Each item contains: `modelId`, `name`, `requiredVersion`, `installedVersion` (null if not installed), `action` ("install", "none"), and nested `dependencies`.
