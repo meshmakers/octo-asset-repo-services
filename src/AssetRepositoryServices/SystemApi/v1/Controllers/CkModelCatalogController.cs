@@ -252,7 +252,7 @@ public class CkModelCatalogController : ControllerBase
     /// </summary>
     /// <returns>204 No Content on success</returns>
     [HttpPost("refresh")]
-    [Authorize(AssetRepositoryServiceConstants.SystemAssetApiReadWritePolicy)]
+    [Authorize(AssetRepositoryServiceConstants.DataModelManagementPolicy)]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(typeof(InternalServerErrorDto), StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> RefreshAll()
@@ -275,7 +275,7 @@ public class CkModelCatalogController : ControllerBase
     /// <param name="catalogName">Name of the catalog to refresh</param>
     /// <returns>204 No Content on success</returns>
     [HttpPost("{catalogName}/refresh")]
-    [Authorize(AssetRepositoryServiceConstants.SystemAssetApiReadWritePolicy)]
+    [Authorize(AssetRepositoryServiceConstants.DataModelManagementPolicy)]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(typeof(InternalServerErrorDto), StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> RefreshCatalog([Required] string catalogName)

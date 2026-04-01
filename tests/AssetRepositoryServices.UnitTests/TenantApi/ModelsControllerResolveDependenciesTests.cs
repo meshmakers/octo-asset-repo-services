@@ -40,7 +40,8 @@ public class ModelsControllerResolveDependenciesTests
             A.Fake<ICommandClient<ImportCkCommandRequest>>(),
             _catalogService,
             A.Fake<ICkJsonSerializer>(),
-            _systemContext);
+            _systemContext,
+            A.Fake<Meshmakers.Octo.Runtime.Contracts.CkModelMigrations.ICkModelUpgradeService>());
 
         var httpContext = new DefaultHttpContext();
         httpContext.Request.RouteValues["tenantId"] = "test-tenant";

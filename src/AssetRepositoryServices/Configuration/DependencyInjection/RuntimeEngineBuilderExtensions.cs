@@ -179,6 +179,14 @@ public static class RuntimeEngineBuilderExtensions
                         CommonConstants.OctoApiFullAccess,
                         CommonConstants.OctoApiReadOnly);
                 });
+
+            options.AddPolicy(AssetRepositoryServiceConstants.DataModelManagementPolicy,
+                authorizationPolicyBuilder =>
+                {
+                    authorizationPolicyBuilder.RequireClaim(InfrastructureCommon.ClaimScope,
+                        CommonConstants.OctoApiFullAccess,
+                        CommonConstants.OctoApiDataModelManagement);
+                });
         });
 
         builder.Services.AddMvcCore().AddAuthorization();
@@ -194,6 +202,10 @@ public static class RuntimeEngineBuilderExtensions
                 {
                     CommonConstants.OctoApiReadOnly,
                     CommonConstants.OctoApiReadOnlyDisplayName
+                },
+                {
+                    CommonConstants.OctoApiDataModelManagement,
+                    CommonConstants.OctoApiDataModelManagementDisplayName
                 }
             };
 
@@ -214,6 +226,10 @@ public static class RuntimeEngineBuilderExtensions
                 {
                     AssetRepositoryServiceConstants.TenantAssetApiReadWritePolicy,
                     new List<string> { CommonConstants.OctoApiFullAccess }
+                },
+                {
+                    AssetRepositoryServiceConstants.DataModelManagementPolicy,
+                    new List<string> { CommonConstants.OctoApiDataModelManagement }
                 }
             };
 

@@ -12,6 +12,7 @@ public static class AssetRepositoryServiceConstants
 
     internal const string TenantAssetApiReadOnlyPolicy = "TenantAssetApiReadOnlyPolicy";
     internal const string TenantAssetApiReadWritePolicy = "TenantAssetApiReadWritePolicy";
+    internal const string DataModelManagementPolicy = "DataModelManagementPolicy";
 
 
     /// <summary>

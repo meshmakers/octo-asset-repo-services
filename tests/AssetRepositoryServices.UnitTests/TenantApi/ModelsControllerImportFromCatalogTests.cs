@@ -39,7 +39,8 @@ public class ModelsControllerImportFromCatalogTests
             _importCkCommandClient,
             _catalogService,
             _ckJsonSerializer,
-            A.Fake<Meshmakers.Octo.Runtime.Contracts.MongoDb.ISystemContext>());
+            A.Fake<Meshmakers.Octo.Runtime.Contracts.MongoDb.ISystemContext>(),
+            A.Fake<Meshmakers.Octo.Runtime.Contracts.CkModelMigrations.ICkModelUpgradeService>());
 
         // Set up HttpContext with tenant ID via request route values
         var httpContext = new DefaultHttpContext();
