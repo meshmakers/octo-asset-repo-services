@@ -98,6 +98,7 @@ Located in versioned API folders:
 **System APIs** (`SystemApi/v1/Controllers/`):
 - `DiagnosticsController.cs` - Health and diagnostics
 - `BlueprintsController.cs` - Blueprint management
+- `CkModelCatalogController.cs` - CK model catalog browsing, search, and cache refresh
 
 **Tenant APIs** (`TenantApi/v1/Controllers/`):
 - `TenantsController.cs` - Tenant management (each tenant manages its own child tenants)
@@ -191,3 +192,22 @@ The service supports dual authentication:
 ### Configuration
 Use environment variable prefix `OCTO_` to override configuration values.
 User secrets are supported for local development (UserSecretsId: `173d8e91-b831-4e8a-a43f-672c57e6a4da`).
+
+### CK Model Catalog REST API
+
+System-scoped REST endpoints for browsing and managing Construction Kit model catalogs. Implemented in `CkModelCatalogController`.
+
+| Method | Endpoint | Auth Policy | Description |
+|--------|----------|-------------|-------------|
+| `GET` | `system/v1/ckmodelcatalog` | ReadOnly | List all models from all catalogs (paged) |
+| `GET` | `system/v1/ckmodelcatalog/search?q={term}` | ReadOnly | Search models by term |
+| `GET` | `system/v1/ckmodelcatalog/catalogs` | ReadOnly | List available catalog sources |
+| `GET` | `system/v1/ckmodelcatalog/{catalogName}` | ReadOnly | List models from specific catalog |
+| `HEAD` | `system/v1/ckmodelcatalog/{modelId}` | ReadOnly | Check if model exists |
+| `GET` | `system/v1/ckmodelcatalog/{catalogName}/{modelId}` | ReadOnly | Get model details |
+| `POST` | `system/v1/ckmodelcatalog/refresh` | ReadWrite | Refresh all catalog caches |
+| `POST` | `system/v1/ckmodelcatalog/{catalogName}/refresh` | ReadWrite | Refresh specific catalog cache |
+
+**DTOs:** `DataTransferObjects/CkModelCatalog/` - `CkModelCatalogDto`, `CkModelCatalogItemDto`, `CkModelCatalogListResponseDto`
+
+**Delegates to:** `ICatalogService` from `ConstructionKit.Contracts` (registered via `AddConstructionKit()`).
