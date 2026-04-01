@@ -1,9 +1,13 @@
 using System.ComponentModel.DataAnnotations;
 using Asp.Versioning;
 using IdentityModel;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.DataTransferObjects.CkModelCatalog;
 using Meshmakers.Octo.Common.DistributionEventHub.Services;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects.ApiErrors;
+using Meshmakers.Octo.ConstructionKit.Contracts;
+using Meshmakers.Octo.ConstructionKit.Contracts.Serialization;
+using Meshmakers.Octo.ConstructionKit.Contracts.Services;
 using Meshmakers.Octo.Runtime.Contracts.Exchange;
 using Meshmakers.Octo.Services.Contracts.DistributionEventHub.Commands;
 using Microsoft.AspNetCore.Authorization;
@@ -20,6 +24,8 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.TenantApi.v1.Controlle
 [ApiVersion("1.0")]
 public class ModelsController : ControllerBase
 {
+    private readonly ICatalogService _catalogService;
+    private readonly ICkJsonSerializer _ckJsonSerializer;
     private readonly IDistributedCacheService _distributedCache;
     private readonly ICommandClient<ExportRtByQueryCommandRequest> _exportRtByQueryCommandClient;
     private readonly ICommandClient<ExportRtByDeepGraphCommandRequest> _exportRtByDeepGraphCommandClient;
@@ -34,17 +40,23 @@ public class ModelsController : ControllerBase
     /// <param name="exportRtByDeepGraphCommandClient"></param>
     /// <param name="importRtCommandClient"></param>
     /// <param name="importCkCommandClient"></param>
+    /// <param name="catalogService">CK model catalog service</param>
+    /// <param name="ckJsonSerializer">CK model JSON serializer</param>
     public ModelsController(IDistributedCacheService distributedCache,
         ICommandClient<ExportRtByQueryCommandRequest> exportRtByQueryCommandClient,
         ICommandClient<ExportRtByDeepGraphCommandRequest> exportRtByDeepGraphCommandClient,
         ICommandClient<ImportRtCommandRequest> importRtCommandClient,
-        ICommandClient<ImportCkCommandRequest> importCkCommandClient)
+        ICommandClient<ImportCkCommandRequest> importCkCommandClient,
+        ICatalogService catalogService,
+        ICkJsonSerializer ckJsonSerializer)
     {
         _distributedCache = distributedCache;
         _exportRtByQueryCommandClient = exportRtByQueryCommandClient;
         _exportRtByDeepGraphCommandClient = exportRtByDeepGraphCommandClient;
         _importRtCommandClient = importRtCommandClient;
         _importCkCommandClient = importCkCommandClient;
+        _catalogService = catalogService;
+        _ckJsonSerializer = ckJsonSerializer;
     }
 
     // POST: {tenantId}/v1/Models/ExportRtByQuery
@@ -207,6 +219,88 @@ public class ModelsController : ControllerBase
         {
             return StatusCode(StatusCodes.Status500InternalServerError, new InternalServerErrorDto(ex.Message));
         }
+    }
+
+    // POST: {tenantId}/v1/Models/ImportFromCatalog
+    /// <summary>
+    ///     Imports a construction kit model directly from a catalog
+    /// </summary>
+    /// <param name="request">The catalog name and model ID to import</param>
+    /// <returns>A job ID for tracking the async import operation</returns>
+    [HttpPost]
+    [Route("ImportFromCatalog")]
+    [Authorize(AssetRepositoryServiceConstants.TenantAssetApiReadWritePolicy)]
+    [ProducesResponseType(typeof(TransferModelResponseDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(OperationFailedErrorDto), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(InternalServerErrorDto), StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> ImportFromCatalog([FromBody] ImportFromCatalogRequestDto request)
+    {
+        try
+        {
+            var tenantId = HttpContext.GetTenantId();
+            if (string.IsNullOrEmpty(tenantId))
+            {
+                return BadRequest(new OperationFailedErrorDto("TenantId is required"));
+            }
+
+            if (string.IsNullOrWhiteSpace(request.CatalogName))
+            {
+                return BadRequest(new OperationFailedErrorDto("CatalogName is required"));
+            }
+
+            if (string.IsNullOrWhiteSpace(request.ModelId))
+            {
+                return BadRequest(new OperationFailedErrorDto("ModelId is required"));
+            }
+
+            var ckModelId = new CkModelId(request.ModelId);
+            var operationResult = new OperationResult();
+
+            var compiledModel =
+                await _catalogService.GetAsync(request.CatalogName, ckModelId, operationResult);
+
+            if (compiledModel == null)
+            {
+                return NotFound();
+            }
+
+            if (operationResult.HasErrors || operationResult.HasFatalErrors)
+            {
+                return BadRequest(new OperationFailedErrorDto(
+                    string.Join("; ", operationResult.Messages.Select(m => m.MessageText))));
+            }
+
+            // Serialize the compiled model to JSON and cache it
+            var cacheKey = await SerializeModelToCache(tenantId, compiledModel);
+
+            var args = new ImportCkCommandRequest(tenantId, cacheKey);
+            var r = await _importCkCommandClient.GetResponse<JobCreatedResponse>(args);
+            return Ok(new TransferModelResponseDto(r.JobId));
+        }
+        catch (InvalidOperationException e)
+        {
+            return BadRequest(new InternalServerErrorDto(e.Message));
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(StatusCodes.Status500InternalServerError, new InternalServerErrorDto(ex.Message));
+        }
+    }
+
+    private async Task<string> SerializeModelToCache(string tenantId,
+        ConstructionKit.Contracts.DataTransferObjects.CkCompiledModelRoot compiledModel)
+    {
+        await using var memoryStream = new MemoryStream();
+        await using var streamWriter = new StreamWriter(memoryStream, leaveOpen: true);
+        await _ckJsonSerializer.SerializeAsync(streamWriter, compiledModel);
+        await streamWriter.FlushAsync();
+        memoryStream.Position = 0;
+
+        var fileName = $"{compiledModel.ModelId.FullName}.json";
+        var key = await _distributedCache.CreateStreamAsync(tenantId, memoryStream, "application/json", fileName,
+            TimeSpan.FromHours(1));
+        return key;
     }
 
     private async Task<string> AddFileToCache(string tenantId, IFormFile file)

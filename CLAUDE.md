@@ -102,7 +102,7 @@ Located in versioned API folders:
 
 **Tenant APIs** (`TenantApi/v1/Controllers/`):
 - `TenantsController.cs` - Tenant management (each tenant manages its own child tenants)
-- `ModelsController.cs` - Construction kit and runtime model import/export
+- `ModelsController.cs` - Construction kit and runtime model import/export (includes `ImportFromCatalog` endpoint)
 - `LargeBinariesController.cs` - Binary file upload/download
 
 #### 4. Stream Data Management
@@ -211,3 +211,23 @@ System-scoped REST endpoints for browsing and managing Construction Kit model ca
 **DTOs:** `DataTransferObjects/CkModelCatalog/` - `CkModelCatalogDto`, `CkModelCatalogItemDto`, `CkModelCatalogListResponseDto`
 
 **Delegates to:** `ICatalogService` from `ConstructionKit.Contracts` (registered via `AddConstructionKit()`).
+
+### CK Model Import from Catalog (Tenant API)
+
+Tenant-scoped endpoint to import a CK model directly from a catalog without file upload.
+
+| Method | Endpoint | Auth Policy | Description |
+|--------|----------|-------------|-------------|
+| `POST` | `{tenantId}/v1/models/ImportFromCatalog` | ReadWrite | Import CK model from catalog into tenant |
+
+**Request body:**
+```json
+{
+  "catalogName": "PublicGitHub",
+  "modelId": "Energy-2.0.0"
+}
+```
+
+**Response:** `TransferModelResponseDto` with `jobId` for async tracking.
+
+**Flow:** Fetches compiled model from catalog → serializes to JSON → caches in Redis → sends `ImportCkCommandRequest` through existing async job pipeline (RabbitMQ → Hangfire → `ITenantContext.ImportCkModelAsync`).
