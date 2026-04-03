@@ -725,7 +725,9 @@ public class ModelsController : ControllerBase
             CollectModelsToImport(dep, result, seen);
         }
 
-        if ((item.Action == "install" || item.Action == "update") && seen.Add(item.ModelId))
+        // Never include service-managed models in the import list
+        if ((item.Action == "install" || item.Action == "update") &&
+            !IsSystemManaged(item.Name) && seen.Add(item.ModelId))
         {
             result.Add(item.ModelId);
         }
@@ -752,10 +754,15 @@ public class ModelsController : ControllerBase
             item.InstalledVersion = modelId.Version.ToString();
             item.Action = "none";
         }
+        else if (IsSystemManaged(modelId.Name))
+        {
+            // Service-managed models are updated by the service, not by the user.
+            // The LibraryStatus compatibility check already validates version compatibility.
+            item.Action = "none";
+            item.InstalledVersion = "(service-managed)";
+        }
         else
         {
-            // Check if any version of this model is installed (by checking a range)
-            // For simplicity, we check exact version only - "install" if not present
             item.Action = "install";
         }
 
