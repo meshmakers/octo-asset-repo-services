@@ -483,6 +483,17 @@ public class ModelsController : ControllerBase
                 }
             }
 
+            // Build installed system model versions map for compatibility checks
+            var installedSystemVersions = new Dictionary<string, CkVersion>();
+            foreach (var inst in installedResult.Items)
+            {
+                if (IsSystemManaged(inst.ModelId) &&
+                    inst.ModelState == ConstructionKit.Contracts.DataTransferObjects.ModelState.Available)
+                {
+                    installedSystemVersions[inst.ModelId] = inst.Id.Version;
+                }
+            }
+
             // Build merged view
             var items = new List<CkModelLibraryStatusItemDto>();
             var processedNames = new HashSet<string>();
@@ -492,12 +503,24 @@ public class ModelsController : ControllerBase
                 processedNames.Add(inst.ModelId);
                 catalogByName.TryGetValue(inst.ModelId, out var catalog);
 
-                var hasUpdate = catalog != null &&
+                var isServiceManaged = IsSystemManaged(inst.ModelId);
+                var hasUpdate = !isServiceManaged && catalog != null &&
                                 catalog.ModelId.Version.CompareTo(inst.Id.Version) > 0;
 
                 var modelState = inst.ModelState.ToString();
                 var isResolveFailed = inst.ModelState ==
                                      ConstructionKit.Contracts.DataTransferObjects.ModelState.ResolveFailed;
+
+                // Check compatibility for non-system models with catalog updates
+                var isCompatible = true;
+                string? incompatibilityReason = null;
+                if (!isServiceManaged && catalog != null && hasUpdate)
+                {
+                    (isCompatible, incompatibilityReason) = await CheckSystemCompatibilityAsync(
+                        catalog.ModelId, installedSystemVersions, new HashSet<string>(), cancellationToken);
+                }
+
+                var needsAction = (isResolveFailed || hasUpdate) && !isServiceManaged && isCompatible;
 
                 items.Add(new CkModelLibraryStatusItemDto
                 {
@@ -507,9 +530,12 @@ public class ModelsController : ControllerBase
                     Dependencies = inst.Dependencies?.Select(d => d.FullName).ToList() ?? [],
                     CatalogVersion = catalog?.ModelId.Version.ToString(),
                     HasUpdate = hasUpdate,
-                    NeedsAction = isResolveFailed || hasUpdate,
+                    NeedsAction = needsAction,
                     CatalogName = catalog?.CatalogName,
-                    FullModelId = catalog?.ModelId.FullName
+                    FullModelId = catalog?.ModelId.FullName,
+                    IsServiceManaged = isServiceManaged,
+                    IsCompatible = isCompatible,
+                    IncompatibilityReason = incompatibilityReason
                 });
             }
 
@@ -518,12 +544,26 @@ public class ModelsController : ControllerBase
             {
                 if (!processedNames.Contains(name))
                 {
+                    var isServiceManaged = IsSystemManaged(name);
+
+                    // Check compatibility for catalog-only non-system models
+                    var isCompatible = true;
+                    string? incompatibilityReason = null;
+                    if (!isServiceManaged)
+                    {
+                        (isCompatible, incompatibilityReason) = await CheckSystemCompatibilityAsync(
+                            cm.ModelId, installedSystemVersions, new HashSet<string>(), cancellationToken);
+                    }
+
                     items.Add(new CkModelLibraryStatusItemDto
                     {
                         Name = name,
                         CatalogVersion = cm.ModelId.Version.ToString(),
                         CatalogName = cm.CatalogName,
-                        FullModelId = cm.ModelId.FullName
+                        FullModelId = cm.ModelId.FullName,
+                        IsServiceManaged = isServiceManaged,
+                        IsCompatible = isCompatible,
+                        IncompatibilityReason = incompatibilityReason
                     });
                 }
             }
@@ -747,6 +787,51 @@ public class ModelsController : ControllerBase
         }
 
         return item;
+    }
+
+    private static bool IsSystemManaged(string modelName) =>
+        modelName == "System" || modelName.StartsWith("System.", StringComparison.Ordinal);
+
+    private async Task<(bool isCompatible, string? reason)> CheckSystemCompatibilityAsync(
+        CkModelId catalogModelId,
+        Dictionary<string, CkVersion> installedSystemVersions,
+        HashSet<string> visited,
+        CancellationToken cancellationToken)
+    {
+        var operationResult = new OperationResult();
+        var compiled = await _catalogService.GetAsync(catalogModelId, operationResult,
+            cancellationToken: cancellationToken);
+        if (compiled?.Dependencies == null) return (true, null);
+
+        foreach (var dep in compiled.Dependencies)
+        {
+            if (!visited.Add(dep.FullName)) continue;
+
+            if (IsSystemManaged(dep.Name))
+            {
+                if (installedSystemVersions.TryGetValue(dep.Name, out var installedVersion))
+                {
+                    if (dep.Version.Major != installedVersion.Major ||
+                        installedVersion.CompareTo(dep.Version) < 0)
+                    {
+                        return (false,
+                            $"Requires {dep.FullName}, but {dep.Name}-{installedVersion} is installed");
+                    }
+                }
+                else
+                {
+                    return (false, $"Requires {dep.FullName}, but {dep.Name} is not installed");
+                }
+            }
+            else
+            {
+                var (subCompat, subReason) = await CheckSystemCompatibilityAsync(
+                    dep, installedSystemVersions, visited, cancellationToken);
+                if (!subCompat) return (false, subReason);
+            }
+        }
+
+        return (true, null);
     }
 
     private async Task<string> SerializeModelToCache(string tenantId,

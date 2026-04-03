@@ -50,4 +50,21 @@ public class CkModelLibraryStatusItemDto
     ///     Full model ID of the catalog version for import (e.g., "Energy-2.0.0")
     /// </summary>
     public string? FullModelId { get; set; }
+
+    /// <summary>
+    ///     Whether this model is managed by a service (System, System.Identity, etc.)
+    ///     Service-managed models should not be updated by the user.
+    /// </summary>
+    public bool IsServiceManaged { get; set; }
+
+    /// <summary>
+    ///     Whether the catalog version is compatible with installed system model versions.
+    ///     Checked transitively through the full dependency chain.
+    /// </summary>
+    public bool IsCompatible { get; set; } = true;
+
+    /// <summary>
+    ///     Reason for incompatibility, or null if compatible
+    /// </summary>
+    public string? IncompatibilityReason { get; set; }
 }
