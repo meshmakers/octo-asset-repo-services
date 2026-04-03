@@ -638,6 +638,21 @@ public class ModelsController : ControllerBase
                 CollectModelsToImport(rootItem, allModelsToImport, seen);
             }
 
+            // Build lookup of final import versions by name
+            var importVersionByName = new Dictionary<string, CkModelId>();
+            foreach (var modelId in allModelsToImport)
+            {
+                var id = new CkModelId(modelId);
+                importVersionByName[id.Name] = id;
+            }
+
+            // Correct tree items: if a higher version is in the import list,
+            // mark lower-version dependencies as "none" to avoid confusion
+            foreach (var tree in dependencyTrees)
+            {
+                CorrectTreeActions(tree.RootModel, importVersionByName);
+            }
+
             return Ok(new BatchDependencyResolutionResponseDto
             {
                 ModelsToImport = allModelsToImport,
@@ -812,6 +827,28 @@ public class ModelsController : ControllerBase
         }
 
         return item;
+    }
+
+    private static void CorrectTreeActions(DependencyResolutionItemDto item,
+        Dictionary<string, CkModelId> importVersionByName)
+    {
+        foreach (var dep in item.Dependencies)
+        {
+            CorrectTreeActions(dep, importVersionByName);
+        }
+
+        // If this item shows "install" but a higher version of the same model
+        // is already in the import list, mark as "none" (covered by higher version)
+        if (item.Action is "install" or "update" &&
+            importVersionByName.TryGetValue(item.Name, out var importVersion))
+        {
+            var itemVersion = new CkVersion(item.RequiredVersion);
+            if (importVersion.Version.CompareTo(itemVersion) > 0)
+            {
+                item.Action = "none";
+                item.InstalledVersion = $"(will import {importVersion.FullName})";
+            }
+        }
     }
 
     private static bool IsSystemManaged(string modelName) =>
