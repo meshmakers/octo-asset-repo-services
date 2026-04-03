@@ -15,6 +15,7 @@ using Meshmakers.Octo.Backend.AssetRepositoryServices.Services;
 using Meshmakers.Octo.Communication.Contracts;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
 using Meshmakers.Octo.ConstructionKit.Contracts;
+using Meshmakers.Octo.ConstructionKit.Contracts.ModelCatalogs;
 using Meshmakers.Octo.ConstructionKit.Contracts.Serialization;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb.Configuration;
 using Meshmakers.Octo.Runtime.Engine.Configuration.DependencyInjection;
@@ -350,6 +351,17 @@ public static class RuntimeEngineBuilderExtensions
         builder.Services.AddRuntimeEngine()
             .AddMongoDbRuntimeRepository()
             .AddMongoBlueprintSupport();
+
+        // Bind CK model catalog options to configuration sections
+        // This allows OCTO_LocalFileSystemCatalog__IsEnabled etc. env vars to work
+        var config = builder.Services.BuildServiceProvider()
+            .GetRequiredService<IConfiguration>();
+        builder.Services.Configure<LocalFileSystemCatalogOptions>(
+            config.GetSection("LocalFileSystemCatalog"));
+        builder.Services.Configure<PrivateGitHubCatalogOptions>(
+            config.GetSection("PrivateOctoGitHub"));
+        builder.Services.Configure<PublicGitHubCatalogOptions>(
+            config.GetSection("PublicOctoGitHub"));
         builder.Services.AddSingleton<IOctoService, OctoService>();
     }
 }
