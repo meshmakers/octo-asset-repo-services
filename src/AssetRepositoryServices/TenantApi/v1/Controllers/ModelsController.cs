@@ -725,9 +725,27 @@ public class ModelsController : ControllerBase
             CollectModelsToImport(dep, result, seen);
         }
 
-        // Never include service-managed models in the import list
-        if ((item.Action == "install" || item.Action == "update") &&
-            !IsSystemManaged(item.Name) && seen.Add(item.ModelId))
+        if ((item.Action != "install" && item.Action != "update") || IsSystemManaged(item.Name))
+        {
+            return;
+        }
+
+        // Deduplicate by model name - keep the highest version
+        if (!seen.Add(item.Name))
+        {
+            // Already have this model name - replace if new version is higher
+            var existingIndex = result.FindIndex(r => r.StartsWith(item.Name + "-", StringComparison.Ordinal));
+            if (existingIndex >= 0)
+            {
+                var existingId = new CkModelId(result[existingIndex]);
+                var newId = new CkModelId(item.ModelId);
+                if (newId.Version.CompareTo(existingId.Version) > 0)
+                {
+                    result[existingIndex] = item.ModelId;
+                }
+            }
+        }
+        else
         {
             result.Add(item.ModelId);
         }
