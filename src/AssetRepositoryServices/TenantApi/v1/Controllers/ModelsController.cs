@@ -282,6 +282,17 @@ public class ModelsController : ControllerBase
                     string.Join("; ", operationResult.Messages.Select(m => m.MessageText))));
             }
 
+            // Check system dependency compatibility
+            var tenantContext = await _systemContext.FindTenantContextAsync(tenantId);
+            var sysVersions = await GetInstalledSystemVersionsAsync(tenantContext);
+            var (isCompatible, incompatibilityReason) = await CheckSystemCompatibilityAsync(
+                ckModelId, sysVersions, new HashSet<string>(), CancellationToken.None);
+            if (!isCompatible)
+            {
+                return BadRequest(new OperationFailedErrorDto(
+                    $"Import blocked: {incompatibilityReason}"));
+            }
+
             // Serialize the compiled model to JSON and cache it
             var cacheKey = await SerializeModelToCache(tenantId, compiledModel);
 
@@ -694,6 +705,22 @@ public class ModelsController : ControllerBase
             if (string.IsNullOrWhiteSpace(request.CatalogName) || request.ModelIds.Count == 0)
             {
                 return BadRequest(new OperationFailedErrorDto("CatalogName and at least one ModelId are required"));
+            }
+
+            // Pre-check system compatibility for all models
+            var tenantContext = await _systemContext.FindTenantContextAsync(tenantId);
+            var sysVersions = await GetInstalledSystemVersionsAsync(tenantContext);
+
+            foreach (var modelId in request.ModelIds)
+            {
+                var checkId = new CkModelId(modelId);
+                var (isCompatible, reason) = await CheckSystemCompatibilityAsync(
+                    checkId, sysVersions, new HashSet<string>(), CancellationToken.None);
+                if (!isCompatible)
+                {
+                    return BadRequest(new OperationFailedErrorDto(
+                        $"Import blocked for '{modelId}': {reason}"));
+                }
             }
 
             string? lastJobId = null;
