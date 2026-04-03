@@ -348,14 +348,15 @@ public class ModelsController : ControllerBase
                 return NotFound();
             }
 
-            // Get tenant context for checking installed models
+            // Get tenant context and installed system versions
             var tenantContext = await _systemContext.FindTenantContextAsync(tenantId);
+            var sysVersions = await GetInstalledSystemVersionsAsync(tenantContext);
 
             // Resolve the dependency tree
             var resolved = new HashSet<string>();
             var rootItem = await ResolveDependencyTreeAsync(
                 compiledModel.ModelId, compiledModel.Dependencies,
-                tenantContext, resolved, cancellationToken);
+                tenantContext, sysVersions, resolved, cancellationToken);
 
             return Ok(new DependencyResolutionResponseDto { RootModel = rootItem });
         }
@@ -607,6 +608,7 @@ public class ModelsController : ControllerBase
             }
 
             var tenantContext = await _systemContext.FindTenantContextAsync(tenantId);
+            var sysVersions = await GetInstalledSystemVersionsAsync(tenantContext);
             var dependencyTrees = new List<DependencyResolutionResponseDto>();
             var allModelsToImport = new List<string>();
             var seen = new HashSet<string>();
@@ -630,7 +632,7 @@ public class ModelsController : ControllerBase
                 var resolved = new HashSet<string>();
                 var rootItem = await ResolveDependencyTreeAsync(
                     compiledModel.ModelId, compiledModel.Dependencies,
-                    tenantContext, resolved, cancellationToken);
+                    tenantContext, sysVersions, resolved, cancellationToken);
 
                 dependencyTrees.Add(new DependencyResolutionResponseDto { RootModel = rootItem });
 
@@ -740,7 +742,8 @@ public class ModelsController : ControllerBase
             CollectModelsToImport(dep, result, seen);
         }
 
-        if ((item.Action != "install" && item.Action != "update") || IsSystemManaged(item.Name))
+        if ((item.Action != "install" && item.Action != "update") || IsSystemManaged(item.Name) ||
+            HasIncompatibleDependency(item))
         {
             return;
         }
@@ -770,6 +773,7 @@ public class ModelsController : ControllerBase
         CkModelId modelId,
         List<CkModelId>? dependencies,
         ITenantContext tenantContext,
+        Dictionary<string, CkVersion>? installedSystemVersions,
         HashSet<string> resolved,
         CancellationToken cancellationToken)
     {
@@ -789,10 +793,27 @@ public class ModelsController : ControllerBase
         }
         else if (IsSystemManaged(modelId.Name))
         {
-            // Service-managed models are updated by the service, not by the user.
-            // The LibraryStatus compatibility check already validates version compatibility.
-            item.Action = "none";
-            item.InstalledVersion = "(service-managed)";
+            // Service-managed models: check major version compatibility
+            if (installedSystemVersions != null &&
+                installedSystemVersions.TryGetValue(modelId.Name, out var installedSysVersion))
+            {
+                if (modelId.Version.Major != installedSysVersion.Major)
+                {
+                    item.Action = "incompatible";
+                    item.InstalledVersion =
+                        $"(requires major v{modelId.Version.Major}, installed v{installedSysVersion})";
+                }
+                else
+                {
+                    item.Action = "none";
+                    item.InstalledVersion = $"(service-managed: v{installedSysVersion})";
+                }
+            }
+            else
+            {
+                item.Action = "none";
+                item.InstalledVersion = "(service-managed)";
+            }
         }
         else
         {
@@ -821,7 +842,7 @@ public class ModelsController : ControllerBase
                 }
 
                 var depItem = await ResolveDependencyTreeAsync(
-                    dep, subDeps, tenantContext, resolved, cancellationToken);
+                    dep, subDeps, tenantContext, installedSystemVersions, resolved, cancellationToken);
                 item.Dependencies.Add(depItem);
             }
         }
@@ -849,6 +870,33 @@ public class ModelsController : ControllerBase
                 item.InstalledVersion = $"(will import {importVersion.FullName})";
             }
         }
+    }
+
+    private async Task<Dictionary<string, CkVersion>> GetInstalledSystemVersionsAsync(
+        ITenantContext tenantContext)
+    {
+        var repository = tenantContext.GetTenantRepository();
+        var session = repository.GetSession();
+        var queryOptions = Runtime.Contracts.Repositories.Query.RtEntityQueryOptions.Create();
+        var installedResult = await repository.GetCkModelsAsync(session, null, queryOptions, take: 500);
+
+        var result = new Dictionary<string, CkVersion>();
+        foreach (var inst in installedResult.Items)
+        {
+            if (IsSystemManaged(inst.ModelId) &&
+                inst.ModelState == ConstructionKit.Contracts.DataTransferObjects.ModelState.Available)
+            {
+                result[inst.ModelId] = inst.Id.Version;
+            }
+        }
+
+        return result;
+    }
+
+    private static bool HasIncompatibleDependency(DependencyResolutionItemDto item)
+    {
+        if (item.Action == "incompatible") return true;
+        return item.Dependencies.Any(HasIncompatibleDependency);
     }
 
     private static bool IsSystemManaged(string modelName) =>
