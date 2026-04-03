@@ -11,6 +11,7 @@ using Meshmakers.Octo.ConstructionKit.Contracts.Services;
 using Meshmakers.Octo.Runtime.Contracts.CkModelMigrations;
 using Meshmakers.Octo.Runtime.Contracts.Exchange;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb;
+using Meshmakers.Octo.Runtime.Contracts.Repositories.Query;
 using Meshmakers.Octo.Services.Contracts.DistributionEventHub.Commands;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -434,6 +435,259 @@ public class ModelsController : ControllerBase
         catch (Exception ex)
         {
             return StatusCode(StatusCodes.Status500InternalServerError, new InternalServerErrorDto(ex.Message));
+        }
+    }
+
+    // GET: {tenantId}/v1/Models/LibraryStatus
+    /// <summary>
+    ///     Returns the merged status of all CK model libraries: installed models
+    ///     combined with catalog availability, version comparison, and action flags.
+    /// </summary>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>Combined library status for all known models</returns>
+    [HttpGet]
+    [Route("LibraryStatus")]
+    [Authorize(AssetRepositoryServiceConstants.TenantAssetApiReadOnlyPolicy)]
+    [ProducesResponseType(typeof(CkModelLibraryStatusResponseDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(OperationFailedErrorDto), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(InternalServerErrorDto), StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> GetLibraryStatus(CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var tenantId = HttpContext.GetTenantId();
+            if (string.IsNullOrEmpty(tenantId))
+            {
+                return BadRequest(new OperationFailedErrorDto("TenantId is required"));
+            }
+
+            // Get installed models from tenant
+            var tenantContext = await _systemContext.FindTenantContextAsync(tenantId);
+            var repository = tenantContext.GetTenantRepository();
+            var session = repository.GetSession();
+            var queryOptions = Runtime.Contracts.Repositories.Query.RtEntityQueryOptions.Create();
+            var installedResult = await repository.GetCkModelsAsync(session, null, queryOptions, take: 500);
+
+            // Get catalog models
+            var catalogResult = await _catalogService.ListAsync(0, 500, cancellationToken: cancellationToken);
+            var catalogModels = catalogResult.ModelResultItems;
+
+            // Build catalog lookup: name → latest version (using semantic comparison)
+            var catalogByName = new Dictionary<string, CatalogResultItem>();
+            foreach (var cm in catalogModels)
+            {
+                if (!catalogByName.TryGetValue(cm.ModelId.Name, out var existing) ||
+                    cm.ModelId.Version.CompareTo(existing.ModelId.Version) > 0)
+                {
+                    catalogByName[cm.ModelId.Name] = cm;
+                }
+            }
+
+            // Build merged view
+            var items = new List<CkModelLibraryStatusItemDto>();
+            var processedNames = new HashSet<string>();
+
+            foreach (var inst in installedResult.Items)
+            {
+                processedNames.Add(inst.ModelId);
+                catalogByName.TryGetValue(inst.ModelId, out var catalog);
+
+                var hasUpdate = catalog != null &&
+                                catalog.ModelId.Version.CompareTo(inst.Id.Version) > 0;
+
+                var modelState = inst.ModelState.ToString();
+                var isResolveFailed = inst.ModelState ==
+                                     ConstructionKit.Contracts.DataTransferObjects.ModelState.ResolveFailed;
+
+                items.Add(new CkModelLibraryStatusItemDto
+                {
+                    Name = inst.ModelId,
+                    InstalledVersion = inst.Id.Version.ToString(),
+                    ModelState = modelState,
+                    Dependencies = inst.Dependencies?.Select(d => d.FullName).ToList() ?? [],
+                    CatalogVersion = catalog?.ModelId.Version.ToString(),
+                    HasUpdate = hasUpdate,
+                    NeedsAction = isResolveFailed || hasUpdate,
+                    CatalogName = catalog?.CatalogName,
+                    FullModelId = catalog?.ModelId.FullName
+                });
+            }
+
+            // Add catalog-only models (not installed)
+            foreach (var (name, cm) in catalogByName)
+            {
+                if (!processedNames.Contains(name))
+                {
+                    items.Add(new CkModelLibraryStatusItemDto
+                    {
+                        Name = name,
+                        CatalogVersion = cm.ModelId.Version.ToString(),
+                        CatalogName = cm.CatalogName,
+                        FullModelId = cm.ModelId.FullName
+                    });
+                }
+            }
+
+            return Ok(new CkModelLibraryStatusResponseDto
+            {
+                Items = items,
+                ModelsNeedingActionCount = items.Count(i => i.NeedsAction)
+            });
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(StatusCodes.Status500InternalServerError, new InternalServerErrorDto(ex.Message));
+        }
+    }
+
+    // POST: {tenantId}/v1/Models/ResolveDependenciesBatch
+    /// <summary>
+    ///     Resolves dependencies for multiple CK models in a single call.
+    ///     Returns a flattened, deduplicated, topologically sorted import list.
+    /// </summary>
+    /// <param name="requests">List of catalog name + model ID pairs to resolve</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>Combined dependency resolution with flattened import list</returns>
+    [HttpPost]
+    [Route("ResolveDependenciesBatch")]
+    [Authorize(AssetRepositoryServiceConstants.TenantAssetApiReadOnlyPolicy)]
+    [ProducesResponseType(typeof(BatchDependencyResolutionResponseDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(OperationFailedErrorDto), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(InternalServerErrorDto), StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> ResolveDependenciesBatch(
+        [FromBody] List<ImportFromCatalogRequestDto> requests,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var tenantId = HttpContext.GetTenantId();
+            if (string.IsNullOrEmpty(tenantId))
+            {
+                return BadRequest(new OperationFailedErrorDto("TenantId is required"));
+            }
+
+            var tenantContext = await _systemContext.FindTenantContextAsync(tenantId);
+            var dependencyTrees = new List<DependencyResolutionResponseDto>();
+            var allModelsToImport = new List<string>();
+            var seen = new HashSet<string>();
+
+            foreach (var request in requests)
+            {
+                if (string.IsNullOrWhiteSpace(request.CatalogName) ||
+                    string.IsNullOrWhiteSpace(request.ModelId))
+                {
+                    continue;
+                }
+
+                var ckModelId = new CkModelId(request.ModelId);
+                var operationResult = new OperationResult();
+                var compiledModel = await _catalogService.GetAsync(
+                    request.CatalogName, ckModelId, operationResult,
+                    cancellationToken: cancellationToken);
+
+                if (compiledModel == null) continue;
+
+                var resolved = new HashSet<string>();
+                var rootItem = await ResolveDependencyTreeAsync(
+                    compiledModel.ModelId, compiledModel.Dependencies,
+                    tenantContext, resolved, cancellationToken);
+
+                dependencyTrees.Add(new DependencyResolutionResponseDto { RootModel = rootItem });
+
+                // Flatten this tree into the combined list
+                CollectModelsToImport(rootItem, allModelsToImport, seen);
+            }
+
+            return Ok(new BatchDependencyResolutionResponseDto
+            {
+                ModelsToImport = allModelsToImport,
+                DependencyTrees = dependencyTrees
+            });
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(StatusCodes.Status500InternalServerError, new InternalServerErrorDto(ex.Message));
+        }
+    }
+
+    // POST: {tenantId}/v1/Models/ImportFromCatalogBatch
+    /// <summary>
+    ///     Imports multiple CK models from a catalog in dependency order.
+    ///     Each model is fetched, cached, and submitted for import sequentially.
+    /// </summary>
+    /// <param name="request">Catalog name and ordered list of model IDs</param>
+    /// <returns>Job ID of the last import operation for tracking</returns>
+    [HttpPost]
+    [Route("ImportFromCatalogBatch")]
+    [Authorize(AssetRepositoryServiceConstants.DataModelManagementPolicy)]
+    [ProducesResponseType(typeof(TransferModelResponseDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(OperationFailedErrorDto), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(InternalServerErrorDto), StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> ImportFromCatalogBatch(
+        [FromBody] ImportFromCatalogBatchRequestDto request)
+    {
+        try
+        {
+            var tenantId = HttpContext.GetTenantId();
+            if (string.IsNullOrEmpty(tenantId))
+            {
+                return BadRequest(new OperationFailedErrorDto("TenantId is required"));
+            }
+
+            if (string.IsNullOrWhiteSpace(request.CatalogName) || request.ModelIds.Count == 0)
+            {
+                return BadRequest(new OperationFailedErrorDto("CatalogName and at least one ModelId are required"));
+            }
+
+            string? lastJobId = null;
+
+            foreach (var modelId in request.ModelIds)
+            {
+                var ckModelId = new CkModelId(modelId);
+                var operationResult = new OperationResult();
+                var compiledModel = await _catalogService.GetAsync(
+                    request.CatalogName, ckModelId, operationResult);
+
+                if (compiledModel == null)
+                {
+                    return BadRequest(new OperationFailedErrorDto(
+                        $"Model '{modelId}' not found in catalog '{request.CatalogName}'"));
+                }
+
+                var cacheKey = await SerializeModelToCache(tenantId, compiledModel);
+                var args = new ImportCkCommandRequest(tenantId, cacheKey);
+                var r = await _importCkCommandClient.GetResponse<JobCreatedResponse>(args);
+                lastJobId = r.JobId;
+            }
+
+            if (lastJobId == null)
+            {
+                return BadRequest(new OperationFailedErrorDto("No models were imported"));
+            }
+
+            return Ok(new TransferModelResponseDto(lastJobId));
+        }
+        catch (InvalidOperationException e)
+        {
+            return BadRequest(new InternalServerErrorDto(e.Message));
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(StatusCodes.Status500InternalServerError, new InternalServerErrorDto(ex.Message));
+        }
+    }
+
+    private static void CollectModelsToImport(DependencyResolutionItemDto item, List<string> result,
+        HashSet<string> seen)
+    {
+        foreach (var dep in item.Dependencies)
+        {
+            CollectModelsToImport(dep, result, seen);
+        }
+
+        if ((item.Action == "install" || item.Action == "update") && seen.Add(item.ModelId))
+        {
+            result.Add(item.ModelId);
         }
     }
 
