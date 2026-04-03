@@ -723,7 +723,10 @@ public class ModelsController : ControllerBase
                 }
             }
 
-            string? lastJobId = null;
+            // Submit each model as a separate Hangfire job via the async pipeline.
+            // The frontend must wait for each job to complete before submitting the next
+            // to ensure correct dependency order.
+            var jobIds = new List<string>();
 
             foreach (var modelId in request.ModelIds)
             {
@@ -741,15 +744,15 @@ public class ModelsController : ControllerBase
                 var cacheKey = await SerializeModelToCache(tenantId, compiledModel);
                 var args = new ImportCkCommandRequest(tenantId, cacheKey);
                 var r = await _importCkCommandClient.GetResponse<JobCreatedResponse>(args);
-                lastJobId = r.JobId;
+                jobIds.Add(r.JobId);
             }
 
-            if (lastJobId == null)
+            if (jobIds.Count == 0)
             {
                 return BadRequest(new OperationFailedErrorDto("No models were imported"));
             }
 
-            return Ok(new TransferModelResponseDto(lastJobId));
+            return Ok(new BatchImportResponseDto { JobIds = jobIds });
         }
         catch (InvalidOperationException e)
         {
