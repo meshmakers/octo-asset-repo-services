@@ -352,16 +352,19 @@ public static class RuntimeEngineBuilderExtensions
             .AddMongoDbRuntimeRepository()
             .AddMongoBlueprintSupport();
 
-        // Bind CK model catalog options to configuration sections
+        // Bind CK model catalog options to configuration sections (if available)
         // This allows OCTO_LocalFileSystemCatalog__IsEnabled etc. env vars to work
-        var config = builder.Services.BuildServiceProvider()
-            .GetRequiredService<IConfiguration>();
-        builder.Services.Configure<LocalFileSystemCatalogOptions>(
-            config.GetSection("LocalFileSystemCatalog"));
-        builder.Services.Configure<PrivateGitHubCatalogOptions>(
-            config.GetSection("PrivateOctoGitHub"));
-        builder.Services.Configure<PublicGitHubCatalogOptions>(
-            config.GetSection("PublicOctoGitHub"));
+        var tempProvider = builder.Services.BuildServiceProvider();
+        var config = tempProvider.GetService<IConfiguration>();
+        if (config != null)
+        {
+            builder.Services.Configure<LocalFileSystemCatalogOptions>(
+                config.GetSection("LocalFileSystemCatalog"));
+            builder.Services.Configure<PrivateGitHubCatalogOptions>(
+                config.GetSection("PrivateOctoGitHub"));
+            builder.Services.Configure<PublicGitHubCatalogOptions>(
+                config.GetSection("PublicOctoGitHub"));
+        }
         builder.Services.AddSingleton<IOctoService, OctoService>();
     }
 }
