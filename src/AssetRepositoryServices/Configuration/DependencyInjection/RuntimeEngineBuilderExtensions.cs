@@ -343,6 +343,7 @@ public static class RuntimeEngineBuilderExtensions
             c.AddCommandClient<ExportRtByDeepGraphCommandRequest>(QueueNames.ExportRtByDeepGraphCommand);
             c.AddCommandClient<ImportRtCommandRequest>(QueueNames.ImportRtCommand);
             c.AddCommandClient<ImportCkCommandRequest>(QueueNames.ImportCkCommand);
+            c.AddCommandClient<ImportCkBatchCommandRequest>(QueueNames.ImportCkBatchCommand);
             c.AddBroadcastEventConsumer<TenantManagementConsumer, PosUpdateTenant>();
             c.AddBroadcastEventConsumer<TenantManagementConsumer, PreDeleteTenant>();
         });

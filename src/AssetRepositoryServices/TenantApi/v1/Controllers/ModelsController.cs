@@ -33,6 +33,7 @@ public class ModelsController : ControllerBase
     private readonly ICommandClient<ExportRtByQueryCommandRequest> _exportRtByQueryCommandClient;
     private readonly ICommandClient<ExportRtByDeepGraphCommandRequest> _exportRtByDeepGraphCommandClient;
     private readonly ICommandClient<ImportCkCommandRequest> _importCkCommandClient;
+    private readonly ICommandClient<ImportCkBatchCommandRequest> _importCkBatchCommandClient;
     private readonly ICommandClient<ImportRtCommandRequest> _importRtCommandClient;
     private readonly ISystemContext _systemContext;
     private readonly ICkModelUpgradeService _upgradeService;
@@ -45,6 +46,7 @@ public class ModelsController : ControllerBase
     /// <param name="exportRtByDeepGraphCommandClient"></param>
     /// <param name="importRtCommandClient"></param>
     /// <param name="importCkCommandClient"></param>
+    /// <param name="importCkBatchCommandClient"></param>
     /// <param name="catalogService">CK model catalog service</param>
     /// <param name="ckJsonSerializer">CK model JSON serializer</param>
     /// <param name="systemContext">System context for tenant access</param>
@@ -54,6 +56,7 @@ public class ModelsController : ControllerBase
         ICommandClient<ExportRtByDeepGraphCommandRequest> exportRtByDeepGraphCommandClient,
         ICommandClient<ImportRtCommandRequest> importRtCommandClient,
         ICommandClient<ImportCkCommandRequest> importCkCommandClient,
+        ICommandClient<ImportCkBatchCommandRequest> importCkBatchCommandClient,
         ICatalogService catalogService,
         ICkJsonSerializer ckJsonSerializer,
         ISystemContext systemContext,
@@ -64,6 +67,7 @@ public class ModelsController : ControllerBase
         _exportRtByDeepGraphCommandClient = exportRtByDeepGraphCommandClient;
         _importRtCommandClient = importRtCommandClient;
         _importCkCommandClient = importCkCommandClient;
+        _importCkBatchCommandClient = importCkBatchCommandClient;
         _catalogService = catalogService;
         _ckJsonSerializer = ckJsonSerializer;
         _systemContext = systemContext;
@@ -681,14 +685,15 @@ public class ModelsController : ControllerBase
     // POST: {tenantId}/v1/Models/ImportFromCatalogBatch
     /// <summary>
     ///     Imports multiple CK models from a catalog in dependency order.
-    ///     Each model is fetched, cached, and submitted for import sequentially.
+    ///     All models are cached upfront, then submitted as a single sequential batch job
+    ///     to prevent race conditions during parallel dependency resolution.
     /// </summary>
     /// <param name="request">Catalog name and ordered list of model IDs</param>
-    /// <returns>Job ID of the last import operation for tracking</returns>
+    /// <returns>Single job ID for tracking the entire batch import</returns>
     [HttpPost]
     [Route("ImportFromCatalogBatch")]
     [Authorize(AssetRepositoryServiceConstants.DataModelManagementPolicy)]
-    [ProducesResponseType(typeof(TransferModelResponseDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(BatchImportResponseDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(OperationFailedErrorDto), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(InternalServerErrorDto), StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> ImportFromCatalogBatch(
@@ -723,10 +728,10 @@ public class ModelsController : ControllerBase
                 }
             }
 
-            // Submit each model as a separate Hangfire job via the async pipeline.
-            // The frontend must wait for each job to complete before submitting the next
-            // to ensure correct dependency order.
-            var jobIds = new List<string>();
+            // Cache all models upfront, then submit a single batch job that imports
+            // them sequentially. This prevents race conditions where parallel Hangfire
+            // jobs try to resolve dependencies against models still in "Importing" state.
+            var cacheKeys = new List<string>();
 
             foreach (var modelId in request.ModelIds)
             {
@@ -742,17 +747,19 @@ public class ModelsController : ControllerBase
                 }
 
                 var cacheKey = await SerializeModelToCache(tenantId, compiledModel);
-                var args = new ImportCkCommandRequest(tenantId, cacheKey);
-                var r = await _importCkCommandClient.GetResponse<JobCreatedResponse>(args);
-                jobIds.Add(r.JobId);
+                cacheKeys.Add(cacheKey);
             }
 
-            if (jobIds.Count == 0)
+            if (cacheKeys.Count == 0)
             {
                 return BadRequest(new OperationFailedErrorDto("No models were imported"));
             }
 
-            return Ok(new BatchImportResponseDto { JobIds = jobIds });
+            // Submit as a single sequential batch job
+            var batchArgs = new ImportCkBatchCommandRequest(tenantId, cacheKeys);
+            var r = await _importCkBatchCommandClient.GetResponse<JobCreatedResponse>(batchArgs);
+
+            return Ok(new BatchImportResponseDto { JobId = r.JobId });
         }
         catch (InvalidOperationException e)
         {

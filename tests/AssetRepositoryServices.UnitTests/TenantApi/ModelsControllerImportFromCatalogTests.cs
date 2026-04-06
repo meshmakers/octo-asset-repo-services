@@ -37,6 +37,7 @@ public class ModelsControllerImportFromCatalogTests
             A.Fake<ICommandClient<ExportRtByDeepGraphCommandRequest>>(),
             A.Fake<ICommandClient<ImportRtCommandRequest>>(),
             _importCkCommandClient,
+            A.Fake<ICommandClient<ImportCkBatchCommandRequest>>(),
             _catalogService,
             _ckJsonSerializer,
             A.Fake<Meshmakers.Octo.Runtime.Contracts.MongoDb.ISystemContext>(),

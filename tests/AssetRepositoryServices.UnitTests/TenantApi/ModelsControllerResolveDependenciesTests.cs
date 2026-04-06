@@ -38,6 +38,7 @@ public class ModelsControllerResolveDependenciesTests
             A.Fake<ICommandClient<ExportRtByDeepGraphCommandRequest>>(),
             A.Fake<ICommandClient<ImportRtCommandRequest>>(),
             A.Fake<ICommandClient<ImportCkCommandRequest>>(),
+            A.Fake<ICommandClient<ImportCkBatchCommandRequest>>(),
             _catalogService,
             A.Fake<ICkJsonSerializer>(),
             _systemContext,
