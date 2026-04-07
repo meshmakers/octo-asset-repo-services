@@ -830,15 +830,16 @@ public class ModelsController : ControllerBase
         }
         else if (IsSystemManaged(modelId.Name))
         {
-            // Service-managed models: check major version compatibility
+            // Service-managed models: strict version check because compiled models
+            // contain exact CkTypeId references (e.g. System-2.0.7/Entity-1)
             if (installedSystemVersions != null &&
                 installedSystemVersions.TryGetValue(modelId.Name, out var installedSysVersion))
             {
-                if (modelId.Version.Major != installedSysVersion.Major)
+                if (installedSysVersion.CompareTo(modelId.Version) != 0)
                 {
                     item.Action = "incompatible";
                     item.InstalledVersion =
-                        $"(requires major v{modelId.Version.Major}, installed v{installedSysVersion})";
+                        $"(requires v{modelId.Version}, installed v{installedSysVersion})";
                 }
                 else
                 {
@@ -958,8 +959,10 @@ public class ModelsController : ControllerBase
             {
                 if (installedSystemVersions.TryGetValue(dep.Name, out var installedVersion))
                 {
-                    if (dep.Version.Major != installedVersion.Major ||
-                        installedVersion.CompareTo(dep.Version) < 0)
+                    // Strict version check: compiled models contain exact CkTypeId
+                    // references (e.g. System-2.0.7/Entity-1) so the installed
+                    // system version must match exactly.
+                    if (installedVersion.CompareTo(dep.Version) != 0)
                     {
                         return (false,
                             $"Requires {dep.FullName}, but {dep.Name}-{installedVersion} is installed");
