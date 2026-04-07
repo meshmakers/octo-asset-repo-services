@@ -527,10 +527,10 @@ public class ModelsController : ControllerBase
                 var isResolveFailed = inst.ModelState ==
                                      ConstructionKit.Contracts.DataTransferObjects.ModelState.ResolveFailed;
 
-                // Check compatibility for non-system models with catalog updates
+                // Check compatibility for non-system models that need action (update or fix)
                 var isCompatible = true;
                 string? incompatibilityReason = null;
-                if (!isServiceManaged && catalog != null && hasUpdate)
+                if (!isServiceManaged && catalog != null && (hasUpdate || isResolveFailed))
                 {
                     (isCompatible, incompatibilityReason) = await CheckSystemCompatibilityAsync(
                         catalog.ModelId, installedSystemVersions, new HashSet<string>(), cancellationToken);
