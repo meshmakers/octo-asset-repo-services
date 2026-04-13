@@ -50,7 +50,8 @@ public class ModelsControllerImportFromCatalogBatchTests
             _catalogService,
             _ckJsonSerializer,
             _systemContext,
-            A.Fake<ICkModelUpgradeService>());
+            A.Fake<ICkModelUpgradeService>(),
+            A.Fake<ICkModelMigrationService>());
 
         var httpContext = new DefaultHttpContext();
         httpContext.Request.RouteValues["tenantId"] = "test-tenant";

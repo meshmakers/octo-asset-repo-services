@@ -35,6 +35,7 @@ public class ModelsController : ControllerBase
     private readonly ICommandClient<ImportCkCommandRequest> _importCkCommandClient;
     private readonly ICommandClient<ImportCkBatchCommandRequest> _importCkBatchCommandClient;
     private readonly ICommandClient<ImportRtCommandRequest> _importRtCommandClient;
+    private readonly ICkModelMigrationService _migrationService;
     private readonly ISystemContext _systemContext;
     private readonly ICkModelUpgradeService _upgradeService;
 
@@ -51,6 +52,7 @@ public class ModelsController : ControllerBase
     /// <param name="ckJsonSerializer">CK model JSON serializer</param>
     /// <param name="systemContext">System context for tenant access</param>
     /// <param name="upgradeService">CK model upgrade service for pre-flight checks</param>
+    /// <param name="migrationService">CK model migration service for migration history</param>
     public ModelsController(IDistributedCacheService distributedCache,
         ICommandClient<ExportRtByQueryCommandRequest> exportRtByQueryCommandClient,
         ICommandClient<ExportRtByDeepGraphCommandRequest> exportRtByDeepGraphCommandClient,
@@ -60,7 +62,8 @@ public class ModelsController : ControllerBase
         ICatalogService catalogService,
         ICkJsonSerializer ckJsonSerializer,
         ISystemContext systemContext,
-        ICkModelUpgradeService upgradeService)
+        ICkModelUpgradeService upgradeService,
+        ICkModelMigrationService migrationService)
     {
         _distributedCache = distributedCache;
         _exportRtByQueryCommandClient = exportRtByQueryCommandClient;
@@ -72,6 +75,7 @@ public class ModelsController : ControllerBase
         _ckJsonSerializer = ckJsonSerializer;
         _systemContext = systemContext;
         _upgradeService = upgradeService;
+        _migrationService = migrationService;
     }
 
     // POST: {tenantId}/v1/Models/ExportRtByQuery
@@ -764,6 +768,67 @@ public class ModelsController : ControllerBase
         catch (InvalidOperationException e)
         {
             return BadRequest(new InternalServerErrorDto(e.Message));
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(StatusCodes.Status500InternalServerError, new InternalServerErrorDto(ex.Message));
+        }
+    }
+
+    // GET: {tenantId}/v1/Models/{modelName}/MigrationHistory
+    /// <summary>
+    ///     Gets the migration history for a specific CK model in the tenant
+    /// </summary>
+    /// <param name="modelName">Name of the CK model (e.g., "Energy")</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>Migration history entries sorted by execution date descending</returns>
+    [HttpGet]
+    [Route("{modelName}/MigrationHistory")]
+    [Authorize(AssetRepositoryServiceConstants.TenantAssetApiReadOnlyPolicy)]
+    [ProducesResponseType(typeof(MigrationHistoryResponseDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(OperationFailedErrorDto), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(InternalServerErrorDto), StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> GetMigrationHistory(
+        [FromRoute] string modelName,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var tenantId = HttpContext.GetTenantId();
+            if (string.IsNullOrEmpty(tenantId))
+            {
+                return BadRequest(new OperationFailedErrorDto("TenantId is required"));
+            }
+
+            if (string.IsNullOrWhiteSpace(modelName))
+            {
+                return BadRequest(new OperationFailedErrorDto("ModelName is required"));
+            }
+
+            var history = await _migrationService.GetHistoryAsync(tenantId, modelName, cancellationToken);
+
+            var response = new MigrationHistoryResponseDto
+            {
+                TotalCount = history.Count,
+                Items = history.Select(h => new MigrationHistoryEntryDto
+                {
+                    CkModelName = h.CkModelName,
+                    FromVersion = h.FromVersion,
+                    ToVersion = h.ToVersion,
+                    ExecutedAt = h.ExecutedAt,
+                    Success = h.Success,
+                    EntitiesAffected = h.EntitiesAffected,
+                    EntitiesAdded = h.EntitiesAdded,
+                    EntitiesUpdated = h.EntitiesUpdated,
+                    EntitiesDeleted = h.EntitiesDeleted,
+                    DurationMs = h.DurationMs,
+                    Errors = h.Errors,
+                    Warnings = h.Warnings,
+                    BackupId = h.BackupId
+                }).ToList()
+            };
+
+            return Ok(response);
         }
         catch (Exception ex)
         {
