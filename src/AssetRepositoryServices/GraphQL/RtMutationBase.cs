@@ -406,8 +406,9 @@ internal abstract class RtMutationBase : ObjectGraphType
         if (item.Value != null)
         {
             var rtAssociationInputDtos = (IEnumerable<object>)item.Value;
-            foreach (RtAssociationInputDto rtAssociationDto in rtAssociationInputDtos)
+            foreach (var rawDto in rtAssociationInputDtos)
             {
+                var rtAssociationDto = ConvertToAssociationInputDto(rawDto);
                 var assocInfo = new AssociationUpdateInfo(
                     new RtEntityId(rtAssociationDto.Target.CkTypeId, rtAssociationDto.Target.RtId),
                     rtEntity.ToRtEntityId(),
@@ -436,8 +437,9 @@ internal abstract class RtMutationBase : ObjectGraphType
         if (item.Value != null)
         {
             var rtAssociationInputDtos = (IEnumerable<object>)item.Value;
-            foreach (RtAssociationInputDto rtAssociationDto in rtAssociationInputDtos)
+            foreach (var rawDto in rtAssociationInputDtos)
             {
+                var rtAssociationDto = ConvertToAssociationInputDto(rawDto);
                 var assocInfo = new AssociationUpdateInfo(
                     rtEntity.ToRtEntityId(),
                     new RtEntityId(rtAssociationDto.Target.CkTypeId, rtAssociationDto.Target.RtId),
@@ -448,5 +450,47 @@ internal abstract class RtMutationBase : ObjectGraphType
         }
 
         return true;
+    }
+
+    /// <summary>
+    /// Converts an association input to RtAssociationInputDto. Handles both typed instances
+    /// and Dictionary&lt;string, object&gt; from generic GraphQL input.
+    /// </summary>
+    private static RtAssociationInputDto ConvertToAssociationInputDto(object value)
+    {
+        if (value is RtAssociationInputDto dto)
+        {
+            return dto;
+        }
+
+        if (value is IDictionary<string, object> dictionary)
+        {
+            var targetDict = dictionary.TryGetValue("target", out var targetObj) && targetObj is IDictionary<string, object> td
+                ? td
+                : throw new InvalidCastException("Association input must have a 'target' property with rtId and ckTypeId.");
+
+            var rtId = targetDict.TryGetValue("rtId", out var rtIdObj) ? OctoObjectId.Parse(rtIdObj?.ToString()!) : throw new InvalidCastException("target.rtId is required");
+            var ckTypeId = targetDict.TryGetValue("ckTypeId", out var ckTypeIdObj) ? ckTypeIdObj?.ToString()! : throw new InvalidCastException("target.ckTypeId is required");
+
+            AssociationModOptionsDto? modOption = null;
+            if (dictionary.TryGetValue("modOption", out var modOptionObj) && modOptionObj != null)
+            {
+                var modOptionStr = modOptionObj.ToString()!;
+                if (Enum.TryParse<AssociationModOptionsDto>(modOptionStr, true, out var parsed))
+                {
+                    modOption = parsed;
+                }
+            }
+
+            return new RtAssociationInputDto
+            {
+                Target = new RtEntityIdDto { RtId = rtId, CkTypeId = ckTypeId },
+                ModOption = modOption
+            };
+        }
+
+        throw new InvalidCastException(
+            $"Unable to convert value of type '{value.GetType().FullName}' to RtAssociationInputDto. " +
+            $"Expected either RtAssociationInputDto or Dictionary<string, object>.");
     }
 }
