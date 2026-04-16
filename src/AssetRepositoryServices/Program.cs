@@ -5,7 +5,7 @@ using Meshmakers.Octo.Backend.AssetRepositoryServices.StreamData;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb.Extensions;
 using Meshmakers.Octo.Services.Infrastructure.Services;
 using Meshmakers.Octo.Services.Observability;
-using Meshmakers.Octo.Services.StreamData.Extensions;
+using Meshmakers.Octo.Runtime.Engine.MongoDb.StreamData.Extensions;
 using NLog;
 using NLog.Web;
 using LogLevel = Microsoft.Extensions.Logging.LogLevel;
@@ -48,10 +48,8 @@ try
     builder.Services.AddRuntimeEngine()
         .AddOctoAssetRepositoryServices(
             systemOptions => builder.Configuration.GetSection("System").Bind(systemOptions),
-            options => builder.Configuration.GetSection("AssetRepository").Bind(options));
-
-    builder.Services.AddStreamDataManagement()
-        .AddStreamDataDatabase<ConfigureStreamDataConfiguration>();
+            options => builder.Configuration.GetSection("AssetRepository").Bind(options))
+        .AddCrateDbStreamDataRepository<ConfigureStreamDataConfiguration>();
 
     var app = builder.Build();
     app.MapObservability();

@@ -1,8 +1,8 @@
-﻿using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations;
 using Asp.Versioning;
 using GraphQL;
-using MassTransit;
-using Meshmakers.Octo.Backend.AssetRepositoryServices.StreamData.Services;
+using Meshmakers.Octo.Runtime.Contracts.MongoDb;
+using Meshmakers.Octo.Services.Infrastructure;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.StreamData.Controllers;
@@ -17,31 +17,28 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.StreamData.Controllers
 public class StreamDataController : ControllerBase
 {
     private readonly ILogger<StreamDataController> _logger;
-    private readonly ITenantManager _tenantManager;
+    private readonly ISystemContext _systemContext;
 
     /// <summary>
     /// Constructor
     /// </summary>
-    /// <param name="logger"></param>
-    /// <param name="tenantManager"></param>
-    public StreamDataController(ILogger<StreamDataController> logger, ITenantManager tenantManager)
+    public StreamDataController(ILogger<StreamDataController> logger, ISystemContext systemContext)
     {
         _logger = logger;
-        _tenantManager = tenantManager;
+        _systemContext = systemContext;
     }
-    
+
     /// <summary>
     /// Enables stream data for a given tenant
     /// </summary>
-    /// <param name="tenantId"></param>
-    /// <returns></returns>
     [HttpPost("enable")]
     [Authorize(AssetRepositoryServiceConstants.SystemAssetApiReadWritePolicy)]
     public async Task<IActionResult> Enable([Required] string tenantId)
     {
         try
         {
-            await _tenantManager.EnableStreamData(tenantId);
+            var tenantContext = await _systemContext.FindTenantContextAsync(tenantId);
+            await tenantContext.EnableStreamDataAsync();
             return NoContent();
         }
         catch (ConfigurationException e)
@@ -49,19 +46,18 @@ public class StreamDataController : ControllerBase
             return BadRequest(e.Message);
         }
     }
-    
+
     /// <summary>
-    /// Enables stream data for a given tenant
+    /// Disables stream data for a given tenant
     /// </summary>
-    /// <param name="tenantId"></param>
-    /// <returns></returns>
     [HttpPost("disable")]
     [Authorize(AssetRepositoryServiceConstants.SystemAssetApiReadWritePolicy)]
     public async Task<IActionResult> Disable([Required] string tenantId)
     {
         try
         {
-            await _tenantManager.DisableStreamDataAsync(tenantId);
+            var tenantContext = await _systemContext.FindTenantContextAsync(tenantId);
+            await tenantContext.DisableStreamDataAsync();
             return NoContent();
         }
         catch (ConfigurationException e)

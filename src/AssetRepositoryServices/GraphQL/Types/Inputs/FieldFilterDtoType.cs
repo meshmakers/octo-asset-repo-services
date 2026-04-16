@@ -13,5 +13,7 @@ internal sealed class FieldFilterDtoType : InputObjectGraphType<FieldFilterDto>
         Field(x => x.AttributePath);
         Field(x => x.Operator, typeof(NonNullGraphType<FieldFilterOperatorDtoType>));
         Field(x => x.ComparisonValue, typeof(SimpleScalarType));
+        Field(x => x.SecondaryValue, typeof(SimpleScalarType))
+            .Description("Secondary value for two-argument operators such as Between.");
     }
 }

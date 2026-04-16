@@ -108,6 +108,13 @@ internal class AssetRepositoryException : Exception
         return new AssetRepositoryException("Invalid query. From, To and Limit must be set for downsampling");
     }
 
+    public static Exception StreamDataNotAvailable()
+    {
+        return new AssetRepositoryException(
+            "Stream data is not enabled for this tenant, or the stream data repository is not registered. " +
+            "Ensure AddCrateDbStreamDataRepository() was called during startup and the tenant has stream data enabled.");
+    }
+
     public static Exception OperationResultErrors(OperationResult operationResult)
     {
         var ex = new AssetRepositoryException("Execution was aborted due to an error. Please check the details.");

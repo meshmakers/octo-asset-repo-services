@@ -11,7 +11,7 @@ using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.ConstructionKit.Contracts.DataTransferObjects;
 using Meshmakers.Octo.ConstructionKit.Contracts.DependencyGraph;
 using Meshmakers.Octo.Runtime.Contracts.RepositoryEntities;
-using Meshmakers.Octo.Services.StreamData.Dtos;
+using Meshmakers.Octo.Runtime.Engine.MongoDb.StreamData.Dtos;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
 
@@ -61,7 +61,7 @@ internal sealed class StreamDataEntityDtoType : ObjectGraphType<StreamDataEntity
 
         Field(d => d.RtId, typeof(NonNullGraphType<OctoObjectIdType>));
         Field(d => d.CkTypeId, typeof(NonNullGraphType<RtCkIdGraph<CkTypeId>>));
-        Field(d => d.TimeStamp, typeof(DateTimeGraphType));
+        Field(d => d.Timestamp, typeof(DateTimeGraphType));
         Field(d => d.RtWellKnownName, typeof(StringGraphType));
         Field(d => d.RtCreationDateTime, typeof(DateTimeGraphType));
         Field(d => d.RtChangedDateTime, typeof(DateTimeGraphType))
@@ -233,7 +233,7 @@ internal sealed class StreamDataEntityDtoType : ObjectGraphType<StreamDataEntity
         {
             RtId = datapoint.RtId ?? throw OctoGraphQLException.CkTypeIdUndefined(),
             CkTypeId = datapoint.CkTypeId ?? throw OctoGraphQLException.CkTypeIdUndefined(),
-            TimeStamp = datapoint.Timestamp,
+            Timestamp = datapoint.Timestamp,
             RtWellKnownName = datapoint.RtWellKnownName,
             RtCreationDateTime = datapoint.RtCreationDateTime,
             RtChangedDateTime = datapoint.RtChangedDateTime,

@@ -1,6 +1,6 @@
 using FluentAssertions;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL;
-using Meshmakers.Octo.Services.StreamData;
+using Meshmakers.Octo.Runtime.Engine.MongoDb.StreamData;
 using Xunit;
 
 namespace AssetRepositoryServices.UnitTests.GraphQL;
@@ -12,7 +12,7 @@ public class StreamDataQueryValidationTests
     [Fact]
     public void AllValidFields_DoesNotThrow()
     {
-        var act = () => StreamDataQuery.ValidateStreamDataFields(
+        var act = () => StreamDataFieldValidation.ValidateStreamDataFields(
             _fieldResolver,
             ["Voltage", "Temperature"],
             ["Timestamp"],
@@ -24,7 +24,7 @@ public class StreamDataQueryValidationTests
     [Fact]
     public void UnknownColumn_ThrowsWithFieldName()
     {
-        var act = () => StreamDataQuery.ValidateStreamDataFields(
+        var act = () => StreamDataFieldValidation.ValidateStreamDataFields(
             _fieldResolver,
             ["Voltage", "NonExistent"],
             null,
@@ -37,7 +37,7 @@ public class StreamDataQueryValidationTests
     [Fact]
     public void UnknownSortField_ThrowsWithFieldName()
     {
-        var act = () => StreamDataQuery.ValidateStreamDataFields(
+        var act = () => StreamDataFieldValidation.ValidateStreamDataFields(
             _fieldResolver,
             null,
             ["BadSort"],
@@ -50,7 +50,7 @@ public class StreamDataQueryValidationTests
     [Fact]
     public void UnknownFilterField_ThrowsWithFieldName()
     {
-        var act = () => StreamDataQuery.ValidateStreamDataFields(
+        var act = () => StreamDataFieldValidation.ValidateStreamDataFields(
             _fieldResolver,
             null,
             null,
@@ -63,7 +63,7 @@ public class StreamDataQueryValidationTests
     [Fact]
     public void MultipleUnknownsAcrossAllCategories_ThrowsSingleExceptionListingAll()
     {
-        var act = () => StreamDataQuery.ValidateStreamDataFields(
+        var act = () => StreamDataFieldValidation.ValidateStreamDataFields(
             _fieldResolver,
             ["BadCol"],
             ["BadSort"],
@@ -78,7 +78,7 @@ public class StreamDataQueryValidationTests
     [Fact]
     public void NullAndEmptyInputs_DoNotThrow()
     {
-        var act = () => StreamDataQuery.ValidateStreamDataFields(
+        var act = () => StreamDataFieldValidation.ValidateStreamDataFields(
             _fieldResolver,
             null,
             null,
@@ -86,7 +86,7 @@ public class StreamDataQueryValidationTests
 
         act.Should().NotThrow();
 
-        var act2 = () => StreamDataQuery.ValidateStreamDataFields(
+        var act2 = () => StreamDataFieldValidation.ValidateStreamDataFields(
             _fieldResolver,
             [],
             [],
@@ -98,7 +98,7 @@ public class StreamDataQueryValidationTests
     [Fact]
     public void DefaultFields_AreValid()
     {
-        var act = () => StreamDataQuery.ValidateStreamDataFields(
+        var act = () => StreamDataFieldValidation.ValidateStreamDataFields(
             _fieldResolver,
             ["Timestamp", "RtId"],
             ["Timestamp"],
@@ -110,7 +110,7 @@ public class StreamDataQueryValidationTests
     [Fact]
     public void CaseInsensitiveMatch_IsValid()
     {
-        var act = () => StreamDataQuery.ValidateStreamDataFields(
+        var act = () => StreamDataFieldValidation.ValidateStreamDataFields(
             _fieldResolver,
             ["voltage", "TEMPERATURE", "timestamp"],
             ["rtId"],

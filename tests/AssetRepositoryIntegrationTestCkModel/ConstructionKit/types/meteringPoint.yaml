@@ -20,3 +20,10 @@ types:
   # Non-optional attribute with default value - for testing AB#3306
   - id: ${this}/SyncSequenceNumber
     name: SyncSequenceNumber
+  # Stream data attributes for integration testing
+  - id: ${this}/Voltage
+    name: Voltage
+    isOptional: true
+  - id: ${this}/Current
+    name: Current
+    isOptional: true

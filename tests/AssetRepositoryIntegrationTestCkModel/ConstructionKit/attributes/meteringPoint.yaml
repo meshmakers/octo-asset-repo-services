@@ -17,3 +17,10 @@ attributes:
     description: Sync sequence number for testing default value handling
     defaultValues:
       - 0
+  # Stream data attributes for integration testing stream data queries
+  - id: Voltage
+    valueType: Double
+    isDataStream: true
+  - id: Current
+    valueType: Double
+    isDataStream: true
