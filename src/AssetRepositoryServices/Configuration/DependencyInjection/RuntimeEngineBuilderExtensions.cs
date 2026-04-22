@@ -136,6 +136,11 @@ public static class RuntimeEngineBuilderExtensions
                 options.Authority = octoOptions.Authority;
 
                 options.TokenValidationParameters.ValidateAudience = false;
+
+                // Explicitly set the valid issuer so token validation does not depend on fetching
+                // the OIDC discovery document. This prevents IDX10204 errors when the identity
+                // service is temporarily unreachable (e.g. during rolling updates).
+                options.TokenValidationParameters.ValidIssuer = octoOptions.Authority;
             });
 
 
