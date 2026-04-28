@@ -10,6 +10,7 @@ using Meshmakers.Octo.Runtime.Contracts;
 using Meshmakers.Octo.Runtime.Contracts.Geospatial.Geometry;
 using Meshmakers.Octo.Runtime.Contracts.Repositories;
 using Meshmakers.Octo.Runtime.Contracts.Repositories.Query;
+using Meshmakers.Octo.Runtime.Contracts.StreamData;
 using Meshmakers.Octo.Runtime.Engine.CrateDb;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Utils;
@@ -138,6 +139,10 @@ internal static class ResolveConnectionContextExtensions
             context.Errors.Add(new ExecutionError(persistenceException.Message, persistenceException)
                 { Code = Statics.GraphQlErrorDataStore });
         }
+        else if (exception is Meshmakers.Octo.Runtime.Contracts.StreamData.StreamDataException streamDataException)
+        {
+            HandleStreamDataException(context, streamDataException);
+        }
         else
         {
             context.Errors.Add(new ExecutionError("An error occurred", exception)
@@ -145,6 +150,47 @@ internal static class ResolveConnectionContextExtensions
         }
 
         return null;
+    }
+
+    private static void HandleStreamDataException(
+        IResolveFieldContext context,
+        Meshmakers.Octo.Runtime.Contracts.StreamData.StreamDataException ex)
+    {
+        var code = ex switch
+        {
+            ArchiveNotFoundException => Statics.GraphQlErrorStreamDataArchiveNotFound,
+            ArchiveNotActivatedException => Statics.GraphQlErrorStreamDataArchiveNotActivated,
+            InvalidArchiveStateTransitionException => Statics.GraphQlErrorStreamDataInvalidTransition,
+            ArchiveSchemaImmutableException => Statics.GraphQlErrorStreamDataSchemaImmutable,
+            ArchivePathInvalidException => Statics.GraphQlErrorStreamDataPathInvalid,
+            ArchiveActivationFailedException => Statics.GraphQlErrorStreamDataActivationFailed,
+            _ => Statics.GraphQlErrorStreamData,
+        };
+
+        var error = new ExecutionError(ex.Message, ex)
+        {
+            Code = code,
+            Extensions = new Dictionary<string, object?>(),
+        };
+        if (ex.ArchiveRtId.HasValue)
+        {
+            error.Extensions["archiveRtId"] = ex.ArchiveRtId.Value.ToString();
+        }
+        if (ex is ArchiveNotActivatedException notActivated)
+        {
+            error.Extensions["actualStatus"] = notActivated.ActualStatus.ToString();
+        }
+        else if (ex is InvalidArchiveStateTransitionException invalidTransition)
+        {
+            error.Extensions["fromStatus"] = invalidTransition.FromStatus.ToString();
+            error.Extensions["attemptedTransition"] = invalidTransition.AttemptedTransition;
+        }
+        else if (ex is ArchivePathInvalidException pathInvalid)
+        {
+            error.Extensions["path"] = pathInvalid.Path;
+        }
+
+        context.Errors.Add(error);
     }
 
     internal static void ValidateOperationResult(OperationResult operationResult)

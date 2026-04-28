@@ -11,12 +11,17 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL;
 [DoNotRegister]
 internal sealed class OctoMutation : ObjectGraphType
 {
-    public OctoMutation(IGraphTypesCache graphTypesCache)
+    public OctoMutation(ILoggerFactory loggerFactory, IGraphTypesCache graphTypesCache)
     {
         Field("Runtime", new RtMutation(graphTypesCache))
             .Resolve(_ => new RtEntityDto());
 
         Field<CkMutation>("ConstructionKit")
+            .Resolve(_ => new object());
+
+        // Archive lifecycle mutations (concept §16). Tenant context is implicit; per-mutation
+        // role gating is enforced by the AspNetCore policy on the GraphQL endpoint.
+        Field("StreamData", new StreamDataMutation(loggerFactory.CreateLogger<StreamDataMutation>()))
             .Resolve(_ => new object());
     }
 }

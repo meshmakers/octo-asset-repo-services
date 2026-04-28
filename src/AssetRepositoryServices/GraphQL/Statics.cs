@@ -76,6 +76,16 @@ internal static class Statics
     public const string GraphQlErrorCache = "ASSET1005";
     public const string GraphQlCkModelUpdateError = "ASSET1006";
 
+    // StreamData / archive lifecycle error codes (concept §12). Stable so clients can pattern-
+    // match on them rather than parsing free-form messages.
+    public const string GraphQlErrorStreamDataArchiveNotFound = "STREAMDATA_ARCHIVE_NOT_FOUND";
+    public const string GraphQlErrorStreamDataArchiveNotActivated = "STREAMDATA_ARCHIVE_NOT_ACTIVATED";
+    public const string GraphQlErrorStreamDataInvalidTransition = "STREAMDATA_INVALID_TRANSITION";
+    public const string GraphQlErrorStreamDataSchemaImmutable = "STREAMDATA_SCHEMA_IMMUTABLE";
+    public const string GraphQlErrorStreamDataPathInvalid = "STREAMDATA_PATH_INVALID";
+    public const string GraphQlErrorStreamDataActivationFailed = "STREAMDATA_ACTIVATION_FAILED";
+    public const string GraphQlErrorStreamData = "STREAMDATA_ERROR";
+
     public static string GetGraphQlPascalCaseName<TKey>(this RtCkId<TKey> ckKey) where TKey : IComparable<TKey>, ICkElementId
     {
         return ckKey.SemanticVersionedFullName
