@@ -1,5 +1,6 @@
 using GraphQL;
 using GraphQL.Types;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.RequestHandling;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Scalars;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Utils;
@@ -59,10 +60,10 @@ internal sealed class StreamDataMutation : ObjectGraphType
             var archiveRtId = ctx.GetArgument<OctoObjectId>(Statics.RtIdArg);
             _logger.LogDebug("Archive {Transition} requested for {ArchiveRtId}", transitionName, archiveRtId);
 
-            var lifecycle = ctx.RequestServices?.GetRequiredService<IArchiveLifecycleService>()
-                ?? throw AssetRepositoryException.ServiceNotRegistered(typeof(IArchiveLifecycleService));
-            var store = ctx.RequestServices?.GetRequiredService<ICkArchiveRuntimeStore>()
-                ?? throw AssetRepositoryException.ServiceNotRegistered(typeof(ICkArchiveRuntimeStore));
+            var gql = (GraphQlUserContext)ctx.UserContext;
+            var lifecycle = gql.TenantContext.GetArchiveLifecycleService()
+                ?? throw AssetRepositoryException.StreamDataNotAvailable();
+            var store = gql.TenantContext.GetCkArchiveRuntimeStore();
 
             await transition(lifecycle, archiveRtId);
 
