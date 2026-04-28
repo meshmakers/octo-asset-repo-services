@@ -62,7 +62,7 @@ internal static class StreamDataVariantExecutor
     {
         return i.Variant switch
         {
-            StreamQueryVariant.Simple => await repo.ExecuteQueryAsync(
+            StreamQueryVariant.Simple => await repo.ExecuteQueryAsync(default,
                 StreamDataQueryOptions.Create()
                     .WithCkTypeId(i.CkTypeId)
                     .WithColumns(i.ColumnPaths ?? [])
@@ -73,7 +73,7 @@ internal static class StreamDataVariantExecutor
                     .WithFieldFilters(i.FieldFilters)
                     .WithPagination(i.Offset, i.PageSize)),
 
-            StreamQueryVariant.Aggregation => await repo.ExecuteAggregationQueryAsync(
+            StreamQueryVariant.Aggregation => await repo.ExecuteAggregationQueryAsync(default,
                 StreamDataAggregationQueryOptions.Create()
                     .WithCkTypeId(i.CkTypeId)
                     .WithAggregationColumns(i.AggregationColumns ?? [])
@@ -81,7 +81,7 @@ internal static class StreamDataVariantExecutor
                     .WithTimeRange(i.From, i.To)
                     .WithFieldFilters(i.FieldFilters)),
 
-            StreamQueryVariant.GroupingAggregation => await repo.ExecuteGroupedAggregationQueryAsync(
+            StreamQueryVariant.GroupingAggregation => await repo.ExecuteGroupedAggregationQueryAsync(default,
                 StreamDataGroupedAggregationQueryOptions.Create()
                     .WithCkTypeId(i.CkTypeId)
                     .WithGroupByColumns(i.GroupByColumnPaths ?? [])
@@ -90,7 +90,7 @@ internal static class StreamDataVariantExecutor
                     .WithTimeRange(i.From, i.To)
                     .WithFieldFilters(i.FieldFilters)),
 
-            StreamQueryVariant.Downsampling => await repo.ExecuteDownsamplingQueryAsync(
+            StreamQueryVariant.Downsampling => await repo.ExecuteDownsamplingQueryAsync(default,
                 StreamDataDownsamplingQueryOptions.Create()
                     .WithCkTypeId(i.CkTypeId)
                     .WithAggregationColumns(i.AggregationColumns ?? [])

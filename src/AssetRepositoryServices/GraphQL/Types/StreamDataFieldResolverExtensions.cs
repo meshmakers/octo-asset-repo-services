@@ -1,4 +1,4 @@
-using Meshmakers.Octo.Runtime.Engine.MongoDb.StreamData;
+using Meshmakers.Octo.Runtime.Engine.CrateDb;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
 

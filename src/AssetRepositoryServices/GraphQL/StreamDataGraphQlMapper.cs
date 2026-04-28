@@ -105,19 +105,19 @@ internal static class StreamDataGraphQlMapper
     /// <see cref="AggregationFunction"/>.
     /// </summary>
     public static AggregationFunction MapAggregationFunctionDto(
-        Meshmakers.Octo.Runtime.Engine.MongoDb.StreamData.Dtos.AggregationFunctionDto func)
+        Meshmakers.Octo.Runtime.Engine.CrateDb.Dtos.AggregationFunctionDto func)
     {
         return func switch
         {
-            Meshmakers.Octo.Runtime.Engine.MongoDb.StreamData.Dtos.AggregationFunctionDto.Avg
+            Meshmakers.Octo.Runtime.Engine.CrateDb.Dtos.AggregationFunctionDto.Avg
                 => AggregationFunction.Average,
-            Meshmakers.Octo.Runtime.Engine.MongoDb.StreamData.Dtos.AggregationFunctionDto.Min
+            Meshmakers.Octo.Runtime.Engine.CrateDb.Dtos.AggregationFunctionDto.Min
                 => AggregationFunction.Minimum,
-            Meshmakers.Octo.Runtime.Engine.MongoDb.StreamData.Dtos.AggregationFunctionDto.Max
+            Meshmakers.Octo.Runtime.Engine.CrateDb.Dtos.AggregationFunctionDto.Max
                 => AggregationFunction.Maximum,
-            Meshmakers.Octo.Runtime.Engine.MongoDb.StreamData.Dtos.AggregationFunctionDto.Count
+            Meshmakers.Octo.Runtime.Engine.CrateDb.Dtos.AggregationFunctionDto.Count
                 => AggregationFunction.Count,
-            Meshmakers.Octo.Runtime.Engine.MongoDb.StreamData.Dtos.AggregationFunctionDto.Sum
+            Meshmakers.Octo.Runtime.Engine.CrateDb.Dtos.AggregationFunctionDto.Sum
                 => AggregationFunction.Sum,
             _ => throw new ArgumentOutOfRangeException(nameof(func), func, null)
         };

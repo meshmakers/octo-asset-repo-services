@@ -1,5 +1,5 @@
 ﻿using Meshmakers.Octo.Backend.AssetRepositoryServices.Configuration.DependencyInjection.Options;
-using Meshmakers.Octo.Runtime.Engine.MongoDb.StreamData.Configuration;
+using Meshmakers.Octo.Runtime.Engine.CrateDb.Configuration;
 using Microsoft.Extensions.Options;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.Configuration;

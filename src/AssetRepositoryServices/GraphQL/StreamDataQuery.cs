@@ -11,8 +11,8 @@ using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.ConstructionKit.Contracts.DependencyGraph;
 using Meshmakers.Octo.ConstructionKit.Models.System.Generated.System.v2;
 using Meshmakers.Octo.Runtime.Contracts.StreamData;
-using Meshmakers.Octo.Runtime.Engine.MongoDb.StreamData;
-using Meshmakers.Octo.Runtime.Engine.MongoDb.StreamData.Dtos;
+using Meshmakers.Octo.Runtime.Engine.CrateDb;
+using Meshmakers.Octo.Runtime.Engine.CrateDb.Dtos;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL;
 
@@ -98,7 +98,7 @@ internal sealed class StreamDataQuery : ObjectGraphType
                 .WithSortOrders(StreamDataGraphQlMapper.MapSortOrders(sortDtos))
                 .WithPagination(arg.GetOffset(), arg.First);
 
-            var result = await repo.ExecuteQueryAsync(options);
+            var result = await repo.ExecuteQueryAsync(default, options);
 
             var rows = result.Rows
                 .Select(row => StreamDataEntityDtoType.CreateStreamDataEntityDto(
@@ -150,7 +150,7 @@ internal sealed class StreamDataQuery : ObjectGraphType
                 .WithFieldFilters(StreamDataGraphQlMapper.MapFieldFilters(fieldFilters))
                 .WithPagination(arg.GetOffset(), arg.First);
 
-            var result = await repo.ExecuteQueryAsync(options);
+            var result = await repo.ExecuteQueryAsync(default, options);
             var rows = result.Rows
                 .Select(r => StreamDataQueryRowDto.FromStreamDataRow(r, columnMappings))
                 .ToList();
