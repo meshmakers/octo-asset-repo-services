@@ -4,6 +4,7 @@ using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.RequestHandling;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Scalars;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Utils;
+using Meshmakers.Octo.Communication.Contracts;
 using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.Runtime.Contracts.StreamData;
 
@@ -61,6 +62,19 @@ internal sealed class StreamDataMutation : ObjectGraphType
             _logger.LogDebug("Archive {Transition} requested for {ArchiveRtId}", transitionName, archiveRtId);
 
             var gql = (GraphQlUserContext)ctx.UserContext;
+            // Concept §5 / T22: archive lifecycle mutations require the StreamDataAdmin role.
+            // Per-mutation field-level enforcement on top of the AspNetCore policy on the GraphQL
+            // endpoint (which only verifies authentication, not the specific role).
+            if (gql.User?.IsInRole(CommonConstants.StreamDataAdminRole) != true)
+            {
+                ctx.Errors.Add(new ExecutionError(
+                    $"Archive {transitionName} requires the '{CommonConstants.StreamDataAdminRole}' role.")
+                {
+                    Code = Statics.GraphQlForbidden,
+                });
+                return null;
+            }
+
             var lifecycle = gql.TenantContext.GetArchiveLifecycleService()
                 ?? throw AssetRepositoryException.StreamDataNotAvailable();
             var store = gql.TenantContext.GetCkArchiveRuntimeStore();

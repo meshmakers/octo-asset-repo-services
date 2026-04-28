@@ -86,6 +86,9 @@ internal static class Statics
     public const string GraphQlErrorStreamDataActivationFailed = "STREAMDATA_ACTIVATION_FAILED";
     public const string GraphQlErrorStreamData = "STREAMDATA_ERROR";
 
+    /// <summary>Stable code for "caller is not in a required role" — gates the archive lifecycle mutations on StreamDataAdmin.</summary>
+    public const string GraphQlForbidden = "FORBIDDEN";
+
     public static string GetGraphQlPascalCaseName<TKey>(this RtCkId<TKey> ckKey) where TKey : IComparable<TKey>, ICkElementId
     {
         return ckKey.SemanticVersionedFullName
