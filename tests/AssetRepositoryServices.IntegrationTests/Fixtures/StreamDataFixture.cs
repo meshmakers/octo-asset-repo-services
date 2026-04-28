@@ -6,10 +6,10 @@ using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Utils;
 using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.Runtime.Contracts.StreamData;
-using Meshmakers.Octo.Runtime.Engine.MongoDb.StreamData;
-using Meshmakers.Octo.Runtime.Engine.MongoDb.StreamData.Configuration;
-using Meshmakers.Octo.Runtime.Engine.MongoDb.StreamData.Dtos;
-using Meshmakers.Octo.Runtime.Engine.MongoDb.StreamData.Extensions;
+using Meshmakers.Octo.Runtime.Engine.CrateDb;
+using Meshmakers.Octo.Runtime.Engine.CrateDb.Configuration;
+using Meshmakers.Octo.Runtime.Engine.CrateDb.Dtos;
+using Meshmakers.Octo.Runtime.Engine.CrateDb.Extensions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Npgsql;
@@ -225,7 +225,10 @@ public class StreamDataFixture : AssetRepoFixture
         var tenantContext = await systemContext.FindTenantContextAsync(systemContext.TenantId);
         var repo = tenantContext.GetStreamDataRepository()
             ?? throw new InvalidOperationException("stream-data not enabled");
-        var result = await repo.ExecuteQueryAsync(options);
+        // Integration test still targets the legacy shared table; passing default archiveRtId
+        // keeps the existing behaviour. Transition to a real archive id happens once the test
+        // fixture provisions a dedicated CkArchive entity.
+        var result = await repo.ExecuteQueryAsync(default, options);
         return result.Rows;
     }
 

@@ -1,5 +1,5 @@
 using Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Fixtures;
-using Meshmakers.Octo.Runtime.Engine.MongoDb.StreamData;
+using Meshmakers.Octo.Runtime.Engine.CrateDb;
 using Xunit;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.StreamData;
