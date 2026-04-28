@@ -28,6 +28,7 @@ internal sealed class StreamDataQuery : ObjectGraphType
 
         Connection<NonNullGraphType<StreamDataQueryDtoType>>("StreamDataQuery")
             .Argument<NonNullGraphType<OctoObjectIdType>>(Statics.RtIdArg, "The persisted stream-data query runtime id.")
+            .Argument<NonNullGraphType<OctoObjectIdType>>(Statics.ArchiveRtIdArg, "CkArchive runtime id the persisted query should target at execution time.")
             .ResolveAsync(ResolveStreamDataQueryAsync);
 
         Field<NonNullGraphType<StreamDataTransientQuery>>("TransientStreamDataQuery")
@@ -36,6 +37,7 @@ internal sealed class StreamDataQuery : ObjectGraphType
 
         Connection<NonNullGraphType<StreamDataEntityGenericDtoType>>("StreamDataEntities")
             .Description("Generic stream-data entity connection. Supply the CK type at query time.")
+            .Argument<NonNullGraphType<OctoObjectIdType>>(Statics.ArchiveRtIdArg, "CkArchive runtime id whose table should be queried.")
             .Argument<NonNullGraphType<StringGraphType>>(Statics.CkIdArg, "CK type to query")
             .Argument<NonNullGraphType<ListGraphType<NonNullGraphType<StringGraphType>>>>(Statics.ColumnPathsArg, "Attribute paths to project")
             .Argument<StreamDataArgumentsGraphType>(Statics.StreamDataArgument, "Time filter and limit")
@@ -49,6 +51,7 @@ internal sealed class StreamDataQuery : ObjectGraphType
             this.Connection<object?, IGraphType, StreamDataEntityDto>(graphTypesCache, rtEntityDtoType,
                     rtEntityDtoType.ConnectionName)
                 .AddMetadata(Statics.CkId, rtEntityDtoType.CkTypeId.ToRtCkId())
+                .Argument<NonNullGraphType<OctoObjectIdType>>(Statics.ArchiveRtIdArg, "CkArchive runtime id whose table should be queried.")
                 .Argument<OctoObjectIdType>(Statics.RtIdArg, "Returns the entity with the given rtId.")
                 .Argument<ListGraphType<OctoObjectIdType>>(Statics.RtIdsArg, "Returns entities with the given rtIds.")
                 .Argument<StreamDataArgumentsGraphType>(Statics.StreamDataArgument, "Filter for stream data data.")
@@ -69,6 +72,7 @@ internal sealed class StreamDataQuery : ObjectGraphType
                 ?? throw AssetRepositoryException.StreamDataNotAvailable();
 
             var ckTypeId = arg.GetMetadataValue<RtCkId<CkTypeId>>(Statics.CkId);
+            var archiveRtId = arg.GetArgument<OctoObjectId>(Statics.ArchiveRtIdArg);
             var fieldResolver = BuildFieldResolver(arg, gql.TenantId, ckTypeId);
             var requestedType = arg.GetCkCacheService().GetRtCkType(gql.TenantId, ckTypeId);
 
@@ -98,7 +102,7 @@ internal sealed class StreamDataQuery : ObjectGraphType
                 .WithSortOrders(StreamDataGraphQlMapper.MapSortOrders(sortDtos))
                 .WithPagination(arg.GetOffset(), arg.First);
 
-            var result = await repo.ExecuteQueryAsync(default, options);
+            var result = await repo.ExecuteQueryAsync(archiveRtId, options);
 
             var rows = result.Rows
                 .Select(row => StreamDataEntityDtoType.CreateStreamDataEntityDto(
@@ -124,6 +128,7 @@ internal sealed class StreamDataQuery : ObjectGraphType
                 ?? throw AssetRepositoryException.StreamDataNotAvailable();
 
             var ckTypeId = arg.GetArgument<RtCkId<CkTypeId>>(Statics.CkIdArg);
+            var archiveRtId = arg.GetArgument<OctoObjectId>(Statics.ArchiveRtIdArg);
             var columnPaths = arg.GetArgument<IEnumerable<string>>(Statics.ColumnPathsArg).ToList();
 
             var fieldResolver = BuildFieldResolver(arg, gql.TenantId, ckTypeId);
@@ -150,7 +155,7 @@ internal sealed class StreamDataQuery : ObjectGraphType
                 .WithFieldFilters(StreamDataGraphQlMapper.MapFieldFilters(fieldFilters))
                 .WithPagination(arg.GetOffset(), arg.First);
 
-            var result = await repo.ExecuteQueryAsync(default, options);
+            var result = await repo.ExecuteQueryAsync(archiveRtId, options);
             var rows = result.Rows
                 .Select(r => StreamDataQueryRowDto.FromStreamDataRow(r, columnMappings))
                 .ToList();
@@ -172,6 +177,7 @@ internal sealed class StreamDataQuery : ObjectGraphType
             var tenantRepository = graphQlUserContext.TenantContext.GetTenantRepository();
 
             var queryRtId = arg.GetArgument<OctoObjectId>(Statics.RtIdArg);
+            var archiveRtId = arg.GetArgument<OctoObjectId>(Statics.ArchiveRtIdArg);
             var loaded = await tenantRepository.GetRtEntityByRtIdAsync<RtStreamDataQuery>(
                 sessionAccessor.Session, queryRtId)
                 ?? throw AssetRepositoryException.RtQueryNotFound(queryRtId);
@@ -184,7 +190,11 @@ internal sealed class StreamDataQuery : ObjectGraphType
                 QueryRtId = queryRtId,
                 AssociatedCkTypeId = new RtCkId<CkTypeId>(loaded.QueryCkTypeId),
                 Columns = columns,
-                UserContext = new StreamDataQueryUserContext { LoadedQuery = loaded }
+                UserContext = new StreamDataQueryUserContext
+                {
+                    LoadedQuery = loaded,
+                    ArchiveRtId = archiveRtId,
+                }
             };
 
             return ConnectionUtils.ToOctoConnection(new[] { dto }, arg, 0, 1);

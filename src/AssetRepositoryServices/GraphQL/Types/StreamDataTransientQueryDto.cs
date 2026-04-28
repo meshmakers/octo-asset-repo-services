@@ -28,6 +28,9 @@ internal sealed class StreamDataTransientUserContext
     /// <summary>Which of the four stream-data query variants to execute.</summary>
     public required StreamQueryVariant Variant { get; init; }
 
+    /// <summary>The CkArchive runtime id whose table the query should run against. T10 / concept §16.</summary>
+    public required OctoObjectId ArchiveRtId { get; init; }
+
     /// <summary>The CK type the query targets.</summary>
     public required RtCkId<CkTypeId> CkTypeId { get; init; }
 

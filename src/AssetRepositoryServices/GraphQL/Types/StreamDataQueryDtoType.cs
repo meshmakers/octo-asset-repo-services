@@ -126,6 +126,7 @@ internal sealed class StreamDataQueryDtoType : ObjectGraphType<StreamDataQueryDt
                     input = new StreamQueryExecutionInput
                     {
                         Variant = StreamQueryVariant.Simple,
+                        ArchiveRtId = uc.ArchiveRtId,
                         CkTypeId = ckTypeId,
                         ColumnPaths = columnNames,
                         RtIds = simple.RtIds?.Select(id => new OctoObjectId(id)).ToList(),
@@ -164,6 +165,7 @@ internal sealed class StreamDataQueryDtoType : ObjectGraphType<StreamDataQueryDt
                     input = new StreamQueryExecutionInput
                     {
                         Variant = StreamQueryVariant.Aggregation,
+                        ArchiveRtId = uc.ArchiveRtId,
                         CkTypeId = ckTypeId,
                         AggregationColumns = aggregationColumns
                             .Select(c => new AggregationColumn(
@@ -206,6 +208,7 @@ internal sealed class StreamDataQueryDtoType : ObjectGraphType<StreamDataQueryDt
                     input = new StreamQueryExecutionInput
                     {
                         Variant = StreamQueryVariant.GroupingAggregation,
+                        ArchiveRtId = uc.ArchiveRtId,
                         CkTypeId = ckTypeId,
                         GroupByColumnPaths = groupingColumns,
                         AggregationColumns = aggregationColumns
@@ -247,6 +250,7 @@ internal sealed class StreamDataQueryDtoType : ObjectGraphType<StreamDataQueryDt
                     input = new StreamQueryExecutionInput
                     {
                         Variant = StreamQueryVariant.Downsampling,
+                        ArchiveRtId = uc.ArchiveRtId,
                         CkTypeId = ckTypeId,
                         AggregationColumns = aggregationColumns
                             .Select(c => new AggregationColumn(
@@ -344,6 +348,7 @@ internal sealed class StreamDataQueryDtoType : ObjectGraphType<StreamDataQueryDt
             var input = new StreamQueryExecutionInput
             {
                 Variant = StreamQueryVariant.Aggregation,
+                ArchiveRtId = uc.ArchiveRtId,
                 CkTypeId = ckTypeId,
                 AggregationColumns = aggColumns,
                 RtIds = loaded.RtIds?.Select(id => new OctoObjectId(id)).ToList(),

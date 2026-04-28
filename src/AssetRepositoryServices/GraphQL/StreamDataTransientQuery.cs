@@ -33,6 +33,8 @@ internal sealed class StreamDataTransientQuery : ObjectGraphType
 
         Connection<NonNullGraphType<StreamDataTransientQueryDtoType>>("Simple")
             .Description("Transient simple stream-data query — projects raw attribute values.")
+            .Argument<NonNullGraphType<OctoObjectIdType>>(Statics.ArchiveRtIdArg,
+                "CkArchive runtime id whose table should be queried.")
             .Argument<NonNullGraphType<StringGraphType>>(Statics.CkIdArg,
                 "The construction kit type with the given id.")
             .Argument<NonNullGraphType<ListGraphType<NonNullGraphType<StringGraphType>>>>(Statics.ColumnPathsArg,
@@ -49,6 +51,8 @@ internal sealed class StreamDataTransientQuery : ObjectGraphType
 
         Connection<NonNullGraphType<StreamDataTransientQueryDtoType>>("Aggregation")
             .Description("Transient aggregation stream-data query.")
+            .Argument<NonNullGraphType<OctoObjectIdType>>(Statics.ArchiveRtIdArg,
+                "CkArchive runtime id whose table should be queried.")
             .Argument<NonNullGraphType<StringGraphType>>(Statics.CkIdArg,
                 "The construction kit type with the given id.")
             .Argument<NonNullGraphType<ListGraphType<NonNullGraphType<StreamDataQueryColumnInputDtoType>>>>(Statics.ColumnPathsArg,
@@ -63,6 +67,8 @@ internal sealed class StreamDataTransientQuery : ObjectGraphType
 
         Connection<NonNullGraphType<StreamDataTransientQueryDtoType>>("GroupingAggregation")
             .Description("Transient grouped-aggregation stream-data query.")
+            .Argument<NonNullGraphType<OctoObjectIdType>>(Statics.ArchiveRtIdArg,
+                "CkArchive runtime id whose table should be queried.")
             .Argument<NonNullGraphType<StringGraphType>>(Statics.CkIdArg,
                 "The construction kit type with the given id.")
             .Argument<NonNullGraphType<ListGraphType<NonNullGraphType<StringGraphType>>>>(Statics.GroupByColumnPathsArg,
@@ -79,6 +85,8 @@ internal sealed class StreamDataTransientQuery : ObjectGraphType
 
         Connection<NonNullGraphType<StreamDataTransientQueryDtoType>>("Downsampling")
             .Description("Transient downsampling stream-data query — divides the time range into equal buckets.")
+            .Argument<NonNullGraphType<OctoObjectIdType>>(Statics.ArchiveRtIdArg,
+                "CkArchive runtime id whose table should be queried.")
             .Argument<NonNullGraphType<StringGraphType>>(Statics.CkIdArg,
                 "The construction kit type with the given id.")
             .Argument<NonNullGraphType<ListGraphType<NonNullGraphType<StreamDataQueryColumnInputDtoType>>>>(Statics.ColumnPathsArg,
@@ -105,6 +113,7 @@ internal sealed class StreamDataTransientQuery : ObjectGraphType
             _logger.LogDebug("StreamDataTransientQuery: handling Simple sub-connection");
 
             var gql = (GraphQlUserContext)ctx.UserContext;
+            var archiveRtId = ctx.GetArgument<OctoObjectId>(Statics.ArchiveRtIdArg);
             var ckTypeId = ctx.GetArgument<RtCkId<CkTypeId>>(Statics.CkIdArg);
             var columnPaths = ctx.GetArgument<IEnumerable<string>>(Statics.ColumnPathsArg).ToList();
 
@@ -135,6 +144,7 @@ internal sealed class StreamDataTransientQuery : ObjectGraphType
                 UserContext = new StreamDataTransientUserContext
                 {
                     Variant = StreamQueryVariant.Simple,
+                    ArchiveRtId = archiveRtId,
                     CkTypeId = ckTypeId,
                     ColumnPaths = columnPaths,
                     From = execArgs?.From,
@@ -160,6 +170,7 @@ internal sealed class StreamDataTransientQuery : ObjectGraphType
             _logger.LogDebug("StreamDataTransientQuery: handling Aggregation sub-connection");
 
             var gql = (GraphQlUserContext)ctx.UserContext;
+            var archiveRtId = ctx.GetArgument<OctoObjectId>(Statics.ArchiveRtIdArg);
             var ckTypeId = ctx.GetArgument<RtCkId<CkTypeId>>(Statics.CkIdArg);
             var columnInputs = ctx.GetArgument<IEnumerable<StreamDataQueryColumnInputDto>>(Statics.ColumnPathsArg).ToList();
 
@@ -196,6 +207,7 @@ internal sealed class StreamDataTransientQuery : ObjectGraphType
                 UserContext = new StreamDataTransientUserContext
                 {
                     Variant = StreamQueryVariant.Aggregation,
+                    ArchiveRtId = archiveRtId,
                     CkTypeId = ckTypeId,
                     AggregationColumns = aggColumns,
                     From = execArgs?.From,
@@ -219,6 +231,7 @@ internal sealed class StreamDataTransientQuery : ObjectGraphType
             _logger.LogDebug("StreamDataTransientQuery: handling GroupingAggregation sub-connection");
 
             var gql = (GraphQlUserContext)ctx.UserContext;
+            var archiveRtId = ctx.GetArgument<OctoObjectId>(Statics.ArchiveRtIdArg);
             var ckTypeId = ctx.GetArgument<RtCkId<CkTypeId>>(Statics.CkIdArg);
             var groupByColumnPaths = ctx.GetArgument<IEnumerable<string>>(Statics.GroupByColumnPathsArg).ToList();
             var columnInputs = ctx.GetArgument<IEnumerable<StreamDataQueryColumnInputDto>>(Statics.ColumnPathsArg).ToList();
@@ -263,6 +276,7 @@ internal sealed class StreamDataTransientQuery : ObjectGraphType
                 UserContext = new StreamDataTransientUserContext
                 {
                     Variant = StreamQueryVariant.GroupingAggregation,
+                    ArchiveRtId = archiveRtId,
                     CkTypeId = ckTypeId,
                     GroupByColumnPaths = groupByColumnPaths,
                     AggregationColumns = aggColumns,
@@ -287,6 +301,7 @@ internal sealed class StreamDataTransientQuery : ObjectGraphType
             _logger.LogDebug("StreamDataTransientQuery: handling Downsampling sub-connection");
 
             var gql = (GraphQlUserContext)ctx.UserContext;
+            var archiveRtId = ctx.GetArgument<OctoObjectId>(Statics.ArchiveRtIdArg);
             var ckTypeId = ctx.GetArgument<RtCkId<CkTypeId>>(Statics.CkIdArg);
             var columnInputs = ctx.GetArgument<IEnumerable<StreamDataQueryColumnInputDto>>(Statics.ColumnPathsArg).ToList();
             var from = ctx.GetArgument<DateTime>("from");
@@ -325,6 +340,7 @@ internal sealed class StreamDataTransientQuery : ObjectGraphType
                 UserContext = new StreamDataTransientUserContext
                 {
                     Variant = StreamQueryVariant.Downsampling,
+                    ArchiveRtId = archiveRtId,
                     CkTypeId = ckTypeId,
                     AggregationColumns = aggColumns,
                     From = from,

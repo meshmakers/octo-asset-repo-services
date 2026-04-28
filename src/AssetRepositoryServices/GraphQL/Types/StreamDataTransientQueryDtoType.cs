@@ -99,6 +99,7 @@ internal sealed class StreamDataTransientQueryDtoType : ObjectGraphType<StreamDa
                     input = new StreamQueryExecutionInput
                     {
                         Variant = StreamQueryVariant.Simple,
+                        ArchiveRtId = uc.ArchiveRtId,
                         CkTypeId = ckTypeId,
                         ColumnPaths = columnPaths,
                         RtIds = uc.RtIds,
@@ -123,6 +124,7 @@ internal sealed class StreamDataTransientQueryDtoType : ObjectGraphType<StreamDa
                     input = new StreamQueryExecutionInput
                     {
                         Variant = StreamQueryVariant.Aggregation,
+                        ArchiveRtId = uc.ArchiveRtId,
                         CkTypeId = ckTypeId,
                         AggregationColumns = aggColumns,
                         RtIds = uc.RtIds,
@@ -147,6 +149,7 @@ internal sealed class StreamDataTransientQueryDtoType : ObjectGraphType<StreamDa
                     input = new StreamQueryExecutionInput
                     {
                         Variant = StreamQueryVariant.GroupingAggregation,
+                        ArchiveRtId = uc.ArchiveRtId,
                         CkTypeId = ckTypeId,
                         GroupByColumnPaths = groupByPaths,
                         AggregationColumns = aggColumns,
@@ -170,6 +173,7 @@ internal sealed class StreamDataTransientQueryDtoType : ObjectGraphType<StreamDa
                     input = new StreamQueryExecutionInput
                     {
                         Variant = StreamQueryVariant.Downsampling,
+                        ArchiveRtId = uc.ArchiveRtId,
                         CkTypeId = ckTypeId,
                         AggregationColumns = aggColumns,
                         RtIds = uc.RtIds,
@@ -251,6 +255,7 @@ internal sealed class StreamDataTransientQueryDtoType : ObjectGraphType<StreamDa
             var input = new StreamQueryExecutionInput
             {
                 Variant = StreamQueryVariant.Aggregation,
+                ArchiveRtId = uc.ArchiveRtId,
                 CkTypeId = ckTypeId,
                 AggregationColumns = aggColumns,
                 RtIds = uc.RtIds,
