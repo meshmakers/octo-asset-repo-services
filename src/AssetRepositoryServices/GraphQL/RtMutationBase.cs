@@ -1,6 +1,7 @@
 using GraphQL.Types;
 using Meshmakers.Common.Shared;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.Services;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
 using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.ConstructionKit.Contracts.DataTransferObjects;
@@ -192,10 +193,11 @@ internal abstract class RtMutationBase : ObjectGraphType
                         var binaryLinkedData = ConvertToBinaryData(value);
                         if (binaryLinkedData != null && binaryLinkedData.Length > 0)
                         {
+                            var detectedContentType = BinaryContentTypeDetector.Detect(binaryLinkedData);
                             var entityBinaryInfo = new EntityBinaryInfo
                             {
-                                ContentType = DetectContentType(binaryLinkedData),
-                                Filename = $"{ckTypeAttributeGraph.AttributeName}{DetectFileExtension(DetectContentType(binaryLinkedData))}",
+                                ContentType = detectedContentType,
+                                Filename = $"{ckTypeAttributeGraph.AttributeName}{BinaryContentTypeDetector.DetectFileExtension(detectedContentType)}",
                                 Size = binaryLinkedData.Length,
                                 Stream = new MemoryStream(binaryLinkedData)
                             };
@@ -295,76 +297,6 @@ internal abstract class RtMutationBase : ObjectGraphType
         throw new InvalidCastException(
             $"Unable to convert value of type '{value.GetType().FullName}' to byte[]. " +
             $"Expected byte[], List<object>, or IEnumerable.");
-    }
-
-    /// <summary>
-    /// Detects the MIME content type of binary data by inspecting magic bytes.
-    /// </summary>
-    private static string DetectContentType(byte[] data)
-    {
-        if (data.Length >= 4)
-        {
-            // PNG: 89 50 4E 47
-            if (data[0] == 0x89 && data[1] == 0x50 && data[2] == 0x4E && data[3] == 0x47)
-                return "image/png";
-
-            // GIF: 47 49 46 38
-            if (data[0] == 0x47 && data[1] == 0x49 && data[2] == 0x46 && data[3] == 0x38)
-                return "image/gif";
-
-            // PDF: 25 50 44 46
-            if (data[0] == 0x25 && data[1] == 0x50 && data[2] == 0x44 && data[3] == 0x46)
-                return "application/pdf";
-
-            // WebP: 52 49 46 46 xx xx xx xx 57 45 42 50
-            if (data.Length >= 12 &&
-                data[0] == 0x52 && data[1] == 0x49 && data[2] == 0x46 && data[3] == 0x46 &&
-                data[8] == 0x57 && data[9] == 0x45 && data[10] == 0x42 && data[11] == 0x50)
-                return "image/webp";
-        }
-
-        if (data.Length >= 3)
-        {
-            // JPEG: FF D8 FF
-            if (data[0] == 0xFF && data[1] == 0xD8 && data[2] == 0xFF)
-                return "image/jpeg";
-        }
-
-        if (data.Length >= 2)
-        {
-            // BMP: 42 4D
-            if (data[0] == 0x42 && data[1] == 0x4D)
-                return "image/bmp";
-        }
-
-        // SVG: check for XML/SVG text markers
-        if (data.Length >= 5)
-        {
-            var header = System.Text.Encoding.UTF8.GetString(data, 0, Math.Min(data.Length, 256)).TrimStart();
-            if (header.StartsWith("<?xml", StringComparison.OrdinalIgnoreCase) ||
-                header.StartsWith("<svg", StringComparison.OrdinalIgnoreCase))
-                return "image/svg+xml";
-        }
-
-        return "application/octet-stream";
-    }
-
-    /// <summary>
-    /// Returns the file extension for a given content type.
-    /// </summary>
-    private static string DetectFileExtension(string contentType)
-    {
-        return contentType switch
-        {
-            "image/png" => ".png",
-            "image/jpeg" => ".jpg",
-            "image/gif" => ".gif",
-            "image/webp" => ".webp",
-            "image/svg+xml" => ".svg",
-            "image/bmp" => ".bmp",
-            "application/pdf" => ".pdf",
-            _ => ".bin"
-        };
     }
 
     private async Task<RtRecord> HandleRecordAsync(ICkCacheService ckCacheService, string tenantId,

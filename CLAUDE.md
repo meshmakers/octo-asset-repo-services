@@ -103,7 +103,7 @@ Located in versioned API folders:
 **Tenant APIs** (`TenantApi/v1/Controllers/`):
 - `TenantsController.cs` - Tenant management (each tenant manages its own child tenants)
 - `ModelsController.cs` - Construction kit and runtime model import/export (includes `ImportFromCatalog` endpoint)
-- `LargeBinariesController.cs` - Binary file upload/download
+- `LargeBinariesController.cs` - Binary file download. Falls back to magic-byte sniffing via `BinaryContentTypeDetector` when the stored `ContentType` is missing or `application/octet-stream` (legacy data uploaded before detection existed). For non-seekable source streams the head bytes are re-prepended via `PrependedReadStream`.
 
 #### 4. Stream Data Management
 Time-series data support (`StreamData/`):

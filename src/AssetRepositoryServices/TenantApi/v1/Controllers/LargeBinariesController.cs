@@ -21,6 +21,8 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.TenantApi.v1.Controlle
 // ReSharper disable once ClassNeverInstantiated.Global
 public class LargeBinariesController : ControllerBase
 {
+    private const int SniffBufferSize = 16;
+
     private readonly IOctoService _octoService;
 
     /// <summary>
@@ -71,7 +73,16 @@ public class LargeBinariesController : ControllerBase
 
             await session.CommitTransactionAsync().ConfigureAwait(false);
 
-            return new FileStreamResult(streamHandler.Stream, streamHandler.ContentType);
+            // Self-heal old uploads that were stored before content-type detection existed
+            // (or under a code path that did not set a specific type). Sniff the magic
+            // bytes from the head of the stream so the response carries a useful MIME type
+            // — important for callers like <link rel="icon">, where browsers reject
+            // application/octet-stream as a favicon.
+            var (contentType, responseStream) = await EnsureSpecificContentTypeAsync(
+                streamHandler.Stream,
+                streamHandler.ContentType);
+
+            return new FileStreamResult(responseStream, contentType);
         }
         catch (ArgumentException ex)
         {
@@ -85,5 +96,54 @@ public class LargeBinariesController : ControllerBase
         {
             return StatusCode(StatusCodes.Status500InternalServerError, new InternalServerErrorDto(ex.Message));
         }
+    }
+
+    private static async Task<(string ContentType, Stream Stream)> EnsureSpecificContentTypeAsync(
+        Stream stream,
+        string? storedContentType)
+    {
+        if (!BinaryContentTypeDetector.IsGenericOrEmpty(storedContentType))
+        {
+            return (storedContentType!, stream);
+        }
+
+        var buffer = new byte[SniffBufferSize];
+        var bytesRead = await ReadUpToAsync(stream, buffer, SniffBufferSize).ConfigureAwait(false);
+        var detected = BinaryContentTypeDetector.Detect(buffer.AsSpan(0, bytesRead));
+
+        // Whatever we choose for the response body, the consumer must still see the
+        // bytes we already pulled off the source stream. Reset if possible, else
+        // prepend the read bytes back onto a wrapper.
+        Stream responseStream;
+        if (stream.CanSeek)
+        {
+            stream.Position = 0;
+            responseStream = stream;
+        }
+        else
+        {
+            var prefix = new byte[bytesRead];
+            Array.Copy(buffer, prefix, bytesRead);
+            responseStream = new PrependedReadStream(prefix, stream);
+        }
+
+        var resolvedContentType =
+            BinaryContentTypeDetector.IsGenericOrEmpty(detected)
+                ? storedContentType ?? BinaryContentTypeDetector.GenericContentType
+                : detected;
+
+        return (resolvedContentType, responseStream);
+    }
+
+    private static async Task<int> ReadUpToAsync(Stream stream, byte[] buffer, int count)
+    {
+        var total = 0;
+        while (total < count)
+        {
+            var read = await stream.ReadAsync(buffer.AsMemory(total, count - total)).ConfigureAwait(false);
+            if (read == 0) break;
+            total += read;
+        }
+        return total;
     }
 }
