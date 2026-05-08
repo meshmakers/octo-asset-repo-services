@@ -4,6 +4,7 @@ using GraphQL;
 using IdentityModel;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb.Configuration;
+using Meshmakers.Octo.Runtime.Contracts.StreamData;
 using Meshmakers.Octo.Services.Infrastructure;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -90,6 +91,13 @@ public class StreamDataController : ControllerBase
         {
             return BadRequest(e.Message);
         }
+        catch (StreamDataException e)
+        {
+            // Concept §12: known stream-data failures (e.g. instance-level disabled, archive
+            // path invalid, activation failed) — return the message text only, no stack trace.
+            _logger.LogWarning("EnableStreamData refused for tenant '{TenantId}': {Reason}", tenantId, e.Message);
+            return BadRequest(e.Message);
+        }
     }
 
     /// <summary>
@@ -107,6 +115,11 @@ public class StreamDataController : ControllerBase
         }
         catch (ConfigurationException e)
         {
+            return BadRequest(e.Message);
+        }
+        catch (StreamDataException e)
+        {
+            _logger.LogWarning("DisableStreamData refused for tenant '{TenantId}': {Reason}", tenantId, e.Message);
             return BadRequest(e.Message);
         }
     }
