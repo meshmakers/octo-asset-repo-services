@@ -291,8 +291,10 @@ internal sealed class StreamDataQuery : ObjectGraphType
 
     private static DataPointDto ConvertToDataPointDto(StreamDataRow row)
     {
-        // row.Values is keyed by PascalCase dotted canonical form — the same form
-        // RtTypeWithAttributes.GetAttributeValueOrDefault expects. Direct copy.
+        // After T17 row.Values is keyed by camelCase column names (the per-archive table's
+        // physical schema), and StreamDataEntityDtoType.ResolveAttributeValue camelCases the
+        // PascalCase AttributeName from CK metadata before lookup, so the dict can be copied
+        // through verbatim.
         return new DataPointDto(new Dictionary<string, object?>(row.Values))
         {
             RtId = row.RtId ?? OctoObjectId.Empty,

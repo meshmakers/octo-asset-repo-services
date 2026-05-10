@@ -20,20 +20,20 @@ internal static class StreamDataStatisticsHelper
 
         foreach (var path in paths)
         {
-            // The engine stores aggregation values under SQL aliases like "Avg_Voltage"
-            // where the path portion is the attribute's canonical PascalCase CrateDbName.
-            // (Stream-data attribute paths are flat — segments-within-paths are a non-goal,
-            // see spec 2026-04-12-stream-data-casing-canonicalization-design.md).
-            var pascal = path.Length > 0
-                ? char.ToUpperInvariant(path[0]) + path.Substring(1)
+            // After T17 the engine stores aggregation values under SQL aliases like "Avg_voltage"
+            // where the path portion is the attribute's camelCase CrateDB column name (mirrors
+            // the BSON convention; stream-data attribute paths are flat — segments-within-paths
+            // are a non-goal).
+            var camel = path.Length > 0
+                ? char.ToLowerInvariant(path[0]) + path.Substring(1)
                 : path;
-            var sqlAlias = $"{prefix}_{pascal}";
+            var sqlAlias = $"{prefix}_{camel}";
 
             object? value = null;
             if (!firstRow.Values.TryGetValue(sqlAlias, out value))
             {
-                // Fallback: some callers may key by the plain path.
-                firstRow.Values.TryGetValue(pascal, out value);
+                // Fallback: some callers may key by the plain camelCase path.
+                firstRow.Values.TryGetValue(camel, out value);
             }
 
             yield return new StatisticsResult { AttributePath = path, Value = value };

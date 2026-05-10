@@ -27,6 +27,7 @@ public class StreamDataAggregationsSubConnectionTests(StreamDataFixture fixture,
                 streamData {
                     transientStreamDataQuery {
                         simple(
+                            archiveRtId: "{{fixture.ArchiveRtIdString}}"
                             ckId: "{{fixture.TestCkTypeId}}"
                             columnPaths: ["Voltage"]
                             first: 1
@@ -56,6 +57,9 @@ public class StreamDataAggregationsSubConnectionTests(StreamDataFixture fixture,
         stats.Should().HaveCount(1);
 
         var stat = stats.Single();
+        // Aggregation-statistics output echoes the requested attributePath verbatim. Only the
+        // underlying CrateDB column the SQL touches is the camelCased form (`voltage`); the
+        // wire-format identifier on the way back stays `Voltage`.
         stat.GetProperty("attributePath").GetString().Should().Be("Voltage");
 
         // Voltages are 220.0 to 229.5 (inserted by fixture). Accept any average inside that range;
@@ -75,6 +79,7 @@ public class StreamDataAggregationsSubConnectionTests(StreamDataFixture fixture,
                 streamData {
                     transientStreamDataQuery {
                         simple(
+                            archiveRtId: "{{fixture.ArchiveRtIdString}}"
                             ckId: "{{fixture.TestCkTypeId}}"
                             columnPaths: ["Voltage"]
                             first: 1

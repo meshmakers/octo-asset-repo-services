@@ -2,6 +2,7 @@ using System.ComponentModel.DataAnnotations;
 using Asp.Versioning;
 using GraphQL;
 using IdentityModel;
+using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb.Configuration;
 using Meshmakers.Octo.Runtime.Contracts.StreamData;
@@ -101,6 +102,19 @@ public class StreamDataController : ControllerBase
     }
 
     /// <summary>
+    /// Activates a CkArchive: provisions the per-archive CrateDB table and transitions the archive
+    /// to <c>Activated</c>. Allowed from <c>Created</c>, <c>Disabled</c>, or <c>Failed</c>;
+    /// idempotent on <c>Activated</c>. Same lifecycle path as the <c>activateArchive</c> GraphQL
+    /// mutation — exposed as REST so headless tooling (octo-cli, deployment scripts) can finish
+    /// the rt-import → activate handshake without a GraphQL client.
+    /// </summary>
+    [HttpPost("archives/{archiveRtId}/activate")]
+    [Microsoft.AspNetCore.Authorization.Authorize(AssetRepositoryServiceConstants.SystemAssetApiReadWritePolicy)]
+    public Task<IActionResult> ActivateArchive([Required] string tenantId, [Required] string archiveRtId)
+        => InvokeArchiveTransitionAsync(tenantId, archiveRtId, "ActivateArchive",
+            (lifecycle, id) => lifecycle.ActivateAsync(id));
+
+    /// <summary>
     /// Disables stream data for a given tenant
     /// </summary>
     [HttpPost("disable")]
@@ -120,6 +134,70 @@ public class StreamDataController : ControllerBase
         catch (StreamDataException e)
         {
             _logger.LogWarning("DisableStreamData refused for tenant '{TenantId}': {Reason}", tenantId, e.Message);
+            return BadRequest(e.Message);
+        }
+    }
+
+    /// <summary>
+    /// Disables a CkArchive: transitions to <c>Disabled</c> (no DDL side-effect; data preserved).
+    /// Allowed only from <c>Activated</c>.
+    /// </summary>
+    [HttpPost("archives/{archiveRtId}/disable")]
+    [Microsoft.AspNetCore.Authorization.Authorize(AssetRepositoryServiceConstants.SystemAssetApiReadWritePolicy)]
+    public Task<IActionResult> DisableArchive([Required] string tenantId, [Required] string archiveRtId)
+        => InvokeArchiveTransitionAsync(tenantId, archiveRtId, "DisableArchive",
+            (lifecycle, id) => lifecycle.DisableAsync(id));
+
+    /// <summary>
+    /// Re-enables a previously disabled archive: transitions <c>Disabled → Activated</c>. Re-validates
+    /// column paths against the current CK model; no DDL because the table already exists.
+    /// </summary>
+    [HttpPost("archives/{archiveRtId}/enable")]
+    [Microsoft.AspNetCore.Authorization.Authorize(AssetRepositoryServiceConstants.SystemAssetApiReadWritePolicy)]
+    public Task<IActionResult> EnableArchive([Required] string tenantId, [Required] string archiveRtId)
+        => InvokeArchiveTransitionAsync(tenantId, archiveRtId, "EnableArchive",
+            (lifecycle, id) => lifecycle.EnableAsync(id));
+
+    /// <summary>
+    /// Retries activation after a previous DDL failure. Allowed only from <c>Failed</c>.
+    /// </summary>
+    [HttpPost("archives/{archiveRtId}/retry")]
+    [Microsoft.AspNetCore.Authorization.Authorize(AssetRepositoryServiceConstants.SystemAssetApiReadWritePolicy)]
+    public Task<IActionResult> RetryArchiveActivation([Required] string tenantId, [Required] string archiveRtId)
+        => InvokeArchiveTransitionAsync(tenantId, archiveRtId, "RetryArchiveActivation",
+            (lifecycle, id) => lifecycle.RetryActivationAsync(id));
+
+    /// <summary>
+    /// Drops the per-archive CrateDB table (idempotent) and soft-deletes the <c>CkArchive</c>
+    /// entity. Destructive — historical data is lost. Allowed from any status.
+    /// </summary>
+    [HttpDelete("archives/{archiveRtId}")]
+    [Microsoft.AspNetCore.Authorization.Authorize(AssetRepositoryServiceConstants.SystemAssetApiReadWritePolicy)]
+    public Task<IActionResult> DeleteArchive([Required] string tenantId, [Required] string archiveRtId)
+        => InvokeArchiveTransitionAsync(tenantId, archiveRtId, "DeleteArchive",
+            (lifecycle, id) => lifecycle.DeleteAsync(id));
+
+    private async Task<IActionResult> InvokeArchiveTransitionAsync(
+        string tenantId, string archiveRtId, string operation,
+        Func<IArchiveLifecycleService, OctoObjectId, Task> transition)
+    {
+        try
+        {
+            var tenantContext = await _systemContext.FindTenantContextAsync(tenantId);
+            var lifecycle = tenantContext.GetArchiveLifecycleService()
+                ?? throw new StreamDataException(
+                    $"StreamData is not enabled for tenant '{tenantId}'. Call POST /streamdata/enable first.");
+            await transition(lifecycle, new OctoObjectId(archiveRtId));
+            return NoContent();
+        }
+        catch (ConfigurationException e)
+        {
+            return BadRequest(e.Message);
+        }
+        catch (StreamDataException e)
+        {
+            _logger.LogWarning("{Operation} refused for tenant '{TenantId}', archive '{ArchiveRtId}': {Reason}",
+                operation, tenantId, archiveRtId, e.Message);
             return BadRequest(e.Message);
         }
     }

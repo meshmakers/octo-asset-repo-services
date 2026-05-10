@@ -173,7 +173,12 @@ internal sealed class StreamDataEntityDtoType : ObjectGraphType<StreamDataEntity
         var rtTypeWithAttributes = context.Source.UserContext as RtTypeWithAttributes;
         var typeAttributeGraph = context.FieldDefinition.GetMetadata<CkTypeAttributeGraph>(Statics.AttributeGraphType);
 
-        var attributeName = typeAttributeGraph.AttributeName;
+        // After T17 every per-archive column is camelCase (mirroring the BSON convention used on
+        // the MongoDB side). The row dictionary that backs this DTO is keyed by those camelCase
+        // names, so the PascalCase AttributeName from CK metadata has to be camelCased before any
+        // lookup — otherwise typed attribute fields and aggregation aliases (`Avg_voltage` etc.)
+        // resolve to null even when the column has data.
+        var attributeName = ToCamelCase(typeAttributeGraph.AttributeName);
 
         if (context.TryGetArgument(Statics.StreamDataAttributeArgument, out AttributeTsArgumentDto? argument)
             && argument.AggregationType is not null)
@@ -209,6 +214,16 @@ internal sealed class StreamDataEntityDtoType : ObjectGraphType<StreamDataEntity
         }
 
         return r;
+    }
+
+    private static string ToCamelCase(string name)
+    {
+        if (string.IsNullOrEmpty(name) || char.IsLower(name[0]))
+        {
+            return name;
+        }
+
+        return char.ToLowerInvariant(name[0]) + name[1..];
     }
 
     private void AddConstructionKit()

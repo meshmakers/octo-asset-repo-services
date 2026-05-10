@@ -5,10 +5,11 @@ using GraphQL;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Utils;
 using Meshmakers.Octo.ConstructionKit.Contracts;
+using Meshmakers.Octo.ConstructionKit.Models.StreamData.Generated.System.StreamData.v1;
+using Meshmakers.Octo.Runtime.Contracts.MongoDb.Configuration;
+using Meshmakers.Octo.Runtime.Contracts.RepositoryEntities;
 using Meshmakers.Octo.Runtime.Contracts.StreamData;
-using Meshmakers.Octo.Runtime.Engine.CrateDb;
 using Meshmakers.Octo.Runtime.Engine.CrateDb.Configuration;
-using Meshmakers.Octo.Runtime.Engine.CrateDb.Dtos;
 using Meshmakers.Octo.Runtime.Engine.CrateDb.Extensions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
@@ -17,9 +18,14 @@ using Npgsql;
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Fixtures;
 
 /// <summary>
-/// Test fixture that provides MongoDB + CrateDB + full service stack for stream data integration tests.
-/// Uses the system tenant for GraphQL execution (same pattern as GraphQlTestFixture) to get a fully
-/// resolved CK cache. Enables stream data on the system tenant and inserts known test data points.
+/// Test fixture that provides MongoDB + CrateDB + full service stack for stream data integration
+/// tests. Uses the system tenant so the CK cache resolves the test model. After T17 the fixture
+/// owns the full archive lifecycle: it creates a <c>CkArchive</c> runtime entity with explicit
+/// columns, activates it (which provisions the per-archive CrateDB table via
+/// <see cref="IArchiveLifecycleService"/>), then writes test data through
+/// <see cref="IStreamDataRepository.InsertAsync(OctoObjectId, StreamDataPoint)"/>. The resulting
+/// archive id is exposed as <see cref="ArchiveRtId"/> and threaded through every GraphQL query
+/// in the tests.
 /// </summary>
 public class StreamDataFixture : AssetRepoFixture
 {
@@ -30,14 +36,14 @@ public class StreamDataFixture : AssetRepoFixture
     public string? CrateDbConnectionString { get; private set; }
 
     /// <summary>
-    /// The tenant ID used for stream data CrateDB operations.
-    /// This is the system tenant ID (no hyphens, safe for CrateDB table names).
+    /// The tenant ID used for stream data CrateDB operations (system tenant — name contains no
+    /// hyphens, safe for CrateDB schema identifiers).
     /// </summary>
     public string StreamDataTenantId => GetSystemContext().TenantId;
 
     /// <summary>
-    /// Known test data: 20 data points with Voltage and Current attributes,
-    /// timestamps spanning one hour at 3-minute intervals.
+    /// Known test data: 20 data points with voltage and current attributes, timestamps spanning
+    /// roughly an hour at 3-minute intervals.
     /// </summary>
     public DateTime TestDataStartTime { get; } = new(2026, 1, 1, 10, 0, 0, DateTimeKind.Utc);
     public DateTime TestDataEndTime { get; } = new(2026, 1, 1, 10, 57, 0, DateTimeKind.Utc);
@@ -45,9 +51,19 @@ public class StreamDataFixture : AssetRepoFixture
 
     public string TestCkTypeId { get; } = "AssetRepositoryIntegrationTest/MeteringPoint";
 
+    /// <summary>
+    /// Runtime id of the <c>CkArchive</c> entity provisioned in <see cref="InitializeServicesAsync"/>.
+    /// Tests pass this through GraphQL as the <c>archiveRtId</c> argument so every query targets
+    /// the per-archive CrateDB table the fixture writes to.
+    /// </summary>
+    public OctoObjectId ArchiveRtId { get; private set; }
+
+    /// <summary>String form of <see cref="ArchiveRtId"/> for inline embedding in GraphQL bodies.</summary>
+    public string ArchiveRtIdString => ArchiveRtId.ToString();
+
     protected override async Task InitializeServicesAsync()
     {
-        // Start CrateDB test container (single-node)
+        // Start CrateDB test container (single-node).
         _crateDbContainer = new ContainerBuilder("crate:5.10.10")
             .WithName($"cratedb-test-{Guid.NewGuid():N}")
             .WithPortBinding(5432, true)
@@ -63,27 +79,24 @@ public class StreamDataFixture : AssetRepoFixture
         var crateDbPort = _crateDbContainer.GetMappedPublicPort(5432);
         CrateDbConnectionString = $"Host=localhost;Port={crateDbPort};Username=crate;SSL Mode=Prefer";
 
-        // Register stream data services with single-node configuration
+        // Flip the instance-level kill switch BEFORE registering the stream data stack — the
+        // tenant context refuses to enable stream data if `StreamData:Enabled` is false at
+        // process scope (concept §5 two-tier activation).
+        Services.Configure<StreamDataInstanceConfiguration>(c => c.Enabled = true);
         Services.AddSingleton(new CrateDbTestConnectionString(CrateDbConnectionString));
         Services.AddStreamDataDatabase<TestStreamDataConfiguration>();
 
-        // Call base which starts MongoDB, creates system tenant + test tenant, and builds the ServiceProvider
+        // Call base which starts MongoDB, creates system tenant + test tenant, builds the SP.
         await base.InitializeServicesAsync();
 
         var systemContext = GetSystemContext();
 
-        // Enable stream data BEFORE importing the CK model.
-        // EnableStreamDataAsync triggers repository access which eagerly loads the CK cache.
-        // If we import the CK model first, the cache is invalidated by the import,
-        // then EnableStreamDataAsync reloads it — but at that point ModelLoaderService.LoadAsync
-        // may not resolve the newly imported model's types correctly.
-        // By enabling first, the cache load only contains System (which is fine for stream data setup),
-        // then the CK model import invalidates the cache, and the next access (GraphQL) reloads
-        // with all models properly resolved.
+        // Enable stream data BEFORE importing the CK model — the import otherwise invalidates the
+        // CK cache mid-flight which makes EnableStreamDataAsync's eager cache load see a stale
+        // model. (Same ordering subtlety as the original fixture; preserved.)
         var tenantContext = await systemContext.FindTenantContextAsync(systemContext.TenantId);
         await tenantContext.EnableStreamDataAsync();
 
-        // Import the CK model into the system tenant (same pattern as SampleDataFixture)
         var operationResult = new OperationResult();
         await systemContext.ImportCkModelAsync(
             new CkModelId("AssetRepositoryIntegrationTest"), operationResult);
@@ -95,7 +108,13 @@ public class StreamDataFixture : AssetRepoFixture
                 $"{string.Join(", ", operationResult.Messages.Select(m => m.MessageText))}");
         }
 
-        // Insert known test data points into the system tenant's CrateDB table
+        // Provision a real archive: create the CkArchive entity, then drive it through Activated
+        // so the CrateDB table is materialised per its column spec.
+        ArchiveRtId = await CreateAndActivateArchiveAsync();
+
+        // Write the canonical test points through the repository so the per-archive table sees the
+        // exact payload shape that production callers produce (StreamDataPoint → DataPointDto with
+        // camelCase keys after T17).
         await InsertTestDataPoints();
 
         // Initialize GraphQL execution infrastructure
@@ -160,59 +179,92 @@ public class StreamDataFixture : AssetRepoFixture
         };
     }
 
+    private async Task<OctoObjectId> CreateAndActivateArchiveAsync()
+    {
+        var systemContext = GetSystemContext();
+        var tenantRepository = systemContext.GetSystemTenantRepository();
+        var archive = new RtCkArchive
+        {
+            RtWellKnownName = "MeteringPointArchive",
+            TargetCkTypeId = TestCkTypeId,
+            Status = RtCkArchiveStatusEnum.Created,
+            Columns = new AttributeRecordValueList<RtCkArchiveColumnRecord>
+            {
+                new() { Path = "Voltage", Indexed = true, Required = false },
+                new() { Path = "Current", Indexed = true, Required = false }
+            }
+        };
+
+        using (var session = await tenantRepository.GetSessionAsync())
+        {
+            session.StartTransaction();
+            await tenantRepository.InsertOneRtEntityAsync(session, archive);
+            await session.CommitTransactionAsync();
+        }
+
+        var tenantContext = await systemContext.FindTenantContextAsync(systemContext.TenantId);
+        var lifecycle = tenantContext.GetArchiveLifecycleService()
+            ?? throw new InvalidOperationException("ArchiveLifecycleService not registered.");
+        await lifecycle.ActivateAsync(archive.RtId);
+        return archive.RtId;
+    }
+
     private async Task InsertTestDataPoints()
     {
-        var databaseClient = GetService<IStreamDataDatabaseClient>();
-        var tenantId = StreamDataTenantId;
+        var systemContext = GetSystemContext();
+        var tenantContext = await systemContext.FindTenantContextAsync(systemContext.TenantId);
+        var repo = tenantContext.GetStreamDataRepository()
+            ?? throw new InvalidOperationException("StreamDataRepository not available — was EnableStreamDataAsync called?");
 
-        var dataPoints = new List<DataPointDto>();
+        var ckTypeId = new RtCkId<CkTypeId>(TestCkTypeId);
+        var points = new List<StreamDataPoint>(TestDataPointCount);
         for (var i = 0; i < TestDataPointCount; i++)
         {
             var timestamp = TestDataStartTime.AddMinutes(i * 3);
-            var voltage = 220.0 + (i * 0.5);
-            var current = 10.0 + (i * 0.1);
-
             var attributes = new Dictionary<string, object?>
             {
-                ["Voltage"] = voltage,
-                ["Current"] = current
+                // Keys reflect the picker output (camelCase paths). T17 path-to-column mapping
+                // produces matching column names: `voltage`, `current`.
+                ["voltage"] = 220.0 + (i * 0.5),
+                ["current"] = 10.0 + (i * 0.1)
             };
-
-            dataPoints.Add(new DataPointDto(attributes)
+            points.Add(new StreamDataPoint
             {
                 RtId = OctoObjectId.GenerateNewId(),
-                CkTypeId = new RtCkId<CkTypeId>(TestCkTypeId),
+                CkTypeId = ckTypeId,
                 Timestamp = timestamp,
                 RtWellKnownName = $"TestMeteringPoint{i:D3}",
+                Attributes = attributes
             });
         }
 
-        await databaseClient.InsertDataAsync(tenantId, dataPoints);
-
-        // Explicit refresh to make data immediately queryable
-        await RefreshTableAsync(tenantId);
+        await repo.InsertAsync(ArchiveRtId, points);
+        await RefreshArchiveTableAsync();
     }
 
-    private async Task RefreshTableAsync(string tableName)
+    /// <summary>
+    /// CrateDB applies inserts asynchronously to the read path (~1s). Tests need read-after-write
+    /// consistency so we force a refresh on the per-archive table after seeding.
+    /// </summary>
+    private async Task RefreshArchiveTableAsync()
     {
+        var qualifiedTable = $"\"{StreamDataTenantId}\".\"archive_{ArchiveRtIdString}\"";
         await using var conn = new NpgsqlConnection(CrateDbConnectionString);
         await conn.OpenAsync();
-        await using var cmd = new NpgsqlCommand($"REFRESH TABLE {tableName}", conn);
+        await using var cmd = new NpgsqlCommand($"REFRESH TABLE {qualifiedTable}", conn);
         await cmd.ExecuteNonQueryAsync();
     }
 
     /// <summary>
-    /// Executes a stream-data query directly against the engine repository (bypassing GraphQL),
-    /// used by invariant-pinning tests that inspect StreamDataRow.Values keys.
+    /// Executes a stream-data query directly against the engine repository (bypassing GraphQL).
+    /// Used by invariant-pinning tests that inspect <c>StreamDataRow.Values</c> keys.
     /// </summary>
     public async Task<IReadOnlyList<StreamDataRow>> ExecuteRepoQueryDirectAsync(
         string ckTypeId,
         IReadOnlyList<string> columnPaths)
     {
-        // Warm the CK cache — the repository's field resolver depends on the
-        // system-tenant CK cache being populated, which normally happens via
-        // GraphQL request pipeline. A trivial GraphQL query here triggers the
-        // same cache-population path.
+        // Warm the CK cache via a no-op GraphQL request — the repository's field resolver depends
+        // on the system-tenant CK cache being populated.
         _ = await ExecuteGraphQlAsync("{ __typename }");
 
         var ckId = new RtCkId<CkTypeId>(ckTypeId);
@@ -225,10 +277,7 @@ public class StreamDataFixture : AssetRepoFixture
         var tenantContext = await systemContext.FindTenantContextAsync(systemContext.TenantId);
         var repo = tenantContext.GetStreamDataRepository()
             ?? throw new InvalidOperationException("stream-data not enabled");
-        // Integration test still targets the legacy shared table; passing default archiveRtId
-        // keeps the existing behaviour. Transition to a real archive id happens once the test
-        // fixture provisions a dedicated CkArchive entity.
-        var result = await repo.ExecuteQueryAsync(default, options);
+        var result = await repo.ExecuteQueryAsync(ArchiveRtId, options);
         return result.Rows;
     }
 

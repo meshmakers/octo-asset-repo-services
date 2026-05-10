@@ -29,6 +29,7 @@ public class StreamDataBetweenFilterTests(StreamDataFixture fixture, ITestOutput
                 streamData {
                     transientStreamDataQuery {
                         simple(
+                            archiveRtId: "{{fixture.ArchiveRtIdString}}"
                             ckId: "{{fixture.TestCkTypeId}}"
                             columnPaths: ["Voltage"]
                             fieldFilter: [{

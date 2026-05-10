@@ -24,6 +24,7 @@ public class StreamDataSimpleQueryTests(StreamDataFixture fixture, ITestOutputHe
                 streamData {
                     transientStreamDataQuery {
                         simple(
+                            archiveRtId: "{{fixture.ArchiveRtIdString}}"
                             ckId: "{{fixture.TestCkTypeId}}"
                             columnPaths: ["Voltage", "Current"]
                             first: 100
@@ -90,6 +91,7 @@ public class StreamDataSimpleQueryTests(StreamDataFixture fixture, ITestOutputHe
                 streamData {
                     transientStreamDataQuery {
                         simple(
+                            archiveRtId: "{{fixture.ArchiveRtIdString}}"
                             ckId: "{{fixture.TestCkTypeId}}"
                             columnPaths: ["Voltage"]
                             arg: { from: "{{from}}", to: "{{to}}", queryMode: DEFAULT }
@@ -131,6 +133,7 @@ public class StreamDataSimpleQueryTests(StreamDataFixture fixture, ITestOutputHe
                 streamData {
                     transientStreamDataQuery {
                         simple(
+                            archiveRtId: "{{fixture.ArchiveRtIdString}}"
                             ckId: "{{fixture.TestCkTypeId}}"
                             columnPaths: ["Voltage", "Current"]
                             fieldFilter: [{ attributePath: "Voltage", operator: EQUALS, comparisonValue: "225" }]
@@ -186,6 +189,7 @@ public class StreamDataSimpleQueryTests(StreamDataFixture fixture, ITestOutputHe
                 streamData {
                     transientStreamDataQuery {
                         simple(
+                            archiveRtId: "{{fixture.ArchiveRtIdString}}"
                             ckId: "{{fixture.TestCkTypeId}}"
                             columnPaths: ["Voltage"]
                             sortOrder: [{ attributePath: "Voltage", sortOrder: DESCENDING }]
@@ -241,6 +245,7 @@ public class StreamDataSimpleQueryTests(StreamDataFixture fixture, ITestOutputHe
                 streamData {
                     transientStreamDataQuery {
                         simple(
+                            archiveRtId: "{{fixture.ArchiveRtIdString}}"
                             ckId: "{{fixture.TestCkTypeId}}"
                             columnPaths: ["Voltage"]
                             first: 1
@@ -286,6 +291,7 @@ public class StreamDataSimpleQueryTests(StreamDataFixture fixture, ITestOutputHe
                 streamData {
                     transientStreamDataQuery {
                         simple(
+                            archiveRtId: "{{fixture.ArchiveRtIdString}}"
                             ckId: "{{fixture.TestCkTypeId}}"
                             columnPaths: ["Voltage"]
                             first: 1
@@ -331,6 +337,7 @@ public class StreamDataSimpleQueryTests(StreamDataFixture fixture, ITestOutputHe
                 streamData {
                     transientStreamDataQuery {
                         simple(
+                            archiveRtId: "{{fixture.ArchiveRtIdString}}"
                             ckId: "{{fixture.TestCkTypeId}}"
                             columnPaths: ["Voltage"]
                             arg: { limit: 7, queryMode: DEFAULT }

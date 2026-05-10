@@ -24,7 +24,7 @@ internal sealed class StreamDataMutation : ObjectGraphType
     {
         _logger = logger;
         Name = "StreamDataMutations";
-        Description = "Archive lifecycle mutations: activate, disable, enable, retry activation.";
+        Description = "Archive lifecycle mutations: activate, disable, enable, retry activation, delete.";
 
         Field<NonNullGraphType<ArchiveTransitionResultDtoType>>("activateArchive")
             .Description("Provisions the Crate table and transitions the archive to Activated. Allowed from Created/Disabled/Failed; idempotent on Activated.")
@@ -49,6 +49,41 @@ internal sealed class StreamDataMutation : ObjectGraphType
             .Argument<NonNullGraphType<OctoObjectIdType>>(Statics.RtIdArg, "Runtime id of the CkArchive to retry activation for.")
             .ResolveAsync(ctx => ResolveTransitionAsync(ctx, "RetryActivation",
                 (svc, id) => svc.RetryActivationAsync(id)));
+
+        Field<NonNullGraphType<BooleanGraphType>>("deleteArchive")
+            .Description("Drops the per-archive CrateDB table (idempotent) and soft-deletes the CkArchive entity. Destructive — historical data is lost. Allowed from any status. Returns true when the archive was deleted.")
+            .Argument<NonNullGraphType<OctoObjectIdType>>(Statics.RtIdArg, "Runtime id of the CkArchive to delete.")
+            .ResolveAsync(ResolveDeleteAsync);
+    }
+
+    private async Task<object?> ResolveDeleteAsync(IResolveFieldContext<object?> ctx)
+    {
+        try
+        {
+            var archiveRtId = ctx.GetArgument<OctoObjectId>(Statics.RtIdArg);
+            _logger.LogDebug("Archive Delete requested for {ArchiveRtId}", archiveRtId);
+
+            var gql = (GraphQlUserContext)ctx.UserContext;
+            if (gql.User?.IsInRole(CommonConstants.StreamDataAdminRole) != true)
+            {
+                ctx.Errors.Add(new ExecutionError(
+                    $"Archive Delete requires the '{CommonConstants.StreamDataAdminRole}' role.")
+                {
+                    Code = Statics.GraphQlForbidden,
+                });
+                return null;
+            }
+
+            var lifecycle = gql.TenantContext.GetArchiveLifecycleService()
+                ?? throw AssetRepositoryException.StreamDataNotAvailable();
+
+            await lifecycle.DeleteAsync(archiveRtId);
+            return true;
+        }
+        catch (Exception e)
+        {
+            return ctx.HandleException(e);
+        }
     }
 
     private async Task<object?> ResolveTransitionAsync(
