@@ -49,7 +49,14 @@ try
         .AddOctoAssetRepositoryServices(
             systemOptions => builder.Configuration.GetSection("System").Bind(systemOptions),
             options => builder.Configuration.GetSection("AssetRepository").Bind(options))
-        .AddCrateDbStreamDataRepository<ConfigureStreamDataConfiguration>();
+        .AddCrateDbStreamDataRepository<ConfigureStreamDataConfiguration>()
+        .AddRollupOrchestratorBackgroundService();
+
+    // Bind rollup orchestrator options so the StreamData:Rollup config section can override
+    // the defaults (tick interval, startup delay, tenant id list). Composition roots with
+    // dynamic tenant discovery can replace IRollupTenantSource after this call.
+    builder.Services.Configure<Meshmakers.Octo.Runtime.Engine.MongoDb.StreamData.RollupOrchestratorOptions>(
+        builder.Configuration.GetSection("StreamData:Rollup"));
 
     var app = builder.Build();
     app.MapObservability();
