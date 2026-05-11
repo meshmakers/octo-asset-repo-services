@@ -2,6 +2,7 @@ using GraphQL;
 using GraphQL.Types;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.RequestHandling;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Inputs;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Scalars;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Utils;
 using Meshmakers.Octo.Communication.Contracts;
@@ -56,6 +57,11 @@ internal sealed class StreamDataMutation : ObjectGraphType
             .ResolveAsync(ResolveDeleteAsync);
 
         // ---- Rollup-only mutations (rollup-archives concept §9) ----
+
+        Field<NonNullGraphType<OctoObjectIdType>>("createRollupArchive")
+            .Description("Creates a new CkRollupArchive in Created status. The inherited CkArchive attributes (TargetCkTypeId, Columns) are resolved server-side from the source archive and the supplied aggregations (RollupColumnGenerator). Returns the generated rtId.")
+            .Argument<NonNullGraphType<CreateRollupArchiveInputType>>("input", "Rollup-specific create payload.")
+            .ResolveAsync(ResolveCreateRollupAsync);
 
         Field<NonNullGraphType<ArchiveTransitionResultDtoType>>("freezeRollupArchive")
             .Description("Sets FrozenUntil on the rollup archive. Monotonic — rejected when the new value is earlier than the current FrozenUntil (use unfreezeRollupArchive instead). When set, the orchestrator stops producing buckets whose bucketEnd falls within the frozen range.")
@@ -143,6 +149,49 @@ internal sealed class StreamDataMutation : ObjectGraphType
                 ?? throw new ArchiveNotFoundException(archiveRtId);
 
             return new ArchiveTransitionResultDto(archiveRtId, snapshot.Status, transitionName);
+        }
+        catch (Exception e)
+        {
+            return ctx.HandleException(e);
+        }
+    }
+
+    private async Task<object?> ResolveCreateRollupAsync(IResolveFieldContext<object?> ctx)
+    {
+        try
+        {
+            var input = ctx.GetArgument<CreateRollupArchiveInputDto>("input");
+            _logger.LogDebug(
+                "Rollup Create requested for source {SourceRtId} ({AggregationCount} aggregations)",
+                input.SourceArchiveRtId, input.Aggregations.Count);
+
+            var gql = (GraphQlUserContext)ctx.UserContext;
+            // Same role guard as the other rollup mutations.
+            if (gql.User?.IsInRole(CommonConstants.StreamDataAdminRole) != true)
+            {
+                ctx.Errors.Add(new ExecutionError(
+                    $"Rollup Create requires the '{CommonConstants.StreamDataAdminRole}' role.")
+                {
+                    Code = Statics.GraphQlForbidden,
+                });
+                return null;
+            }
+
+            var lifecycle = gql.TenantContext.GetRollupArchiveLifecycleService()
+                ?? throw AssetRepositoryException.StreamDataNotAvailable();
+
+            var aggregations = input.Aggregations
+                .Select(a => new CkRollupAggregationSpec(a.SourcePath, a.Function, a.TargetColumnName))
+                .ToList();
+
+            var rtId = await lifecycle.CreateAsync(
+                input.RtWellKnownName,
+                input.SourceArchiveRtId,
+                TimeSpan.FromMilliseconds(input.BucketSizeMs),
+                TimeSpan.FromMilliseconds(input.WatermarkLagMs),
+                aggregations);
+
+            return rtId;
         }
         catch (Exception e)
         {
