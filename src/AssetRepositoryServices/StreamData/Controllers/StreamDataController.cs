@@ -177,6 +177,81 @@ public class StreamDataController : ControllerBase
         => InvokeArchiveTransitionAsync(tenantId, archiveRtId, "DeleteArchive",
             (lifecycle, id) => lifecycle.DeleteAsync(id));
 
+    /// <summary>
+    /// Freezes a rollup archive at <paramref name="until"/>. Monotonic — rejected when the new
+    /// value is earlier than the current FrozenUntil. Rollup-archives concept §9.
+    /// </summary>
+    [HttpPost("archives/{rollupRtId}/freeze")]
+    [Microsoft.AspNetCore.Authorization.Authorize(AssetRepositoryServiceConstants.SystemAssetApiReadWritePolicy)]
+    public Task<IActionResult> FreezeRollupArchive(
+        [Required] string tenantId, [Required] string rollupRtId, [Required] DateTime until)
+        => InvokeRollupAsync(tenantId, rollupRtId, "FreezeRollup",
+            (lifecycle, id) => lifecycle.FreezeAsync(id, until));
+
+    /// <summary>
+    /// Clears FrozenUntil on the rollup archive. Idempotent. Concept §9.
+    /// </summary>
+    [HttpPost("archives/{rollupRtId}/unfreeze")]
+    [Microsoft.AspNetCore.Authorization.Authorize(AssetRepositoryServiceConstants.SystemAssetApiReadWritePolicy)]
+    public Task<IActionResult> UnfreezeRollupArchive(
+        [Required] string tenantId, [Required] string rollupRtId, bool acceptGaps = false)
+        => InvokeRollupAsync(tenantId, rollupRtId, "UnfreezeRollup",
+            (lifecycle, id) => lifecycle.UnfreezeAsync(id, acceptGaps));
+
+    /// <summary>
+    /// Resets the rollup's watermark (truncated down to the bucket boundary) so subsequent
+    /// orchestrator ticks re-aggregate the rewound range. Destructive: rows in that range are
+    /// temporarily out of sync until the orchestrator catches up. Concept §5, §9.
+    /// </summary>
+    [HttpPost("archives/{rollupRtId}/rewind")]
+    [Microsoft.AspNetCore.Authorization.Authorize(AssetRepositoryServiceConstants.SystemAssetApiReadWritePolicy)]
+    public Task<IActionResult> RewindRollupWatermark(
+        [Required] string tenantId, [Required] string rollupRtId, [Required] DateTime toBucketEnd)
+        => InvokeRollupAsync(tenantId, rollupRtId, "RewindRollup",
+            (lifecycle, id) => lifecycle.RewindWatermarkAsync(id, toBucketEnd));
+
+    /// <summary>
+    /// Returns every non-soft-deleted rollup archive attached to the given source archive.
+    /// Concept §9.
+    /// </summary>
+    [HttpGet("archives/{archiveRtId}/rollups")]
+    [Microsoft.AspNetCore.Authorization.Authorize]
+    public async Task<ActionResult<IReadOnlyList<RollupArchiveInfoRestDto>>> ListRollupsForArchive(
+        [Required] string tenantId, [Required] string archiveRtId)
+    {
+        try
+        {
+            var tenantContext = await _systemContext.FindTenantContextAsync(tenantId);
+            var rollupStore = tenantContext.GetCkRollupArchiveRuntimeStore();
+            if (rollupStore is null)
+            {
+                return Ok(Array.Empty<RollupArchiveInfoRestDto>());
+            }
+
+            var sourceRtId = new OctoObjectId(archiveRtId);
+            var result = new List<RollupArchiveInfoRestDto>();
+            await foreach (var rollup in rollupStore.EnumerateAsync())
+            {
+                if (rollup.SourceArchiveRtId != sourceRtId) continue;
+                result.Add(new RollupArchiveInfoRestDto(
+                    rollup.RtId.ToString(),
+                    rollup.RtWellKnownName,
+                    rollup.Status.ToString(),
+                    rollup.SourceArchiveRtId.ToString(),
+                    (long)rollup.BucketSize.TotalMilliseconds,
+                    (long)rollup.WatermarkLag.TotalMilliseconds,
+                    rollup.LastAggregatedBucketEnd,
+                    rollup.FrozenUntil,
+                    rollup.Aggregations.Count));
+            }
+            return Ok(result);
+        }
+        catch (ConfigurationException e)
+        {
+            return BadRequest(e.Message);
+        }
+    }
+
     private async Task<IActionResult> InvokeArchiveTransitionAsync(
         string tenantId, string archiveRtId, string operation,
         Func<IArchiveLifecycleService, OctoObjectId, Task> transition)
@@ -198,6 +273,31 @@ public class StreamDataController : ControllerBase
         {
             _logger.LogWarning("{Operation} refused for tenant '{TenantId}', archive '{ArchiveRtId}': {Reason}",
                 operation, tenantId, archiveRtId, e.Message);
+            return BadRequest(e.Message);
+        }
+    }
+
+    private async Task<IActionResult> InvokeRollupAsync(
+        string tenantId, string rollupRtId, string operation,
+        Func<IRollupArchiveLifecycleService, OctoObjectId, Task> mutation)
+    {
+        try
+        {
+            var tenantContext = await _systemContext.FindTenantContextAsync(tenantId);
+            var lifecycle = tenantContext.GetRollupArchiveLifecycleService()
+                ?? throw new StreamDataException(
+                    $"Rollup support is not wired for tenant '{tenantId}'. Ensure stream data is enabled and a rollup store is registered.");
+            await mutation(lifecycle, new OctoObjectId(rollupRtId));
+            return NoContent();
+        }
+        catch (ConfigurationException e)
+        {
+            return BadRequest(e.Message);
+        }
+        catch (StreamDataException e)
+        {
+            _logger.LogWarning("{Operation} refused for tenant '{TenantId}', rollup '{RollupRtId}': {Reason}",
+                operation, tenantId, rollupRtId, e.Message);
             return BadRequest(e.Message);
         }
     }
