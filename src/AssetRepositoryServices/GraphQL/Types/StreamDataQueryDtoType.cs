@@ -80,7 +80,9 @@ internal sealed class StreamDataQueryDtoType : ObjectGraphType<StreamDataQueryDt
             var loaded = uc.LoadedQuery;
             var ckTypeId = dto.AssociatedCkTypeId;
 
-            var fieldResolver = BuildFieldResolver(ctx, tenantId, ckTypeId);
+            var archiveSnapshot = await gql.TenantContext.GetCkArchiveRuntimeStore().GetAsync(uc.ArchiveRtId)
+                ?? throw new ArchiveNotFoundException(uc.ArchiveRtId);
+            var fieldResolver = new StreamDataFieldResolver(archiveSnapshot.Columns.Select(c => c.Path));
             var execOverride = ctx.GetArgument<StreamDataArguments?>(Statics.StreamDataArgument);
 
             StreamQueryExecutionInput input;
@@ -391,18 +393,4 @@ internal sealed class StreamDataQueryDtoType : ObjectGraphType<StreamDataQueryDt
         }
     }
 
-    // ─── Helpers ──────────────────────────────────────────────────────────────
-
-    private static StreamDataFieldResolver BuildFieldResolver(
-        IResolveConnectionContext<StreamDataQueryDto?> ctx,
-        string tenantId,
-        RtCkId<CkTypeId> ckTypeId)
-    {
-        var ckCacheService = ctx.GetCkCacheService();
-        var requestedType = ckCacheService.GetRtCkType(tenantId, ckTypeId);
-        var dataStreamAttributeNames = requestedType.AllAttributes
-            .Where(x => x.Value.IsDataStream)
-            .Select(x => x.Value.AttributeName);
-        return new StreamDataFieldResolver(dataStreamAttributeNames);
-    }
 }

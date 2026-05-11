@@ -29,7 +29,6 @@ internal class GraphTypesCache : IGraphTypesCache
 
     private readonly ConcurrentDictionary<RtCkId<CkRecordId>, RtRecordDtoType> _recordTypes;
     private readonly string _tenantId;
-    private readonly ConcurrentDictionary<RtCkId<CkTypeId>, StreamDataEntityDtoType> _tsTypes;
     private readonly ConcurrentDictionary<RtCkId<CkTypeId>, RtEntityDtoType> _types;
     private readonly ConcurrentDictionary<(RtCkId<CkTypeId>, string, string), DynamicConnectionType> _interfaceAssociationConnections;
 
@@ -55,7 +54,6 @@ internal class GraphTypesCache : IGraphTypesCache
         _recordTypes = new ConcurrentDictionary<RtCkId<CkRecordId>, RtRecordDtoType>();
         _inputRecordTypes = new ConcurrentDictionary<RtCkId<CkRecordId>, RtRecordDtoInputType>();
         _connectionTypes = new ConcurrentDictionary<IGraphType, DynamicConnectionType>();
-        _tsTypes = new ConcurrentDictionary<RtCkId<CkTypeId>, StreamDataEntityDtoType>();
         _interfaceAssociationConnections = new ConcurrentDictionary<(RtCkId<CkTypeId>, string, string), DynamicConnectionType>();
     }
 
@@ -86,11 +84,6 @@ internal class GraphTypesCache : IGraphTypesCache
         return _types.Values.ToArray();
     }
 
-    /// <inheritdoc />
-    public StreamDataEntityDtoType[] GetStreamTypes()
-    {
-        return _tsTypes.Values.ToArray();
-    }
 
     public RtEntityDtoType GetType(RtCkId<CkTypeId> ckTypeId)
     {
@@ -276,11 +269,6 @@ internal class GraphTypesCache : IGraphTypesCache
                     _inputTypes.GetOrAdd(rtCkTypeId, new RtEntityDtoInputType(rtCkTypeId));
                 rtEntityDtoInputType.Populate(_options, _ckCacheService, _tenantId, this, ckTypeGraph);
             }
-
-            if (ckTypeGraph.IsStreamType)
-            {
-                _tsTypes.TryAdd(rtCkTypeId, new StreamDataEntityDtoType(ckTypeGraph));
-            }
         }
 
         // Populate interface types first (they need to be populated before object types
@@ -293,11 +281,6 @@ internal class GraphTypesCache : IGraphTypesCache
         foreach (var rtEntityDtoType in _types.Values)
         {
             rtEntityDtoType.Populate(_options, _ckCacheService, _tenantId, this);
-        }
-
-        foreach (var tsEntityDtoType in _tsTypes.Values)
-        {
-            tsEntityDtoType.Populate(this);
         }
     }
 }

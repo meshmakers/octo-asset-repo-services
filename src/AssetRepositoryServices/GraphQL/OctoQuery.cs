@@ -26,12 +26,8 @@ internal sealed class OctoQuery : ObjectGraphType
             .Resolve(_ => new RtEntityDto());
 
 
-        if (graphTypesCache.GetStreamTypes().Length != 0)
-            // make sure to only add the stream data field if there are stream types.
-        {
-            Field("StreamData", new StreamDataQuery(loggerFactory.CreateLogger<StreamDataQuery>(), graphTypesCache))
-                .Resolve(_ => new StreamDataEntityDto());
-        }
+        Field("StreamData", new StreamDataQuery(loggerFactory.CreateLogger<StreamDataQuery>()))
+            .Resolve(_ => new StreamDataEntityDto());
 
         Field<NonNullGraphType<ListGraphType<NonNullGraphType<ArchivePathInfoDtoType>>>>("availableArchivePaths")
             .Description("Returns the attribute paths reachable from the given CK type that may be used as columns in a CkArchive (concept §16). Bounded by maxDepth so deep records terminate predictably.")

@@ -8,6 +8,7 @@ using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Utils;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
 using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.Runtime.Contracts.Repositories.Query;
+using Meshmakers.Octo.Runtime.Contracts.StreamData;
 using Meshmakers.Octo.Runtime.Engine.CrateDb;
 using Meshmakers.Octo.Runtime.Engine.CrateDb.Dtos;
 
@@ -117,7 +118,8 @@ internal sealed class StreamDataTransientQuery : ObjectGraphType
             var ckTypeId = ctx.GetArgument<RtCkId<CkTypeId>>(Statics.CkIdArg);
             var columnPaths = ctx.GetArgument<IEnumerable<string>>(Statics.ColumnPathsArg).ToList();
 
-            var fieldResolver = BuildFieldResolver(ctx, gql.TenantId, ckTypeId);
+            var archiveSnapshot = await gql.TenantContext.GetCkArchiveRuntimeStore().GetAsync(archiveRtId);
+            var fieldResolver = BuildFieldResolver(archiveSnapshot ?? throw new ArchiveNotFoundException(archiveRtId));
 
             ctx.TryGetArgument(Statics.SortOrderArg, out IEnumerable<SortDto>? sortDtos);
             ctx.TryGetArgument(Statics.FieldFilterArg, out IEnumerable<FieldFilterDto>? fieldFilterDtos);
@@ -174,7 +176,8 @@ internal sealed class StreamDataTransientQuery : ObjectGraphType
             var ckTypeId = ctx.GetArgument<RtCkId<CkTypeId>>(Statics.CkIdArg);
             var columnInputs = ctx.GetArgument<IEnumerable<StreamDataQueryColumnInputDto>>(Statics.ColumnPathsArg).ToList();
 
-            var fieldResolver = BuildFieldResolver(ctx, gql.TenantId, ckTypeId);
+            var archiveSnapshot = await gql.TenantContext.GetCkArchiveRuntimeStore().GetAsync(archiveRtId);
+            var fieldResolver = BuildFieldResolver(archiveSnapshot ?? throw new ArchiveNotFoundException(archiveRtId));
 
             ctx.TryGetArgument(Statics.FieldFilterArg, out IEnumerable<FieldFilterDto>? fieldFilterDtos);
             ctx.TryGetArgument(Statics.RtIdsArg, null, out IEnumerable<OctoObjectId>? rtIds);
@@ -236,7 +239,8 @@ internal sealed class StreamDataTransientQuery : ObjectGraphType
             var groupByColumnPaths = ctx.GetArgument<IEnumerable<string>>(Statics.GroupByColumnPathsArg).ToList();
             var columnInputs = ctx.GetArgument<IEnumerable<StreamDataQueryColumnInputDto>>(Statics.ColumnPathsArg).ToList();
 
-            var fieldResolver = BuildFieldResolver(ctx, gql.TenantId, ckTypeId);
+            var archiveSnapshot = await gql.TenantContext.GetCkArchiveRuntimeStore().GetAsync(archiveRtId);
+            var fieldResolver = BuildFieldResolver(archiveSnapshot ?? throw new ArchiveNotFoundException(archiveRtId));
 
             ctx.TryGetArgument(Statics.FieldFilterArg, out IEnumerable<FieldFilterDto>? fieldFilterDtos);
             ctx.TryGetArgument(Statics.RtIdsArg, null, out IEnumerable<OctoObjectId>? rtIds);
@@ -308,7 +312,8 @@ internal sealed class StreamDataTransientQuery : ObjectGraphType
             var to = ctx.GetArgument<DateTime>("to");
             var limit = ctx.GetArgument<int>("limit");
 
-            var fieldResolver = BuildFieldResolver(ctx, gql.TenantId, ckTypeId);
+            var archiveSnapshot = await gql.TenantContext.GetCkArchiveRuntimeStore().GetAsync(archiveRtId);
+            var fieldResolver = BuildFieldResolver(archiveSnapshot ?? throw new ArchiveNotFoundException(archiveRtId));
 
             ctx.TryGetArgument(Statics.FieldFilterArg, out IEnumerable<FieldFilterDto>? fieldFilterDtos);
             ctx.TryGetArgument(Statics.RtIdsArg, null, out IEnumerable<OctoObjectId>? rtIds);
@@ -358,15 +363,14 @@ internal sealed class StreamDataTransientQuery : ObjectGraphType
 
     // ─── Helpers ──────────────────────────────────────────────────────────────
 
-    private static StreamDataFieldResolver BuildFieldResolver(
-        IResolveConnectionContext<object?> ctx, string tenantId, RtCkId<CkTypeId> ckTypeId)
+    /// <summary>
+    /// Builds the field resolver for a transient stream-data query. Attribute paths come from the
+    /// CkArchive's column spec — that's the canonical set of paths the per-archive table actually
+    /// stores after T17.
+    /// </summary>
+    private static StreamDataFieldResolver BuildFieldResolver(CkArchiveSnapshot archiveSnapshot)
     {
-        var ckCacheService = ctx.GetCkCacheService();
-        var requestedType = ckCacheService.GetRtCkType(tenantId, ckTypeId);
-        var dataStreamAttributeNames = requestedType.AllAttributes
-            .Where(x => x.Value.IsDataStream)
-            .Select(x => x.Value.AttributeName);
-        return new StreamDataFieldResolver(dataStreamAttributeNames);
+        return new StreamDataFieldResolver(archiveSnapshot.Columns.Select(c => c.Path));
     }
 
     private static AggregationTypesDto MapAggregationFunctionDtoToDto(AggregationFunctionDto func)

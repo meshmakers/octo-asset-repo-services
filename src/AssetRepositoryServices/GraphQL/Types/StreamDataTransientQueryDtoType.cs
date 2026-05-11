@@ -73,7 +73,9 @@ internal sealed class StreamDataTransientQueryDtoType : ObjectGraphType<StreamDa
                 ?? throw AssetRepositoryException.StreamDataNotAvailable();
 
             var ckTypeId = uc.CkTypeId;
-            var fieldResolver = BuildFieldResolver(ctx, tenantId, ckTypeId);
+            var archiveSnapshot = await gql.TenantContext.GetCkArchiveRuntimeStore().GetAsync(uc.ArchiveRtId)
+                ?? throw new ArchiveNotFoundException(uc.ArchiveRtId);
+            var fieldResolver = BuildFieldResolver(archiveSnapshot);
 
             IReadOnlyList<ColumnNameMapping> resolvedColumnNames;
             StreamQueryExecutionInput input;
@@ -299,16 +301,9 @@ internal sealed class StreamDataTransientQueryDtoType : ObjectGraphType<StreamDa
 
     // ─── Helpers ──────────────────────────────────────────────────────────────
 
-    private static StreamDataFieldResolver BuildFieldResolver(
-        IResolveConnectionContext<StreamDataTransientQueryDto?> ctx,
-        string tenantId,
-        RtCkId<CkTypeId> ckTypeId)
+    private static StreamDataFieldResolver BuildFieldResolver(CkArchiveSnapshot archiveSnapshot)
     {
-        var ckCacheService = ctx.GetCkCacheService();
-        var requestedType = ckCacheService.GetRtCkType(tenantId, ckTypeId);
-        var dataStreamAttributeNames = requestedType.AllAttributes
-            .Where(x => x.Value.IsDataStream)
-            .Select(x => x.Value.AttributeName);
-        return new StreamDataFieldResolver(dataStreamAttributeNames);
+        // Per-archive table contents are bounded by the archive's column spec.
+        return new StreamDataFieldResolver(archiveSnapshot.Columns.Select(c => c.Path));
     }
 }
