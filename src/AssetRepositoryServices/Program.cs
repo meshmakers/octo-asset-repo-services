@@ -58,6 +58,13 @@ try
     builder.Services.Configure<Meshmakers.Octo.Runtime.Engine.MongoDb.StreamData.RollupOrchestratorOptions>(
         builder.Configuration.GetSection("StreamData:Rollup"));
 
+    // Register the StreamData CK model descriptor so EnableStreamDataAsync auto-imports
+    // System.StreamData (including CkRollupArchive) into the tenant. Without this, rollups
+    // resolve to "RtCkTypeId 'System.StreamData/CkRollupArchive' not found in CkCache".
+    builder.Services.AddSingleton<Meshmakers.Octo.Runtime.Contracts.MongoDb.Services.IStreamDataCkModelDescriptor>(
+        _ => new Meshmakers.Octo.Runtime.Contracts.MongoDb.Services.StreamDataCkModelDescriptor(
+            Meshmakers.Octo.ConstructionKit.Models.StreamData.Generated.System.StreamData.v1.SystemStreamDataCkIds.CkModelId));
+
     var app = builder.Build();
     app.MapObservability();
 
