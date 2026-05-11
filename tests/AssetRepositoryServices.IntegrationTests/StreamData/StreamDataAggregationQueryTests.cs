@@ -23,6 +23,7 @@ public class StreamDataAggregationQueryTests(StreamDataFixture fixture, ITestOut
                 streamData {
                     transientStreamDataQuery {
                         aggregation(
+                            archiveRtId: "{{fixture.ArchiveRtIdString}}"
                             ckId: "{{fixture.TestCkTypeId}}"
                             columnPaths: [
                                 { attributePath: "Voltage", aggregationType: AVG }
@@ -72,6 +73,7 @@ public class StreamDataAggregationQueryTests(StreamDataFixture fixture, ITestOut
                 streamData {
                     transientStreamDataQuery {
                         aggregation(
+                            archiveRtId: "{{fixture.ArchiveRtIdString}}"
                             ckId: "{{fixture.TestCkTypeId}}"
                             columnPaths: [
                                 { attributePath: "Voltage", aggregationType: MIN },
@@ -118,6 +120,7 @@ public class StreamDataAggregationQueryTests(StreamDataFixture fixture, ITestOut
                 streamData {
                     transientStreamDataQuery {
                         groupingAggregation(
+                            archiveRtId: "{{fixture.ArchiveRtIdString}}"
                             ckId: "{{fixture.TestCkTypeId}}"
                             groupByColumnPaths: ["ckTypeId"]
                             columnPaths: [
@@ -168,6 +171,7 @@ public class StreamDataAggregationQueryTests(StreamDataFixture fixture, ITestOut
                 streamData {
                     transientStreamDataQuery {
                         downsampling(
+                            archiveRtId: "{{fixture.ArchiveRtIdString}}"
                             ckId: "{{fixture.TestCkTypeId}}"
                             columnPaths: [
                                 { attributePath: "Voltage", aggregationType: AVG }
@@ -228,6 +232,7 @@ public class StreamDataAggregationQueryTests(StreamDataFixture fixture, ITestOut
                 streamData {
                     transientStreamDataQuery {
                         downsampling(
+                            archiveRtId: "{{fixture.ArchiveRtIdString}}"
                             ckId: "{{fixture.TestCkTypeId}}"
                             columnPaths: [
                                 { attributePath: "Voltage", aggregationType: COUNT }

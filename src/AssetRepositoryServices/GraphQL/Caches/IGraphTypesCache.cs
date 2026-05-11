@@ -74,12 +74,6 @@ internal interface IGraphTypesCache
     IGraphType[] GetKnownGraphTypes();
 
     /// <summary>
-    ///     Returns an array of known stream data graph types
-    /// </summary>
-    /// <returns></returns>
-    StreamDataEntityDtoType[] GetStreamTypes();
-
-    /// <summary>
     ///     Gets or creates a connection type for an interface association field.
     ///     This ensures that implementing types use the same connection type as the interface.
     /// </summary>

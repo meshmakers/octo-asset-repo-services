@@ -9,6 +9,7 @@ internal static class Statics
     internal const string EntitiesArg = "entities";
     internal const string RtIdArg = "rtId";
     internal const string RtIdsArg = "rtIds";
+    internal const string ArchiveRtIdArg = "archiveRtId";
     internal const string CkModelIds = "ckModelIds";
     internal const string CkIdArg = "ckId";
     internal const string RtCkIdArg = "rtCkId";
@@ -74,6 +75,19 @@ internal static class Statics
     public const string GraphQlModelValidationErrors = "ASSET1004";
     public const string GraphQlErrorCache = "ASSET1005";
     public const string GraphQlCkModelUpdateError = "ASSET1006";
+
+    // StreamData / archive lifecycle error codes (concept §12). Stable so clients can pattern-
+    // match on them rather than parsing free-form messages.
+    public const string GraphQlErrorStreamDataArchiveNotFound = "STREAMDATA_ARCHIVE_NOT_FOUND";
+    public const string GraphQlErrorStreamDataArchiveNotActivated = "STREAMDATA_ARCHIVE_NOT_ACTIVATED";
+    public const string GraphQlErrorStreamDataInvalidTransition = "STREAMDATA_INVALID_TRANSITION";
+    public const string GraphQlErrorStreamDataSchemaImmutable = "STREAMDATA_SCHEMA_IMMUTABLE";
+    public const string GraphQlErrorStreamDataPathInvalid = "STREAMDATA_PATH_INVALID";
+    public const string GraphQlErrorStreamDataActivationFailed = "STREAMDATA_ACTIVATION_FAILED";
+    public const string GraphQlErrorStreamData = "STREAMDATA_ERROR";
+
+    /// <summary>Stable code for "caller is not in a required role" — gates the archive lifecycle mutations on StreamDataAdmin.</summary>
+    public const string GraphQlForbidden = "FORBIDDEN";
 
     public static string GetGraphQlPascalCaseName<TKey>(this RtCkId<TKey> ckKey) where TKey : IComparable<TKey>, ICkElementId
     {

@@ -7,13 +7,9 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Strea
 
 /// <summary>
 /// Integration tests for the per-type stream-data connection
-/// (assetRepositoryIntegrationTestMeteringPoint on StreamDataModelQuery),
-/// which exposes typed attribute fields directly on the row (not via cells).
-///
-/// Regression pin for the camelCase/PascalCase mismatch between StreamDataRow.Values
-/// (keyed by GraphQlAlias, e.g. "voltage") and DataPointDto.GetAttributeValueOrDefault
-/// (case-sensitive, expects PascalCase "Voltage"). Before the fix in
-/// ConvertToDataPointDto, the typed `voltage`/`current` fields came back null.
+/// (assetRepositoryIntegrationTestMeteringPoint on StreamDataModelQuery), which exposes typed
+/// attribute fields directly on the row (not via cells). After T17 every column is camelCase
+/// across the wire and the underlying CrateDB table — both the row keys and the GraphQL aliases.
 /// </summary>
 [Collection("Sequential")]
 public class StreamDataPerTypeConnectionTests(StreamDataFixture fixture, ITestOutputHelper output)
@@ -24,12 +20,16 @@ public class StreamDataPerTypeConnectionTests(StreamDataFixture fixture, ITestOu
     {
         fixture.OutputHelper = output;
 
-        // Per-type connection naming: stream + PascalCase CK type (model + type, slashes stripped).
-        // AssetRepositoryIntegrationTest/MeteringPoint -> assetRepositoryIntegrationTestMeteringPoint.
-        const string query = """
+        // Per-type connection naming: stream + camelCase CK type (model + type, slashes stripped).
+        // AssetRepositoryIntegrationTest/MeteringPoint → assetRepositoryIntegrationTestMeteringPoint.
+        // Per-archive table requires `archiveRtId`.
+        var query = $$"""
             {
                 streamData {
-                    assetRepositoryIntegrationTestMeteringPoint(first: 5) {
+                    assetRepositoryIntegrationTestMeteringPoint(
+                        archiveRtId: "{{fixture.ArchiveRtIdString}}"
+                        first: 5
+                    ) {
                         totalCount
                         items {
                             rtId
@@ -72,8 +72,10 @@ public class StreamDataPerTypeConnectionTests(StreamDataFixture fixture, ITestOu
     }
 
     [Fact]
-    public async Task PerTypeConnection_RowValuesAreKeyedInPascalCase()
+    public async Task PerTypeConnection_RowValuesAreKeyedInCamelCase()
     {
+        // T17 inverted the row-key casing convention: per-archive tables use camelCase columns
+        // throughout the engine, so `StreamDataRow.Values` is keyed by camelCase too.
         fixture.OutputHelper = output;
 
         var rows = await fixture.ExecuteRepoQueryDirectAsync(
@@ -85,9 +87,8 @@ public class StreamDataPerTypeConnectionTests(StreamDataFixture fixture, ITestOu
         {
             foreach (var key in row.Values.Keys)
             {
-                key.Should().MatchRegex("^[A-Z][a-zA-Z0-9.]*$",
-                    "internal stream-data row keys are PascalCase canonical — " +
-                    "camelCase keys would be a regression of the casing invariant");
+                key.Should().MatchRegex("^[a-z][a-zA-Z0-9]*$",
+                    "stream-data row keys must be camelCase after T17 (matches CrateDB column names)");
             }
         }
     }

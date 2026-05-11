@@ -36,8 +36,6 @@ internal sealed class CkAttributeDtoType : ObjectGraphType<CkAttributeDto>
             .Description("Optional description of the attribute.");
         Field(x => x.MetaData, typeof(ListGraphType<CkAttributeMetaDataDtoType>))
             .Description("Optional meta data of the attribute.");
-        Field(x => x.IsDataStream, typeof(BooleanGraphType))
-            .Description("Optional flag that tells if an attribute is a data stream.");
         Field<ListGraphType<SimpleScalarType>, object>(nameof(CkAttributeDto.DefaultValues))
             .Description("Default values of the attribute.");
     }
@@ -82,7 +80,6 @@ internal sealed class CkAttributeDtoType : ObjectGraphType<CkAttributeDto>
             Description = ckTypeAttributeGraph.Description,
             MetaData = ckTypeAttributeGraph.MetaData?.Select(CkAttributeMetaDataDtoType.CreateCkAttributeMetaDataDto)
                 .ToList(),
-            IsDataStream = ckTypeAttributeGraph.IsDataStream,
             DefaultValues = ckTypeAttributeGraph.DefaultValues
         };
 

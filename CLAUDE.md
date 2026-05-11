@@ -81,8 +81,25 @@ The service dynamically generates GraphQL schemas per tenant:
 - **OctoQuery** (`GraphQL/OctoQuery.cs`) - Root query with three main sections:
   - `ConstructionKit` - Query construction kit models (CK types, enums, attributes)
   - `Runtime` - Query runtime entities (data instances)
-  - `StreamData` - Query time-series data (only included if stream types exist)
+  - `StreamData` - Query time-series data via persisted (`streamDataQuery`) and transient (`transientStreamDataQuery`) entry points
 - **OctoMutation** (`GraphQL/OctoMutation.cs`) - Root mutation for Runtime and ConstructionKit operations
+
+#### StreamData Query Surface
+
+Three execution shapes, all archive-driven (per CK Archive snapshot, which carries the target CK type and the captured column list):
+
+| Entry point | Use case |
+|---|---|
+| `streamData.streamDataQuery(rtId)` | Execute a persisted `RtStreamDataQuery`. Loaded entity holds `ArchiveRtId`, columns, filters, sort, time range. The resolver dispatches to the correct repo method based on the loaded subtype (`RtSimpleSdQuery` / `RtAggregationSdQuery` / `RtGroupingAggregationSdQuery` / `RtDownsamplingSdQuery`). |
+| `streamData.transientStreamDataQuery` | Ad-hoc execution without persistence. Four sub-connections: `simple`, `aggregation`, `groupingAggregation`, `downsampling`. The server derives `ckTypeId` from the archive snapshot (no client argument). |
+
+Both surfaces accept runtime overrides on the `rows` / sub-connection level:
+
+- `arg: StreamDataArguments` — override time range and limit
+- `sortOrder: [Sort]` — override sort order
+- `fieldFilter: [FieldFilter]` — **additional** filters, **AND-combined** with the persisted `FieldFilter` server-side (`StreamDataQueryDtoType.MergeFilters`). Same merging pattern as the runtime `RtQuery.Rows.fieldFilter` argument.
+
+The persisted query's `aggregations` sub-connection takes a `ResultAggregationInput` (count/min/max/avg/sum × attribute paths) and runs a second engine call over the same data set as `rows` — useful for "give me the avg/max alongside the rows" without persisting an aggregation-typed query.
 
 GraphQL types are dynamically created based on the tenant's construction kit model stored in MongoDB.
 

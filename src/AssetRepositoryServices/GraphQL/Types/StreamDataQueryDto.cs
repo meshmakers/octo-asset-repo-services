@@ -29,4 +29,11 @@ internal sealed class StreamDataQueryUserContext
 {
     /// <summary>The loaded <see cref="RtStreamDataQuery"/> runtime entity (concrete subtype).</summary>
     public required RtStreamDataQuery LoadedQuery { get; init; }
+
+    /// <summary>
+    /// The CkArchive runtime id whose table the persisted query should run against. Supplied by
+    /// the caller at the parent connection so the persisted query (which has no archive linkage)
+    /// can target a concrete archive at execution time. T10 / concept §16.
+    /// </summary>
+    public required OctoObjectId ArchiveRtId { get; init; }
 }

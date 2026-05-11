@@ -8,7 +8,7 @@ using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
 using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.Runtime.Contracts.Repositories.Query;
 using Meshmakers.Octo.Runtime.Contracts.StreamData;
-using Meshmakers.Octo.Runtime.Engine.MongoDb.StreamData;
+using Meshmakers.Octo.Runtime.Engine.CrateDb;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
 
@@ -73,7 +73,9 @@ internal sealed class StreamDataTransientQueryDtoType : ObjectGraphType<StreamDa
                 ?? throw AssetRepositoryException.StreamDataNotAvailable();
 
             var ckTypeId = uc.CkTypeId;
-            var fieldResolver = BuildFieldResolver(ctx, tenantId, ckTypeId);
+            var archiveSnapshot = await gql.TenantContext.GetCkArchiveRuntimeStore().GetAsync(uc.ArchiveRtId)
+                ?? throw new ArchiveNotFoundException(uc.ArchiveRtId);
+            var fieldResolver = BuildFieldResolver(archiveSnapshot);
 
             IReadOnlyList<ColumnNameMapping> resolvedColumnNames;
             StreamQueryExecutionInput input;
@@ -99,6 +101,7 @@ internal sealed class StreamDataTransientQueryDtoType : ObjectGraphType<StreamDa
                     input = new StreamQueryExecutionInput
                     {
                         Variant = StreamQueryVariant.Simple,
+                        ArchiveRtId = uc.ArchiveRtId,
                         CkTypeId = ckTypeId,
                         ColumnPaths = columnPaths,
                         RtIds = uc.RtIds,
@@ -123,6 +126,7 @@ internal sealed class StreamDataTransientQueryDtoType : ObjectGraphType<StreamDa
                     input = new StreamQueryExecutionInput
                     {
                         Variant = StreamQueryVariant.Aggregation,
+                        ArchiveRtId = uc.ArchiveRtId,
                         CkTypeId = ckTypeId,
                         AggregationColumns = aggColumns,
                         RtIds = uc.RtIds,
@@ -147,6 +151,7 @@ internal sealed class StreamDataTransientQueryDtoType : ObjectGraphType<StreamDa
                     input = new StreamQueryExecutionInput
                     {
                         Variant = StreamQueryVariant.GroupingAggregation,
+                        ArchiveRtId = uc.ArchiveRtId,
                         CkTypeId = ckTypeId,
                         GroupByColumnPaths = groupByPaths,
                         AggregationColumns = aggColumns,
@@ -170,6 +175,7 @@ internal sealed class StreamDataTransientQueryDtoType : ObjectGraphType<StreamDa
                     input = new StreamQueryExecutionInput
                     {
                         Variant = StreamQueryVariant.Downsampling,
+                        ArchiveRtId = uc.ArchiveRtId,
                         CkTypeId = ckTypeId,
                         AggregationColumns = aggColumns,
                         RtIds = uc.RtIds,
@@ -251,6 +257,7 @@ internal sealed class StreamDataTransientQueryDtoType : ObjectGraphType<StreamDa
             var input = new StreamQueryExecutionInput
             {
                 Variant = StreamQueryVariant.Aggregation,
+                ArchiveRtId = uc.ArchiveRtId,
                 CkTypeId = ckTypeId,
                 AggregationColumns = aggColumns,
                 RtIds = uc.RtIds,
@@ -294,16 +301,9 @@ internal sealed class StreamDataTransientQueryDtoType : ObjectGraphType<StreamDa
 
     // ─── Helpers ──────────────────────────────────────────────────────────────
 
-    private static StreamDataFieldResolver BuildFieldResolver(
-        IResolveConnectionContext<StreamDataTransientQueryDto?> ctx,
-        string tenantId,
-        RtCkId<CkTypeId> ckTypeId)
+    private static StreamDataFieldResolver BuildFieldResolver(CkArchiveSnapshot archiveSnapshot)
     {
-        var ckCacheService = ctx.GetCkCacheService();
-        var requestedType = ckCacheService.GetRtCkType(tenantId, ckTypeId);
-        var dataStreamAttributeNames = requestedType.AllAttributes
-            .Where(x => x.Value.IsDataStream)
-            .Select(x => x.Value.AttributeName);
-        return new StreamDataFieldResolver(dataStreamAttributeNames);
+        // Per-archive table contents are bounded by the archive's column spec.
+        return new StreamDataFieldResolver(archiveSnapshot.Columns.Select(c => c.Path));
     }
 }

@@ -1,6 +1,6 @@
 using FluentAssertions;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL;
-using Meshmakers.Octo.Runtime.Engine.MongoDb.StreamData;
+using Meshmakers.Octo.Runtime.Engine.CrateDb;
 using Xunit;
 
 namespace AssetRepositoryServices.UnitTests.GraphQL;

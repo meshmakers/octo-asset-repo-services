@@ -5,7 +5,7 @@ using Meshmakers.Octo.Backend.AssetRepositoryServices.StreamData;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb.Extensions;
 using Meshmakers.Octo.Services.Infrastructure.Services;
 using Meshmakers.Octo.Services.Observability;
-using Meshmakers.Octo.Runtime.Engine.MongoDb.StreamData.Extensions;
+using Meshmakers.Octo.Runtime.Engine.CrateDb.Extensions;
 using NLog;
 using NLog.Web;
 using LogLevel = Microsoft.Extensions.Logging.LogLevel;

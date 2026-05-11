@@ -22,6 +22,7 @@ internal enum StreamQueryVariant
 internal sealed class StreamQueryExecutionInput
 {
     public required StreamQueryVariant Variant { get; init; }
+    public required OctoObjectId ArchiveRtId { get; init; }
     public required RtCkId<CkTypeId> CkTypeId { get; init; }
 
     // Simple query columns (string attribute paths)
@@ -62,7 +63,7 @@ internal static class StreamDataVariantExecutor
     {
         return i.Variant switch
         {
-            StreamQueryVariant.Simple => await repo.ExecuteQueryAsync(
+            StreamQueryVariant.Simple => await repo.ExecuteQueryAsync(i.ArchiveRtId,
                 StreamDataQueryOptions.Create()
                     .WithCkTypeId(i.CkTypeId)
                     .WithColumns(i.ColumnPaths ?? [])
@@ -73,7 +74,7 @@ internal static class StreamDataVariantExecutor
                     .WithFieldFilters(i.FieldFilters)
                     .WithPagination(i.Offset, i.PageSize)),
 
-            StreamQueryVariant.Aggregation => await repo.ExecuteAggregationQueryAsync(
+            StreamQueryVariant.Aggregation => await repo.ExecuteAggregationQueryAsync(i.ArchiveRtId,
                 StreamDataAggregationQueryOptions.Create()
                     .WithCkTypeId(i.CkTypeId)
                     .WithAggregationColumns(i.AggregationColumns ?? [])
@@ -81,7 +82,7 @@ internal static class StreamDataVariantExecutor
                     .WithTimeRange(i.From, i.To)
                     .WithFieldFilters(i.FieldFilters)),
 
-            StreamQueryVariant.GroupingAggregation => await repo.ExecuteGroupedAggregationQueryAsync(
+            StreamQueryVariant.GroupingAggregation => await repo.ExecuteGroupedAggregationQueryAsync(i.ArchiveRtId,
                 StreamDataGroupedAggregationQueryOptions.Create()
                     .WithCkTypeId(i.CkTypeId)
                     .WithGroupByColumns(i.GroupByColumnPaths ?? [])
@@ -90,7 +91,7 @@ internal static class StreamDataVariantExecutor
                     .WithTimeRange(i.From, i.To)
                     .WithFieldFilters(i.FieldFilters)),
 
-            StreamQueryVariant.Downsampling => await repo.ExecuteDownsamplingQueryAsync(
+            StreamQueryVariant.Downsampling => await repo.ExecuteDownsamplingQueryAsync(i.ArchiveRtId,
                 StreamDataDownsamplingQueryOptions.Create()
                     .WithCkTypeId(i.CkTypeId)
                     .WithAggregationColumns(i.AggregationColumns ?? [])
