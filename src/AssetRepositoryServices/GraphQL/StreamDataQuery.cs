@@ -33,6 +33,39 @@ internal sealed class StreamDataQuery : ObjectGraphType
         Field<NonNullGraphType<StreamDataTransientQuery>>("TransientStreamDataQuery")
             .Description("Transient stream-data queries")
             .Resolve(_ => new { });
+
+        Field<NonNullGraphType<ListGraphType<NonNullGraphType<RollupArchiveInfoDtoType>>>>("rollupsFor")
+            .Description("Returns every non-soft-deleted rollup archive attached to the given source archive — runtime id, status, schedule, watermark, freeze state. Rollup-archives concept §9.")
+            .Argument<NonNullGraphType<OctoObjectIdType>>(Statics.RtIdArg, "Runtime id of the source CkArchive to enumerate rollups for.")
+            .ResolveAsync(ResolveRollupsForAsync);
+    }
+
+    private static async Task<object?> ResolveRollupsForAsync(IResolveFieldContext<object?> ctx)
+    {
+        var sourceRtId = ctx.GetArgument<OctoObjectId>(Statics.RtIdArg);
+        var gql = (GraphQlUserContext)ctx.UserContext;
+        var rollupStore = gql.TenantContext.GetCkRollupArchiveRuntimeStore();
+        if (rollupStore is null)
+        {
+            return Array.Empty<RollupArchiveInfoDto>();
+        }
+
+        var result = new List<RollupArchiveInfoDto>();
+        await foreach (var rollup in rollupStore.EnumerateAsync())
+        {
+            if (rollup.SourceArchiveRtId != sourceRtId) continue;
+            result.Add(new RollupArchiveInfoDto(
+                rollup.RtId,
+                rollup.RtWellKnownName,
+                rollup.Status,
+                rollup.SourceArchiveRtId,
+                (long)rollup.BucketSize.TotalMilliseconds,
+                (long)rollup.WatermarkLag.TotalMilliseconds,
+                rollup.LastAggregatedBucketEnd,
+                rollup.FrozenUntil,
+                rollup.Aggregations.Count));
+        }
+        return result;
     }
 
     private async Task<object?> ResolveStreamDataQueryAsync(IResolveConnectionContext<object?> arg)
