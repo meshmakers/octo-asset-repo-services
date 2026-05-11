@@ -36,8 +36,6 @@ internal sealed class StreamDataTransientQuery : ObjectGraphType
             .Description("Transient simple stream-data query — projects raw attribute values.")
             .Argument<NonNullGraphType<OctoObjectIdType>>(Statics.ArchiveRtIdArg,
                 "CkArchive runtime id whose table should be queried.")
-            .Argument<NonNullGraphType<StringGraphType>>(Statics.CkIdArg,
-                "The construction kit type with the given id.")
             .Argument<NonNullGraphType<ListGraphType<NonNullGraphType<StringGraphType>>>>(Statics.ColumnPathsArg,
                 "Data stream attribute names to project.")
             .Argument<StreamDataArgumentsGraphType>(Statics.StreamDataArgument,
@@ -54,8 +52,6 @@ internal sealed class StreamDataTransientQuery : ObjectGraphType
             .Description("Transient aggregation stream-data query.")
             .Argument<NonNullGraphType<OctoObjectIdType>>(Statics.ArchiveRtIdArg,
                 "CkArchive runtime id whose table should be queried.")
-            .Argument<NonNullGraphType<StringGraphType>>(Statics.CkIdArg,
-                "The construction kit type with the given id.")
             .Argument<NonNullGraphType<ListGraphType<NonNullGraphType<StreamDataQueryColumnInputDtoType>>>>(Statics.ColumnPathsArg,
                 "Aggregation columns with attribute path and aggregation type.")
             .Argument<StreamDataArgumentsGraphType>(Statics.StreamDataArgument,
@@ -70,8 +66,6 @@ internal sealed class StreamDataTransientQuery : ObjectGraphType
             .Description("Transient grouped-aggregation stream-data query.")
             .Argument<NonNullGraphType<OctoObjectIdType>>(Statics.ArchiveRtIdArg,
                 "CkArchive runtime id whose table should be queried.")
-            .Argument<NonNullGraphType<StringGraphType>>(Statics.CkIdArg,
-                "The construction kit type with the given id.")
             .Argument<NonNullGraphType<ListGraphType<NonNullGraphType<StringGraphType>>>>(Statics.GroupByColumnPathsArg,
                 "The attribute paths to group by.")
             .Argument<NonNullGraphType<ListGraphType<NonNullGraphType<StreamDataQueryColumnInputDtoType>>>>(Statics.ColumnPathsArg,
@@ -88,8 +82,6 @@ internal sealed class StreamDataTransientQuery : ObjectGraphType
             .Description("Transient downsampling stream-data query — divides the time range into equal buckets.")
             .Argument<NonNullGraphType<OctoObjectIdType>>(Statics.ArchiveRtIdArg,
                 "CkArchive runtime id whose table should be queried.")
-            .Argument<NonNullGraphType<StringGraphType>>(Statics.CkIdArg,
-                "The construction kit type with the given id.")
             .Argument<NonNullGraphType<ListGraphType<NonNullGraphType<StreamDataQueryColumnInputDtoType>>>>(Statics.ColumnPathsArg,
                 "Aggregation columns with attribute path and aggregation type.")
             .Argument<NonNullGraphType<IntGraphType>>("limit",
@@ -115,11 +107,13 @@ internal sealed class StreamDataTransientQuery : ObjectGraphType
 
             var gql = (GraphQlUserContext)ctx.UserContext;
             var archiveRtId = ctx.GetArgument<OctoObjectId>(Statics.ArchiveRtIdArg);
-            var ckTypeId = ctx.GetArgument<RtCkId<CkTypeId>>(Statics.CkIdArg);
+
             var columnPaths = ctx.GetArgument<IEnumerable<string>>(Statics.ColumnPathsArg).ToList();
 
-            var archiveSnapshot = await gql.TenantContext.GetCkArchiveRuntimeStore().GetAsync(archiveRtId);
-            var fieldResolver = BuildFieldResolver(archiveSnapshot ?? throw new ArchiveNotFoundException(archiveRtId));
+            var archiveSnapshot = await gql.TenantContext.GetCkArchiveRuntimeStore().GetAsync(archiveRtId)
+                ?? throw new ArchiveNotFoundException(archiveRtId);
+            var ckTypeId = archiveSnapshot.TargetCkTypeId;
+            var fieldResolver = BuildFieldResolver(archiveSnapshot);
 
             ctx.TryGetArgument(Statics.SortOrderArg, out IEnumerable<SortDto>? sortDtos);
             ctx.TryGetArgument(Statics.FieldFilterArg, out IEnumerable<FieldFilterDto>? fieldFilterDtos);
@@ -173,11 +167,13 @@ internal sealed class StreamDataTransientQuery : ObjectGraphType
 
             var gql = (GraphQlUserContext)ctx.UserContext;
             var archiveRtId = ctx.GetArgument<OctoObjectId>(Statics.ArchiveRtIdArg);
-            var ckTypeId = ctx.GetArgument<RtCkId<CkTypeId>>(Statics.CkIdArg);
+
             var columnInputs = ctx.GetArgument<IEnumerable<StreamDataQueryColumnInputDto>>(Statics.ColumnPathsArg).ToList();
 
-            var archiveSnapshot = await gql.TenantContext.GetCkArchiveRuntimeStore().GetAsync(archiveRtId);
-            var fieldResolver = BuildFieldResolver(archiveSnapshot ?? throw new ArchiveNotFoundException(archiveRtId));
+            var archiveSnapshot = await gql.TenantContext.GetCkArchiveRuntimeStore().GetAsync(archiveRtId)
+                ?? throw new ArchiveNotFoundException(archiveRtId);
+            var ckTypeId = archiveSnapshot.TargetCkTypeId;
+            var fieldResolver = BuildFieldResolver(archiveSnapshot);
 
             ctx.TryGetArgument(Statics.FieldFilterArg, out IEnumerable<FieldFilterDto>? fieldFilterDtos);
             ctx.TryGetArgument(Statics.RtIdsArg, null, out IEnumerable<OctoObjectId>? rtIds);
@@ -235,12 +231,14 @@ internal sealed class StreamDataTransientQuery : ObjectGraphType
 
             var gql = (GraphQlUserContext)ctx.UserContext;
             var archiveRtId = ctx.GetArgument<OctoObjectId>(Statics.ArchiveRtIdArg);
-            var ckTypeId = ctx.GetArgument<RtCkId<CkTypeId>>(Statics.CkIdArg);
+
             var groupByColumnPaths = ctx.GetArgument<IEnumerable<string>>(Statics.GroupByColumnPathsArg).ToList();
             var columnInputs = ctx.GetArgument<IEnumerable<StreamDataQueryColumnInputDto>>(Statics.ColumnPathsArg).ToList();
 
-            var archiveSnapshot = await gql.TenantContext.GetCkArchiveRuntimeStore().GetAsync(archiveRtId);
-            var fieldResolver = BuildFieldResolver(archiveSnapshot ?? throw new ArchiveNotFoundException(archiveRtId));
+            var archiveSnapshot = await gql.TenantContext.GetCkArchiveRuntimeStore().GetAsync(archiveRtId)
+                ?? throw new ArchiveNotFoundException(archiveRtId);
+            var ckTypeId = archiveSnapshot.TargetCkTypeId;
+            var fieldResolver = BuildFieldResolver(archiveSnapshot);
 
             ctx.TryGetArgument(Statics.FieldFilterArg, out IEnumerable<FieldFilterDto>? fieldFilterDtos);
             ctx.TryGetArgument(Statics.RtIdsArg, null, out IEnumerable<OctoObjectId>? rtIds);
@@ -306,14 +304,16 @@ internal sealed class StreamDataTransientQuery : ObjectGraphType
 
             var gql = (GraphQlUserContext)ctx.UserContext;
             var archiveRtId = ctx.GetArgument<OctoObjectId>(Statics.ArchiveRtIdArg);
-            var ckTypeId = ctx.GetArgument<RtCkId<CkTypeId>>(Statics.CkIdArg);
+
             var columnInputs = ctx.GetArgument<IEnumerable<StreamDataQueryColumnInputDto>>(Statics.ColumnPathsArg).ToList();
             var from = ctx.GetArgument<DateTime>("from");
             var to = ctx.GetArgument<DateTime>("to");
             var limit = ctx.GetArgument<int>("limit");
 
-            var archiveSnapshot = await gql.TenantContext.GetCkArchiveRuntimeStore().GetAsync(archiveRtId);
-            var fieldResolver = BuildFieldResolver(archiveSnapshot ?? throw new ArchiveNotFoundException(archiveRtId));
+            var archiveSnapshot = await gql.TenantContext.GetCkArchiveRuntimeStore().GetAsync(archiveRtId)
+                ?? throw new ArchiveNotFoundException(archiveRtId);
+            var ckTypeId = archiveSnapshot.TargetCkTypeId;
+            var fieldResolver = BuildFieldResolver(archiveSnapshot);
 
             ctx.TryGetArgument(Statics.FieldFilterArg, out IEnumerable<FieldFilterDto>? fieldFilterDtos);
             ctx.TryGetArgument(Statics.RtIdsArg, null, out IEnumerable<OctoObjectId>? rtIds);

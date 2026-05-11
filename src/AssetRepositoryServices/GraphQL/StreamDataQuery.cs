@@ -27,73 +27,12 @@ internal sealed class StreamDataQuery : ObjectGraphType
         Name = "StreamDataModelQuery";
 
         Connection<NonNullGraphType<StreamDataQueryDtoType>>("StreamDataQuery")
-            .Argument<NonNullGraphType<OctoObjectIdType>>(Statics.RtIdArg, "The persisted stream-data query runtime id.")
-            .Argument<NonNullGraphType<OctoObjectIdType>>(Statics.ArchiveRtIdArg, "CkArchive runtime id the persisted query should target at execution time.")
+            .Argument<NonNullGraphType<OctoObjectIdType>>(Statics.RtIdArg, "The persisted stream-data query runtime id. The query's stored ArchiveRtId determines which archive table is read.")
             .ResolveAsync(ResolveStreamDataQueryAsync);
 
         Field<NonNullGraphType<StreamDataTransientQuery>>("TransientStreamDataQuery")
             .Description("Transient stream-data queries")
             .Resolve(_ => new { });
-
-        Connection<NonNullGraphType<StreamDataEntityGenericDtoType>>("StreamDataEntities")
-            .Description("Generic stream-data entity connection. Supply the CK type at query time.")
-            .Argument<NonNullGraphType<OctoObjectIdType>>(Statics.ArchiveRtIdArg, "CkArchive runtime id whose table should be queried.")
-            .Argument<NonNullGraphType<StringGraphType>>(Statics.CkIdArg, "CK type to query")
-            .Argument<NonNullGraphType<ListGraphType<NonNullGraphType<StringGraphType>>>>(Statics.ColumnPathsArg, "Attribute paths to project")
-            .Argument<StreamDataArgumentsGraphType>(Statics.StreamDataArgument, "Time filter and limit")
-            .Argument<ListGraphType<SortDtoType>>(Statics.SortOrderArg, "Sort order for items")
-            .Argument<ListGraphType<FieldFilterDtoType>>(Statics.FieldFilterArg, "Field-level comparison filters")
-            .Argument<ListGraphType<OctoObjectIdType>>(Statics.RtIdsArg, "Scope to specific runtime entity IDs")
-            .ResolveAsync(ResolveStreamDataEntitiesAsync);
-    }
-
-    private async Task<object?> ResolveStreamDataEntitiesAsync(IResolveConnectionContext<object?> arg)
-    {
-        try
-        {
-            var gql = (GraphQlUserContext)arg.UserContext;
-            var repo = gql.TenantContext.GetStreamDataRepository()
-                ?? throw AssetRepositoryException.StreamDataNotAvailable();
-
-            var ckTypeId = arg.GetArgument<RtCkId<CkTypeId>>(Statics.CkIdArg);
-            var archiveRtId = arg.GetArgument<OctoObjectId>(Statics.ArchiveRtIdArg);
-            var columnPaths = arg.GetArgument<IEnumerable<string>>(Statics.ColumnPathsArg).ToList();
-
-            var archiveSnapshot = await gql.TenantContext.GetCkArchiveRuntimeStore().GetAsync(archiveRtId)
-                ?? throw new ArchiveNotFoundException(archiveRtId);
-            var fieldResolver = new StreamDataFieldResolver(archiveSnapshot.Columns.Select(c => c.Path));
-            arg.TryGetArgument(Statics.SortOrderArg, out IEnumerable<SortDto>? sortDtos);
-            arg.TryGetArgument(Statics.FieldFilterArg, out IEnumerable<FieldFilterDto>? fieldFilterDtos);
-            arg.TryGetArgument(Statics.RtIdsArg, null, out IEnumerable<OctoObjectId>? rtIds);
-            var execArgs = arg.GetArgument<StreamDataArguments?>(Statics.StreamDataArgument);
-            var fieldFilters = fieldFilterDtos?.ToList();
-
-            StreamDataFieldValidation.ValidateStreamDataFields(
-                fieldResolver, columnPaths,
-                sortDtos?.Select(s => s.AttributePath),
-                fieldFilters?.Where(f => f.ComparisonValue != null).Select(f => f.AttributePath));
-
-            var columnMappings = fieldResolver.ResolveToMappings(columnPaths);
-
-            var options = StreamDataQueryOptions.Create()
-                .WithCkTypeId(ckTypeId)
-                .WithColumns(columnPaths)
-                .WithRtIds(rtIds?.ToList())
-                .WithTimeRange(execArgs?.From, execArgs?.To)
-                .WithLimit(execArgs?.Limit)
-                .WithSortOrders(StreamDataGraphQlMapper.MapSortOrders(sortDtos))
-                .WithFieldFilters(StreamDataGraphQlMapper.MapFieldFilters(fieldFilters))
-                .WithPagination(arg.GetOffset(), arg.First);
-
-            var result = await repo.ExecuteQueryAsync(archiveRtId, options);
-            var rows = result.Rows
-                .Select(r => StreamDataQueryRowDto.FromStreamDataRow(r, columnMappings))
-                .ToList();
-            var offset = arg.GetOffset().GetValueOrDefault(0);
-            return ConnectionUtils.ToOctoConnection(rows, arg,
-                rows.Count != 0 ? offset : 0, (int)result.TotalCount);
-        }
-        catch (Exception e) { return arg.HandleException(e); }
     }
 
     private async Task<object?> ResolveStreamDataQueryAsync(IResolveConnectionContext<object?> arg)
@@ -107,10 +46,17 @@ internal sealed class StreamDataQuery : ObjectGraphType
             var tenantRepository = graphQlUserContext.TenantContext.GetTenantRepository();
 
             var queryRtId = arg.GetArgument<OctoObjectId>(Statics.RtIdArg);
-            var archiveRtId = arg.GetArgument<OctoObjectId>(Statics.ArchiveRtIdArg);
             var loaded = await tenantRepository.GetRtEntityByRtIdAsync<RtStreamDataQuery>(
                 sessionAccessor.Session, queryRtId)
                 ?? throw AssetRepositoryException.RtQueryNotFound(queryRtId);
+
+            // The archive target is captured on the persisted query — the resolver doesn't
+            // need a separate argument. Persisted query is a complete specification.
+            if (string.IsNullOrWhiteSpace(loaded.ArchiveRtId))
+            {
+                throw AssetRepositoryException.RtQueryNotFound(queryRtId);
+            }
+            var archiveRtId = new OctoObjectId(loaded.ArchiveRtId);
 
             // Build the column list from the concrete subtype so clients can inspect them.
             var columns = BuildColumnsFromLoaded(loaded);
