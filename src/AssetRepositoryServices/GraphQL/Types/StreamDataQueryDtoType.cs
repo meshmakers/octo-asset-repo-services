@@ -44,17 +44,23 @@ internal sealed class StreamDataQueryDtoType : ObjectGraphType<StreamDataQueryDt
 
         Connection<NonNullGraphType<StreamDataQueryRowDtoType>>("Rows")
             .Description("Executes the persisted stream-data query and returns the result rows. " +
-                         "Accepts optional runtime overrides for the time range, limit, and sort order.")
+                         "Accepts optional runtime overrides for the time range, limit, and sort order, " +
+                         "plus additional field filters AND-combined with the persisted FieldFilter.")
             .Argument<StreamDataArgumentsGraphType>(Statics.StreamDataArgument,
                 "Override time filter and limit at execution time.")
             .Argument<ListGraphType<SortDtoType>>(Statics.SortOrderArg,
                 "Sort order for items (overrides persisted sort if supplied).")
+            .Argument<ListGraphType<FieldFilterDtoType>>(Statics.FieldFilterArg,
+                "Additional field filters applied at execution time, AND-combined with the persisted FieldFilter.")
             .ResolveAsync(ResolveRowsAsync);
 
         Connection<NonNullGraphType<QueryAggregationResultType>>("Aggregations")
-            .Description("Computes statistical aggregations over the same data set as the persisted query.")
+            .Description("Computes statistical aggregations over the same data set as the persisted query. " +
+                         "Accepts optional runtime field filters AND-combined with the persisted FieldFilter.")
             .Argument<NonNullGraphType<ResultAggregationInputDtoType>>(Statics.AggregationsArg,
                 "Requested aggregation statistics.")
+            .Argument<ListGraphType<FieldFilterDtoType>>(Statics.FieldFilterArg,
+                "Additional field filters applied at execution time, AND-combined with the persisted FieldFilter.")
             .ResolveAsync(ResolveAggregationsAsync);
     }
 
@@ -85,6 +91,11 @@ internal sealed class StreamDataQueryDtoType : ObjectGraphType<StreamDataQueryDt
             var fieldResolver = new StreamDataFieldResolver(archiveSnapshot.Columns.Select(c => c.Path));
             var execOverride = ctx.GetArgument<StreamDataArguments?>(Statics.StreamDataArgument);
 
+            // Runtime field filters AND-combine with the persisted FieldFilter on each subtype.
+            ctx.TryGetArgument(Statics.FieldFilterArg, out IEnumerable<FieldFilterDto>? runtimeFieldFilterDtos);
+            var runtimeFieldFilters = runtimeFieldFilterDtos?.ToList();
+            var mappedRuntimeFieldFilters = StreamDataGraphQlMapper.MapFieldFilters(runtimeFieldFilters);
+
             StreamQueryExecutionInput input;
             IReadOnlyList<ColumnNameMapping> resolvedColumnNames;
 
@@ -103,12 +114,14 @@ internal sealed class StreamDataQueryDtoType : ObjectGraphType<StreamDataQueryDt
                         ? runtimeSortList.Select(s => s.AttributePath)
                         : persistedSortList?.Select(s => s.AttributePath);
 
+                    var persistedFilterPaths = fieldFilterList is { Count: > 0 }
+                        ? fieldFilterList.Where(f => f.ComparisonValue != null).Select(f => f.AttributePath)
+                        : null;
+                    var runtimeFilterPaths = runtimeFieldFilters
+                        ?.Where(f => f.ComparisonValue != null).Select(f => f.AttributePath);
                     StreamDataFieldValidation.ValidateStreamDataFields(
                         fieldResolver, columnNames, sortFieldNames,
-                        fieldFilterList is { Count: > 0 }
-                            ? fieldFilterList.Where(f => f.ComparisonValue != null)
-                                .Select(f => f.AttributePath)
-                            : null);
+                        ConcatNullable(persistedFilterPaths, runtimeFilterPaths));
 
                     resolvedColumnNames = fieldResolver.ResolveToMappings(columnNames);
 
@@ -136,11 +149,13 @@ internal sealed class StreamDataQueryDtoType : ObjectGraphType<StreamDataQueryDt
                         To = execOverride?.To ?? simple.To,
                         Limit = execOverride?.Limit ?? (simple.Limit.HasValue ? (int)simple.Limit.Value : null),
                         SortOrders = sortOrders,
-                        FieldFilters = StreamDataGraphQlMapper.MapCkFieldFilters(
-                            fieldFilterList,
-                            f => f.AttributePath,
-                            f => f.Operator,
-                            f => f.ComparisonValue),
+                        FieldFilters = MergeFilters(
+                            StreamDataGraphQlMapper.MapCkFieldFilters(
+                                fieldFilterList,
+                                f => f.AttributePath,
+                                f => f.Operator,
+                                f => f.ComparisonValue),
+                            mappedRuntimeFieldFilters),
                         Offset = ctx.GetOffset(),
                         PageSize = ctx.First
                     };
@@ -152,14 +167,16 @@ internal sealed class StreamDataQueryDtoType : ObjectGraphType<StreamDataQueryDt
                     var aggregationColumns = aggregation.Columns?.ToList() ?? [];
                     var fieldFilterList = aggregation.FieldFilter?.ToList();
 
+                    var persistedFilterPaths = fieldFilterList is { Count: > 0 }
+                        ? fieldFilterList.Where(f => f.ComparisonValue != null).Select(f => f.AttributePath)
+                        : null;
+                    var runtimeFilterPaths = runtimeFieldFilters
+                        ?.Where(f => f.ComparisonValue != null).Select(f => f.AttributePath);
                     StreamDataFieldValidation.ValidateStreamDataFields(
                         fieldResolver,
                         aggregationColumns.Select(c => c.AttributePath),
                         null,
-                        fieldFilterList is { Count: > 0 }
-                            ? fieldFilterList.Where(f => f.ComparisonValue != null)
-                                .Select(f => f.AttributePath)
-                            : null);
+                        ConcatNullable(persistedFilterPaths, runtimeFilterPaths));
 
                     resolvedColumnNames = fieldResolver.ResolveToMappings(
                         aggregationColumns.Select(c => c.AttributePath));
@@ -177,11 +194,13 @@ internal sealed class StreamDataQueryDtoType : ObjectGraphType<StreamDataQueryDt
                         RtIds = aggregation.RtIds?.Select(id => new OctoObjectId(id)).ToList(),
                         From = execOverride?.From ?? aggregation.From,
                         To = execOverride?.To ?? aggregation.To,
-                        FieldFilters = StreamDataGraphQlMapper.MapCkFieldFilters(
-                            fieldFilterList,
-                            f => f.AttributePath,
-                            f => f.Operator,
-                            f => f.ComparisonValue)
+                        FieldFilters = MergeFilters(
+                            StreamDataGraphQlMapper.MapCkFieldFilters(
+                                fieldFilterList,
+                                f => f.AttributePath,
+                                f => f.Operator,
+                                f => f.ComparisonValue),
+                            mappedRuntimeFieldFilters)
                     };
                     break;
                 }
@@ -192,14 +211,16 @@ internal sealed class StreamDataQueryDtoType : ObjectGraphType<StreamDataQueryDt
                     var aggregationColumns = grouping.Columns?.ToList() ?? [];
                     var fieldFilterList = grouping.FieldFilter?.ToList();
 
+                    var persistedFilterPaths = fieldFilterList is { Count: > 0 }
+                        ? fieldFilterList.Where(f => f.ComparisonValue != null).Select(f => f.AttributePath)
+                        : null;
+                    var runtimeFilterPaths = runtimeFieldFilters
+                        ?.Where(f => f.ComparisonValue != null).Select(f => f.AttributePath);
                     StreamDataFieldValidation.ValidateStreamDataFields(
                         fieldResolver,
                         groupingColumns.Concat(aggregationColumns.Select(c => c.AttributePath)),
                         null,
-                        fieldFilterList is { Count: > 0 }
-                            ? fieldFilterList.Where(f => f.ComparisonValue != null)
-                                .Select(f => f.AttributePath)
-                            : null);
+                        ConcatNullable(persistedFilterPaths, runtimeFilterPaths));
 
                     resolvedColumnNames = fieldResolver
                         .ResolveToMappings(groupingColumns)
@@ -221,11 +242,13 @@ internal sealed class StreamDataQueryDtoType : ObjectGraphType<StreamDataQueryDt
                         RtIds = grouping.RtIds?.Select(id => new OctoObjectId(id)).ToList(),
                         From = execOverride?.From ?? grouping.From,
                         To = execOverride?.To ?? grouping.To,
-                        FieldFilters = StreamDataGraphQlMapper.MapCkFieldFilters(
-                            fieldFilterList,
-                            f => f.AttributePath,
-                            f => f.Operator,
-                            f => f.ComparisonValue)
+                        FieldFilters = MergeFilters(
+                            StreamDataGraphQlMapper.MapCkFieldFilters(
+                                fieldFilterList,
+                                f => f.AttributePath,
+                                f => f.Operator,
+                                f => f.ComparisonValue),
+                            mappedRuntimeFieldFilters)
                     };
                     break;
                 }
@@ -235,14 +258,16 @@ internal sealed class StreamDataQueryDtoType : ObjectGraphType<StreamDataQueryDt
                     var aggregationColumns = downsampling.Columns?.ToList() ?? [];
                     var fieldFilterList = downsampling.FieldFilter?.ToList();
 
+                    var persistedFilterPaths = fieldFilterList is { Count: > 0 }
+                        ? fieldFilterList.Where(f => f.ComparisonValue != null).Select(f => f.AttributePath)
+                        : null;
+                    var runtimeFilterPaths = runtimeFieldFilters
+                        ?.Where(f => f.ComparisonValue != null).Select(f => f.AttributePath);
                     StreamDataFieldValidation.ValidateStreamDataFields(
                         fieldResolver,
                         aggregationColumns.Select(c => c.AttributePath),
                         null,
-                        fieldFilterList is { Count: > 0 }
-                            ? fieldFilterList.Where(f => f.ComparisonValue != null)
-                                .Select(f => f.AttributePath)
-                            : null);
+                        ConcatNullable(persistedFilterPaths, runtimeFilterPaths));
 
                     // Timestamp first (canonical PascalCase, wire camelCase), then resolved aggregation columns
                     var inputs = new[] { Constants.Timestamp }
@@ -265,11 +290,13 @@ internal sealed class StreamDataQueryDtoType : ObjectGraphType<StreamDataQueryDt
                         Limit = execOverride?.Limit ?? (downsampling.Limit.HasValue
                             ? (int)downsampling.Limit.Value
                             : null),
-                        FieldFilters = StreamDataGraphQlMapper.MapCkFieldFilters(
-                            fieldFilterList,
-                            f => f.AttributePath,
-                            f => f.Operator,
-                            f => f.ComparisonValue)
+                        FieldFilters = MergeFilters(
+                            StreamDataGraphQlMapper.MapCkFieldFilters(
+                                fieldFilterList,
+                                f => f.AttributePath,
+                                f => f.Operator,
+                                f => f.ComparisonValue),
+                            mappedRuntimeFieldFilters)
                     };
                     break;
                 }
@@ -340,12 +367,16 @@ internal sealed class StreamDataQueryDtoType : ObjectGraphType<StreamDataQueryDt
                 aggColumns.AddRange(aggInput.SumAttributePaths.Select(p =>
                     new AggregationColumn(p, AggregationFunction.Sum)));
 
-            // Re-use the same field filters as the loaded query (same data-set semantics).
-            var fieldFilters = StreamDataGraphQlMapper.MapCkFieldFilters(
-                loaded.FieldFilter?.ToList(),
-                f => f.AttributePath,
-                f => f.Operator,
-                f => f.ComparisonValue);
+            // Re-use the same field filters as the loaded query (same data-set semantics),
+            // AND-combined with any runtime field filters passed alongside the aggregations request.
+            ctx.TryGetArgument(Statics.FieldFilterArg, out IEnumerable<FieldFilterDto>? runtimeFieldFilterDtos);
+            var fieldFilters = MergeFilters(
+                StreamDataGraphQlMapper.MapCkFieldFilters(
+                    loaded.FieldFilter?.ToList(),
+                    f => f.AttributePath,
+                    f => f.Operator,
+                    f => f.ComparisonValue),
+                StreamDataGraphQlMapper.MapFieldFilters(runtimeFieldFilterDtos?.ToList()));
 
             var input = new StreamQueryExecutionInput
             {
@@ -393,4 +424,27 @@ internal sealed class StreamDataQueryDtoType : ObjectGraphType<StreamDataQueryDt
         }
     }
 
+    // ─── Helpers ─────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// AND-combines persisted and runtime field filters. Either input may be null/empty.
+    /// Returns null when both are null/empty (engine-native "no filter").
+    /// </summary>
+    private static IReadOnlyList<FieldFilter>? MergeFilters(
+        IReadOnlyList<FieldFilter>? persisted,
+        IReadOnlyList<FieldFilter>? runtime)
+    {
+        if ((persisted == null || persisted.Count == 0) && (runtime == null || runtime.Count == 0))
+            return null;
+        if (persisted == null || persisted.Count == 0) return runtime;
+        if (runtime == null || runtime.Count == 0) return persisted;
+        return persisted.Concat(runtime).ToList();
+    }
+
+    private static IEnumerable<string>? ConcatNullable(IEnumerable<string>? a, IEnumerable<string>? b)
+    {
+        if (a == null) return b;
+        if (b == null) return a;
+        return a.Concat(b);
+    }
 }
