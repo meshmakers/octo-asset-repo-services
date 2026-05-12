@@ -56,6 +56,13 @@ internal sealed class StreamDataMutation : ObjectGraphType
             .Argument<NonNullGraphType<OctoObjectIdType>>(Statics.RtIdArg, "Runtime id of the CkArchive to delete.")
             .ResolveAsync(ResolveDeleteAsync);
 
+        // ---- TimeRangeArchive create (concept-time-range §10) ----
+
+        Field<NonNullGraphType<OctoObjectIdType>>("createTimeRangeArchive")
+            .Description("Creates a new TimeRangeArchive in Created status. Takes target CK type, attribute-path columns, and optional advisory period. Unlike createRollupArchive there is no source archive to inherit anything from — the operator picks everything directly. Returns the generated rtId. Requires StreamDataAdmin.")
+            .Argument<NonNullGraphType<CreateTimeRangeArchiveInputType>>("input", "Time-range-specific create payload.")
+            .ResolveAsync(ResolveCreateTimeRangeAsync);
+
         // ---- Rollup-only mutations (rollup-archives concept §9) ----
 
         Field<NonNullGraphType<OctoObjectIdType>>("createRollupArchive")
@@ -149,6 +156,48 @@ internal sealed class StreamDataMutation : ObjectGraphType
                 ?? throw new ArchiveNotFoundException(archiveRtId);
 
             return new ArchiveTransitionResultDto(archiveRtId, snapshot.Status, transitionName);
+        }
+        catch (Exception e)
+        {
+            return ctx.HandleException(e);
+        }
+    }
+
+    private async Task<object?> ResolveCreateTimeRangeAsync(IResolveFieldContext<object?> ctx)
+    {
+        try
+        {
+            var input = ctx.GetArgument<CreateTimeRangeArchiveInputDto>("input");
+            _logger.LogDebug(
+                "TimeRangeArchive Create requested for target {TargetCkTypeId} ({ColumnCount} columns)",
+                input.TargetCkTypeId, input.Columns.Count);
+
+            var gql = (GraphQlUserContext)ctx.UserContext;
+            // Same role guard as createRollupArchive: schema-defining ops are admin-only.
+            if (gql.User?.IsInRole(CommonConstants.StreamDataAdminRole) != true)
+            {
+                ctx.Errors.Add(new ExecutionError(
+                    $"TimeRangeArchive Create requires the '{CommonConstants.StreamDataAdminRole}' role.")
+                {
+                    Code = Statics.GraphQlForbidden,
+                });
+                return null;
+            }
+
+            var store = gql.TenantContext.GetTimeRangeArchiveRuntimeStore()
+                ?? throw AssetRepositoryException.StreamDataNotAvailable();
+
+            var columns = input.Columns
+                .Select(c => new CkArchiveColumnSpec(c.Path, c.Indexed, c.Required))
+                .ToList();
+
+            var rtId = await store.InsertAsync(
+                input.RtWellKnownName,
+                new RtCkId<CkTypeId>(input.TargetCkTypeId),
+                columns,
+                input.PeriodMs is { } ms ? TimeSpan.FromMilliseconds(ms) : null);
+
+            return rtId;
         }
         catch (Exception e)
         {

@@ -211,6 +211,64 @@ public class StreamDataController : ControllerBase
             (lifecycle, id) => lifecycle.RewindWatermarkAsync(id, toBucketEnd));
 
     /// <summary>
+    /// Inserts a batch of externally-aggregated time-range data points into a
+    /// <c>TimeRangeArchive</c>. Each row covers a half-open <c>[from, to)</c> window;
+    /// re-deliveries upsert via the natural key and set the row's <c>was_updated</c> flag to
+    /// true. Time-range concept §3. The archive must be in <c>Activated</c> status; non-time-
+    /// range archives reject the call with HTTP 400.
+    /// </summary>
+    [HttpPost("archives/{archiveRtId}/insertTimeRange")]
+    [Microsoft.AspNetCore.Authorization.Authorize(AssetRepositoryServiceConstants.SystemAssetApiReadWritePolicy)]
+    public async Task<IActionResult> InsertTimeRange(
+        [Required] string tenantId,
+        [Required] string archiveRtId,
+        [FromBody] IReadOnlyList<InsertTimeRangePointRestDto> points)
+    {
+        try
+        {
+            if (points is null || points.Count == 0)
+            {
+                return NoContent();
+            }
+
+            var tenantContext = await _systemContext.FindTenantContextAsync(tenantId);
+            var repository = tenantContext.GetStreamDataRepository()
+                ?? throw new StreamDataException(
+                    $"StreamData is not enabled for tenant '{tenantId}'. Call POST /streamdata/enable first.");
+
+            var domainPoints = points.Select(p => new TimeRangeStreamDataPoint
+            {
+                RtId = new OctoObjectId(p.RtId),
+                CkTypeId = new RtCkId<CkTypeId>(p.CkTypeId),
+                From = p.From,
+                To = p.To,
+                RtWellKnownName = p.RtWellKnownName,
+                Attributes = p.Attributes,
+            }).ToList();
+
+            await repository.InsertTimeRangeAsync(new OctoObjectId(archiveRtId), domainPoints);
+            return NoContent();
+        }
+        catch (ConfigurationException e)
+        {
+            return BadRequest(e.Message);
+        }
+        catch (StreamDataException e)
+        {
+            _logger.LogWarning(
+                "InsertTimeRange refused for tenant '{TenantId}', archive '{ArchiveRtId}': {Reason}",
+                tenantId, archiveRtId, e.Message);
+            return BadRequest(e.Message);
+        }
+        catch (ArgumentException e)
+        {
+            // Covers the To <= From validation and the non-time-range archive guard in
+            // CrateDbStreamDataRepository.InsertTimeRangeAsync.
+            return BadRequest(e.Message);
+        }
+    }
+
+    /// <summary>
     /// Returns every non-soft-deleted rollup archive attached to the given source archive.
     /// Concept §9.
     /// </summary>
