@@ -86,7 +86,7 @@ internal sealed class StreamDataQueryDtoType : ObjectGraphType<StreamDataQueryDt
             var loaded = uc.LoadedQuery;
             var ckTypeId = dto.AssociatedCkTypeId;
 
-            var archiveSnapshot = await gql.TenantContext.GetCkArchiveRuntimeStore().GetAsync(uc.ArchiveRtId)
+            var archiveSnapshot = await gql.TenantContext.GetArchiveRuntimeStore().GetAsync(uc.ArchiveRtId)
                 ?? throw new ArchiveNotFoundException(uc.ArchiveRtId);
             var fieldResolver = new StreamDataFieldResolver(archiveSnapshot.Columns.Select(c => c.Path));
             var execOverride = ctx.GetArgument<StreamDataArguments?>(Statics.StreamDataArgument);

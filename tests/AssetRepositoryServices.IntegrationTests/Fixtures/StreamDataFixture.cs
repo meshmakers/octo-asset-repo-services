@@ -183,7 +183,7 @@ public class StreamDataFixture : AssetRepoFixture
     {
         var systemContext = GetSystemContext();
         var tenantRepository = systemContext.GetSystemTenantRepository();
-        var archive = new RtCkArchive
+        var archive = new RtArchive
         {
             RtWellKnownName = "MeteringPointArchive",
             TargetCkTypeId = TestCkTypeId,

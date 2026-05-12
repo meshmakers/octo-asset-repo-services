@@ -44,7 +44,7 @@ internal sealed class StreamDataQuery : ObjectGraphType
     {
         var sourceRtId = ctx.GetArgument<OctoObjectId>(Statics.RtIdArg);
         var gql = (GraphQlUserContext)ctx.UserContext;
-        var rollupStore = gql.TenantContext.GetCkRollupArchiveRuntimeStore();
+        var rollupStore = gql.TenantContext.GetRollupArchiveRuntimeStore();
         if (rollupStore is null)
         {
             return Array.Empty<RollupArchiveInfoDto>();

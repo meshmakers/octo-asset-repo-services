@@ -110,7 +110,7 @@ internal sealed class StreamDataTransientQuery : ObjectGraphType
 
             var columnPaths = ctx.GetArgument<IEnumerable<string>>(Statics.ColumnPathsArg).ToList();
 
-            var archiveSnapshot = await gql.TenantContext.GetCkArchiveRuntimeStore().GetAsync(archiveRtId)
+            var archiveSnapshot = await gql.TenantContext.GetArchiveRuntimeStore().GetAsync(archiveRtId)
                 ?? throw new ArchiveNotFoundException(archiveRtId);
             var ckTypeId = archiveSnapshot.TargetCkTypeId;
             var fieldResolver = BuildFieldResolver(archiveSnapshot);
@@ -170,7 +170,7 @@ internal sealed class StreamDataTransientQuery : ObjectGraphType
 
             var columnInputs = ctx.GetArgument<IEnumerable<StreamDataQueryColumnInputDto>>(Statics.ColumnPathsArg).ToList();
 
-            var archiveSnapshot = await gql.TenantContext.GetCkArchiveRuntimeStore().GetAsync(archiveRtId)
+            var archiveSnapshot = await gql.TenantContext.GetArchiveRuntimeStore().GetAsync(archiveRtId)
                 ?? throw new ArchiveNotFoundException(archiveRtId);
             var ckTypeId = archiveSnapshot.TargetCkTypeId;
             var fieldResolver = BuildFieldResolver(archiveSnapshot);
@@ -235,7 +235,7 @@ internal sealed class StreamDataTransientQuery : ObjectGraphType
             var groupByColumnPaths = ctx.GetArgument<IEnumerable<string>>(Statics.GroupByColumnPathsArg).ToList();
             var columnInputs = ctx.GetArgument<IEnumerable<StreamDataQueryColumnInputDto>>(Statics.ColumnPathsArg).ToList();
 
-            var archiveSnapshot = await gql.TenantContext.GetCkArchiveRuntimeStore().GetAsync(archiveRtId)
+            var archiveSnapshot = await gql.TenantContext.GetArchiveRuntimeStore().GetAsync(archiveRtId)
                 ?? throw new ArchiveNotFoundException(archiveRtId);
             var ckTypeId = archiveSnapshot.TargetCkTypeId;
             var fieldResolver = BuildFieldResolver(archiveSnapshot);
@@ -310,7 +310,7 @@ internal sealed class StreamDataTransientQuery : ObjectGraphType
             var to = ctx.GetArgument<DateTime>("to");
             var limit = ctx.GetArgument<int>("limit");
 
-            var archiveSnapshot = await gql.TenantContext.GetCkArchiveRuntimeStore().GetAsync(archiveRtId)
+            var archiveSnapshot = await gql.TenantContext.GetArchiveRuntimeStore().GetAsync(archiveRtId)
                 ?? throw new ArchiveNotFoundException(archiveRtId);
             var ckTypeId = archiveSnapshot.TargetCkTypeId;
             var fieldResolver = BuildFieldResolver(archiveSnapshot);
@@ -368,7 +368,7 @@ internal sealed class StreamDataTransientQuery : ObjectGraphType
     /// CkArchive's column spec — that's the canonical set of paths the per-archive table actually
     /// stores after T17.
     /// </summary>
-    private static StreamDataFieldResolver BuildFieldResolver(CkArchiveSnapshot archiveSnapshot)
+    private static StreamDataFieldResolver BuildFieldResolver(ArchiveSnapshot archiveSnapshot)
     {
         return new StreamDataFieldResolver(archiveSnapshot.Columns.Select(c => c.Path));
     }

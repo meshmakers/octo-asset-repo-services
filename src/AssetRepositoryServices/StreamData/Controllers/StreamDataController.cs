@@ -222,7 +222,7 @@ public class StreamDataController : ControllerBase
         try
         {
             var tenantContext = await _systemContext.FindTenantContextAsync(tenantId);
-            var rollupStore = tenantContext.GetCkRollupArchiveRuntimeStore();
+            var rollupStore = tenantContext.GetRollupArchiveRuntimeStore();
             if (rollupStore is null)
             {
                 return Ok(Array.Empty<RollupArchiveInfoRestDto>());

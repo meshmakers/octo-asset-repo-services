@@ -141,7 +141,7 @@ internal sealed class StreamDataMutation : ObjectGraphType
 
             var lifecycle = gql.TenantContext.GetArchiveLifecycleService()
                 ?? throw AssetRepositoryException.StreamDataNotAvailable();
-            var store = gql.TenantContext.GetCkArchiveRuntimeStore();
+            var store = gql.TenantContext.GetArchiveRuntimeStore();
 
             await transition(lifecycle, archiveRtId);
 
@@ -223,7 +223,7 @@ internal sealed class StreamDataMutation : ObjectGraphType
 
             var lifecycle = gql.TenantContext.GetRollupArchiveLifecycleService()
                 ?? throw AssetRepositoryException.StreamDataNotAvailable();
-            var store = gql.TenantContext.GetCkRollupArchiveRuntimeStore()
+            var store = gql.TenantContext.GetRollupArchiveRuntimeStore()
                 ?? throw AssetRepositoryException.StreamDataNotAvailable();
 
             await mutation(lifecycle, rollupRtId);
