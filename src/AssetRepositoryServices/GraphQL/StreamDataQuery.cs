@@ -38,6 +38,40 @@ internal sealed class StreamDataQuery : ObjectGraphType
             .Description("Returns every non-soft-deleted rollup archive attached to the given source archive — runtime id, status, schedule, watermark, freeze state. Rollup-archives concept §9.")
             .Argument<NonNullGraphType<OctoObjectIdType>>(Statics.RtIdArg, "Runtime id of the source CkArchive to enumerate rollups for.")
             .ResolveAsync(ResolveRollupsForAsync);
+
+        Field<NonNullGraphType<ListGraphType<NonNullGraphType<ArchiveStorageStatsDtoType>>>>("archivesStorageStats")
+            .Description("Bulk-fetch per-archive backend storage stats (row count, on-disk size, health) for the studio's archives list. One round-trip per call; archives whose backing table doesn't exist yet (not activated) appear with tableExists=false so callers don't have to filter the rtId list beforehand.")
+            .Argument<NonNullGraphType<ListGraphType<NonNullGraphType<OctoObjectIdType>>>>("rtIds", "Runtime ids of the archives to fetch stats for. Empty list returns empty result.")
+            .ResolveAsync(ResolveArchivesStorageStatsAsync);
+    }
+
+    private static async Task<object?> ResolveArchivesStorageStatsAsync(IResolveFieldContext<object?> ctx)
+    {
+        var rtIds = ctx.GetArgument<IReadOnlyList<OctoObjectId>>("rtIds") ?? Array.Empty<OctoObjectId>();
+        if (rtIds.Count == 0)
+        {
+            return Array.Empty<ArchiveStorageStatsDto>();
+        }
+
+        var gql = (GraphQlUserContext)ctx.UserContext;
+        var streamDataRepo = gql.TenantContext.GetStreamDataRepository();
+        if (streamDataRepo is null)
+        {
+            // StreamData not enabled for this tenant — return placeholders so the studio's list
+            // can still render the rows without a special "stats unavailable" code path.
+            return rtIds
+                .Select(rtId => new ArchiveStorageStatsDto(rtId, TableExists: false, RecordCount: 0, SizeBytes: 0, Health: ArchiveStorageHealth.Unknown))
+                .ToList();
+        }
+
+        var stats = await streamDataRepo.GetArchiveStatsAsync(rtIds, ctx.CancellationToken).ConfigureAwait(false);
+
+        // Preserve the input order so studio clients can zip with their existing row list.
+        return rtIds
+            .Select(rtId => stats.TryGetValue(rtId, out var s)
+                ? new ArchiveStorageStatsDto(s.ArchiveRtId, s.TableExists, s.RecordCount, s.SizeBytes, s.Health)
+                : new ArchiveStorageStatsDto(rtId, TableExists: false, RecordCount: 0, SizeBytes: 0, Health: ArchiveStorageHealth.Unknown))
+            .ToList();
     }
 
     private static async Task<object?> ResolveRollupsForAsync(IResolveFieldContext<object?> ctx)

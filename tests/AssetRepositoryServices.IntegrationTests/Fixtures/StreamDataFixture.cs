@@ -183,7 +183,10 @@ public class StreamDataFixture : AssetRepoFixture
     {
         var systemContext = GetSystemContext();
         var tenantRepository = systemContext.GetSystemTenantRepository();
-        var archive = new RtArchive
+        // System.StreamData 1.2.0 split the original concrete `CkArchive` into the abstract
+        // `Archive` base + concrete `RawArchive` subtype — `Archive` is no longer instantiable.
+        // Fresh-imports therefore use `RtRawArchive` directly.
+        var archive = new RtRawArchive
         {
             RtWellKnownName = "MeteringPointArchive",
             TargetCkTypeId = TestCkTypeId,
