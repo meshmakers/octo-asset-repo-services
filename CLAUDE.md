@@ -103,6 +103,42 @@ The persisted query's `aggregations` sub-connection takes a `ResultAggregationIn
 
 GraphQL types are dynamically created based on the tenant's construction kit model stored in MongoDB.
 
+#### StreamData Mutations
+
+Custom (non-generated) mutations on `streamData` for archive and rollup lifecycle. The
+generic CkEntity-typed `runtime.systemStreamDataCkArchives.create` / `…CkRollupArchives.create`
+mutations still exist (auto-generated from the CK model), but the rollup variant should not
+be used directly — see `createRollupArchive` below for why.
+
+| Field | Returns | Notes |
+|---|---|---|
+| `activateArchive(rtId)` / `disableArchive` / `enableArchive` / `retryArchiveActivation` | `ArchiveTransitionResult` | Status transitions on `IArchiveLifecycleService`. Polymorphic — work on both `CkArchive` and `CkRollupArchive`. |
+| `deleteArchive(rtId)` | `Boolean` | Drops the CrateDB table and soft-deletes the entity. Refuses if active rollups still reference a raw archive (concept §6 / `RollupSourceInUseException`). |
+| `createRollupArchive(input)` | `OctoObjectId` | **Server-side rollup creation.** Input carries only the rollup-specific fields (`sourceArchiveRtId`, `bucketSizeMs`, `watermarkLagMs`, `aggregations[]` + optional name); `TargetCkTypeId` is inherited from the source archive and `Columns` is derived from the aggregations via `RollupColumnGenerator` server-side. Single source of truth for the column-derivation rule — clients no longer mirror it. Requires `StreamDataAdmin`. |
+| `freezeRollupArchive(rtId, until)` / `unfreezeRollupArchive(rtId, acceptGaps)` / `rewindRollupWatermark(rtId, toBucketEnd)` | `ArchiveTransitionResult` | Rollup-only lifecycle. All require `StreamDataAdmin`. |
+
+All custom mutations use `ResolveConnectionContextExtensions.HandleException` to surface
+domain exceptions (`InvalidArchiveStateTransitionException`, `ArchiveNotFoundException`,
+`RollupSourceMissingException`, …) as stable GraphQL error codes with the underlying message
+in `error.extensions.OctoDetails`.
+
+#### StreamData Setup
+
+`Program.cs` registers `IStreamDataCkModelDescriptor` so the engine's
+`EnsureStreamDataCkModelImportedAsync` auto-import path picks the shipped CK model version
+instead of the hardcoded 1.0.0 fallback:
+
+```csharp
+builder.Services.AddSingleton<IStreamDataCkModelDescriptor>(
+    _ => new StreamDataCkModelDescriptor(SystemStreamDataCkIds.CkModelId));
+```
+
+Any asset-repo deploy that ships a newer model (e.g. 1.0.0 → 1.1.0 adding `CkRollupArchive`)
+auto-promotes the model on the next tenant resolve. Older sibling services without the
+descriptor cannot downgrade the model on a tenant — the engine's downgrade guard
+(`TenantContext.EnsureStreamDataCkModelImportedAsync`) skips when the installed version is
+higher than the local descriptor's target.
+
 #### 2. Multi-Tenant Request Pipeline
 - **TenantIdRouteConstraint** (`Routing/TenantIdRouteConstraint.cs`) - Routes include tenant ID
 - **TenantUserContextBuilder** (`GraphQL/RequestHandling/TenantUserContextBuilder.cs`) - Builds tenant context from HTTP request
