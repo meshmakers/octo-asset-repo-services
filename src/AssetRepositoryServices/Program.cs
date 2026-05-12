@@ -58,6 +58,16 @@ try
     builder.Services.Configure<Meshmakers.Octo.Runtime.Engine.MongoDb.StreamData.RollupOrchestratorOptions>(
         builder.Configuration.GetSection("StreamData:Rollup"));
 
+    // Asset-repo is a multi-tenant pod: the default ConfigBasedRollupTenantSource only sees
+    // tenants explicitly listed in StreamData:Rollup.TenantIds, which would force operators to
+    // hand-maintain that list every time a tenant is provisioned. Replace it with the dynamic
+    // SystemContextRollupTenantSource that enumerates every registered tenant on each tick;
+    // the per-tenant orchestrator (GetRollupOrchestrator) already skips tenants without
+    // StreamData enabled, so this source intentionally returns the full population.
+    builder.Services.AddSingleton<
+        Meshmakers.Octo.Runtime.Engine.MongoDb.StreamData.IRollupTenantSource,
+        Meshmakers.Octo.Runtime.Engine.MongoDb.StreamData.SystemContextRollupTenantSource>();
+
     // Register the StreamData CK model descriptor so EnableStreamDataAsync auto-imports
     // System.StreamData (including CkRollupArchive) into the tenant. Without this, rollups
     // resolve to "RtCkTypeId 'System.StreamData/CkRollupArchive' not found in CkCache".
