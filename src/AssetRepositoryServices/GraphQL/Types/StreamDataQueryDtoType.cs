@@ -88,7 +88,9 @@ internal sealed class StreamDataQueryDtoType : ObjectGraphType<StreamDataQueryDt
 
             var archiveSnapshot = await gql.TenantContext.GetArchiveRuntimeStore().GetAsync(uc.ArchiveRtId)
                 ?? throw new ArchiveNotFoundException(uc.ArchiveRtId);
-            var fieldResolver = new StreamDataFieldResolver(archiveSnapshot.Columns.Select(c => c.Path));
+            var fieldResolver = new StreamDataFieldResolver(
+                archiveSnapshot.Columns.Select(c => c.Path),
+                usesWindowedStorage: archiveSnapshot.UsesWindowedStorage);
             var execOverride = ctx.GetArgument<StreamDataArguments?>(Statics.StreamDataArgument);
 
             // Runtime field filters AND-combine with the persisted FieldFilter on each subtype.

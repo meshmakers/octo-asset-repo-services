@@ -370,7 +370,9 @@ internal sealed class StreamDataTransientQuery : ObjectGraphType
     /// </summary>
     private static StreamDataFieldResolver BuildFieldResolver(ArchiveSnapshot archiveSnapshot)
     {
-        return new StreamDataFieldResolver(archiveSnapshot.Columns.Select(c => c.Path));
+        return new StreamDataFieldResolver(
+            archiveSnapshot.Columns.Select(c => c.Path),
+            usesWindowedStorage: archiveSnapshot.UsesWindowedStorage);
     }
 
     private static AggregationTypesDto MapAggregationFunctionDtoToDto(AggregationFunctionDto func)
