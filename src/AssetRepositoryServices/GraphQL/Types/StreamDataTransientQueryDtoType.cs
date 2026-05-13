@@ -75,7 +75,15 @@ internal sealed class StreamDataTransientQueryDtoType : ObjectGraphType<StreamDa
             var ckTypeId = uc.CkTypeId;
             var archiveSnapshot = await gql.TenantContext.GetArchiveRuntimeStore().GetAsync(uc.ArchiveRtId)
                 ?? throw new ArchiveNotFoundException(uc.ArchiveRtId);
-            var fieldResolver = BuildFieldResolver(archiveSnapshot);
+            // Simple queries pick physical column paths directly; aggregation variants pick
+            // logical CK paths (chain-walked for rollups) and the engine's chain-aware resolver
+            // translates them to SQL. The resolver here drives both column-name mapping for the
+            // result rows and field-validation, so it has to know the logical paths exist for
+            // aggregation variants to validate successfully against rollup archives.
+            var fieldResolver = uc.Variant == StreamQueryVariant.Simple
+                ? BuildFieldResolver(archiveSnapshot)
+                : await StreamDataFieldResolverExtensions.BuildAggregationFieldResolverAsync(
+                    archiveSnapshot, gql, ctx.CancellationToken);
 
             IReadOnlyList<ColumnNameMapping> resolvedColumnNames;
             StreamQueryExecutionInput input;

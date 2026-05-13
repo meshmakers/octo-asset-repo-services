@@ -173,7 +173,7 @@ internal sealed class StreamDataTransientQuery : ObjectGraphType
             var archiveSnapshot = await gql.TenantContext.GetArchiveRuntimeStore().GetAsync(archiveRtId)
                 ?? throw new ArchiveNotFoundException(archiveRtId);
             var ckTypeId = archiveSnapshot.TargetCkTypeId;
-            var fieldResolver = BuildFieldResolver(archiveSnapshot);
+            var fieldResolver = await StreamDataFieldResolverExtensions.BuildAggregationFieldResolverAsync(archiveSnapshot, gql, ctx.CancellationToken);
 
             ctx.TryGetArgument(Statics.FieldFilterArg, out IEnumerable<FieldFilterDto>? fieldFilterDtos);
             ctx.TryGetArgument(Statics.RtIdsArg, null, out IEnumerable<OctoObjectId>? rtIds);
@@ -238,7 +238,7 @@ internal sealed class StreamDataTransientQuery : ObjectGraphType
             var archiveSnapshot = await gql.TenantContext.GetArchiveRuntimeStore().GetAsync(archiveRtId)
                 ?? throw new ArchiveNotFoundException(archiveRtId);
             var ckTypeId = archiveSnapshot.TargetCkTypeId;
-            var fieldResolver = BuildFieldResolver(archiveSnapshot);
+            var fieldResolver = await StreamDataFieldResolverExtensions.BuildAggregationFieldResolverAsync(archiveSnapshot, gql, ctx.CancellationToken);
 
             ctx.TryGetArgument(Statics.FieldFilterArg, out IEnumerable<FieldFilterDto>? fieldFilterDtos);
             ctx.TryGetArgument(Statics.RtIdsArg, null, out IEnumerable<OctoObjectId>? rtIds);
@@ -313,7 +313,7 @@ internal sealed class StreamDataTransientQuery : ObjectGraphType
             var archiveSnapshot = await gql.TenantContext.GetArchiveRuntimeStore().GetAsync(archiveRtId)
                 ?? throw new ArchiveNotFoundException(archiveRtId);
             var ckTypeId = archiveSnapshot.TargetCkTypeId;
-            var fieldResolver = BuildFieldResolver(archiveSnapshot);
+            var fieldResolver = await StreamDataFieldResolverExtensions.BuildAggregationFieldResolverAsync(archiveSnapshot, gql, ctx.CancellationToken);
 
             ctx.TryGetArgument(Statics.FieldFilterArg, out IEnumerable<FieldFilterDto>? fieldFilterDtos);
             ctx.TryGetArgument(Statics.RtIdsArg, null, out IEnumerable<OctoObjectId>? rtIds);

@@ -88,9 +88,12 @@ internal sealed class StreamDataQueryDtoType : ObjectGraphType<StreamDataQueryDt
 
             var archiveSnapshot = await gql.TenantContext.GetArchiveRuntimeStore().GetAsync(uc.ArchiveRtId)
                 ?? throw new ArchiveNotFoundException(uc.ArchiveRtId);
-            var fieldResolver = new StreamDataFieldResolver(
-                archiveSnapshot.Columns.Select(c => c.Path),
-                usesWindowedStorage: archiveSnapshot.UsesWindowedStorage);
+            // Persisted queries dispatch by subtype; aggregation variants reference logical CK
+            // paths on rollups (translated by the chain-aware engine resolver). The aggregation
+            // builder is a no-op for raw / time-range archives and harmless for persisted Simple
+            // queries that only reference physical paths, so we always use it here.
+            var fieldResolver = await StreamDataFieldResolverExtensions.BuildAggregationFieldResolverAsync(
+                archiveSnapshot, gql, ctx.CancellationToken);
             var execOverride = ctx.GetArgument<StreamDataArguments?>(Statics.StreamDataArgument);
 
             // Runtime field filters AND-combine with the persisted FieldFilter on each subtype.
