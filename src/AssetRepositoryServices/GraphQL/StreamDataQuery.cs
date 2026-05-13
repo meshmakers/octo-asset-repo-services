@@ -43,6 +43,42 @@ internal sealed class StreamDataQuery : ObjectGraphType
             .Description("Bulk-fetch per-archive backend storage stats (row count, on-disk size, health) for the studio's archives list. One round-trip per call; archives whose backing table doesn't exist yet (not activated) appear with tableExists=false so callers don't have to filter the rtId list beforehand.")
             .Argument<NonNullGraphType<ListGraphType<NonNullGraphType<OctoObjectIdType>>>>("rtIds", "Runtime ids of the archives to fetch stats for. Empty list returns empty result.")
             .ResolveAsync(ResolveArchivesStorageStatsAsync);
+
+        Field<RollupQueryMetadataDtoType>("rollupQueryMetadata")
+            .Description("Returns the studio's query-editor metadata for a rollup archive: bucket size and the distinct *logical* CK-attribute paths the rollup aggregates. Cascade rollups (rollup over rollup) have their physical sourcePath storage columns reversed back to the original CK attribute paths via RollupLogicalPathResolver (concept-time-range §7). Null if the rtId doesn't resolve to a rollup archive.")
+            .Argument<NonNullGraphType<OctoObjectIdType>>(Statics.RtIdArg, "Runtime id of the rollup archive to fetch metadata for.")
+            .ResolveAsync(ResolveRollupQueryMetadataAsync);
+    }
+
+    private static async Task<object?> ResolveRollupQueryMetadataAsync(IResolveFieldContext<object?> ctx)
+    {
+        var rollupRtId = ctx.GetArgument<OctoObjectId>(Statics.RtIdArg);
+        var gql = (GraphQlUserContext)ctx.UserContext;
+        var rollupStore = gql.TenantContext.GetRollupArchiveRuntimeStore();
+        if (rollupStore is null)
+        {
+            // StreamData not enabled for this tenant — surface null so the studio can render
+            // without the bucket-alignment hint / logical-path picker.
+            return null;
+        }
+
+        var rollup = await rollupStore.GetAsync(rollupRtId).ConfigureAwait(false);
+        if (rollup is null)
+        {
+            return null;
+        }
+
+        var archiveStore = gql.TenantContext.GetArchiveRuntimeStore();
+        var logicalPaths = await RollupLogicalPathResolver.ResolveAsync(
+            rollup,
+            getArchive: id => archiveStore.GetAsync(id),
+            getRollup: id => rollupStore.GetAsync(id),
+            ctx.CancellationToken).ConfigureAwait(false);
+
+        return new RollupQueryMetadataDto(
+            RtId: rollup.RtId,
+            BucketSizeMs: (long)rollup.BucketSize.TotalMilliseconds,
+            LogicalSourcePaths: logicalPaths);
     }
 
     private static async Task<object?> ResolveArchivesStorageStatsAsync(IResolveFieldContext<object?> ctx)
