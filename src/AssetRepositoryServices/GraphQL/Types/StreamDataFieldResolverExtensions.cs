@@ -1,4 +1,5 @@
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Utils;
+using Meshmakers.Octo.Runtime.Contracts.Repositories.Query;
 using Meshmakers.Octo.Runtime.Contracts.StreamData;
 using Meshmakers.Octo.Runtime.Engine.CrateDb;
 
@@ -22,6 +23,43 @@ internal static class StreamDataFieldResolverExtensions
             return new ColumnNameMapping(r.CrateDbName, r.GraphQlAlias);
         }).ToList();
     }
+
+    /// <summary>
+    /// Aggregation-aware variant of <see cref="ResolveToMappings"/>. Each aggregation column
+    /// produces a mapping whose canonical / wire key includes a lowercase function suffix
+    /// (e.g. <c>amountvalue_min</c>) so multiple aggregations on the same attribute path don't
+    /// collide on the same row.Values key. The engine's MapAggregationRow stores results under
+    /// this same key for parity. Mirrors `CrateDbStreamDataRepository.Execute*AggregationQueryAsync`.
+    /// </summary>
+    public static IReadOnlyList<ColumnNameMapping> ResolveAggregationMappings(
+        this StreamDataFieldResolver resolver,
+        IEnumerable<AggregationColumn> aggregationColumns)
+    {
+        return aggregationColumns.Select(col =>
+        {
+            var r = resolver.Resolve(col.AttributePath)!;
+            var suffix = AggregationFunctionWireSuffix(col.Function);
+            var key = $"{r.CrateDbName}_{suffix}";
+            return new ColumnNameMapping(key, key);
+        }).ToList();
+    }
+
+    /// <summary>
+    /// Function-suffix the engine appends to <c>row.Values</c> keys (see
+    /// `CrateDbStreamDataRepository.Execute*AggregationQueryAsync`). The engine talks in
+    /// <c>AggregationFunctionDto</c> short names (Min/Max/Avg/Sum/Count); the wire DTO uses
+    /// <c>AggregationFunction</c> long names (Minimum/Maximum/Average/Sum/Count) — translate
+    /// so both sides land on the same key.
+    /// </summary>
+    private static string AggregationFunctionWireSuffix(AggregationFunction f) => f switch
+    {
+        AggregationFunction.Minimum => "min",
+        AggregationFunction.Maximum => "max",
+        AggregationFunction.Average => "avg",
+        AggregationFunction.Sum => "sum",
+        AggregationFunction.Count => "count",
+        _ => f.ToString().ToLowerInvariant()
+    };
 
     /// <summary>
     /// Builds a field resolver for aggregation-style queries (Aggregation / GroupingAggregation /

@@ -128,8 +128,7 @@ internal sealed class StreamDataTransientQueryDtoType : ObjectGraphType<StreamDa
                 {
                     var aggColumns = uc.AggregationColumns ?? [];
 
-                    resolvedColumnNames = fieldResolver.ResolveToMappings(
-                        aggColumns.Select(c => c.AttributePath));
+                    resolvedColumnNames = fieldResolver.ResolveAggregationMappings(aggColumns);
 
                     input = new StreamQueryExecutionInput
                     {
@@ -152,8 +151,7 @@ internal sealed class StreamDataTransientQueryDtoType : ObjectGraphType<StreamDa
 
                     resolvedColumnNames = fieldResolver
                         .ResolveToMappings(groupByPaths)
-                        .Concat(fieldResolver.ResolveToMappings(
-                            aggColumns.Select(c => c.AttributePath)))
+                        .Concat(fieldResolver.ResolveAggregationMappings(aggColumns))
                         .ToList();
 
                     input = new StreamQueryExecutionInput
@@ -175,10 +173,12 @@ internal sealed class StreamDataTransientQueryDtoType : ObjectGraphType<StreamDa
                 {
                     var aggColumns = uc.AggregationColumns ?? [];
 
-                    // Timestamp first (canonical PascalCase, wire camelCase), then resolved aggregation columns
-                    var inputs = new[] { Constants.Timestamp }
-                        .Concat(aggColumns.Select(c => c.AttributePath));
-                    resolvedColumnNames = fieldResolver.ResolveToMappings(inputs);
+                    // Timestamp first (canonical PascalCase, wire camelCase), then aggregation
+                    // columns with function-suffixed keys (matches engine MapAggregationRow).
+                    resolvedColumnNames = fieldResolver
+                        .ResolveToMappings(new[] { Constants.Timestamp })
+                        .Concat(fieldResolver.ResolveAggregationMappings(aggColumns))
+                        .ToList();
 
                     input = new StreamQueryExecutionInput
                     {

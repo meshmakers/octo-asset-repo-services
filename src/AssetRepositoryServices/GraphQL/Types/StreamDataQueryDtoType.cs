@@ -183,8 +183,12 @@ internal sealed class StreamDataQueryDtoType : ObjectGraphType<StreamDataQueryDt
                         null,
                         ConcatNullable(persistedFilterPaths, runtimeFilterPaths));
 
-                    resolvedColumnNames = fieldResolver.ResolveToMappings(
-                        aggregationColumns.Select(c => c.AttributePath));
+                    var aggInputAgg = aggregationColumns
+                        .Select(c => new AggregationColumn(
+                            c.AttributePath,
+                            StreamDataGraphQlMapper.MapCkAggregationType(c.AggregationType)))
+                        .ToList();
+                    resolvedColumnNames = fieldResolver.ResolveAggregationMappings(aggInputAgg);
 
                     input = new StreamQueryExecutionInput
                     {
@@ -227,10 +231,14 @@ internal sealed class StreamDataQueryDtoType : ObjectGraphType<StreamDataQueryDt
                         null,
                         ConcatNullable(persistedFilterPaths, runtimeFilterPaths));
 
+                    var aggInputGrp = aggregationColumns
+                        .Select(c => new AggregationColumn(
+                            c.AttributePath,
+                            StreamDataGraphQlMapper.MapCkAggregationType(c.AggregationType)))
+                        .ToList();
                     resolvedColumnNames = fieldResolver
                         .ResolveToMappings(groupingColumns)
-                        .Concat(fieldResolver.ResolveToMappings(
-                            aggregationColumns.Select(c => c.AttributePath)))
+                        .Concat(fieldResolver.ResolveAggregationMappings(aggInputGrp))
                         .ToList();
 
                     input = new StreamQueryExecutionInput
@@ -274,10 +282,17 @@ internal sealed class StreamDataQueryDtoType : ObjectGraphType<StreamDataQueryDt
                         null,
                         ConcatNullable(persistedFilterPaths, runtimeFilterPaths));
 
-                    // Timestamp first (canonical PascalCase, wire camelCase), then resolved aggregation columns
-                    var inputs = new[] { Constants.Timestamp }
-                        .Concat(aggregationColumns.Select(c => c.AttributePath));
-                    resolvedColumnNames = fieldResolver.ResolveToMappings(inputs);
+                    var aggInputDs = aggregationColumns
+                        .Select(c => new AggregationColumn(
+                            c.AttributePath,
+                            StreamDataGraphQlMapper.MapCkAggregationType(c.AggregationType)))
+                        .ToList();
+                    // Timestamp first (canonical PascalCase, wire camelCase), then aggregation
+                    // columns with function-suffixed keys (matches engine MapAggregationRow).
+                    resolvedColumnNames = fieldResolver
+                        .ResolveToMappings(new[] { Constants.Timestamp })
+                        .Concat(fieldResolver.ResolveAggregationMappings(aggInputDs))
+                        .ToList();
 
                     input = new StreamQueryExecutionInput
                     {
