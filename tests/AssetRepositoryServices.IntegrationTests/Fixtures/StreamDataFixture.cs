@@ -7,6 +7,7 @@ using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Utils;
 using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.ConstructionKit.Models.StreamData.Generated.System.StreamData.v1;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb.Configuration;
+using Meshmakers.Octo.Runtime.Contracts.MongoDb.Services;
 using Meshmakers.Octo.Runtime.Contracts.RepositoryEntities;
 using Meshmakers.Octo.Runtime.Contracts.StreamData;
 using Meshmakers.Octo.Runtime.Engine.CrateDb.Configuration;
@@ -85,6 +86,12 @@ public class StreamDataFixture : AssetRepoFixture
         Services.Configure<StreamDataInstanceConfiguration>(c => c.Enabled = true);
         Services.AddSingleton(new CrateDbTestConnectionString(CrateDbConnectionString));
         Services.AddStreamDataDatabase<TestStreamDataConfiguration>();
+
+        // Mirrors Program.cs: register the descriptor so EnsureStreamDataCkModelImportedAsync
+        // resolves the shipped model id instead of the engine's hardcoded 1.0.0 fallback,
+        // which no catalog ships.
+        Services.AddSingleton<IStreamDataCkModelDescriptor>(
+            _ => new StreamDataCkModelDescriptor(SystemStreamDataCkIds.CkModelId));
 
         // Call base which starts MongoDB, creates system tenant + test tenant, builds the SP.
         await base.InitializeServicesAsync();

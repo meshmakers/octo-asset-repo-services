@@ -30,7 +30,6 @@ public class StreamDataBetweenFilterTests(StreamDataFixture fixture, ITestOutput
                     transientStreamDataQuery {
                         simple(
                             archiveRtId: "{{fixture.ArchiveRtIdString}}"
-                            ckId: "{{fixture.TestCkTypeId}}"
                             columnPaths: ["Voltage"]
                             fieldFilter: [{
                                 attributePath: "Timestamp"

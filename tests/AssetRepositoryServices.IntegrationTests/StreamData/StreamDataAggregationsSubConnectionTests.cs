@@ -28,7 +28,6 @@ public class StreamDataAggregationsSubConnectionTests(StreamDataFixture fixture,
                     transientStreamDataQuery {
                         simple(
                             archiveRtId: "{{fixture.ArchiveRtIdString}}"
-                            ckId: "{{fixture.TestCkTypeId}}"
                             columnPaths: ["Voltage"]
                             first: 1
                         ) {
@@ -80,7 +79,6 @@ public class StreamDataAggregationsSubConnectionTests(StreamDataFixture fixture,
                     transientStreamDataQuery {
                         simple(
                             archiveRtId: "{{fixture.ArchiveRtIdString}}"
-                            ckId: "{{fixture.TestCkTypeId}}"
                             columnPaths: ["Voltage"]
                             first: 1
                         ) {
