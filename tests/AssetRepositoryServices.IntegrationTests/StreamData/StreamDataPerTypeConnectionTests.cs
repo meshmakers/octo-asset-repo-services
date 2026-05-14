@@ -6,37 +6,46 @@ using Xunit;
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.StreamData;
 
 /// <summary>
-/// Integration tests for the per-type stream-data connection
-/// (assetRepositoryIntegrationTestMeteringPoint on StreamDataModelQuery), which exposes typed
-/// attribute fields directly on the row (not via cells). After T17 every column is camelCase
-/// across the wire and the underlying CrateDB table — both the row keys and the GraphQL aliases.
+/// Integration tests for resolving attribute values on stream-data rows. After AB#3864 the
+/// per-CK-type connection on StreamDataModelQuery was removed; attribute values are now
+/// projected through cells on the transient simple query (`streamData.transientStreamDataQuery.simple`).
+/// This test still pins the camelCase row.Values vs PascalCase GetAttributeValueOrDefault
+/// regression by walking cell.attributePath/value pairs.
 /// </summary>
 [Collection("Sequential")]
 public class StreamDataPerTypeConnectionTests(StreamDataFixture fixture, ITestOutputHelper output)
     : IClassFixture<StreamDataFixture>
 {
     [Fact]
-    public async Task PerTypeConnection_ReturnsTypedAttributeValues()
+    public async Task TransientSimpleQuery_ReturnsTypedAttributeValues()
     {
         fixture.OutputHelper = output;
 
-        // Per-type connection naming: stream + camelCase CK type (model + type, slashes stripped).
-        // AssetRepositoryIntegrationTest/MeteringPoint → assetRepositoryIntegrationTestMeteringPoint.
-        // Per-archive table requires `archiveRtId`.
         var query = $$"""
             {
                 streamData {
-                    assetRepositoryIntegrationTestMeteringPoint(
-                        archiveRtId: "{{fixture.ArchiveRtIdString}}"
-                        first: 5
-                    ) {
-                        totalCount
-                        items {
-                            rtId
-                            timestamp
-                            rtWellKnownName
-                            voltage
-                            current
+                    transientStreamDataQuery {
+                        simple(
+                            archiveRtId: "{{fixture.ArchiveRtIdString}}"
+                            columnPaths: ["Voltage", "Current"]
+                            first: 5
+                        ) {
+                            items {
+                                rows(first: 5) {
+                                    totalCount
+                                    items {
+                                        rtId
+                                        timestamp
+                                        rtWellKnownName
+                                        cells(first: 10) {
+                                            items {
+                                                attributePath
+                                                value
+                                            }
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -48,26 +57,32 @@ public class StreamDataPerTypeConnectionTests(StreamDataFixture fixture, ITestOu
 
         result.Errors.Should().BeNullOrEmpty("GraphQL query should succeed without errors");
 
-        var connection = GetConnection(result);
-        connection.GetProperty("totalCount").GetInt32().Should()
-            .Be(fixture.TestDataPointCount);
+        var rows = GetRows(result);
+        rows.GetProperty("totalCount").GetInt32().Should().Be(fixture.TestDataPointCount);
 
-        var items = connection.GetProperty("items").EnumerateArray().ToList();
+        var items = rows.GetProperty("items").EnumerateArray().ToList();
         items.Should().HaveCount(5);
 
         foreach (var item in items)
         {
             item.GetProperty("rtId").ValueKind.Should().NotBe(JsonValueKind.Null,
-                "rtId is always populated for typed stream rows");
+                "rtId is always populated for stream rows");
             item.GetProperty("timestamp").ValueKind.Should().NotBe(JsonValueKind.Null,
                 "timestamp is always populated");
             item.GetProperty("rtWellKnownName").ValueKind.Should().NotBe(JsonValueKind.Null,
                 "fixture populates rtWellKnownName as 'TestMeteringPointNNN'");
 
-            item.GetProperty("voltage").ValueKind.Should().NotBe(JsonValueKind.Null,
-                "typed attribute fields must resolve — regression check for the "
+            var cells = item.GetProperty("cells").GetProperty("items").EnumerateArray().ToList();
+            var byPath = cells.ToDictionary(
+                c => c.GetProperty("attributePath").GetString()!,
+                c => c.GetProperty("value"));
+
+            byPath.Should().ContainKey("voltage",
+                "typed attribute cells must resolve — regression check for the "
                 + "camelCase row.Values vs PascalCase GetAttributeValueOrDefault mismatch");
-            item.GetProperty("current").ValueKind.Should().NotBe(JsonValueKind.Null);
+            byPath.Should().ContainKey("current");
+            byPath["voltage"].ValueKind.Should().NotBe(JsonValueKind.Null);
+            byPath["current"].ValueKind.Should().NotBe(JsonValueKind.Null);
         }
     }
 
@@ -94,15 +109,18 @@ public class StreamDataPerTypeConnectionTests(StreamDataFixture fixture, ITestOu
     }
 
     /// <summary>
-    /// Path: data → streamData → assetRepositoryIntegrationTestMeteringPoint
+    /// Path: data → streamData → transientStreamDataQuery → simple → items[0] → rows
     /// </summary>
-    private JsonElement GetConnection(global::GraphQL.ExecutionResult result)
+    private JsonElement GetRows(global::GraphQL.ExecutionResult result)
     {
         var json = fixture.SerializeGraphQl(result);
         var doc = JsonDocument.Parse(json);
         return doc.RootElement
             .GetProperty("data")
             .GetProperty("streamData")
-            .GetProperty("assetRepositoryIntegrationTestMeteringPoint");
+            .GetProperty("transientStreamDataQuery")
+            .GetProperty("simple")
+            .GetProperty("items").EnumerateArray().First()
+            .GetProperty("rows");
     }
 }
