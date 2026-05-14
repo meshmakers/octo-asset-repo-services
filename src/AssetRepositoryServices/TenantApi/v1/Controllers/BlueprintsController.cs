@@ -5,6 +5,7 @@ using Meshmakers.Octo.Backend.AssetRepositoryServices.DataTransferObjects.Bluepr
 using Meshmakers.Octo.Backend.AssetRepositoryServices.Services;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects.ApiErrors;
 using Meshmakers.Octo.ConstructionKit.Contracts.BlueprintCatalogs;
+using Meshmakers.Octo.ConstructionKit.Contracts.Messages;
 using Meshmakers.Octo.Runtime.Contracts;
 using Meshmakers.Octo.Runtime.Contracts.Blueprints;
 using Microsoft.AspNetCore.Authorization;
@@ -39,6 +40,91 @@ public class BlueprintsController : ControllerBase
         _blueprintHistory = blueprintHistory;
         _backupService = backupService;
         _blueprintService = blueprintService;
+    }
+
+    // POST {tenantId}/v1/blueprints/apply
+    /// <summary>
+    ///     Applies a blueprint to the tenant for the first time. CK models are
+    ///     loaded into the tenant and seed data is imported via upsert.
+    /// </summary>
+    /// <param name="request">Apply request</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>Apply result with summary of changes</returns>
+    [HttpPost("apply")]
+    [Authorize(AssetRepositoryServiceConstants.TenantAssetApiReadWritePolicy)]
+    [ProducesResponseType(typeof(BlueprintApplyResultDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(OperationFailedErrorDto), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(InternalServerErrorDto), StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> Apply(
+        [FromBody] BlueprintApplyRequestDto request,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var tenantId = HttpContext.GetTenantId();
+            if (string.IsNullOrEmpty(tenantId))
+            {
+                return BadRequest(new OperationFailedErrorDto("TenantId is required"));
+            }
+
+            if (string.IsNullOrEmpty(request.BlueprintId))
+            {
+                return BadRequest(new OperationFailedErrorDto("BlueprintId is required"));
+            }
+
+            BlueprintId blueprintId;
+            try
+            {
+                blueprintId = new BlueprintId(request.BlueprintId);
+            }
+            catch (ArgumentException e)
+            {
+                return BadRequest(new OperationFailedErrorDto($"Invalid BlueprintId: {e.Message}"));
+            }
+
+            var result = await _blueprintService.ApplyBlueprintAsync(
+                tenantId,
+                blueprintId,
+                request.Force,
+                cancellationToken);
+
+            if (!result.IsSuccess)
+            {
+                var errors = result.OperationResult.Messages
+                    .Where(m => m.MessageLevel == MessageLevel.Error)
+                    .Select(m => m.MessageText)
+                    .ToList();
+
+                return BadRequest(new OperationFailedErrorDto(
+                    string.Join(", ", errors.Count > 0 ? errors : ["Blueprint apply failed"])));
+            }
+
+            var response = new BlueprintApplyResultDto
+            {
+                Success = true,
+                TenantId = result.TenantId ?? tenantId,
+                BlueprintId = result.BlueprintId?.FullName ?? request.BlueprintId,
+                ApplicationMode = (request.Force
+                    ? BlueprintApplicationMode.ReApply
+                    : BlueprintApplicationMode.Initial).ToString(),
+                SeedDataFilesApplied = result.AppliedSeedDataFiles.Count,
+                LoadedCkModels = result.LoadedCkModels.Select(m => m.ToString()).ToList(),
+                Warnings = result.OperationResult.Messages
+                    .Where(m => m.MessageLevel == MessageLevel.Warning)
+                    .Select(m => m.MessageText)
+                    .ToList()
+            };
+
+            return Ok(response);
+        }
+        catch (PersistenceException e)
+        {
+            return BadRequest(new OperationFailedErrorDto(e.Message));
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(StatusCodes.Status500InternalServerError, new InternalServerErrorDto(ex.Message));
+        }
     }
 
     // GET {tenantId}/v1/blueprints/history

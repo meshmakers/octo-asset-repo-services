@@ -17,6 +17,7 @@ using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
 using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.ConstructionKit.Contracts.ModelCatalogs;
 using Meshmakers.Octo.ConstructionKit.Contracts.Serialization;
+using Meshmakers.Octo.Runtime.Contracts.Blueprints;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb.Configuration;
 using Meshmakers.Octo.Runtime.Engine.Configuration.DependencyInjection;
 using Meshmakers.Octo.Services.Contracts.DistributionEventHub.Commands;
@@ -357,6 +358,9 @@ public static class RuntimeEngineBuilderExtensions
         builder.Services.AddRuntimeEngine()
             .AddMongoDbRuntimeRepository()
             .AddMongoBlueprintSupport();
+
+        // Override engine's default LoggingBlueprintNotifications with the event-hub adapter
+        builder.Services.AddSingleton<IBlueprintNotifications, DistributedBlueprintNotifications>();
 
         // Bind CK model catalog options to configuration sections (if available)
         // This allows OCTO_LocalFileSystemCatalog__IsEnabled etc. env vars to work
