@@ -25,6 +25,7 @@ public class BlueprintsController : ControllerBase
     private readonly ITenantBlueprintHistory _blueprintHistory;
     private readonly ITenantBackupService _backupService;
     private readonly IBlueprintService _blueprintService;
+    private readonly ITenantBlueprintInstallations _blueprintInstallations;
 
     /// <summary>
     ///     Constructor
@@ -32,14 +33,17 @@ public class BlueprintsController : ControllerBase
     /// <param name="blueprintHistory">Blueprint history service</param>
     /// <param name="backupService">Backup service</param>
     /// <param name="blueprintService">Blueprint service</param>
+    /// <param name="blueprintInstallations">Tenant blueprint installations service</param>
     public BlueprintsController(
         ITenantBlueprintHistory blueprintHistory,
         ITenantBackupService backupService,
-        IBlueprintService blueprintService)
+        IBlueprintService blueprintService,
+        ITenantBlueprintInstallations blueprintInstallations)
     {
         _blueprintHistory = blueprintHistory;
         _backupService = backupService;
         _blueprintService = blueprintService;
+        _blueprintInstallations = blueprintInstallations;
     }
 
     // POST {tenantId}/v1/blueprints/apply
@@ -507,6 +511,126 @@ public class BlueprintsController : ControllerBase
             };
 
             return Ok(response);
+        }
+        catch (PersistenceException e)
+        {
+            return BadRequest(new OperationFailedErrorDto(e.Message));
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(StatusCodes.Status500InternalServerError, new InternalServerErrorDto(ex.Message));
+        }
+    }
+
+    // GET {tenantId}/v1/blueprints/installations
+    /// <summary>
+    ///     Lists all blueprints currently installed on the tenant. Distinct from
+    ///     the application history (which is append-only).
+    /// </summary>
+    [HttpGet("installations")]
+    [Authorize(AssetRepositoryServiceConstants.TenantAssetApiReadOnlyPolicy)]
+    [ProducesResponseType(typeof(IEnumerable<BlueprintInstallationDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(OperationFailedErrorDto), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(InternalServerErrorDto), StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> GetInstallations(CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var tenantId = HttpContext.GetTenantId();
+            if (string.IsNullOrEmpty(tenantId))
+            {
+                return BadRequest(new OperationFailedErrorDto("TenantId is required"));
+            }
+
+            var rows = await _blueprintInstallations.GetInstalledAsync(tenantId, cancellationToken);
+
+            var response = rows.Select(r => new BlueprintInstallationDto
+            {
+                BlueprintId = r.BlueprintId.FullName,
+                InstalledAt = r.InstalledAt,
+                LastUpdatedAt = r.LastUpdatedAt,
+                IsDependency = r.IsDependency,
+                ResolvedDependencies = r.ResolvedDependencies.Select(d => d.FullName).ToList(),
+                SeedDataChecksum = r.SeedDataChecksum
+            });
+
+            return Ok(response);
+        }
+        catch (PersistenceException e)
+        {
+            return BadRequest(new OperationFailedErrorDto(e.Message));
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(StatusCodes.Status500InternalServerError, new InternalServerErrorDto(ex.Message));
+        }
+    }
+
+    // DELETE {tenantId}/v1/blueprints/{blueprintName}?cascade=true
+    /// <summary>
+    ///     Uninstalls a blueprint from the tenant. With cascade=true, dependents
+    ///     are uninstalled first and orphaned dependencies are auto-cleaned.
+    /// </summary>
+    /// <param name="blueprintName">Name of the blueprint to remove (without version).</param>
+    /// <param name="cascade">When true, also remove blueprints that depend on the target.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    [HttpDelete("{blueprintName}")]
+    [Authorize(AssetRepositoryServiceConstants.TenantAssetApiReadWritePolicy)]
+    [ProducesResponseType(typeof(BlueprintUninstallResultDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(BlueprintUninstallResultDto), StatusCodes.Status409Conflict)]
+    [ProducesResponseType(typeof(OperationFailedErrorDto), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(InternalServerErrorDto), StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> Uninstall(
+        [Required] string blueprintName,
+        [FromQuery] bool cascade = false,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var tenantId = HttpContext.GetTenantId();
+            if (string.IsNullOrEmpty(tenantId))
+            {
+                return BadRequest(new OperationFailedErrorDto("TenantId is required"));
+            }
+
+            if (string.IsNullOrEmpty(blueprintName))
+            {
+                return BadRequest(new OperationFailedErrorDto("BlueprintName is required"));
+            }
+
+            var result = await _blueprintService.UninstallAsync(
+                tenantId, blueprintName, cascade, cancellationToken);
+
+            var response = new BlueprintUninstallResultDto
+            {
+                Success = result.Success,
+                UninstalledBlueprintId = result.UninstalledBlueprintId?.FullName,
+                EntitiesDeleted = result.EntitiesDeleted,
+                CascadedDependencies = result.CascadedDependencies.Select(d => d.FullName).ToList(),
+                BlockingDependents = result.BlockingDependents.Select(d => d.FullName).ToList(),
+                Warnings = result.Warnings.ToList()
+            };
+
+            if (result.Success)
+            {
+                return Ok(response);
+            }
+
+            // Blocked by dependents → 409 Conflict (caller can retry with cascade=true).
+            if (result.BlockingDependents.Count > 0)
+            {
+                return Conflict(response);
+            }
+
+            // Target not installed → 404.
+            if (result.UninstalledBlueprintId == null)
+            {
+                return NotFound();
+            }
+
+            return BadRequest(new OperationFailedErrorDto(
+                string.Join(", ", result.Errors.Count > 0 ? result.Errors : ["Uninstall failed"])));
         }
         catch (PersistenceException e)
         {
