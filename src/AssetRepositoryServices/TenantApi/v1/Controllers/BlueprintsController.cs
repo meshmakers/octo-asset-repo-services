@@ -491,7 +491,7 @@ public class BlueprintsController : ControllerBase
                 return BadRequest(new OperationFailedErrorDto("BackupId is required"));
             }
 
-            var result = await _backupService.RestoreBackupAsync(tenantId, backupId, cancellationToken);
+            var result = await _blueprintService.RollbackAsync(tenantId, backupId, cancellationToken);
 
             if (!result.Success)
             {
