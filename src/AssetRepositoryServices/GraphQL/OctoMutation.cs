@@ -23,5 +23,10 @@ internal sealed class OctoMutation : ObjectGraphType
         // role gating is enforced by the AspNetCore policy on the GraphQL endpoint.
         Field("StreamData", new StreamDataMutation(loggerFactory.CreateLogger<StreamDataMutation>()))
             .Resolve(_ => new object());
+
+        // Blueprint install / update / uninstall / rollback. Per-mutation field-level
+        // gating on AdminPanelManagementRole is enforced inside the resolvers.
+        Field("Blueprints", new BlueprintsMutation(loggerFactory.CreateLogger<BlueprintsMutation>()))
+            .Resolve(_ => new object());
     }
 }
