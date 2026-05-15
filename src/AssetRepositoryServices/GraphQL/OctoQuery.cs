@@ -29,6 +29,9 @@ internal sealed class OctoQuery : ObjectGraphType
         Field("StreamData", new StreamDataQuery(loggerFactory.CreateLogger<StreamDataQuery>()))
             .Resolve(_ => new StreamDataEntityDto());
 
+        Field("Blueprints", new BlueprintsQuery(loggerFactory.CreateLogger<BlueprintsQuery>()))
+            .Resolve(_ => new object());
+
         Field<NonNullGraphType<ListGraphType<NonNullGraphType<ArchivePathInfoDtoType>>>>("availableArchivePaths")
             .Description("Returns the attribute paths reachable from the given CK type that may be used as columns in a CkArchive (concept §16). Bounded by maxDepth so deep records terminate predictably.")
             .Argument<NonNullGraphType<StringGraphType>>("ckTypeId", "The CK type id to introspect, e.g. \"Energy/Sensor\".")
