@@ -354,8 +354,12 @@ public static class RuntimeEngineBuilderExtensions
             c.AddBroadcastEventConsumer<TenantManagementConsumer, PreDeleteTenant>();
         });
 
-        // Add the basic services of Octo
-        builder.Services.AddRuntimeEngine()
+        // Mongo-backed repositories + blueprint history/installations.
+        // Don't call AddRuntimeEngine() here: Program.cs already does, and
+        // a second call duplicates every IEnumerable-style registration
+        // (most visibly the three IBlueprintCatalog instances surfaced via
+        // BlueprintsQuery.catalogs in the studio).
+        builder
             .AddMongoDbRuntimeRepository()
             .AddMongoBlueprintSupport();
 
