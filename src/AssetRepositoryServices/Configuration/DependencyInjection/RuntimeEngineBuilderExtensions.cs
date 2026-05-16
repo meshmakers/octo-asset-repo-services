@@ -2,6 +2,7 @@
 using System.Text.Json;
 using AssetRepositoryServices.Resources;
 using GraphQL;
+using Meshmakers.Common.Shared;
 using GraphQL.Server.Transports.AspNetCore;
 using GraphQL.Types.Relay;
 using Meshmakers.Octo.Backend.AssetRepositoryServices;
@@ -133,15 +134,19 @@ public static class RuntimeEngineBuilderExtensions
             {
                 var octoOptions = builder.Services.BuildServiceProvider()
                     .GetRequiredService<OctoAssetRepositoryServicesOptions>();
-                // base-address of your identity server
-                options.Authority = octoOptions.Authority;
+                // base-address of your identity server.
+                // EnsureEndsWith("/") mirrors what identity / bot / communication-controller
+                // do — tokens from IdentityServer carry `iss` with a trailing slash, so
+                // ValidIssuer must match the slash-form exactly.
+                var authorityUrl = octoOptions.Authority.EnsureEndsWith("/");
+                options.Authority = authorityUrl;
 
                 options.TokenValidationParameters.ValidateAudience = false;
 
                 // Explicitly set the valid issuer so token validation does not depend on fetching
                 // the OIDC discovery document. This prevents IDX10204 errors when the identity
                 // service is temporarily unreachable (e.g. during rolling updates).
-                options.TokenValidationParameters.ValidIssuer = octoOptions.Authority;
+                options.TokenValidationParameters.ValidIssuer = authorityUrl;
             });
 
 
