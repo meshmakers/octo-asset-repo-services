@@ -129,7 +129,7 @@ internal class RtEntityMutation : RtMutationBase
 
                 await RtEntityFromInputObjectAsync(ckCacheService, graphQlUserContext.TenantId, document,
                     mutationDto.Item, associationUpdateInfoList);
-                if (document.Attributes.Any())
+                if (document.Attributes.Any() || !string.IsNullOrWhiteSpace(document.RtWellKnownName))
                 {
                     entityUpdateInfos.Add(EntityUpdateInfo<RtEntity>.CreateUpdate(rtEntityId, document));
                 }

@@ -435,6 +435,93 @@ public class RtEntityGenericMutationTests : IClassFixture<GraphQlTestFixture>
     }
 
     [Fact]
+    public async Task Update_RtWellKnownNameOnly_ReturnsRenamedEntity()
+    {
+        // Regression: without any `attributes` payload, the resolver previously skipped the
+        // update entirely and returned an empty array — surfacing as
+        // "Server did not return an updated archive" in the studio's archive rename flow.
+        var createMutation = @"
+            mutation ($entities: [RtEntityInput!]!) {
+                runtime {
+                    runtimeEntities {
+                        create(entities: $entities) {
+                            rtId
+                        }
+                    }
+                }
+            }";
+
+        var createVariables = JsonSerializer.Serialize(new
+        {
+            entities = new[]
+            {
+                new
+                {
+                    ckTypeId = CustomerCkTypeId,
+                    rtWellKnownName = "TestCustomer_RenameOnly_Original",
+                    attributes = new[]
+                    {
+                        new { attributeName = "firstName", value = "Rename" },
+                        new { attributeName = "lastName", value = "Only" },
+                        new { attributeName = "street", value = "Street 1" },
+                        new { attributeName = "postalCode", value = "12345" },
+                        new { attributeName = "city", value = "City" },
+                        new { attributeName = "country", value = "Austria" }
+                    }
+                }
+            }
+        });
+
+        var createResult = await _fixture.ExecuteGraphQlAsync(createMutation, createVariables);
+        createResult.Errors.Should().BeNullOrEmpty();
+
+        var createdRtId = JObject.Parse(_fixture.SerializeGraphQl(createResult))
+            .SelectToken("data.runtime.runtimeEntities.create[0].rtId")?.Value<string>();
+        createdRtId.Should().NotBeNullOrEmpty();
+
+        var updateMutation = @"
+            mutation ($entities: [RtEntityUpdate!]!) {
+                runtime {
+                    runtimeEntities {
+                        update(entities: $entities) {
+                            rtId
+                            rtWellKnownName
+                        }
+                    }
+                }
+            }";
+
+        var updateVariables = JsonSerializer.Serialize(new
+        {
+            entities = new[]
+            {
+                new
+                {
+                    rtId = createdRtId,
+                    item = new
+                    {
+                        ckTypeId = CustomerCkTypeId,
+                        rtWellKnownName = "TestCustomer_RenameOnly_Renamed"
+                    }
+                }
+            }
+        });
+
+        var result = await _fixture.ExecuteGraphQlAsync(updateMutation, updateVariables);
+
+        result.Should().NotBeNull();
+        result.Errors.Should().BeNullOrEmpty();
+        result.Data.Should().NotBeNull();
+
+        var updatedEntities = JObject.Parse(_fixture.SerializeGraphQl(result))
+            .SelectToken("data.runtime.runtimeEntities.update") as JArray;
+        updatedEntities.Should().NotBeNull();
+        updatedEntities.Should().HaveCount(1);
+        updatedEntities![0]["rtId"]?.Value<string>().Should().Be(createdRtId);
+        updatedEntities![0]["rtWellKnownName"]?.Value<string>().Should().Be("TestCustomer_RenameOnly_Renamed");
+    }
+
+    [Fact]
     public async Task Update_MultipleEntities_ReturnsAllUpdatedEntities()
     {
         // Arrange - create two entities to update
