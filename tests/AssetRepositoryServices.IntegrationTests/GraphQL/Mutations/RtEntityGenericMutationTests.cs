@@ -491,6 +491,10 @@ public class RtEntityGenericMutationTests : IClassFixture<GraphQlTestFixture>
                 }
             }";
 
+        // The generic input schema marks `attributes` as non-null, so we send an empty list
+        // (no attribute changes) — same shape the bug originally reproduced under, since the
+        // pre-fix guard `if (document.Attributes.Any())` skipped the update in both the
+        // omitted-attributes and empty-attributes cases.
         var updateVariables = JsonSerializer.Serialize(new
         {
             entities = new[]
@@ -501,7 +505,8 @@ public class RtEntityGenericMutationTests : IClassFixture<GraphQlTestFixture>
                     item = new
                     {
                         ckTypeId = CustomerCkTypeId,
-                        rtWellKnownName = "TestCustomer_RenameOnly_Renamed"
+                        rtWellKnownName = "TestCustomer_RenameOnly_Renamed",
+                        attributes = Array.Empty<object>()
                     }
                 }
             }
