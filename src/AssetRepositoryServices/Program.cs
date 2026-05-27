@@ -2,6 +2,7 @@ using Meshmakers.Octo.Backend.AssetRepositoryServices.Configuration;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.Routing;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.Services;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.StreamData;
+using Meshmakers.Octo.Runtime.Contracts.Blueprints;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb.Extensions;
 using Meshmakers.Octo.Services.Infrastructure.Services;
 using Meshmakers.Octo.Services.Observability;
@@ -44,6 +45,12 @@ try
 
     builder.Services.Configure<RouteOptions>(options =>
         options.ConstraintMap.Add("tenantId", typeof(TenantIdRouteConstraint)));
+
+    // Bind blueprint variable context (octo.version/environment/systemTenantId) so the
+    // default IBlueprintVariableProvider surfaces values from helm-injected
+    // OCTO_BLUEPRINTS__* environment variables instead of falling back to defaults.
+    builder.Services.Configure<OctoBlueprintVariablesOptions>(options =>
+        builder.Configuration.GetSection(OctoBlueprintVariablesOptions.SectionName).Bind(options));
 
     builder.Services.AddRuntimeEngine()
         .AddOctoAssetRepositoryServices(
