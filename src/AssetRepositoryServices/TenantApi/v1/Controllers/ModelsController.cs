@@ -294,7 +294,7 @@ public class ModelsController : ControllerBase
             var tenantContext = await _systemContext.FindTenantContextAsync(tenantId);
             var sysVersions = await GetInstalledSystemVersionsAsync(tenantContext);
             var (isCompatible, incompatibilityReason) = await CheckSystemCompatibilityAsync(
-                ckModelId, sysVersions, new HashSet<string>(), CancellationToken.None);
+                ckModelId, sysVersions, new HashSet<string>(), new List<string>(), CancellationToken.None);
             if (!isCompatible)
             {
                 return BadRequest(new OperationFailedErrorDto(
@@ -521,42 +521,7 @@ public class ModelsController : ControllerBase
             foreach (var inst in installedResult.Items)
             {
                 processedNames.Add(inst.ModelId);
-                catalogByName.TryGetValue(inst.ModelId, out var catalog);
-
-                var isServiceManaged = IsSystemManaged(inst.ModelId);
-                var hasUpdate = !isServiceManaged && catalog != null &&
-                                catalog.ModelId.Version.CompareTo(inst.Id.Version) > 0;
-
-                var modelState = inst.ModelState.ToString();
-                var isResolveFailed = inst.ModelState ==
-                                     ConstructionKit.Contracts.DataTransferObjects.ModelState.ResolveFailed;
-
-                // Check compatibility for non-system models that need action (update or fix)
-                var isCompatible = true;
-                string? incompatibilityReason = null;
-                if (!isServiceManaged && catalog != null && (hasUpdate || isResolveFailed))
-                {
-                    (isCompatible, incompatibilityReason) = await CheckSystemCompatibilityAsync(
-                        catalog.ModelId, installedSystemVersions, new HashSet<string>(), cancellationToken);
-                }
-
-                var needsAction = (isResolveFailed || hasUpdate) && !isServiceManaged && isCompatible;
-
-                items.Add(new CkModelLibraryStatusItemDto
-                {
-                    Name = inst.ModelId,
-                    InstalledVersion = inst.Id.Version.ToString(),
-                    ModelState = modelState,
-                    Dependencies = inst.Dependencies?.Select(d => d.FullName).ToList() ?? [],
-                    CatalogVersion = catalog?.ModelId.Version.ToString(),
-                    HasUpdate = hasUpdate,
-                    NeedsAction = needsAction,
-                    CatalogName = catalog?.CatalogName,
-                    FullModelId = catalog?.ModelId.FullName,
-                    IsServiceManaged = isServiceManaged,
-                    IsCompatible = isCompatible,
-                    IncompatibilityReason = incompatibilityReason
-                });
+                items.Add(await BuildInstalledItemAsync(inst, catalogByName, installedSystemVersions, cancellationToken));
             }
 
             // Add catalog-only models (not installed)
@@ -564,34 +529,15 @@ public class ModelsController : ControllerBase
             {
                 if (!processedNames.Contains(name))
                 {
-                    var isServiceManaged = IsSystemManaged(name);
-
-                    // Check compatibility for catalog-only non-system models
-                    var isCompatible = true;
-                    string? incompatibilityReason = null;
-                    if (!isServiceManaged)
-                    {
-                        (isCompatible, incompatibilityReason) = await CheckSystemCompatibilityAsync(
-                            cm.ModelId, installedSystemVersions, new HashSet<string>(), cancellationToken);
-                    }
-
-                    items.Add(new CkModelLibraryStatusItemDto
-                    {
-                        Name = name,
-                        CatalogVersion = cm.ModelId.Version.ToString(),
-                        CatalogName = cm.CatalogName,
-                        FullModelId = cm.ModelId.FullName,
-                        IsServiceManaged = isServiceManaged,
-                        IsCompatible = isCompatible,
-                        IncompatibilityReason = incompatibilityReason
-                    });
+                    items.Add(await BuildCatalogOnlyItemAsync(name, cm, installedSystemVersions, cancellationToken));
                 }
             }
 
             return Ok(new CkModelLibraryStatusResponseDto
             {
                 Items = items,
-                ModelsNeedingActionCount = items.Count(i => i.NeedsAction)
+                ModelsNeedingActionCount = items.Count(i => i.NeedsAction),
+                ModelsWithCatalogInconsistencyCount = items.Count(i => i.HasCatalogInconsistency)
             });
         }
         catch (Exception ex)
@@ -724,7 +670,7 @@ public class ModelsController : ControllerBase
             {
                 var checkId = new CkModelId(modelId);
                 var (isCompatible, reason) = await CheckSystemCompatibilityAsync(
-                    checkId, sysVersions, new HashSet<string>(), CancellationToken.None);
+                    checkId, sysVersions, new HashSet<string>(), new List<string>(), CancellationToken.None);
                 if (!isCompatible)
                 {
                     return BadRequest(new OperationFailedErrorDto(
@@ -1005,15 +951,150 @@ public class ModelsController : ControllerBase
     private static bool IsSystemManaged(string modelName) =>
         modelName == "System" || modelName.StartsWith("System.", StringComparison.Ordinal);
 
+    // Build one library-status row for an installed model. Catches per-item failures so a
+    // single misbehaving model does not collapse the whole library-status response into a 500.
+    private async Task<CkModelLibraryStatusItemDto> BuildInstalledItemAsync(
+        Runtime.Contracts.MongoDb.Repositories.Entities.CkModel inst,
+        Dictionary<string, CatalogResultItem> catalogByName,
+        Dictionary<string, CkVersion> installedSystemVersions,
+        CancellationToken cancellationToken)
+    {
+        catalogByName.TryGetValue(inst.ModelId, out var catalog);
+        var isServiceManaged = IsSystemManaged(inst.ModelId);
+        var modelState = inst.ModelState.ToString();
+        var dependencies = inst.Dependencies?.Select(d => d.FullName).ToList() ?? [];
+
+        try
+        {
+            var hasUpdate = !isServiceManaged && catalog != null &&
+                            catalog.ModelId.Version.CompareTo(inst.Id.Version) > 0;
+            var isResolveFailed = inst.ModelState ==
+                                 ConstructionKit.Contracts.DataTransferObjects.ModelState.ResolveFailed;
+
+            var isCompatible = true;
+            string? incompatibilityReason = null;
+            var unresolvedDeps = new List<string>();
+            if (!isServiceManaged && catalog != null && (hasUpdate || isResolveFailed))
+            {
+                (isCompatible, incompatibilityReason) = await CheckSystemCompatibilityAsync(
+                    catalog.ModelId, installedSystemVersions, new HashSet<string>(),
+                    unresolvedDeps, cancellationToken);
+            }
+
+            var hasInconsistency = unresolvedDeps.Count > 0;
+            var needsAction = (isResolveFailed || hasUpdate) && !isServiceManaged
+                              && isCompatible && !hasInconsistency;
+
+            return new CkModelLibraryStatusItemDto
+            {
+                Name = inst.ModelId,
+                InstalledVersion = inst.Id.Version.ToString(),
+                ModelState = modelState,
+                Dependencies = dependencies,
+                CatalogVersion = catalog?.ModelId.Version.ToString(),
+                HasUpdate = hasUpdate,
+                NeedsAction = needsAction,
+                CatalogName = catalog?.CatalogName,
+                FullModelId = catalog?.ModelId.FullName,
+                IsServiceManaged = isServiceManaged,
+                IsCompatible = isCompatible,
+                IncompatibilityReason = incompatibilityReason,
+                UnresolvedDependencies = unresolvedDeps,
+                HasCatalogInconsistency = hasInconsistency
+            };
+        }
+        catch (Exception ex)
+        {
+            return new CkModelLibraryStatusItemDto
+            {
+                Name = inst.ModelId,
+                InstalledVersion = inst.Id.Version.ToString(),
+                ModelState = modelState,
+                Dependencies = dependencies,
+                CatalogVersion = catalog?.ModelId.Version.ToString(),
+                CatalogName = catalog?.CatalogName,
+                FullModelId = catalog?.ModelId.FullName,
+                IsServiceManaged = isServiceManaged,
+                IsCompatible = false,
+                IncompatibilityReason = $"Failed to evaluate library status: {ex.Message}",
+                HasCatalogInconsistency = true
+            };
+        }
+    }
+
+    private async Task<CkModelLibraryStatusItemDto> BuildCatalogOnlyItemAsync(
+        string name,
+        CatalogResultItem cm,
+        Dictionary<string, CkVersion> installedSystemVersions,
+        CancellationToken cancellationToken)
+    {
+        var isServiceManaged = IsSystemManaged(name);
+
+        try
+        {
+            var isCompatible = true;
+            string? incompatibilityReason = null;
+            var unresolvedDeps = new List<string>();
+            if (!isServiceManaged)
+            {
+                (isCompatible, incompatibilityReason) = await CheckSystemCompatibilityAsync(
+                    cm.ModelId, installedSystemVersions, new HashSet<string>(),
+                    unresolvedDeps, cancellationToken);
+            }
+
+            return new CkModelLibraryStatusItemDto
+            {
+                Name = name,
+                CatalogVersion = cm.ModelId.Version.ToString(),
+                CatalogName = cm.CatalogName,
+                FullModelId = cm.ModelId.FullName,
+                IsServiceManaged = isServiceManaged,
+                IsCompatible = isCompatible,
+                IncompatibilityReason = incompatibilityReason,
+                UnresolvedDependencies = unresolvedDeps,
+                HasCatalogInconsistency = unresolvedDeps.Count > 0
+            };
+        }
+        catch (Exception ex)
+        {
+            return new CkModelLibraryStatusItemDto
+            {
+                Name = name,
+                CatalogVersion = cm.ModelId.Version.ToString(),
+                CatalogName = cm.CatalogName,
+                FullModelId = cm.ModelId.FullName,
+                IsServiceManaged = isServiceManaged,
+                IsCompatible = false,
+                IncompatibilityReason = $"Failed to evaluate library status: {ex.Message}",
+                HasCatalogInconsistency = true
+            };
+        }
+    }
+
     private async Task<(bool isCompatible, string? reason)> CheckSystemCompatibilityAsync(
         CkModelId catalogModelId,
         Dictionary<string, CkVersion> installedSystemVersions,
         HashSet<string> visited,
+        List<string> unresolvedDependencies,
         CancellationToken cancellationToken)
     {
         var operationResult = new OperationResult();
-        var compiled = await _catalogService.GetAsync(catalogModelId, operationResult,
-            cancellationToken: cancellationToken);
+        ConstructionKit.Contracts.DataTransferObjects.CkCompiledModelRoot? compiled;
+        try
+        {
+            compiled = await _catalogService.GetAsync(catalogModelId, operationResult,
+                cancellationToken: cancellationToken);
+        }
+        catch (ModelCatalogException)
+        {
+            // The catalog graph is inconsistent: a model up the chain pinned a dependency
+            // on a version that is not published in any registered catalog. Surface this
+            // as an incompatibility instead of failing the whole library-status response.
+            unresolvedDependencies.Add(catalogModelId.FullName);
+            return (false,
+                $"Catalog inconsistency: required dependency '{catalogModelId.FullName}' is not available in any registered catalog");
+        }
+
         if (compiled?.Dependencies == null) return (true, null);
 
         foreach (var dep in compiled.Dependencies)
@@ -1041,7 +1122,7 @@ public class ModelsController : ControllerBase
             else
             {
                 var (subCompat, subReason) = await CheckSystemCompatibilityAsync(
-                    dep, installedSystemVersions, visited, cancellationToken);
+                    dep, installedSystemVersions, visited, unresolvedDependencies, cancellationToken);
                 if (!subCompat) return (false, subReason);
             }
         }

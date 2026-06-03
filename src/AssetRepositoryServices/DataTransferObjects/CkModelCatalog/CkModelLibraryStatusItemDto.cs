@@ -67,4 +67,18 @@ public class CkModelLibraryStatusItemDto
     ///     Reason for incompatibility, or null if compatible
     /// </summary>
     public string? IncompatibilityReason { get; set; }
+
+    /// <summary>
+    ///     Catalog model IDs that this model's compatibility check could not resolve in any
+    ///     registered catalog. Non-empty implies a publishing inconsistency (a compiled model
+    ///     declares a pinned dependency on a version that was never published, or was removed)
+    ///     and the model cannot be installed as-is.
+    /// </summary>
+    public List<string> UnresolvedDependencies { get; set; } = [];
+
+    /// <summary>
+    ///     True when this row has unresolved dependencies. Convenience flag derived from
+    ///     <see cref="UnresolvedDependencies"/> so the UI does not have to compute it.
+    /// </summary>
+    public bool HasCatalogInconsistency { get; set; }
 }

@@ -15,4 +15,10 @@ public class CkModelLibraryStatusResponseDto
     ///     Count of models that need action (ResolveFailed or update available)
     /// </summary>
     public int ModelsNeedingActionCount { get; set; }
+
+    /// <summary>
+    ///     Count of models whose compatibility check could not resolve one or more pinned
+    ///     dependencies in any registered catalog (catalog publishing inconsistency).
+    /// </summary>
+    public int ModelsWithCatalogInconsistencyCount { get; set; }
 }
