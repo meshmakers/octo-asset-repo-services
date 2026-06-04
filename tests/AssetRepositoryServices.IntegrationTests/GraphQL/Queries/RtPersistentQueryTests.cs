@@ -798,7 +798,7 @@ public class RtPersistentQueryTests : IClassFixture<GraphQlTestFixture>
             cells.Should().NotBeNull();
 
             var countCell = ((JArray)cells!).FirstOrDefault(c =>
-                c["attributePath"]?.Value<string>() == "meterReading");
+                c["attributePath"]?.Value<string>() == "meterreading_count");
             countCell.Should().NotBeNull();
 
             // Count should be 8 (active metering points)
@@ -884,7 +884,7 @@ public class RtPersistentQueryTests : IClassFixture<GraphQlTestFixture>
             cells.Should().NotBeNull();
 
             var sumCell = ((JArray)cells!).FirstOrDefault(c =>
-                c["attributePath"]?.Value<string>() == "meterReading");
+                c["attributePath"]?.Value<string>() == "meterreading_sum");
             sumCell.Should().NotBeNull();
 
             // Verify a sum value is returned (should be positive and greater than any single reading)
@@ -970,7 +970,7 @@ public class RtPersistentQueryTests : IClassFixture<GraphQlTestFixture>
             cells.Should().NotBeNull();
 
             var avgCell = ((JArray)cells!).FirstOrDefault(c =>
-                c["attributePath"]?.Value<string>() == "meterReading");
+                c["attributePath"]?.Value<string>() == "meterreading_avg");
             avgCell.Should().NotBeNull();
 
             // Verify an average value is returned (should be positive)
@@ -1059,13 +1059,17 @@ public class RtPersistentQueryTests : IClassFixture<GraphQlTestFixture>
             var cellArray = (JArray)cells!;
             cellArray.Should().HaveCount(2);
 
-            // Verify minimum and maximum values are returned (min should be less than max)
-            var minCell = cellArray.FirstOrDefault();
+            // Verify minimum and maximum values are returned (min should be less than max).
+            // Cells are addressable by their wire-form key (path + function suffix), which is
+            // how the engine disambiguates two aggregations on the same source path.
+            var minCell = cellArray.FirstOrDefault(c =>
+                c["attributePath"]?.Value<string>() == "meterreading_min");
             minCell.Should().NotBeNull();
             var minValue = minCell!["value"]?.Value<int>() ?? 0;
             minValue.Should().BeGreaterThan(0);
 
-            var maxCell = cellArray.LastOrDefault();
+            var maxCell = cellArray.FirstOrDefault(c =>
+                c["attributePath"]?.Value<string>() == "meterreading_max");
             maxCell.Should().NotBeNull();
             var maxValue = maxCell!["value"]?.Value<int>() ?? 0;
             maxValue.Should().BeGreaterThan(0);
@@ -1653,13 +1657,13 @@ public class RtPersistentQueryTests : IClassFixture<GraphQlTestFixture>
                 var cellArray = (JArray)cells!;
                 cellArray.Should().HaveCount(2);
 
-                // First cell should be city
+                // First cell should be city (groupBy key, wire-form)
                 var cityCell = cellArray[0];
                 cityCell["attributePath"]?.Value<string>().Should().Be("city");
 
-                // Second cell should be count
+                // Second cell should be COUNT(firstName) (wire-form with function suffix)
                 var countCell = cellArray[1];
-                countCell["attributePath"]?.Value<string>().Should().Be("firstName");
+                countCell["attributePath"]?.Value<string>().Should().Be("firstname_count");
                 countCell["value"]?.Value<int>().Should().BeGreaterThan(0);
             }
         }

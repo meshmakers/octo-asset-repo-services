@@ -27,9 +27,19 @@ internal sealed class RtQueryColumnType : ObjectGraphType<RtQueryColumnDto>
 
     public static RtQueryColumnDto CreateRtQueryColumnDto(CkTypeQueryColumn ckTypeQueryColumn, AggregationTypesDto aggregationType)
     {
+        // For aggregation columns the AttributePath is emitted in the engine's wire form
+        // (path-concat + lowercase + `_funcsuffix`) so it lines up exactly with the cell key
+        // — picker UIs can store the value verbatim, and MIN/MAX of the same source path
+        // produce two distinct picker entries instead of two indistinguishable duplicates.
+        // Simple-query columns keep the original CK path so they match the simple-query
+        // cells, which still emit the original path.
+        var path = aggregationType == AggregationTypesDto.None
+            ? ckTypeQueryColumn.Path
+            : RtAggregationCellKeyMapper.ToAggregationKey(ckTypeQueryColumn.Path, aggregationType);
+
         var rtQueryColumnDto = new RtQueryColumnDto
         {
-            AttributePath = ckTypeQueryColumn.Path,
+            AttributePath = path,
             AttributeValueType = GetAggregationResultType(ckTypeQueryColumn.ValueType, aggregationType),
             AggregationType = aggregationType,
             UserContext = ckTypeQueryColumn
@@ -54,13 +64,15 @@ internal sealed class RtQueryColumnType : ObjectGraphType<RtQueryColumnDto>
     }
 
     /// <summary>
-    ///     Creates a simple column DTO for groupBy columns (no aggregation)
+    ///     Creates a simple column DTO for groupBy columns (no aggregation).
+    ///     AttributePath is emitted in wire form so it lines up with the grouping cells
+    ///     in the row payload.
     /// </summary>
     public static RtQueryColumnDto CreateGroupByColumnDto(CkTypeQueryColumn ckTypeQueryColumn)
     {
         var rtQueryColumnDto = new RtQueryColumnDto
         {
-            AttributePath = ckTypeQueryColumn.Path,
+            AttributePath = RtAggregationCellKeyMapper.ToGroupingKey(ckTypeQueryColumn.Path),
             AttributeValueType = ckTypeQueryColumn.ValueType,
             AggregationType = AggregationTypesDto.None,
             UserContext = ckTypeQueryColumn

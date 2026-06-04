@@ -519,8 +519,8 @@ public class AggregationColumnTypeTests : IClassFixture<GraphQlTestFixture>
         var columnArray = (JArray)columns!;
         columnArray.Should().HaveCount(2); // groupBy column + aggregation column
 
-        // First column should be the groupBy column (operatingStatus)
-        var groupByColumn = columnArray.First(c => c["attributePath"]?.Value<string>() == "operatingStatus");
+        // First column should be the groupBy column (operatingStatus, emitted as wire-form key)
+        var groupByColumn = columnArray.First(c => c["attributePath"]?.Value<string>() == "operatingstatus");
         groupByColumn.Should().NotBeNull();
         groupByColumn["aggregationType"]?.Value<string>().Should().Be("NONE",
             "GroupBy column should have NONE aggregation type");
@@ -577,7 +577,7 @@ public class AggregationColumnTypeTests : IClassFixture<GraphQlTestFixture>
         var columnArray = (JArray)columns!;
         columnArray.Should().HaveCount(2);
 
-        // GroupBy column (city) should preserve STRING type
+        // GroupBy column (city) should preserve STRING type — wire-form is same as original (single segment, already lowercase)
         var groupByColumn = columnArray.First(c => c["attributePath"]?.Value<string>() == "city");
         groupByColumn.Should().NotBeNull();
         groupByColumn["aggregationType"]?.Value<string>().Should().Be("NONE");

@@ -217,7 +217,8 @@ internal sealed class RtAggregationQueryRowDtoType : ObjectGraphType<RtAggregati
 
         var cellDto = new RtQueryCellDto
         {
-            AttributePath = ckTypeQueryColumnTuple.Item1.Path,
+            AttributePath = RtAggregationCellKeyMapper.ToAggregationKey(
+                ckTypeQueryColumnTuple.Item1.Path, ckTypeQueryColumnTuple.Item2),
             Value = value
         };
 
@@ -294,7 +295,10 @@ internal sealed class RtGroupingAggregationQueryRowDtoType : ObjectGraphType<RtG
         {
             var cells = new List<RtQueryCellDto>();
 
-            // First, add cells for the GroupBy columns with their key values
+            // First, add cells for the GroupBy columns with their key values.
+            // AttributePath is emitted in the same wire form as aggregation cells
+            // (concat-segments + lowercase, no function suffix) so the frontend can
+            // address grouping and aggregation cells with one consistent key convention.
             var groupByPaths = groupingContext.FieldAggregationResult.GroupByAttributePaths.ToList();
             var keys = groupingContext.FieldAggregationResult.Keys.ToList();
 
@@ -302,7 +306,7 @@ internal sealed class RtGroupingAggregationQueryRowDtoType : ObjectGraphType<RtG
             {
                 cells.Add(new RtQueryCellDto
                 {
-                    AttributePath = groupByPaths[i],
+                    AttributePath = RtAggregationCellKeyMapper.ToGroupingKey(groupByPaths[i]),
                     Value = i < keys.Count ? keys[i] : null
                 });
             }
@@ -344,7 +348,8 @@ internal sealed class RtGroupingAggregationQueryRowDtoType : ObjectGraphType<RtG
 
         var cellDto = new RtQueryCellDto
         {
-            AttributePath = ckTypeQueryColumnTuple.Item1.Path,
+            AttributePath = RtAggregationCellKeyMapper.ToAggregationKey(
+                ckTypeQueryColumnTuple.Item1.Path, ckTypeQueryColumnTuple.Item2),
             Value = value
         };
 
@@ -374,4 +379,49 @@ internal class RtGroupingAggregatedQueryRowUserContext(
     public IReadOnlyList<Tuple<CkTypeQueryColumn, AggregationTypesDto>> CkTypeQueryColumns { get; } = ckTypeQueryColumns;
 
     public FieldAggregationResult FieldAggregationResult { get; } = fieldAggregationResult;
+}
+
+/// <summary>
+/// Wire-format key generator for aggregation/grouping-aggregation result cells.
+/// Mirrors the convention used by the stream-data side (CrateDB-backed) so that
+/// frontend code can address cells from both worlds with one rule:
+/// <list type="bullet">
+///   <item>Aggregation cell key: <c>{pathConcatLower}_{functionSuffix}</c>, e.g. <c>amountvalue_sum</c>.</item>
+///   <item>Grouping cell key: <c>{pathConcatLower}</c>, e.g. <c>operatingstatus</c>.</item>
+/// </list>
+/// The function suffix is required so multiple aggregations on the same attribute
+/// path (MIN + MAX of <c>amount.value</c>) produce distinct keys instead of colliding
+/// on the same row entry.
+/// </summary>
+internal static class RtAggregationCellKeyMapper
+{
+    public static string ToAggregationKey(string path, AggregationTypesDto type)
+        => $"{PathToColumnName(path)}_{FunctionSuffix(type)}";
+
+    public static string ToGroupingKey(string path) => PathToColumnName(path);
+
+    private static string PathToColumnName(string path)
+    {
+        if (string.IsNullOrEmpty(path))
+        {
+            return string.Empty;
+        }
+
+        var sb = new System.Text.StringBuilder(path.Length);
+        foreach (var segment in path.Split('.'))
+        {
+            sb.Append(segment);
+        }
+        return sb.ToString().ToLowerInvariant();
+    }
+
+    private static string FunctionSuffix(AggregationTypesDto type) => type switch
+    {
+        AggregationTypesDto.Count => "count",
+        AggregationTypesDto.Sum => "sum",
+        AggregationTypesDto.Average => "avg",
+        AggregationTypesDto.Minimum => "min",
+        AggregationTypesDto.Maximum => "max",
+        _ => type.ToString().ToLowerInvariant()
+    };
 }

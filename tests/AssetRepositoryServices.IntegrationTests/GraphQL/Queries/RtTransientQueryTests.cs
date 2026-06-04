@@ -347,7 +347,7 @@ public class RtTransientQueryTests : IClassFixture<GraphQlTestFixture>
         cells.Should().NotBeNull();
 
         var countCell = ((JArray)cells!).FirstOrDefault(c =>
-            c["attributePath"]?.Value<string>() == "meterReading");
+            c["attributePath"]?.Value<string>() == "meterreading_count");
         countCell.Should().NotBeNull();
 
         // Count should be 8 (active metering points)
@@ -403,7 +403,7 @@ public class RtTransientQueryTests : IClassFixture<GraphQlTestFixture>
         cells.Should().NotBeNull();
 
         var sumCell = ((JArray)cells!).FirstOrDefault(c =>
-            c["attributePath"]?.Value<string>() == "meterReading");
+            c["attributePath"]?.Value<string>() == "meterreading_sum");
         sumCell.Should().NotBeNull();
 
         // Verify a sum value is returned (should be positive and greater than any single reading)
@@ -459,7 +459,7 @@ public class RtTransientQueryTests : IClassFixture<GraphQlTestFixture>
         cells.Should().NotBeNull();
 
         var avgCell = ((JArray)cells!).FirstOrDefault(c =>
-            c["attributePath"]?.Value<string>() == "meterReading");
+            c["attributePath"]?.Value<string>() == "meterreading_avg");
         avgCell.Should().NotBeNull();
 
         // Verify an average value is returned (should be positive)
@@ -518,13 +518,17 @@ public class RtTransientQueryTests : IClassFixture<GraphQlTestFixture>
         var cellArray = (JArray)cells!;
         cellArray.Should().HaveCount(2);
 
-        // Verify minimum and maximum values are returned (min should be less than max)
-        var minCell = cellArray.FirstOrDefault();
+        // Verify minimum and maximum values are returned (min should be less than max).
+        // Cells are addressable by their wire-form key (path + function suffix), which is
+        // how the engine disambiguates two aggregations on the same source path.
+        var minCell = cellArray.FirstOrDefault(c =>
+            c["attributePath"]?.Value<string>() == "meterreading_min");
         minCell.Should().NotBeNull();
         var minValue = minCell!["value"]?.Value<int>() ?? 0;
         minValue.Should().BeGreaterThan(0);
 
-        var maxCell = cellArray.LastOrDefault();
+        var maxCell = cellArray.FirstOrDefault(c =>
+            c["attributePath"]?.Value<string>() == "meterreading_max");
         maxCell.Should().NotBeNull();
         var maxValue = maxCell!["value"]?.Value<int>() ?? 0;
         maxValue.Should().BeGreaterThan(0);
@@ -733,14 +737,14 @@ public class RtTransientQueryTests : IClassFixture<GraphQlTestFixture>
         var cellArray = (JArray)firstRowCells!;
         cellArray.Should().HaveCount(2); // operatingStatus key + meterReading count
 
-        // First cell should be the groupBy key (operatingStatus)
+        // First cell should be the groupBy key (operatingStatus) emitted as wire-form key
         var groupByCell = cellArray[0];
-        groupByCell["attributePath"]?.Value<string>().Should().Be("operatingStatus");
+        groupByCell["attributePath"]?.Value<string>().Should().Be("operatingstatus");
         groupByCell["value"].Should().NotBeNull();
 
-        // Second cell should be the aggregation value (meterReading count)
+        // Second cell should be the aggregation value (COUNT(meterReading))
         var aggregationCell = cellArray[1];
-        aggregationCell["attributePath"]?.Value<string>().Should().Be("meterReading");
+        aggregationCell["attributePath"]?.Value<string>().Should().Be("meterreading_count");
         aggregationCell["value"].Should().NotBeNull();
     }
 
@@ -869,7 +873,7 @@ public class RtTransientQueryTests : IClassFixture<GraphQlTestFixture>
         // Verify the group key is 1 (Active)
         var groupByCell = rowArray[0].SelectToken("cells.items[0]");
         groupByCell.Should().NotBeNull();
-        groupByCell!["attributePath"]?.Value<string>().Should().Be("operatingStatus");
+        groupByCell!["attributePath"]?.Value<string>().Should().Be("operatingstatus");
         // The value could be either 1 (integer) or "Active" (resolved enum name)
         groupByCell["value"].Should().NotBeNull();
     }
@@ -936,13 +940,13 @@ public class RtTransientQueryTests : IClassFixture<GraphQlTestFixture>
             var cellArray = (JArray)cells!;
             cellArray.Should().HaveCount(2);
 
-            // First cell should be city
+            // First cell should be city (groupBy key, wire-form)
             var cityCell = cellArray[0];
             cityCell["attributePath"]?.Value<string>().Should().Be("city");
 
-            // Second cell should be count
+            // Second cell should be COUNT(firstName) (wire-form with function suffix)
             var countCell = cellArray[1];
-            countCell["attributePath"]?.Value<string>().Should().Be("firstName");
+            countCell["attributePath"]?.Value<string>().Should().Be("firstname_count");
             countCell["value"]?.Value<int>().Should().BeGreaterThan(0);
         }
     }
@@ -1002,7 +1006,7 @@ public class RtTransientQueryTests : IClassFixture<GraphQlTestFixture>
         {
             var sumCell = row.SelectToken("cells.items[1]");
             sumCell.Should().NotBeNull();
-            sumCell!["attributePath"]?.Value<string>().Should().Be("meterReading");
+            sumCell!["attributePath"]?.Value<string>().Should().Be("meterreading_sum");
             // Sum should be a number (could be 0 for some groups)
             sumCell["value"].Should().NotBeNull();
         }
