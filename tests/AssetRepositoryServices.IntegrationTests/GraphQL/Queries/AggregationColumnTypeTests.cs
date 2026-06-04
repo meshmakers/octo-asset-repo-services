@@ -519,8 +519,9 @@ public class AggregationColumnTypeTests : IClassFixture<GraphQlTestFixture>
         var columnArray = (JArray)columns!;
         columnArray.Should().HaveCount(2); // groupBy column + aggregation column
 
-        // First column should be the groupBy column (operatingStatus, emitted as wire-form key)
-        var groupByColumn = columnArray.First(c => c["attributePath"]?.Value<string>() == "operatingstatus");
+        // First column should be the groupBy column (operatingStatus, emitted in original CK form
+        // — grouping columns aren't aggregation-disambiguated, so they keep the original path).
+        var groupByColumn = columnArray.First(c => c["attributePath"]?.Value<string>() == "operatingStatus");
         groupByColumn.Should().NotBeNull();
         groupByColumn["aggregationType"]?.Value<string>().Should().Be("NONE",
             "GroupBy column should have NONE aggregation type");
@@ -577,7 +578,7 @@ public class AggregationColumnTypeTests : IClassFixture<GraphQlTestFixture>
         var columnArray = (JArray)columns!;
         columnArray.Should().HaveCount(2);
 
-        // GroupBy column (city) should preserve STRING type — wire-form is same as original (single segment, already lowercase)
+        // GroupBy column (city) keeps the original CK path
         var groupByColumn = columnArray.First(c => c["attributePath"]?.Value<string>() == "city");
         groupByColumn.Should().NotBeNull();
         groupByColumn["aggregationType"]?.Value<string>().Should().Be("NONE");
