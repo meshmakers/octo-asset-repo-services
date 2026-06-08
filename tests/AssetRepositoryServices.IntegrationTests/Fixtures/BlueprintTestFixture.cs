@@ -1,6 +1,8 @@
+using Meshmakers.Octo.ConstructionKit.Contracts.BlueprintCatalogs;
 using Meshmakers.Octo.ConstructionKit.Engine.BlueprintCatalogs;
 using Meshmakers.Octo.Runtime.Contracts.Blueprints;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Fixtures;
 
@@ -15,6 +17,12 @@ public class BlueprintTestFixture : AssetRepoFixture
         // Add Blueprint support before base initialization
         Services.AddRuntimeEngine()
             .AddMongoBlueprintSupport();
+
+        // Strip the production-default IBlueprintCatalog registrations (LocalFileSystem,
+        // EmbeddedResource, Public/PrivateGitHub). The GitHub catalogs point at real URLs
+        // via their hardcoded option defaults and would otherwise leak external state into
+        // tests that assume a fresh, empty catalog surface.
+        Services.RemoveAll<IBlueprintCatalog>();
 
         await base.InitializeServicesAsync();
     }
