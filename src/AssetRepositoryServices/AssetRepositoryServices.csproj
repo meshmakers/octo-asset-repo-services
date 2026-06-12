@@ -37,11 +37,11 @@
     </ItemGroup>
 
     <ItemGroup>
-        <PackageReference Include="Meshmakers.Octo.Services.Infrastructure" Version="$(OctoVersion)" />
-        <PackageReference Include="Meshmakers.Octo.Services.Observability" Version="$(OctoVersion)" />
-        <PackageReference Include="Meshmakers.Octo.Services.Swagger" Version="$(OctoVersion)" />
-        <PackageReference Include="Meshmakers.Octo.Runtime.Engine.MongoDb" Version="$(OctoVersion)" />
-        <PackageReference Include="Meshmakers.Octo.Runtime.Engine.CrateDb" Version="$(OctoVersion)" />
+        <PackageReference Include="Meshmakers.Octo.Services.Infrastructure" Version="$(OctoCoreLibVersion)" />
+        <PackageReference Include="Meshmakers.Octo.Services.Observability" Version="$(OctoCoreLibVersion)" />
+        <PackageReference Include="Meshmakers.Octo.Services.Swagger" Version="$(OctoCoreLibVersion)" />
+        <PackageReference Include="Meshmakers.Octo.Runtime.Engine.MongoDb" Version="$(OctoCoreLibVersion)" />
+        <PackageReference Include="Meshmakers.Octo.Runtime.Engine.CrateDb" Version="$(OctoCoreLibVersion)" />
         <ProjectReference Include="..\..\tests\AssetRepositoryIntegrationTestCkModel\AssetRepositoryIntegrationTestCkModel.csproj" />
         <ProjectReference Include="..\AssetRepositoryServices.Resources\AssetRepositoryServices.Resources.csproj" />
     </ItemGroup>
