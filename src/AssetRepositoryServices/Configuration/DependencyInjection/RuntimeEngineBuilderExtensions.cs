@@ -301,6 +301,7 @@ public static class RuntimeEngineBuilderExtensions
             .AddUserContextBuilder<TenantUserContextBuilder>()
             .AddGraphTypes() // Add all IGraphType implementors in assembly
             .AddDocumentListener<OctoSessionListener>()
+            .AddDocumentListener<MongoStatsListener>()
             .Services.Register<IOctoSessionAccessor, OctoSessionAccessor>(GraphQL.DI.ServiceLifetime.Singleton)
         );
 
