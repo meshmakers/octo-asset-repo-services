@@ -44,16 +44,19 @@ public class DiagnosticsController : ControllerBase
     /// <param name="commandName">Optional exact match on the driver-level command name (e.g. <c>find</c>, <c>aggregate</c>).</param>
     /// <param name="minDurationMs">Optional minimum duration in milliseconds; entries below this are excluded.</param>
     /// <param name="sinceMinutes">Optional time window; only entries newer than <c>now - sinceMinutes</c> are returned.</param>
-    /// <param name="limit">Maximum number of entries to return (default 100, max 1000).</param>
+    /// <param name="limit">Maximum number of entries (or groups) to return (default 100, max 1000).</param>
+    /// <param name="groupBy">Set to <c>fingerprint</c> to return aggregated <c>SlowQueryGroupDto</c> rows (one per structural fingerprint) instead of per-call entries. Any other value is treated as no grouping.</param>
     [HttpGet("slow-mongo-queries")]
     [Authorize(AssetRepositoryServiceConstants.TenantAssetApiReadOnlyPolicy)]
     [ProducesResponseType(typeof(IReadOnlyList<SlowQueryEntryDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(IReadOnlyList<SlowQueryGroupDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(InternalServerErrorDto), StatusCodes.Status400BadRequest)]
     public IActionResult GetSlowMongoQueries(
         [FromQuery] string? commandName = null,
         [FromQuery] int? minDurationMs = null,
         [FromQuery] int? sinceMinutes = null,
-        [FromQuery] int limit = 100)
+        [FromQuery] int limit = 100,
+        [FromQuery] string? groupBy = null)
     {
         var tenantId = HttpContext.GetTenantId();
         if (string.IsNullOrEmpty(tenantId))
@@ -68,27 +71,47 @@ public class DiagnosticsController : ControllerBase
             ? DateTimeOffset.UtcNow - TimeSpan.FromMinutes(sinceMinutes.Value)
             : null;
 
-        var entries = _buffer.GetSnapshot(
-            predicate: e =>
-                // Tenant scoping is enforced server-side from the validated route tenantId —
-                // never from a query parameter. The buffer's Database field is the trusted
-                // attribution dimension written by MongoCommandObservability.
-                string.Equals(e.Database, tenantId, StringComparison.Ordinal)
-                && (commandName is null || string.Equals(e.CommandName, commandName, StringComparison.Ordinal))
-                && (!minDurationMs.HasValue || e.DurationMs >= minDurationMs.Value)
-                && (!sinceCutoff.HasValue || e.Timestamp >= sinceCutoff.Value),
-            limit: clampedLimit);
+        // Tenant scoping is enforced server-side from the validated route tenantId — never
+        // from a query parameter. The buffer's Database field is the trusted attribution
+        // dimension written by MongoCommandObservability.
+        bool MatchesFilter(SlowQueryEntry e)
+            => string.Equals(e.Database, tenantId, StringComparison.Ordinal)
+               && (commandName is null || string.Equals(e.CommandName, commandName, StringComparison.Ordinal))
+               && (!minDurationMs.HasValue || e.DurationMs >= minDurationMs.Value)
+               && (!sinceCutoff.HasValue || e.Timestamp >= sinceCutoff.Value);
 
-        var dtos = entries.Select(e => new SlowQueryEntryDto(
-            Timestamp: e.Timestamp,
-            CommandName: e.CommandName,
-            Target: e.Target,
-            DurationMs: e.DurationMs,
-            RequestId: e.RequestId,
-            CommandBsonPreview: e.CommandBsonPreview,
-            Success: e.Success,
-            ErrorCode: e.ErrorCode)).ToList();
+        if (string.Equals(groupBy, "fingerprint", StringComparison.OrdinalIgnoreCase))
+        {
+            var groups = _buffer.GetGroupedSnapshot(predicate: MatchesFilter, limit: clampedLimit);
+            var groupDtos = groups.Select(g => new SlowQueryGroupDto(
+                Fingerprint: g.Fingerprint,
+                CommandName: g.CommandName,
+                Target: g.Target,
+                Count: g.Count,
+                FirstSeen: g.FirstSeen,
+                LastSeen: g.LastSeen,
+                MinDurationMs: g.MinDurationMs,
+                MaxDurationMs: g.MaxDurationMs,
+                AvgDurationMs: g.AvgDurationMs,
+                Representative: ToDto(g.Representative))).ToList();
+
+            return Ok(groupDtos);
+        }
+
+        var entries = _buffer.GetSnapshot(predicate: MatchesFilter, limit: clampedLimit);
+        var dtos = entries.Select(ToDto).ToList();
 
         return Ok(dtos);
     }
+
+    private static SlowQueryEntryDto ToDto(SlowQueryEntry e) => new(
+        Timestamp: e.Timestamp,
+        CommandName: e.CommandName,
+        Target: e.Target,
+        DurationMs: e.DurationMs,
+        RequestId: e.RequestId,
+        CommandBsonPreview: e.CommandBsonPreview,
+        Success: e.Success,
+        ErrorCode: e.ErrorCode,
+        Fingerprint: e.Fingerprint);
 }
