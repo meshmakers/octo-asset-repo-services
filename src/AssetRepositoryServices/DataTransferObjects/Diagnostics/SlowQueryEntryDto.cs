@@ -13,4 +13,5 @@ public sealed record SlowQueryEntryDto(
     int RequestId,
     string CommandBsonPreview,
     bool Success,
-    string? ErrorCode);
+    string? ErrorCode,
+    string Fingerprint);
