@@ -50,7 +50,8 @@ public class DiagnosticsController : ControllerBase
     [Authorize(AssetRepositoryServiceConstants.TenantAssetApiReadOnlyPolicy)]
     [ProducesResponseType(typeof(IReadOnlyList<SlowQueryEntryDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(IReadOnlyList<SlowQueryGroupDto>), StatusCodes.Status200OK)]
-    [ProducesResponseType(typeof(InternalServerErrorDto), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(OperationFailedErrorDto), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(InternalServerErrorDto), StatusCodes.Status500InternalServerError)]
     public IActionResult GetSlowMongoQueries(
         [FromQuery] string? commandName = null,
         [FromQuery] int? minDurationMs = null,
