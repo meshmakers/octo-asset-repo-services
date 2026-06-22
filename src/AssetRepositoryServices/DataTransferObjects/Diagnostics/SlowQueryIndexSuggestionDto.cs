@@ -32,14 +32,3 @@ public sealed record SlowQueryIndexSuggestionDto(
     string ShellCommand,
     string Confidence,
     IReadOnlyList<string> Notes);
-
-/// <summary>
-/// One field of a suggested compound index.
-/// </summary>
-/// <param name="Name">Field path (e.g. <c>attributes.name.value</c>).</param>
-/// <param name="Direction"><c>1</c> ascending, <c>-1</c> descending.</param>
-/// <param name="Kind"><c>"equality"</c> / <c>"sort"</c> / <c>"range"</c>.</param>
-public sealed record SlowQueryIndexFieldDto(
-    string Name,
-    int Direction,
-    string Kind);

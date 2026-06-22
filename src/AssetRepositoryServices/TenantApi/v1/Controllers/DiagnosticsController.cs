@@ -164,24 +164,18 @@ public class DiagnosticsController : ControllerBase
             return null;
         }
 
-        var confidence = s.Confidence switch
-        {
-            SlowQueryIndexSuggestionConfidence.High => "high",
-            SlowQueryIndexSuggestionConfidence.Medium => "medium",
-            SlowQueryIndexSuggestionConfidence.Low => "low",
-            _ => "low"
-        };
+        // Passthrough lower-casing of the enum name keeps the wire stable for the values we
+        // know AND surfaces any future engine-side addition transparently (e.g. an upcoming
+        // "Estimated" confidence would arrive on the wire as "estimated" rather than getting
+        // silently coerced to "low" and misleading the operator).
+        var confidence = s.Confidence.ToString().ToLowerInvariant();
 
         var fields = s.Fields.Select(f => new SlowQueryIndexFieldDto(
             Name: f.Name,
             Direction: f.Direction,
-            Kind: f.Kind switch
-            {
-                SlowQueryIndexFieldKind.Equality => "equality",
-                SlowQueryIndexFieldKind.Sort => "sort",
-                SlowQueryIndexFieldKind.Range => "range",
-                _ => "equality"
-            })).ToList();
+            // Same passthrough rationale — a future engine-side field kind (e.g. "Hashed")
+            // surfaces accurately to the client rather than being remapped to "equality".
+            Kind: f.Kind.ToString().ToLowerInvariant())).ToList();
 
         return new SlowQueryIndexSuggestionDto(
             IndexName: s.IndexName,
