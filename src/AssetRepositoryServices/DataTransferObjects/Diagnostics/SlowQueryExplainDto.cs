@@ -32,6 +32,12 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.DataTransferObjects.Di
 /// Short failure cause when <see cref="Status"/> is not <c>success</c> (e.g. <c>"timeout"</c>,
 /// <c>"command type 'insert' is not explainable"</c>). <c>null</c> otherwise.
 /// </param>
+/// <param name="IndexSuggestion">
+/// MongoDB index recommendation when <see cref="HasCollScan"/> is <c>true</c> and the
+/// engine extracted at least one filter field (AB#4220 / Stage 2C). <c>null</c> otherwise —
+/// e.g. for IXSCAN plans, aggregates without a leading <c>$match</c>, or empty filters.
+/// Carries a ready-to-run <c>db.&lt;coll&gt;.createIndex(...)</c> mongosh command.
+/// </param>
 public sealed record SlowQueryExplainDto(
     DateTimeOffset CapturedAt,
     string Status,
@@ -39,4 +45,5 @@ public sealed record SlowQueryExplainDto(
     bool HasCollScan,
     IReadOnlyList<string> IndexNames,
     string? RawExplainPreview,
-    string? ErrorMessage);
+    string? ErrorMessage,
+    SlowQueryIndexSuggestionDto? IndexSuggestion = null);

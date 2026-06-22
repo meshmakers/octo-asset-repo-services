@@ -147,6 +147,41 @@ public class DiagnosticsController : ControllerBase
             HasCollScan: explain.HasCollScan,
             IndexNames: explain.IndexNames,
             RawExplainPreview: explain.RawExplainPreview,
-            ErrorMessage: explain.ErrorMessage);
+            ErrorMessage: explain.ErrorMessage,
+            IndexSuggestion: ToSuggestionDto(explain.IndexSuggestion));
+    }
+
+    /// <summary>
+    /// Projects the engine's <see cref="SlowQueryIndexSuggestion"/> onto the API-stable
+    /// <see cref="SlowQueryIndexSuggestionDto"/>. Confidence and field-kind enums are both
+    /// flattened to lowercase strings so a future engine-side enum rename doesn't break the
+    /// public contract. Returns <c>null</c> when no suggestion was attached.
+    /// </summary>
+    private static SlowQueryIndexSuggestionDto? ToSuggestionDto(SlowQueryIndexSuggestion? s)
+    {
+        if (s is null)
+        {
+            return null;
+        }
+
+        // Passthrough lower-casing of the enum name keeps the wire stable for the values we
+        // know AND surfaces any future engine-side addition transparently (e.g. an upcoming
+        // "Estimated" confidence would arrive on the wire as "estimated" rather than getting
+        // silently coerced to "low" and misleading the operator).
+        var confidence = s.Confidence.ToString().ToLowerInvariant();
+
+        var fields = s.Fields.Select(f => new SlowQueryIndexFieldDto(
+            Name: f.Name,
+            Direction: f.Direction,
+            // Same passthrough rationale — a future engine-side field kind (e.g. "Hashed")
+            // surfaces accurately to the client rather than being remapped to "equality".
+            Kind: f.Kind.ToString().ToLowerInvariant())).ToList();
+
+        return new SlowQueryIndexSuggestionDto(
+            IndexName: s.IndexName,
+            Fields: fields,
+            ShellCommand: s.ShellCommand,
+            Confidence: confidence,
+            Notes: s.Notes);
     }
 }
