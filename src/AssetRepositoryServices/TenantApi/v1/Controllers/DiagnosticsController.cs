@@ -94,7 +94,8 @@ public class DiagnosticsController : ControllerBase
                 MinDurationMs: g.MinDurationMs,
                 MaxDurationMs: g.MaxDurationMs,
                 AvgDurationMs: g.AvgDurationMs,
-                Representative: ToDto(g.Representative))).ToList();
+                Representative: ToDto(g.Representative),
+                Explain: ToExplainDto(g.Explain))).ToList();
 
             return Ok(groupDtos);
         }
@@ -114,5 +115,38 @@ public class DiagnosticsController : ControllerBase
         CommandBsonPreview: e.CommandBsonPreview,
         Success: e.Success,
         ErrorCode: e.ErrorCode,
-        Fingerprint: e.Fingerprint);
+        Fingerprint: e.Fingerprint,
+        Explain: ToExplainDto(e.Explain));
+
+    /// <summary>
+    /// Projects the engine's <see cref="SlowQueryExplain"/> record onto the API-stable
+    /// <see cref="SlowQueryExplainDto"/>. The status enum is flattened to a lower-case string
+    /// (<c>"success"</c> / <c>"unsupported"</c> / <c>"failed"</c>) so a future engine-side
+    /// enum rename doesn't break the contract. Returns <c>null</c> when no explain has landed
+    /// yet — same shape callers already handle for unparsed slow queries.
+    /// </summary>
+    private static SlowQueryExplainDto? ToExplainDto(SlowQueryExplain? explain)
+    {
+        if (explain is null)
+        {
+            return null;
+        }
+
+        var status = explain.Status switch
+        {
+            SlowQueryExplainStatus.Success => "success",
+            SlowQueryExplainStatus.Unsupported => "unsupported",
+            SlowQueryExplainStatus.Failed => "failed",
+            _ => "failed"
+        };
+
+        return new SlowQueryExplainDto(
+            CapturedAt: explain.CapturedAt,
+            Status: status,
+            WinningStage: explain.WinningStage,
+            HasCollScan: explain.HasCollScan,
+            IndexNames: explain.IndexNames,
+            RawExplainPreview: explain.RawExplainPreview,
+            ErrorMessage: explain.ErrorMessage);
+    }
 }
