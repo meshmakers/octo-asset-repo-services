@@ -22,14 +22,17 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.TenantApi.v1.Controlle
 public class DiagnosticsController : ControllerBase
 {
     private readonly SlowQueriesBuffer _buffer;
+    private readonly IIndexUsageService _indexUsageService;
 
     /// <summary>
     /// Constructor.
     /// </summary>
     /// <param name="buffer">DI-resolved in-memory ring of recent slow MongoDB commands.</param>
-    public DiagnosticsController(SlowQueriesBuffer buffer)
+    /// <param name="indexUsageService">Stage 3 / AB#4224 unused-index analysis service.</param>
+    public DiagnosticsController(SlowQueriesBuffer buffer, IIndexUsageService indexUsageService)
     {
         _buffer = buffer;
+        _indexUsageService = indexUsageService;
     }
 
     /// <summary>
@@ -105,6 +108,119 @@ public class DiagnosticsController : ControllerBase
 
         return Ok(dtos);
     }
+
+    /// <summary>
+    /// Stage 3 / AB#4224 unused-index analysis. Runs MongoDB's <c>$indexStats</c> aggregation
+    /// across every non-system collection in the tenant's database, sums ops across replica-set
+    /// hosts, takes the earliest <c>accesses.since</c>, and classifies each index as
+    /// <c>builtin</c> / <c>unused</c> / <c>lowUsage</c> / <c>used</c>. The asset-repo controller
+    /// always sees the snapshot at the moment the call hits MongoDB — there is no background
+    /// poller or persisted history.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <c>accesses.since</c> resets on <c>mongod</c> restart. <paramref name="minAgeDays"/>
+    /// shields the operator from false-positive Unused flags immediately after a restart by
+    /// pinning anything younger as <c>used</c> regardless of the ops count.
+    /// </para>
+    /// <para>
+    /// Default ordering: <c>unused</c> first, then <c>lowUsage</c>, then everything else.
+    /// <paramref name="includeUsed"/> defaults to false so the operator sees only the
+    /// actionable rows by default; setting <c>true</c> appends <c>builtin</c> and <c>used</c>
+    /// for visibility.
+    /// </para>
+    /// </remarks>
+    /// <param name="minAgeDays">Lower bound on observation window (days) before an index can be
+    /// flagged as Unused / LowUsage. Younger indexes return as <c>used</c> regardless of ops.
+    /// Default <c>7</c>.</param>
+    /// <param name="lowUsageOps">Strict less-than cutoff: ops below this count classify as
+    /// <c>lowUsage</c>, at-or-above as <c>used</c>. Default <c>10</c>.</param>
+    /// <param name="includeUsed">When <c>true</c>, return all rows including <c>builtin</c>
+    /// and <c>used</c>. Default <c>false</c> returns only <c>unused</c> + <c>lowUsage</c>.</param>
+    /// <param name="cancellationToken">Cancellation token from the request pipeline.</param>
+    [HttpGet("index-usage")]
+    [Authorize(AssetRepositoryServiceConstants.TenantAssetApiReadOnlyPolicy)]
+    [ProducesResponseType(typeof(IReadOnlyList<IndexUsageEntryDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(OperationFailedErrorDto), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(InternalServerErrorDto), StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> GetIndexUsageAsync(
+        [FromQuery] int minAgeDays = 7,
+        [FromQuery] long lowUsageOps = 10,
+        [FromQuery] bool includeUsed = false,
+        CancellationToken cancellationToken = default)
+    {
+        var tenantId = HttpContext.GetTenantId();
+        if (string.IsNullOrEmpty(tenantId))
+        {
+            return BadRequest(new OperationFailedErrorDto("TenantId is required"));
+        }
+
+        // Defensive clamps — keep operator-supplied values inside a sensible range so a typo
+        // ("minAgeDays=-1" or a 1B ops threshold) can't silently invert the classification.
+        var clampedMinAge = Math.Max(0, minAgeDays);
+        var clampedLowUsage = Math.Max(0L, lowUsageOps);
+
+        var entries = await _indexUsageService.CollectAsync(
+            tenantId, clampedMinAge, clampedLowUsage, DateTimeOffset.UtcNow, cancellationToken).ConfigureAwait(false);
+
+        // Map → DTO and apply visibility filter + actionable ordering server-side. The Studio
+        // surface only renders what comes back, so the rule for "show me the noise-free
+        // default" lives here, not in the engine collector.
+        var dtos = entries
+            .Where(e => includeUsed
+                || e.Status == IndexUsageStatus.Unused
+                || e.Status == IndexUsageStatus.LowUsage)
+            .Select(ToIndexUsageDto)
+            .OrderBy(StatusOrder)
+            .ThenBy(e => e.CollectionName, StringComparer.Ordinal)
+            .ThenBy(e => e.IndexName, StringComparer.Ordinal)
+            .ToList();
+
+        return Ok(dtos);
+    }
+
+    /// <summary>
+    /// Sort key for the index-usage surface — Unused first (most actionable), LowUsage second,
+    /// then Builtin/Used for visibility when <c>includeUsed=true</c>. The classifier already
+    /// guarantees these are the only possible values; the catch-all keeps the compiler happy
+    /// without silently dropping a future engine-side enum addition off the end of the list.
+    /// </summary>
+    private static int StatusOrder(IndexUsageEntryDto e) => e.Status switch
+    {
+        "unused" => 0,
+        "lowUsage" => 1,
+        "builtin" => 2,
+        "used" => 3,
+        _ => 4
+    };
+
+    /// <summary>
+    /// Projects the engine's <see cref="IndexUsageEntry"/> record onto the API-stable
+    /// <see cref="IndexUsageEntryDto"/>. Status is flattened to a lowercase string —
+    /// same passthrough pattern Stage 2D's <see cref="ToSuggestionDto"/> uses, so a future
+    /// engine-side enum addition surfaces transparently on the wire instead of being
+    /// silently coerced.
+    /// </summary>
+    private static IndexUsageEntryDto ToIndexUsageDto(IndexUsageEntry e) => new(
+        CollectionName: e.CollectionName,
+        IndexName: e.IndexName,
+        KeySpec: e.KeySpec,
+        OpsCount: e.OpsCount,
+        SinceUtc: e.SinceUtc,
+        AgeDays: e.AgeDays,
+        IsBuiltin: e.IsBuiltin,
+        DropShellCommand: e.DropShellCommand,
+        // Camel-case for multi-word values keeps the wire shape aligned with JS-style
+        // identifiers — same precedent as SlowQueryIndexSuggestionDto.Confidence ("low" /
+        // "medium" / "high").
+        Status: e.Status switch
+        {
+            IndexUsageStatus.Builtin => "builtin",
+            IndexUsageStatus.Unused => "unused",
+            IndexUsageStatus.LowUsage => "lowUsage",
+            IndexUsageStatus.Used => "used",
+            _ => e.Status.ToString().ToLowerInvariant()
+        });
 
     private static SlowQueryEntryDto ToDto(SlowQueryEntry e) => new(
         Timestamp: e.Timestamp,
