@@ -182,6 +182,11 @@ public class DiagnosticsController : ControllerBase
             Fields: fields,
             ShellCommand: s.ShellCommand,
             Confidence: confidence,
-            Notes: s.Notes);
+            Notes: s.Notes,
+            // Stage 2D — straight passthrough. The engine emits a paste-ready snippet; we
+            // surface it verbatim so the Studio's clipboard copy is byte-identical to what
+            // the operator pastes into their CK source.
+            CkYamlSnippet: s.CkYamlSnippet,
+            CkTypeFullName: s.CkTypeFullName);
     }
 }
