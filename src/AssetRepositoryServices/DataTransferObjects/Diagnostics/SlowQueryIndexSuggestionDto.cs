@@ -26,9 +26,22 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.DataTransferObjects.Di
 /// <c>"$or branches; per-branch indexes may be more selective"</c>). Empty when the
 /// suggestion is unambiguous.
 /// </param>
+/// <param name="CkYamlSnippet">
+/// CK-YAML snippet (Stage 2D / AB#4222) the operator can paste into their CK type's source
+/// file under the <c>indexes:</c> array. Same index as <see cref="ShellCommand"/> but
+/// persisted as part of the model so subsequent re-imports re-create it. <c>null</c> when
+/// CK reverse-mapping wasn't possible (filter without <c>ckTypeId.fullName</c>, unknown
+/// type, unresolvable field, non-RtEntity collection, or no CK cache wired in the host).
+/// </param>
+/// <param name="CkTypeFullName">
+/// CK type full name the <see cref="CkYamlSnippet"/> belongs to (e.g. <c>Demo/Asset</c>).
+/// <c>null</c> when <see cref="CkYamlSnippet"/> is null.
+/// </param>
 public sealed record SlowQueryIndexSuggestionDto(
     string IndexName,
     IReadOnlyList<SlowQueryIndexFieldDto> Fields,
     string ShellCommand,
     string Confidence,
-    IReadOnlyList<string> Notes);
+    IReadOnlyList<string> Notes,
+    string? CkYamlSnippet = null,
+    string? CkTypeFullName = null);
