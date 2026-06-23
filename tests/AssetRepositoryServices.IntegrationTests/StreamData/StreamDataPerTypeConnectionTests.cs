@@ -9,8 +9,9 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Strea
 /// Integration tests for resolving attribute values on stream-data rows. After AB#3864 the
 /// per-CK-type connection on StreamDataModelQuery was removed; attribute values are now
 /// projected through cells on the transient simple query (`streamData.transientStreamDataQuery.simple`).
-/// This test still pins the camelCase row.Values vs PascalCase GetAttributeValueOrDefault
-/// regression by walking cell.attributePath/value pairs.
+/// This test still pins the row-keying regression by walking cell.attributePath/value pairs —
+/// the wire echoes the caller's requested column string verbatim, while the engine-side
+/// <c>StreamDataRow.Values</c> stays keyed by the lower-case CrateDB column name.
 /// </summary>
 [Collection("Sequential")]
 public class StreamDataPerTypeConnectionTests(StreamDataFixture fixture, ITestOutputHelper output)
@@ -77,12 +78,13 @@ public class StreamDataPerTypeConnectionTests(StreamDataFixture fixture, ITestOu
                 c => c.GetProperty("attributePath").GetString()!,
                 c => c.GetProperty("value"));
 
-            byPath.Should().ContainKey("voltage",
-                "typed attribute cells must resolve — regression check for the "
-                + "camelCase row.Values vs PascalCase GetAttributeValueOrDefault mismatch");
-            byPath.Should().ContainKey("current");
-            byPath["voltage"].ValueKind.Should().NotBe(JsonValueKind.Null);
-            byPath["current"].ValueKind.Should().NotBe(JsonValueKind.Null);
+            byPath.Should().ContainKey("Voltage",
+                "wire attributePath must echo the caller's requested column string verbatim "
+                + "— if the engine's storage key leaks through, client grids bind to the "
+                + "wrong field and cells render empty");
+            byPath.Should().ContainKey("Current");
+            byPath["Voltage"].ValueKind.Should().NotBe(JsonValueKind.Null);
+            byPath["Current"].ValueKind.Should().NotBe(JsonValueKind.Null);
         }
     }
 

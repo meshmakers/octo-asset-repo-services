@@ -62,17 +62,17 @@ public class StreamDataSimpleQueryTests(StreamDataFixture fixture, ITestOutputHe
         var items = rows.GetProperty("items").EnumerateArray().ToList();
         items.Should().HaveCount(fixture.TestDataPointCount);
 
-        // Wire-format pin: attributePath values are camelCase dotted.
+        // Wire-format pin: simple stream-data queries echo the caller's requested column path
+        // verbatim as cell.attributePath. Refinery Studio's grid binds Kendo `field` directly
+        // to the saved query columns, so any divergence from the input string makes cells
+        // render empty while the row count stays correct (the symptom that motivated the pin).
+        var requestedColumns = new[] { "Voltage", "Current" };
         foreach (var item in items.Take(3))
         {
-            var cells = item.GetProperty("cells").GetProperty("items").EnumerateArray();
-            foreach (var cell in cells)
-            {
-                var attrPath = cell.GetProperty("attributePath").GetString();
-                attrPath.Should().NotBeNullOrEmpty();
-                attrPath!.Should().MatchRegex("^[a-z][a-zA-Z0-9.]*$",
-                    "attributePath must be camelCase dotted on the GraphQL wire");
-            }
+            var cells = item.GetProperty("cells").GetProperty("items").EnumerateArray().ToList();
+            var attrPaths = cells.Select(c => c.GetProperty("attributePath").GetString()).ToList();
+            attrPaths.Should().BeEquivalentTo(requestedColumns,
+                "every requested column must surface on the wire under its requested string");
         }
     }
 
@@ -170,7 +170,7 @@ public class StreamDataSimpleQueryTests(StreamDataFixture fixture, ITestOutputHe
         foreach (var item in items)
         {
             var cells = item.GetProperty("cells").GetProperty("items").EnumerateArray().ToList();
-            var voltageCell = cells.First(c => c.GetProperty("attributePath").GetString() == "voltage");
+            var voltageCell = cells.First(c => c.GetProperty("attributePath").GetString() == "Voltage");
             // All returned rows should have Voltage matching the filter
             Convert.ToDouble(voltageCell.GetProperty("value").GetRawText()).Should().Be(225.0);
         }
@@ -221,11 +221,11 @@ public class StreamDataSimpleQueryTests(StreamDataFixture fixture, ITestOutputHe
         // First item should have the highest voltage (229.5)
         var firstCells = items[0].GetProperty("cells").GetProperty("items").EnumerateArray().ToList();
         var firstVoltage = Convert.ToDouble(firstCells.First(c =>
-            c.GetProperty("attributePath").GetString() == "voltage").GetProperty("value").GetRawText());
+            c.GetProperty("attributePath").GetString() == "Voltage").GetProperty("value").GetRawText());
 
         var lastCells = items[^1].GetProperty("cells").GetProperty("items").EnumerateArray().ToList();
         var lastVoltage = Convert.ToDouble(lastCells.First(c =>
-            c.GetProperty("attributePath").GetString() == "voltage").GetProperty("value").GetRawText());
+            c.GetProperty("attributePath").GetString() == "Voltage").GetProperty("value").GetRawText());
 
         firstVoltage.Should().BeGreaterThan(lastVoltage, "results should be sorted descending by Voltage");
     }

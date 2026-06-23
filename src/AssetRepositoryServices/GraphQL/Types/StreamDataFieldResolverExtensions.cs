@@ -12,6 +12,13 @@ internal static class StreamDataFieldResolverExtensions
     /// stream-data resolvers. Null-forgives the resolver result because callers
     /// are expected to have validated column paths beforehand via
     /// StreamDataFieldValidation.
+    /// <para>
+    /// The wire alias echoes the caller's requested column verbatim — same contract as the
+    /// runtime <c>RtSimpleQueryCellDto</c> path. Clients (Refinery Studio query result grid,
+    /// MCP tool consumers, Power BI connector) bind grid columns to the saved query's column
+    /// strings; if the wire diverges from the input the grid lookup fails silently and cells
+    /// render empty even though the row count is correct.
+    /// </para>
     /// </summary>
     public static IReadOnlyList<ColumnNameMapping> ResolveToMappings(
         this StreamDataFieldResolver resolver,
@@ -20,7 +27,7 @@ internal static class StreamDataFieldResolverExtensions
         return columns.Select(c =>
         {
             var r = resolver.Resolve(c)!;
-            return new ColumnNameMapping(r.CrateDbName, r.GraphQlAlias);
+            return new ColumnNameMapping(r.CrateDbName, c);
         }).ToList();
     }
 
