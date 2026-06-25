@@ -149,7 +149,7 @@ internal sealed class StreamDataQueryDtoType : ObjectGraphType<StreamDataQueryDt
                         ArchiveRtId = uc.ArchiveRtId,
                         CkTypeId = ckTypeId,
                         ColumnPaths = columnNames,
-                        RtIds = simple.RtIds?.Select(id => new OctoObjectId(id)).ToList(),
+                        RtIds = execOverride?.RtIds ?? simple.RtIds?.Select(id => new OctoObjectId(id)).ToList(),
                         From = execOverride?.From ?? simple.From,
                         To = execOverride?.To ?? simple.To,
                         Limit = execOverride?.Limit ?? (simple.Limit.HasValue ? (int)simple.Limit.Value : null),
@@ -200,7 +200,7 @@ internal sealed class StreamDataQueryDtoType : ObjectGraphType<StreamDataQueryDt
                                 c.AttributePath,
                                 StreamDataGraphQlMapper.MapCkAggregationType(c.AggregationType)))
                             .ToList(),
-                        RtIds = aggregation.RtIds?.Select(id => new OctoObjectId(id)).ToList(),
+                        RtIds = execOverride?.RtIds ?? aggregation.RtIds?.Select(id => new OctoObjectId(id)).ToList(),
                         From = execOverride?.From ?? aggregation.From,
                         To = execOverride?.To ?? aggregation.To,
                         FieldFilters = MergeFilters(
@@ -252,7 +252,7 @@ internal sealed class StreamDataQueryDtoType : ObjectGraphType<StreamDataQueryDt
                                 c.AttributePath,
                                 StreamDataGraphQlMapper.MapCkAggregationType(c.AggregationType)))
                             .ToList(),
-                        RtIds = grouping.RtIds?.Select(id => new OctoObjectId(id)).ToList(),
+                        RtIds = execOverride?.RtIds ?? grouping.RtIds?.Select(id => new OctoObjectId(id)).ToList(),
                         From = execOverride?.From ?? grouping.From,
                         To = execOverride?.To ?? grouping.To,
                         FieldFilters = MergeFilters(
@@ -304,7 +304,7 @@ internal sealed class StreamDataQueryDtoType : ObjectGraphType<StreamDataQueryDt
                                 c.AttributePath,
                                 StreamDataGraphQlMapper.MapCkAggregationType(c.AggregationType)))
                             .ToList(),
-                        RtIds = downsampling.RtIds?.Select(id => new OctoObjectId(id)).ToList(),
+                        RtIds = execOverride?.RtIds ?? downsampling.RtIds?.Select(id => new OctoObjectId(id)).ToList(),
                         From = execOverride?.From ?? downsampling.From,
                         To = execOverride?.To ?? downsampling.To,
                         Limit = execOverride?.Limit ?? (downsampling.Limit.HasValue

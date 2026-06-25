@@ -1,4 +1,6 @@
 ﻿using GraphQL.Types;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Scalars;
+using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.Runtime.Engine.CrateDb.Dtos;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Inputs;
@@ -13,6 +15,10 @@ internal sealed class StreamDataArgumentsGraphType : InputObjectGraphType<Stream
         Field(x => x.Interval, true);
         Field(x => x.Limit, true);
         Field(x => x.QueryMode, typeof(NonNullGraphType<QueryModeDtoGraphType>));
+        Field(x => x.RtIds, typeof(ListGraphType<OctoObjectIdType>))
+            .Description("Override the source runtime ids the query is scoped to. " +
+                         "When supplied, replaces the persisted RtIds (used to scope a widget to " +
+                         "the entities resolved from a selected asset).");
     }
 }
 
@@ -72,6 +78,13 @@ public class StreamDataArguments
     ///     Defines the kind of query to be executed
     /// </summary>
     public QueryModeDto QueryMode { get; set; } = QueryModeDto.Default;
+
+    /// <summary>
+    ///     Optional override for the source runtime ids the query is scoped to. When non-null,
+    ///     it replaces the persisted RtIds at execution time (e.g. to scope a widget to the
+    ///     EnergyMeasurement entities resolved from a selected MeteringPoint).
+    /// </summary>
+    public List<OctoObjectId>? RtIds { get; set; }
 }
 
 /// <summary>
