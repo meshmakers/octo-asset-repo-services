@@ -6,10 +6,12 @@ using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Scalars;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Utils;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
 using Meshmakers.Octo.ConstructionKit.Contracts;
+using Meshmakers.Octo.ConstructionKit.Contracts.DataTransferObjects;
 using Meshmakers.Octo.ConstructionKit.Models.System.Generated.System.v2;
 using Meshmakers.Octo.Runtime.Contracts.Repositories.Query;
 using Meshmakers.Octo.Runtime.Contracts.StreamData;
 using Meshmakers.Octo.Runtime.Engine.CrateDb;
+using Meshmakers.Octo.Runtime.Engine.CrateDb.Dtos;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
 
@@ -110,6 +112,60 @@ internal sealed class StreamDataQueryDtoType : ObjectGraphType<StreamDataQueryDt
                 {
                     var columnNames = simple.Columns?.ToList() ?? [];
                     var fieldFilterList = simple.FieldFilter?.ToList();
+
+                    // Downsampling override (AB#4233): a Simple query executed with
+                    // queryMode=DOWNSAMPLING and a full from/to/limit contract reduces to `limit`
+                    // bins per series instead of returning raw rows. The persisted type stays
+                    // SimpleSdQuery — only the execution path changes. Without all three of
+                    // from/to/limit we fall through to the raw simple path (raw fallback).
+                    var dsFrom = execOverride?.From ?? simple.From;
+                    var dsTo = execOverride?.To ?? simple.To;
+                    var dsLimit = execOverride?.Limit
+                        ?? (simple.Limit.HasValue ? (int)simple.Limit.Value : (int?)null);
+                    if (execOverride?.QueryMode == QueryModeDto.Downsampling
+                        && dsFrom is not null && dsTo is not null && dsLimit is not null)
+                    {
+                        var dsPersistedFilterPaths = fieldFilterList is { Count: > 0 }
+                            ? fieldFilterList.Where(f => f.ComparisonValue != null).Select(f => f.AttributePath)
+                            : null;
+                        var dsRuntimeFilterPaths = runtimeFieldFilters
+                            ?.Where(f => f.ComparisonValue != null).Select(f => f.AttributePath);
+                        StreamDataFieldValidation.ValidateStreamDataFields(
+                            fieldResolver, columnNames, null,
+                            ConcatNullable(dsPersistedFilterPaths, dsRuntimeFilterPaths));
+
+                        // Per value-type reducers: numeric → AVG + MIN + MAX (envelope keeps peaks);
+                        // string/enum/bool → MAX (a stable representative, exact for the
+                        // constant-per-series columns like obisCode); other shapes are skipped.
+                        var reducers = SynthesizeDownsamplingReducers(columnNames, dto.Columns);
+
+                        resolvedColumnNames = fieldResolver
+                            .ResolveToMappings(new[] { Constants.Timestamp })
+                            .Concat(fieldResolver.ResolveAggregationMappings(reducers))
+                            .ToList();
+
+                        input = new StreamQueryExecutionInput
+                        {
+                            Variant = StreamQueryVariant.Downsampling,
+                            ArchiveRtId = uc.ArchiveRtId,
+                            CkTypeId = ckTypeId,
+                            AggregationColumns = reducers,
+                            // Group each bin by the source rtId so interleaved series stay separated.
+                            GroupByColumnPaths = new[] { Constants.RtId },
+                            RtIds = execOverride?.RtIds ?? simple.RtIds?.Select(id => new OctoObjectId(id)).ToList(),
+                            From = dsFrom,
+                            To = dsTo,
+                            Limit = dsLimit,
+                            FieldFilters = MergeFilters(
+                                StreamDataGraphQlMapper.MapCkFieldFilters(
+                                    fieldFilterList,
+                                    f => f.AttributePath,
+                                    f => f.Operator,
+                                    f => f.ComparisonValue),
+                                mappedRuntimeFieldFilters)
+                        };
+                        break;
+                    }
 
                     ctx.TryGetArgument(Statics.SortOrderArg, out IEnumerable<SortDto>? runtimeSortDtos);
                     var runtimeSortList = runtimeSortDtos?.ToList();
@@ -343,6 +399,61 @@ internal sealed class StreamDataQueryDtoType : ObjectGraphType<StreamDataQueryDt
         {
             return ctx.HandleException(e);
         }
+    }
+
+    /// <summary>
+    /// Builds the per-column reducer set for a Simple query executed in DOWNSAMPLING mode
+    /// (AB#4233). The reducer is chosen from each column's value type: numeric columns get
+    /// AVG + MIN + MAX (the MIN/MAX envelope preserves peaks the AVG centre line would smooth
+    /// away); string / enum / boolean / temporal columns get MAX as a stable representative
+    /// (exact for series-identifying columns that are constant within a (bin, series) group, e.g.
+    /// obisCode); record / array / binary / geospatial shapes are not chartable scalars and are
+    /// skipped. The bin timestamp is supplied separately as the "T" column.
+    /// </summary>
+    private static List<AggregationColumn> SynthesizeDownsamplingReducers(
+        IReadOnlyList<string> columnPaths,
+        IReadOnlyList<RtQueryColumnDto> columns)
+    {
+        var typeByPath = new Dictionary<string, AttributeValueTypesDto>();
+        foreach (var c in columns)
+        {
+            typeByPath[c.AttributePath] = c.AttributeValueType;
+        }
+
+        var reducers = new List<AggregationColumn>();
+        foreach (var path in columnPaths)
+        {
+            if (!typeByPath.TryGetValue(path, out var valueType))
+            {
+                continue;
+            }
+
+            switch (valueType)
+            {
+                case AttributeValueTypesDto.Integer:
+                case AttributeValueTypesDto.Integer64:
+                case AttributeValueTypesDto.Double:
+                    reducers.Add(new AggregationColumn(path, AggregationFunction.Average));
+                    reducers.Add(new AggregationColumn(path, AggregationFunction.Minimum));
+                    reducers.Add(new AggregationColumn(path, AggregationFunction.Maximum));
+                    break;
+
+                case AttributeValueTypesDto.String:
+                case AttributeValueTypesDto.Enum:
+                case AttributeValueTypesDto.Boolean:
+                case AttributeValueTypesDto.DateTime:
+                case AttributeValueTypesDto.DateTimeOffset:
+                case AttributeValueTypesDto.TimeSpan:
+                    reducers.Add(new AggregationColumn(path, AggregationFunction.Maximum));
+                    break;
+
+                default:
+                    // Records, arrays, binaries, geospatial — not reducible to a chartable scalar.
+                    break;
+            }
+        }
+
+        return reducers;
     }
 
     // ─── Aggregations resolver ────────────────────────────────────────────────

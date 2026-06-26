@@ -31,7 +31,8 @@ internal sealed class StreamQueryExecutionInput
     // Aggregation / Downsampling / GroupedAggregation columns
     public IReadOnlyList<AggregationColumn>? AggregationColumns { get; init; }
 
-    // GroupedAggregation group-by paths
+    // GroupedAggregation group-by paths — also reused by the Simple-downsampling path (AB#4233)
+    // to keep interleaved series separated (e.g. by the source rtId).
     public IReadOnlyList<string>? GroupByColumnPaths { get; init; }
 
     // Common time/limit/scope
@@ -95,6 +96,7 @@ internal static class StreamDataVariantExecutor
                 StreamDataDownsamplingQueryOptions.Create()
                     .WithCkTypeId(i.CkTypeId)
                     .WithAggregationColumns(i.AggregationColumns ?? [])
+                    .WithGroupByColumns(i.GroupByColumnPaths)
                     .WithTimeRange(
                         i.From ?? throw AssetRepositoryException.InvalidStreamDataQueryParams(),
                         i.To ?? throw AssetRepositoryException.InvalidStreamDataQueryParams())
