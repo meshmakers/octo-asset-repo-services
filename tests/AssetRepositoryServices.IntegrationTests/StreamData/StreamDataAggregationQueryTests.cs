@@ -287,6 +287,86 @@ public class StreamDataAggregationQueryTests(StreamDataFixture fixture, ITestOut
             "total count should not exceed total data points");
     }
 
+    [Fact]
+    public async Task TransientDownsamplingQuery_Windowed_LimitExceedsDistinctWindows_ReturnsNonNullBins()
+    {
+        // AB#4246 regression. A windowed (TimeRange) archive downsampled with far more buckets than
+        // it has distinct windows used to return one row per bin with NULL aggregates for EVERY bin:
+        // the bin was finer than the source window, so the fully-contained predicate (keyed on
+        // window_end) dropped every window. The fix clamps the bucket count to the distinct windows
+        // and anchors the bin on window_start. This asserts the bins now carry real values.
+        fixture.OutputHelper = output;
+
+        var from = fixture.WindowedStartTime.ToString("O");
+        var to = fixture.WindowedEndTime.ToString("O");
+
+        // 200 buckets requested over only 24 distinct 15-minute windows — the pre-fix all-null case.
+        var query = $$"""
+            {
+                streamData {
+                    transientStreamDataQuery {
+                        downsampling(
+                            archiveRtId: "{{fixture.WindowedArchiveRtIdString}}"
+                            columnPaths: [
+                                { attributePath: "Voltage", aggregationType: AVG }
+                            ]
+                            limit: 200
+                            from: "{{from}}"
+                            to: "{{to}}"
+                            first: 500
+                        ) {
+                            items {
+                                rows(first: 500) {
+                                    totalCount
+                                    items {
+                                        timestamp
+                                        cells(first: 10) {
+                                            items {
+                                                attributePath
+                                                value
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            """;
+
+        var result = await fixture.ExecuteGraphQlAsync(query);
+        output.WriteLine(fixture.SerializeGraphQl(result));
+
+        result.Errors.Should().BeNullOrEmpty("GraphQL windowed downsampling query should succeed");
+
+        var rows = GetRowsData(result, "downsampling");
+        var items = rows.GetProperty("items").EnumerateArray().ToList();
+
+        // Clamp: the 200 requested buckets collapse to at most the 24 distinct source windows.
+        items.Should().HaveCountGreaterThanOrEqualTo(1);
+        items.Should().HaveCountLessThanOrEqualTo(fixture.WindowedWindowCount,
+            "the requested bucket count is clamped to the number of distinct source windows");
+
+        // The core regression: bins must carry non-null Voltage averages (pre-fix every bin was null).
+        var binsWithValue = 0;
+        foreach (var item in items)
+        {
+            var cells = item.GetProperty("cells").GetProperty("items").EnumerateArray().ToList();
+            var voltageCell = cells.FirstOrDefault(c =>
+                c.GetProperty("attributePath").GetString()?.Contains("voltage",
+                    StringComparison.OrdinalIgnoreCase) == true);
+            if (voltageCell.ValueKind != JsonValueKind.Undefined &&
+                voltageCell.GetProperty("value").ValueKind != JsonValueKind.Null)
+            {
+                binsWithValue++;
+            }
+        }
+
+        binsWithValue.Should().BeGreaterThan(0,
+            "AB#4246: windowed downsampling must return non-null aggregates, not all-null bins");
+    }
+
     // ─── Helpers ─────────────────────────────────────────────────────────────
 
     /// <summary>

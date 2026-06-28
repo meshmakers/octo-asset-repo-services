@@ -62,6 +62,24 @@ public class StreamDataFixture : AssetRepoFixture
     /// <summary>String form of <see cref="ArchiveRtId"/> for inline embedding in GraphQL bodies.</summary>
     public string ArchiveRtIdString => ArchiveRtId.ToString();
 
+    // ── Windowed (TimeRange) archive — AB#4246 regression ────────────────────────────────────
+    // 24 contiguous 15-minute windows over 6 hours, single series. Used to prove that downsampling
+    // with limit >= the number of distinct windows no longer nulls out every bin (the windowed
+    // fully-contained bug: a bin finer than the source window dropped every window).
+    public DateTime WindowedStartTime { get; } = new(2026, 2, 1, 0, 0, 0, DateTimeKind.Utc);
+    public int WindowedWindowCount { get; } = 24;
+    public TimeSpan WindowedWindowSize { get; } = TimeSpan.FromMinutes(15);
+
+    /// <summary>Exclusive upper bound of the last window.</summary>
+    public DateTime WindowedEndTime => WindowedStartTime.Add(WindowedWindowSize * WindowedWindowCount);
+
+    /// <summary>Runtime id of the windowed <c>TimeRangeArchive</c> provisioned by the fixture.</summary>
+    public OctoObjectId WindowedArchiveRtId { get; private set; }
+
+    public string WindowedArchiveRtIdString => WindowedArchiveRtId.ToString();
+
+    private readonly OctoObjectId _windowedSeriesRtId = OctoObjectId.GenerateNewId();
+
     protected override async Task InitializeServicesAsync()
     {
         // Start CrateDB test container (single-node).
@@ -123,6 +141,10 @@ public class StreamDataFixture : AssetRepoFixture
         // exact payload shape that production callers produce (StreamDataPoint → DataPointDto with
         // camelCase keys after T17).
         await InsertTestDataPoints();
+
+        // Provision a windowed TimeRange archive + windowed data for the AB#4246 downsampling test.
+        WindowedArchiveRtId = await CreateAndActivateWindowedArchiveAsync();
+        await InsertWindowedDataPoints();
 
         // Initialize GraphQL execution infrastructure
         _documentExecuter = Provider?.GetRequiredService<IDocumentExecuter<OctoSchema>>();
@@ -256,13 +278,70 @@ public class StreamDataFixture : AssetRepoFixture
     /// CrateDB applies inserts asynchronously to the read path (~1s). Tests need read-after-write
     /// consistency so we force a refresh on the per-archive table after seeding.
     /// </summary>
-    private async Task RefreshArchiveTableAsync()
+    private Task RefreshArchiveTableAsync() => RefreshArchiveTableAsync(ArchiveRtIdString);
+
+    private async Task RefreshArchiveTableAsync(string archiveRtIdString)
     {
-        var qualifiedTable = $"\"{StreamDataTenantId}\".\"archive_{ArchiveRtIdString}\"";
+        var qualifiedTable = $"\"{StreamDataTenantId}\".\"archive_{archiveRtIdString}\"";
         await using var conn = new NpgsqlConnection(CrateDbConnectionString);
         await conn.OpenAsync();
         await using var cmd = new NpgsqlCommand($"REFRESH TABLE {qualifiedTable}", conn);
         await cmd.ExecuteNonQueryAsync();
+    }
+
+    /// <summary>
+    /// Creates and activates a windowed <c>TimeRangeArchive</c> (one Voltage column). Counterpart of
+    /// <see cref="CreateAndActivateArchiveAsync"/> for the windowed-storage path (AB#4246).
+    /// </summary>
+    private async Task<OctoObjectId> CreateAndActivateWindowedArchiveAsync()
+    {
+        var systemContext = GetSystemContext();
+        var tenantContext = await systemContext.FindTenantContextAsync(systemContext.TenantId);
+        var store = tenantContext.GetTimeRangeArchiveRuntimeStore()
+            ?? throw new InvalidOperationException("TimeRangeArchiveRuntimeStore not available — was EnableStreamDataAsync called?");
+
+        var rtId = await store.InsertAsync(
+            "WindowedMeteringPointArchive",
+            new RtCkId<CkTypeId>(TestCkTypeId),
+            new List<CkArchiveColumnSpec> { new("Voltage", Indexed: true, Required: false) },
+            WindowedWindowSize);
+
+        var lifecycle = tenantContext.GetArchiveLifecycleService()
+            ?? throw new InvalidOperationException("ArchiveLifecycleService not registered.");
+        await lifecycle.ActivateAsync(rtId);
+        return rtId;
+    }
+
+    /// <summary>
+    /// Writes <see cref="WindowedWindowCount"/> contiguous fixed-width windows through
+    /// <see cref="IStreamDataRepository.InsertTimeRangeAsync"/> (the windowed write path), single series.
+    /// </summary>
+    private async Task InsertWindowedDataPoints()
+    {
+        var systemContext = GetSystemContext();
+        var tenantContext = await systemContext.FindTenantContextAsync(systemContext.TenantId);
+        var repo = tenantContext.GetStreamDataRepository()
+            ?? throw new InvalidOperationException("StreamDataRepository not available — was EnableStreamDataAsync called?");
+
+        var ckTypeId = new RtCkId<CkTypeId>(TestCkTypeId);
+        var points = new List<TimeRangeStreamDataPoint>(WindowedWindowCount);
+        for (var k = 0; k < WindowedWindowCount; k++)
+        {
+            var from = WindowedStartTime.Add(WindowedWindowSize * k);
+            var to = from.Add(WindowedWindowSize);
+            points.Add(new TimeRangeStreamDataPoint
+            {
+                RtId = _windowedSeriesRtId,
+                CkTypeId = ckTypeId,
+                From = from,
+                To = to,
+                RtWellKnownName = "WindowedSeries",
+                Attributes = new Dictionary<string, object?> { ["voltage"] = 100.0 + k }
+            });
+        }
+
+        await repo.InsertTimeRangeAsync(WindowedArchiveRtId, points);
+        await RefreshArchiveTableAsync(WindowedArchiveRtIdString);
     }
 
     /// <summary>
