@@ -57,13 +57,20 @@ try
             systemOptions => builder.Configuration.GetSection("System").Bind(systemOptions),
             options => builder.Configuration.GetSection("AssetRepository").Bind(options))
         .AddCrateDbStreamDataRepository<ConfigureStreamDataConfiguration>()
-        .AddRollupOrchestratorBackgroundService();
+        .AddRollupOrchestratorBackgroundService()
+        .AddRecomputeOrchestratorBackgroundService();
 
     // Bind rollup orchestrator options so the StreamData:Rollup config section can override
     // the defaults (tick interval, startup delay, tenant id list). Composition roots with
     // dynamic tenant discovery can replace IRollupTenantSource after this call.
     builder.Services.Configure<Meshmakers.Octo.Runtime.Engine.MongoDb.StreamData.RollupOrchestratorOptions>(
         builder.Configuration.GetSection("StreamData:Rollup"));
+
+    // Bind recompute orchestrator options (AB#4184) so the StreamData:Recompute config section can
+    // override the defaults (tick interval, startup delay). The orchestrator reuses the same
+    // IRollupTenantSource registered below, so it ticks the full tenant population too.
+    builder.Services.Configure<Meshmakers.Octo.Runtime.Engine.MongoDb.StreamData.RecomputeOrchestratorOptions>(
+        builder.Configuration.GetSection("StreamData:Recompute"));
 
     // Asset-repo is a multi-tenant pod: the default ConfigBasedRollupTenantSource only sees
     // tenants explicitly listed in StreamData:Rollup.TenantIds, which would force operators to
