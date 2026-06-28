@@ -139,8 +139,15 @@ internal sealed class StreamDataQueryDtoType : ObjectGraphType<StreamDataQueryDt
                         // constant-per-series columns like obisCode); other shapes are skipped.
                         var reducers = SynthesizeDownsamplingReducers(columnNames, dto.Columns);
 
-                        resolvedColumnNames = fieldResolver
-                            .ResolveToMappings(new[] { Constants.Timestamp })
+                        // The downsampling engine path always surfaces the bin time under the
+                        // canonical `timestamp` key (StreamDataRow.Timestamp + Values[timestamp]).
+                        // Build that mapping directly rather than via ResolveToMappings, which would
+                        // throw on windowed-storage archives whose resolver has no `timestamp`
+                        // default key (their time axis is window_end).
+                        resolvedColumnNames = new List<ColumnNameMapping>
+                            {
+                                new(Constants.Timestamp, Constants.Timestamp)
+                            }
                             .Concat(fieldResolver.ResolveAggregationMappings(reducers))
                             .ToList();
 
