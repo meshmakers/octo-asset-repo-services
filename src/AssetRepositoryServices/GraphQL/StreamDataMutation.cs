@@ -90,6 +90,48 @@ internal sealed class StreamDataMutation : ObjectGraphType
             .Argument<NonNullGraphType<DateTimeGraphType>>("toBucketEnd", "Target bucket-end (exclusive) the watermark is reset to, ISO-8601. Will be truncated down to the bucket boundary.")
             .ResolveAsync(ctx => ResolveRollupAsync(ctx, "RewindWatermark",
                 (svc, id) => svc.RewindWatermarkAsync(id, ctx.GetArgument<DateTime>("toBucketEnd"))));
+
+        Field<NonNullGraphType<RecomputeJobInfoDtoType>>("recomputeArchive")
+            .Description("Triggers (or coalesces) an optimistic recompute of a rollup archive over the half-open range [from, to). Returns the resulting job snapshot. While a recompute runs, readers keep seeing a consistent snapshot. Requires StreamDataAdmin. AB#4184.")
+            .Argument<NonNullGraphType<OctoObjectIdType>>(Statics.RtIdArg, "Runtime id of the CkRollupArchive to recompute.")
+            .Argument<NonNullGraphType<DateTimeGraphType>>("from", "Inclusive range start, ISO-8601.")
+            .Argument<NonNullGraphType<DateTimeGraphType>>("to", "Exclusive range end, ISO-8601.")
+            .Argument<OctoObjectIdType>("rtIdScope", "Optional: restrict the recompute to a single entity (metering point / stream).")
+            .ResolveAsync(ResolveRecomputeAsync);
+    }
+
+    private async Task<object?> ResolveRecomputeAsync(IResolveFieldContext<object?> ctx)
+    {
+        try
+        {
+            var rollupRtId = ctx.GetArgument<OctoObjectId>(Statics.RtIdArg);
+            var from = ctx.GetArgument<DateTime>("from");
+            var to = ctx.GetArgument<DateTime>("to");
+            var rtIdScope = ctx.GetArgument<OctoObjectId?>("rtIdScope");
+
+            var gql = (GraphQlUserContext)ctx.UserContext;
+            if (gql.User?.IsInRole(CommonConstants.StreamDataAdminRole) != true)
+            {
+                ctx.Errors.Add(new ExecutionError(
+                    $"Recompute requires the '{CommonConstants.StreamDataAdminRole}' role.")
+                {
+                    Code = Statics.GraphQlForbidden,
+                });
+                return null;
+            }
+
+            var orchestrator = gql.TenantContext.GetRecomputeOrchestrator()
+                ?? throw AssetRepositoryException.StreamDataNotAvailable();
+
+            var job = await orchestrator.RecomputeArchiveAsync(
+                rollupRtId, from, to, rtIdScope, RecomputeTrigger.Manual, ctx.CancellationToken);
+
+            return RecomputeJobInfoDto.From(job);
+        }
+        catch (Exception e)
+        {
+            return ctx.HandleException(e);
+        }
     }
 
     private async Task<object?> ResolveDeleteAsync(IResolveFieldContext<object?> ctx)

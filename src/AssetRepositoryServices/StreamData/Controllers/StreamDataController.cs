@@ -211,6 +211,69 @@ public class StreamDataController : ControllerBase
             (lifecycle, id) => lifecycle.RewindWatermarkAsync(id, toBucketEnd));
 
     /// <summary>
+    /// Triggers (or coalesces) an optimistic recompute of a rollup archive over the half-open range
+    /// <c>[from, to)</c>, optionally scoped to a single entity. Returns the resulting job snapshot.
+    /// AB#4184.
+    /// </summary>
+    [HttpPost("archives/{rollupRtId}/recompute")]
+    [Microsoft.AspNetCore.Authorization.Authorize(AssetRepositoryServiceConstants.SystemAssetApiReadWritePolicy)]
+    public async Task<ActionResult<RecomputeJobInfoRestDto>> RecomputeArchive(
+        [Required] string tenantId, [Required] string rollupRtId,
+        [Required] DateTime from, [Required] DateTime to, string? rtIdScope)
+    {
+        try
+        {
+            var tenantContext = await _systemContext.FindTenantContextAsync(tenantId);
+            var orchestrator = tenantContext.GetRecomputeOrchestrator()
+                ?? throw new StreamDataException(
+                    $"Recompute support is not wired for tenant '{tenantId}'. Ensure stream data is enabled and a rollup store is registered.");
+
+            var job = await orchestrator.RecomputeArchiveAsync(
+                new OctoObjectId(rollupRtId), from, to,
+                rtIdScope is not null ? new OctoObjectId(rtIdScope) : null,
+                RecomputeTrigger.Manual, HttpContext.RequestAborted);
+
+            return Ok(RecomputeJobInfoRestDto.From(job));
+        }
+        catch (ConfigurationException e)
+        {
+            return BadRequest(e.Message);
+        }
+        catch (StreamDataException e)
+        {
+            _logger.LogWarning("Recompute refused for tenant '{TenantId}', rollup '{RollupRtId}': {Reason}",
+                tenantId, rollupRtId, e.Message);
+            return BadRequest(e.Message);
+        }
+    }
+
+    /// <summary>
+    /// Lists the most recent recompute jobs for a rollup archive (newest first, capped at 50) — for
+    /// debugging why a recompute failed. AB#4184.
+    /// </summary>
+    [HttpGet("archives/{archiveRtId}/recompute-jobs")]
+    public async Task<ActionResult<IReadOnlyList<RecomputeJobInfoRestDto>>> ListRecomputeJobsForArchive(
+        [Required] string tenantId, [Required] string archiveRtId)
+    {
+        try
+        {
+            var tenantContext = await _systemContext.FindTenantContextAsync(tenantId);
+            var jobStore = tenantContext.GetRecomputeJobStore();
+            if (jobStore is null)
+            {
+                return Ok(Array.Empty<RecomputeJobInfoRestDto>());
+            }
+
+            var jobs = await jobStore.GetForArchiveAsync(new OctoObjectId(archiveRtId), 50);
+            return Ok(jobs.Select(RecomputeJobInfoRestDto.From).ToList());
+        }
+        catch (ConfigurationException e)
+        {
+            return BadRequest(e.Message);
+        }
+    }
+
+    /// <summary>
     /// Inserts a batch of externally-aggregated time-range data points into a
     /// <c>TimeRangeArchive</c>. Each row covers a half-open <c>[from, to)</c> window;
     /// re-deliveries upsert via the natural key and set the row's <c>was_updated</c> flag to
