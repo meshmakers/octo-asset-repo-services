@@ -133,6 +133,36 @@ internal sealed class StreamDataTransientQuery : ObjectGraphType
                 .Select(p => BuildSimpleColumn(p, typeQueryColumns))
                 .ToList();
 
+            // Downsampling override (AB#4233): a Simple transient query executed with
+            // queryMode=DOWNSAMPLING and a full from/to/limit contract reduces to `limit` bins per
+            // series instead of raw rows. Synthesize per-type reducers + group by the source rtId;
+            // the .Rows resolver then runs the same downsampling path as the .downsampling
+            // sub-connection. Without all of from/to/limit it falls through to the raw simple path.
+            if (execArgs?.QueryMode == QueryModeDto.Downsampling
+                && execArgs.From is not null && execArgs.To is not null && execArgs.Limit is not null)
+            {
+                var reducers = StreamDataDownsamplingReducers.Synthesize(columnPaths, columns);
+                var dsDto = new StreamDataTransientQueryDto
+                {
+                    QueryCkTypeId = ckTypeId,
+                    Columns = columns,
+                    UserContext = new StreamDataTransientUserContext
+                    {
+                        Variant = StreamQueryVariant.Downsampling,
+                        ArchiveRtId = archiveRtId,
+                        CkTypeId = ckTypeId,
+                        AggregationColumns = reducers,
+                        GroupByColumnPaths = new[] { Constants.RtId },
+                        From = execArgs.From,
+                        To = execArgs.To,
+                        Limit = execArgs.Limit,
+                        FieldFilters = StreamDataGraphQlMapper.MapFieldFilters(fieldFilters),
+                        RtIds = rtIds?.ToList()
+                    }
+                };
+                return ConnectionUtils.ToOctoConnection(new[] { dsDto }, ctx, 0, 1);
+            }
+
             var dto = new StreamDataTransientQueryDto
             {
                 QueryCkTypeId = ckTypeId,

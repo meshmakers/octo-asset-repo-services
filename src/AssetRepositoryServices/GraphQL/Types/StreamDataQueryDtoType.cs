@@ -6,7 +6,6 @@ using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Scalars;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Utils;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
 using Meshmakers.Octo.ConstructionKit.Contracts;
-using Meshmakers.Octo.ConstructionKit.Contracts.DataTransferObjects;
 using Meshmakers.Octo.ConstructionKit.Models.System.Generated.System.v2;
 using Meshmakers.Octo.Runtime.Contracts.Repositories.Query;
 using Meshmakers.Octo.Runtime.Contracts.StreamData;
@@ -137,7 +136,7 @@ internal sealed class StreamDataQueryDtoType : ObjectGraphType<StreamDataQueryDt
                         // Per value-type reducers: numeric → AVG + MIN + MAX (envelope keeps peaks);
                         // string/enum/bool → MAX (a stable representative, exact for the
                         // constant-per-series columns like obisCode); other shapes are skipped.
-                        var reducers = SynthesizeDownsamplingReducers(columnNames, dto.Columns);
+                        var reducers = StreamDataDownsamplingReducers.Synthesize(columnNames, dto.Columns);
 
                         // The downsampling engine path always surfaces the bin time under the
                         // canonical `timestamp` key (StreamDataRow.Timestamp + Values[timestamp]).
@@ -406,61 +405,6 @@ internal sealed class StreamDataQueryDtoType : ObjectGraphType<StreamDataQueryDt
         {
             return ctx.HandleException(e);
         }
-    }
-
-    /// <summary>
-    /// Builds the per-column reducer set for a Simple query executed in DOWNSAMPLING mode
-    /// (AB#4233). The reducer is chosen from each column's value type: numeric columns get
-    /// AVG + MIN + MAX (the MIN/MAX envelope preserves peaks the AVG centre line would smooth
-    /// away); string / enum / boolean / temporal columns get MAX as a stable representative
-    /// (exact for series-identifying columns that are constant within a (bin, series) group, e.g.
-    /// obisCode); record / array / binary / geospatial shapes are not chartable scalars and are
-    /// skipped. The bin timestamp is supplied separately as the "T" column.
-    /// </summary>
-    private static List<AggregationColumn> SynthesizeDownsamplingReducers(
-        IReadOnlyList<string> columnPaths,
-        IReadOnlyList<RtQueryColumnDto> columns)
-    {
-        var typeByPath = new Dictionary<string, AttributeValueTypesDto>();
-        foreach (var c in columns)
-        {
-            typeByPath[c.AttributePath] = c.AttributeValueType;
-        }
-
-        var reducers = new List<AggregationColumn>();
-        foreach (var path in columnPaths)
-        {
-            if (!typeByPath.TryGetValue(path, out var valueType))
-            {
-                continue;
-            }
-
-            switch (valueType)
-            {
-                case AttributeValueTypesDto.Integer:
-                case AttributeValueTypesDto.Integer64:
-                case AttributeValueTypesDto.Double:
-                    reducers.Add(new AggregationColumn(path, AggregationFunction.Average));
-                    reducers.Add(new AggregationColumn(path, AggregationFunction.Minimum));
-                    reducers.Add(new AggregationColumn(path, AggregationFunction.Maximum));
-                    break;
-
-                case AttributeValueTypesDto.String:
-                case AttributeValueTypesDto.Enum:
-                case AttributeValueTypesDto.Boolean:
-                case AttributeValueTypesDto.DateTime:
-                case AttributeValueTypesDto.DateTimeOffset:
-                case AttributeValueTypesDto.TimeSpan:
-                    reducers.Add(new AggregationColumn(path, AggregationFunction.Maximum));
-                    break;
-
-                default:
-                    // Records, arrays, binaries, geospatial — not reducible to a chartable scalar.
-                    break;
-            }
-        }
-
-        return reducers;
     }
 
     // ─── Aggregations resolver ────────────────────────────────────────────────

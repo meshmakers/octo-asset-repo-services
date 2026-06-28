@@ -173,10 +173,15 @@ internal sealed class StreamDataTransientQueryDtoType : ObjectGraphType<StreamDa
                 {
                     var aggColumns = uc.AggregationColumns ?? [];
 
-                    // Timestamp first (canonical PascalCase, wire camelCase), then aggregation
-                    // columns with function-suffixed keys (matches engine MapAggregationRow).
-                    resolvedColumnNames = fieldResolver
-                        .ResolveToMappings(new[] { Constants.Timestamp })
+                    // The downsampling engine path always surfaces the bin time under the canonical
+                    // `timestamp` key; build that mapping directly rather than via ResolveToMappings,
+                    // which throws on windowed-storage archives (their resolver has no `timestamp`
+                    // default — the time axis is window_end). Aggregation columns follow with
+                    // function-suffixed keys (matches engine MapAggregationRow).
+                    resolvedColumnNames = new List<ColumnNameMapping>
+                        {
+                            new(Constants.Timestamp, Constants.Timestamp)
+                        }
                         .Concat(fieldResolver.ResolveAggregationMappings(aggColumns))
                         .ToList();
 
@@ -186,6 +191,7 @@ internal sealed class StreamDataTransientQueryDtoType : ObjectGraphType<StreamDa
                         ArchiveRtId = uc.ArchiveRtId,
                         CkTypeId = ckTypeId,
                         AggregationColumns = aggColumns,
+                        GroupByColumnPaths = uc.GroupByColumnPaths,
                         RtIds = uc.RtIds,
                         From = uc.From,
                         To = uc.To,
