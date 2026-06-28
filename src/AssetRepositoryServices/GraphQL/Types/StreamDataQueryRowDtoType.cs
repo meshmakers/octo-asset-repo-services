@@ -17,7 +17,16 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
 internal sealed class StreamDataQueryRowDto : GraphQlDto
 {
     public OctoObjectId RtId { get; set; }
-    public RtCkId<CkTypeId> CkTypeId { get; set; } = null!;
+
+    /// <summary>
+    /// CK type of the backing entity. Null for aggregation / grouped-aggregation / downsampling
+    /// rows, which have no backing entity — the <see cref="RtCkIdGraph{TCkKey}"/> scalar then
+    /// serialises it to GraphQL <c>null</c>. Must stay null in that case: an empty
+    /// <c>RtCkId&lt;CkTypeId&gt;("")</c> has a null <c>ElementId</c> and throws a
+    /// NullReferenceException from its <c>IsEmpty</c>/<c>SemanticVersionedFullName</c> getter
+    /// during serialization (observed as "NULL_REFERENCE: Error trying to resolve field 'ckTypeId'").
+    /// </summary>
+    public RtCkId<CkTypeId>? CkTypeId { get; set; }
     public DateTime? Timestamp { get; set; }
     public string? RtWellKnownName { get; set; }
     public DateTime? RtCreationDateTime { get; set; }
@@ -45,7 +54,9 @@ internal sealed class StreamDataQueryRowDto : GraphQlDto
         return new StreamDataQueryRowDto
         {
             RtId = row.RtId ?? OctoObjectId.Empty,
-            CkTypeId = row.CkTypeId ?? new RtCkId<CkTypeId>(""),
+            // Leave null for entity-less rows (aggregation/grouping/downsampling) — see CkTypeId
+            // remark. Do NOT coalesce to an empty RtCkId: that serialises with a NullReferenceException.
+            CkTypeId = row.CkTypeId,
             Timestamp = row.Timestamp,
             RtWellKnownName = row.RtWellKnownName,
             RtCreationDateTime = row.RtCreationDateTime,
