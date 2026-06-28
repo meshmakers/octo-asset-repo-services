@@ -5,6 +5,7 @@ using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Scalars;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Utils;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
 using Meshmakers.Octo.ConstructionKit.Contracts;
+using Meshmakers.Octo.ConstructionKit.Contracts.Services;
 using Meshmakers.Octo.Runtime.Contracts.StreamData;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
@@ -72,15 +73,36 @@ internal sealed class StreamDataQueryRowDtoType : ObjectGraphType<StreamDataQuer
 
         Connection<NonNullGraphType<RtQueryCellDtoType>>("Cells")
             .Description("The data cells for this row, one per selected column.")
+            .Argument<BooleanGraphType>(Statics.ResolveEnumValuesToNames,
+                "When true, enum integer values are resolved to their label names. Defaults to true.")
             .Resolve(ResolveCells);
     }
 
     private static object ResolveCells(IResolveConnectionContext<StreamDataQueryRowDto> context)
     {
         var row = context.Source;
+
+        // Default to true for parity with the runtime query path (RtQueryRowDtoType).
+        context.TryGetArgument(Statics.ResolveEnumValuesToNames, true, out bool resolveEnumValuesToNames);
+
+        // Only touch the CK cache when at least one column is enum-typed and resolution is on.
+        var resolveEnums = resolveEnumValuesToNames && row.ColumnNames.Any(m => m.EnumId is not null);
+        ICkCacheService? ckCacheService = null;
+        string? tenantId = null;
+        if (resolveEnums)
+        {
+            ckCacheService = context.GetCkCacheService();
+            tenantId = ((GraphQlUserContext)context.UserContext).TenantId;
+        }
+
         var cells = row.ColumnNames.Select(mapping =>
         {
             row.Values.TryGetValue(mapping.Canonical, out var value);
+            if (resolveEnums && mapping.EnumId is { } enumId && value is not null)
+            {
+                value = ResolveEnumName(ckCacheService!, tenantId!, enumId, value);
+            }
+
             return new RtQueryCellDto
             {
                 AttributePath = mapping.Wire,
@@ -89,5 +111,53 @@ internal sealed class StreamDataQueryRowDtoType : ObjectGraphType<StreamDataQuer
         });
 
         return ConnectionUtils.ToOctoConnection(cells, context);
+    }
+
+    /// <summary>
+    /// Resolves a raw integer enum key to its CK enum value name. Returns the original value
+    /// unchanged when it is not an integer key, the enum is not in the cache, or the key has no
+    /// matching value — stream-data display must never fail on an unexpected value.
+    /// </summary>
+    private static object? ResolveEnumName(ICkCacheService ckCacheService, string tenantId,
+        CkId<CkEnumId> enumId, object value)
+    {
+        if (!TryGetEnumKey(value, out var key))
+        {
+            return value;
+        }
+
+        if (!ckCacheService.TryGetCkEnum(tenantId, enumId, out var ckEnumGraph) || ckEnumGraph == null)
+        {
+            return value;
+        }
+
+        var match = ckEnumGraph.Values.FirstOrDefault(v => v.Key == key);
+        return match?.Name ?? value;
+    }
+
+    /// <summary>
+    /// Coerces an integral value (CrateDB may surface enum keys as int or long) to an int key.
+    /// Non-integral values (doubles, strings, …) are rejected so they pass through unchanged.
+    /// </summary>
+    private static bool TryGetEnumKey(object value, out int key)
+    {
+        switch (value)
+        {
+            case int i:
+                key = i;
+                return true;
+            case long l when l is >= int.MinValue and <= int.MaxValue:
+                key = (int)l;
+                return true;
+            case short s:
+                key = s;
+                return true;
+            case byte b:
+                key = b;
+                return true;
+            default:
+                key = 0;
+                return false;
+        }
     }
 }

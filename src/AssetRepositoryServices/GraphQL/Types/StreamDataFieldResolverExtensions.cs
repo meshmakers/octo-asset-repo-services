@@ -1,4 +1,7 @@
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Utils;
+using Meshmakers.Octo.ConstructionKit.Contracts;
+using Meshmakers.Octo.ConstructionKit.Contracts.DataTransferObjects;
+using Meshmakers.Octo.ConstructionKit.Contracts.Services;
 using Meshmakers.Octo.Runtime.Contracts.Repositories.Query;
 using Meshmakers.Octo.Runtime.Contracts.StreamData;
 using Meshmakers.Octo.Runtime.Engine.CrateDb;
@@ -7,6 +10,43 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
 
 internal static class StreamDataFieldResolverExtensions
 {
+    /// <summary>
+    /// Builds a path → CK-enum-id lookup for the given target CK type, used to enrich
+    /// <see cref="ColumnNameMapping"/> so cells-based stream-data resolvers can resolve raw
+    /// integer enum keys to their value names (parity with the runtime query path). The lookup
+    /// is keyed by the same attribute-path string the persisted/transient query columns use, so
+    /// a column path resolves to its enum id iff the CK attribute at that path is enum-typed.
+    /// Degrades to a null-result resolver (raw integers, no resolution) if the CK type columns
+    /// cannot be enumerated — enum-name resolution is a display enhancement and must never break
+    /// an otherwise-valid query.
+    /// </summary>
+    public static Func<string, CkId<CkEnumId>?> BuildEnumColumnResolver(
+        ICkCacheService ckCacheService, string tenantId, RtCkId<CkTypeId> ckTypeId)
+    {
+        // Case-insensitive: stream-data column/query paths are PascalCase (e.g. "OperatingStatus",
+        // mirroring the archive column spec), whereas the CK query-column collector emits the
+        // attribute path camelCase ("operatingStatus"). Same attribute, first-letter casing differs
+        // — match the whole dotted path ignoring case. Indexer-set (not ToDictionary) so a rare
+        // case-only path collision overwrites instead of throwing.
+        var enumColumns = new Dictionary<string, CkId<CkEnumId>>(StringComparer.OrdinalIgnoreCase);
+        try
+        {
+            foreach (var c in ckCacheService.GetCkTypeQueryColumnPathsByRtCkId(tenantId, ckTypeId))
+            {
+                if (c.ValueType == AttributeValueTypesDto.Enum && c.CkEnumId != null)
+                {
+                    enumColumns[c.Path] = c.CkEnumId;
+                }
+            }
+        }
+        catch
+        {
+            enumColumns.Clear();
+        }
+
+        return path => enumColumns.GetValueOrDefault(path);
+    }
+
     /// <summary>
     /// Resolves each flat attribute name to a canonical+wire pair for cells-based
     /// stream-data resolvers. Null-forgives the resolver result because callers
@@ -22,12 +62,13 @@ internal static class StreamDataFieldResolverExtensions
     /// </summary>
     public static IReadOnlyList<ColumnNameMapping> ResolveToMappings(
         this StreamDataFieldResolver resolver,
-        IEnumerable<string> columns)
+        IEnumerable<string> columns,
+        Func<string, CkId<CkEnumId>?>? enumIdResolver = null)
     {
         return columns.Select(c =>
         {
             var r = resolver.Resolve(c)!;
-            return new ColumnNameMapping(r.CrateDbName, c);
+            return new ColumnNameMapping(r.CrateDbName, c, enumIdResolver?.Invoke(c));
         }).ToList();
     }
 
@@ -40,14 +81,21 @@ internal static class StreamDataFieldResolverExtensions
     /// </summary>
     public static IReadOnlyList<ColumnNameMapping> ResolveAggregationMappings(
         this StreamDataFieldResolver resolver,
-        IEnumerable<AggregationColumn> aggregationColumns)
+        IEnumerable<AggregationColumn> aggregationColumns,
+        Func<string, CkId<CkEnumId>?>? enumIdResolver = null)
     {
         return aggregationColumns.Select(col =>
         {
             var r = resolver.Resolve(col.AttributePath)!;
             var suffix = AggregationFunctionWireSuffix(col.Function);
             var key = $"{r.CrateDbName}_{suffix}";
-            return new ColumnNameMapping(key, key);
+            // Only value-preserving reducers keep the original enum key: MIN/MAX of an enum
+            // column return one of the source integer keys, so resolving to its name is correct.
+            // COUNT/SUM/AVG produce derived numbers that are not enum keys — leave them raw.
+            var enumId = col.Function is AggregationFunction.Minimum or AggregationFunction.Maximum
+                ? enumIdResolver?.Invoke(col.AttributePath)
+                : null;
+            return new ColumnNameMapping(key, key, enumId);
         }).ToList();
     }
 

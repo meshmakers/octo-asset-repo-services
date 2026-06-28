@@ -223,7 +223,10 @@ public class StreamDataFixture : AssetRepoFixture
             Columns = new AttributeRecordValueList<RtCkArchiveColumnRecord>
             {
                 new() { Path = "Voltage", Indexed = true, Required = false },
-                new() { Path = "Current", Indexed = true, Required = false }
+                new() { Path = "Current", Indexed = true, Required = false },
+                // Enum-typed column (OperatingStatus) — drives the AB#4247 enum-name resolution
+                // tests. Additive: existing tests query Voltage/Current only and are unaffected.
+                new() { Path = "OperatingStatus", Indexed = true, Required = false }
             }
         };
 
@@ -256,9 +259,12 @@ public class StreamDataFixture : AssetRepoFixture
             var attributes = new Dictionary<string, object?>
             {
                 // Keys reflect the picker output (camelCase paths). T17 path-to-column mapping
-                // produces matching column names: `voltage`, `current`.
+                // produces matching column names: `voltage`, `current`, `operatingstatus`.
                 ["voltage"] = 220.0 + (i * 0.5),
-                ["current"] = 10.0 + (i * 0.1)
+                ["current"] = 10.0 + (i * 0.1),
+                // OperatingStatus enum keys cycle Unknown(0) / OK(1) / Maintenance(2) so the
+                // AB#4247 enum-resolution tests see a representative spread (max key = 2).
+                ["operatingStatus"] = i % 3
             };
             points.Add(new StreamDataPoint
             {
