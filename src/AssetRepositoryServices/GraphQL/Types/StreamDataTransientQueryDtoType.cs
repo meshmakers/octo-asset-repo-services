@@ -73,6 +73,12 @@ internal sealed class StreamDataTransientQueryDtoType : ObjectGraphType<StreamDa
                 ?? throw AssetRepositoryException.StreamDataNotAvailable();
 
             var ckTypeId = uc.CkTypeId;
+
+            // Enum-id lookup for the target CK type, used to resolve raw integer enum keys to
+            // their value names on the result cells (parity with the runtime query path).
+            var enumIdResolver = StreamDataFieldResolverExtensions.BuildEnumColumnResolver(
+                ctx.GetCkCacheService(), tenantId, ckTypeId);
+
             var archiveSnapshot = await gql.TenantContext.GetArchiveRuntimeStore().GetAsync(uc.ArchiveRtId)
                 ?? throw new ArchiveNotFoundException(uc.ArchiveRtId);
             // Simple queries pick physical column paths directly; aggregation variants pick
@@ -104,7 +110,7 @@ internal sealed class StreamDataTransientQueryDtoType : ObjectGraphType<StreamDa
                         ? StreamDataGraphQlMapper.MapSortOrders(runtimeSortList)
                         : uc.SortOrders;
 
-                    resolvedColumnNames = fieldResolver.ResolveToMappings(columnPaths);
+                    resolvedColumnNames = fieldResolver.ResolveToMappings(columnPaths, enumIdResolver);
 
                     input = new StreamQueryExecutionInput
                     {
@@ -128,7 +134,7 @@ internal sealed class StreamDataTransientQueryDtoType : ObjectGraphType<StreamDa
                 {
                     var aggColumns = uc.AggregationColumns ?? [];
 
-                    resolvedColumnNames = fieldResolver.ResolveAggregationMappings(aggColumns);
+                    resolvedColumnNames = fieldResolver.ResolveAggregationMappings(aggColumns, enumIdResolver);
 
                     input = new StreamQueryExecutionInput
                     {
@@ -150,8 +156,8 @@ internal sealed class StreamDataTransientQueryDtoType : ObjectGraphType<StreamDa
                     var aggColumns = uc.AggregationColumns ?? [];
 
                     resolvedColumnNames = fieldResolver
-                        .ResolveToMappings(groupByPaths)
-                        .Concat(fieldResolver.ResolveAggregationMappings(aggColumns))
+                        .ResolveToMappings(groupByPaths, enumIdResolver)
+                        .Concat(fieldResolver.ResolveAggregationMappings(aggColumns, enumIdResolver))
                         .ToList();
 
                     input = new StreamQueryExecutionInput
@@ -182,7 +188,7 @@ internal sealed class StreamDataTransientQueryDtoType : ObjectGraphType<StreamDa
                         {
                             new(Constants.Timestamp, Constants.Timestamp)
                         }
-                        .Concat(fieldResolver.ResolveAggregationMappings(aggColumns))
+                        .Concat(fieldResolver.ResolveAggregationMappings(aggColumns, enumIdResolver))
                         .ToList();
 
                     input = new StreamQueryExecutionInput

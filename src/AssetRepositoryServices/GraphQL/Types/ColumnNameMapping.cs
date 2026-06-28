@@ -1,3 +1,5 @@
+using Meshmakers.Octo.ConstructionKit.Contracts;
+
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
 
 /// <summary>
@@ -18,4 +20,12 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
 /// queries this is the <c>{CrateDbName}_{lowercaseFunction}</c> form by convention — the
 /// frontend's <c>QueryResultsPanelComponent.toWireAggregationFieldName</c> mirrors it.
 /// </param>
-internal record ColumnNameMapping(string Canonical, string Wire);
+/// <param name="EnumId">
+/// When the column maps to an enum-typed CK attribute, the id of the referenced CK enum.
+/// <c>StreamDataQueryRowDtoType.ResolveCells</c> uses it to resolve the raw integer key
+/// stored in CrateDB to the enum value name — parity with the runtime query path, which
+/// resolves enums via <c>AttributeValueResolveFlags.ResolveEnumsToNames</c>. Null for
+/// non-enum columns and for aggregation columns whose function does not preserve the source
+/// value (COUNT/SUM/AVG produce derived numbers that are not enum keys).
+/// </param>
+internal record ColumnNameMapping(string Canonical, string Wire, CkId<CkEnumId>? EnumId = null);
