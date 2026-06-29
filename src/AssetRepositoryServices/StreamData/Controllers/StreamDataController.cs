@@ -363,7 +363,14 @@ public class StreamDataController : ControllerBase
                     (long)rollup.WatermarkLag.TotalMilliseconds,
                     rollup.LastAggregatedBucketEnd,
                     rollup.FrozenUntil,
-                    rollup.Aggregations.Count));
+                    rollup.Aggregations.Count,
+                    rollup.RecomputeInProgress,
+                    rollup.LastRecomputeStartedAt,
+                    rollup.LastRecomputeSuccessAt,
+                    rollup.LastRecomputeFailureAt,
+                    rollup.LastRecomputeFailureReason,
+                    rollup.DirtyWindowsPending,
+                    rollup.PendingRecomputeRanges));
             }
             return Ok(result);
         }
