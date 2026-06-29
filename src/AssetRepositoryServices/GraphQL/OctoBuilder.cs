@@ -183,9 +183,25 @@ internal class OctoBuilder<TSourceType>(
 
                 break;
             case AttributeValueTypesDto.TimeSpan:
-                if (r is string timeSpanString)
+                // A TimeSpan attribute value can arrive as a real TimeSpan, an Int64/Int32 tick count,
+                // or a string — either a bare-integer tick count (the shape ImportRt's export/import
+                // JSON round-trip produces, AB#4259) or a .NET / ISO-8601 literal. A bare-integer string
+                // is ticks, NOT a .NET literal: TimeSpan.Parse("9000000000") reads it as 9-billion days
+                // and throws OverflowException. Mirror RtTypeWithAttributes.TryCoerceTimeSpan here.
+                switch (r)
                 {
-                    return TimeSpan.Parse(timeSpanString);
+                    case TimeSpan ts:
+                        return ts;
+                    case long ticks:
+                        return TimeSpan.FromTicks(ticks);
+                    case int ticks32:
+                        return TimeSpan.FromTicks(ticks32);
+                    case string s when long.TryParse(s, System.Globalization.NumberStyles.Integer,
+                        System.Globalization.CultureInfo.InvariantCulture, out var tickString):
+                        return TimeSpan.FromTicks(tickString);
+                    case string s when TimeSpan.TryParse(s,
+                        System.Globalization.CultureInfo.InvariantCulture, out var parsed):
+                        return parsed;
                 }
 
                 break;
