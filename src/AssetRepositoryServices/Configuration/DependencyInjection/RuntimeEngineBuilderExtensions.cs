@@ -16,6 +16,7 @@ using Meshmakers.Octo.Backend.AssetRepositoryServices.Services;
 using Meshmakers.Octo.Communication.Contracts;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
 using Meshmakers.Octo.ConstructionKit.Contracts;
+using Meshmakers.Octo.ConstructionKit.Contracts.BlueprintCatalogs;
 using Meshmakers.Octo.ConstructionKit.Contracts.ModelCatalogs;
 using Meshmakers.Octo.ConstructionKit.Contracts.Serialization;
 using Meshmakers.Octo.Runtime.Contracts.Blueprints;
@@ -372,14 +373,29 @@ public static class RuntimeEngineBuilderExtensions
         // Override engine's default LoggingBlueprintNotifications with the event-hub adapter
         builder.Services.AddSingleton<IBlueprintNotifications, DistributedBlueprintNotifications>();
 
-        // Bind CK model catalog options to configuration sections (if available)
-        // This allows OCTO_LocalFileSystemCatalog__IsEnabled etc. env vars to work
+        // Bind CK model + blueprint catalog options to configuration sections (if available).
+        // This allows OCTO_LocalFileSystemCatalog__IsEnabled / __RootPath etc. env vars to work,
+        // which is how the octo developer shell points the local catalogs at the per-checkout
+        // $ROOTPATH/.octo/* directories instead of the central ~/.octo defaults.
         var tempProvider = builder.Services.BuildServiceProvider();
         var config = tempProvider.GetService<IConfiguration>();
         if (config != null)
         {
-            builder.Services.Configure<LocalFileSystemCatalogOptions>(
-                config.GetSection("LocalFileSystemCatalog"));
+            // RootPath goes through ApplyRootPath so the catalog cache is co-located with the
+            // content under the overridden root. A plain section bind sets RootPath but leaves
+            // CacheDirectory at its ~/.octo default — content and cache would then live in
+            // different trees (split-brain). When no RootPath override is present the call is a
+            // no-op and the ~/.octo defaults are preserved.
+            builder.Services.Configure<LocalFileSystemCatalogOptions>(options =>
+            {
+                config.GetSection("LocalFileSystemCatalog").Bind(options);
+                options.ApplyRootPath(config["LocalFileSystemCatalog:RootPath"]);
+            });
+            builder.Services.Configure<LocalFileSystemBlueprintCatalogOptions>(options =>
+            {
+                config.GetSection("LocalFileSystemBlueprintCatalog").Bind(options);
+                options.ApplyRootPath(config["LocalFileSystemBlueprintCatalog:RootPath"]);
+            });
             builder.Services.Configure<PrivateGitHubCatalogOptions>(
                 config.GetSection("PrivateOctoGitHub"));
             builder.Services.Configure<PublicGitHubCatalogOptions>(
