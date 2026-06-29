@@ -19,7 +19,6 @@ public class OctoAssetRepositoryServicesOptions
         PrepareJobSchemaIfNecessary = true;
         Authority = "https://localhost:5003";
         PublicUrl = "https://localhost:5001";
-        PublicAdminPanelUrl = "https://localhost:5005";
         BrokerHost = "localhost";
         StreamDataUser = "crate";
         StreamDataHost = "127.0.0.1";
@@ -70,11 +69,6 @@ public class OctoAssetRepositoryServicesOptions
     /// </summary>
     public string PublicUrl { get; set; }
 
-    /// <summary>
-    ///     (public) base address of the dashboard
-    /// </summary>
-    public string PublicAdminPanelUrl { get; set; }
-    
     /// <summary>
     /// Hostname of crate db server
     /// </summary>
