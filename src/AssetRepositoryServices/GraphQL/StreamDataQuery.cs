@@ -39,6 +39,11 @@ internal sealed class StreamDataQuery : ObjectGraphType
             .Argument<NonNullGraphType<OctoObjectIdType>>(Statics.RtIdArg, "Runtime id of the source CkArchive to enumerate rollups for.")
             .ResolveAsync(ResolveRollupsForAsync);
 
+        Field<NonNullGraphType<ListGraphType<NonNullGraphType<RecomputeJobInfoDtoType>>>>("recomputeJobsFor")
+            .Description("Returns the most recent recompute jobs for a rollup archive (newest first, capped at 50) — for debugging why a recompute failed. AB#4184.")
+            .Argument<NonNullGraphType<OctoObjectIdType>>(Statics.RtIdArg, "Runtime id of the CkRollupArchive to list recompute jobs for.")
+            .ResolveAsync(ResolveRecomputeJobsForAsync);
+
         Field<NonNullGraphType<ListGraphType<NonNullGraphType<ArchiveStorageStatsDtoType>>>>("archivesStorageStats")
             .Description("Bulk-fetch per-archive backend storage stats (row count, on-disk size, health) for the studio's archives list. One round-trip per call; archives whose backing table doesn't exist yet (not activated) appear with tableExists=false so callers don't have to filter the rtId list beforehand.")
             .Argument<NonNullGraphType<ListGraphType<NonNullGraphType<OctoObjectIdType>>>>("rtIds", "Runtime ids of the archives to fetch stats for. Empty list returns empty result.")
@@ -133,9 +138,30 @@ internal sealed class StreamDataQuery : ObjectGraphType
                 (long)rollup.WatermarkLag.TotalMilliseconds,
                 rollup.LastAggregatedBucketEnd,
                 rollup.FrozenUntil,
-                rollup.Aggregations.Count));
+                rollup.Aggregations.Count,
+                rollup.RecomputeInProgress,
+                rollup.LastRecomputeStartedAt,
+                rollup.LastRecomputeSuccessAt,
+                rollup.LastRecomputeFailureAt,
+                rollup.LastRecomputeFailureReason,
+                rollup.DirtyWindowsPending,
+                rollup.PendingRecomputeRanges));
         }
         return result;
+    }
+
+    private static async Task<object?> ResolveRecomputeJobsForAsync(IResolveFieldContext<object?> ctx)
+    {
+        var archiveRtId = ctx.GetArgument<OctoObjectId>(Statics.RtIdArg);
+        var gql = (GraphQlUserContext)ctx.UserContext;
+        var jobStore = gql.TenantContext.GetRecomputeJobStore();
+        if (jobStore is null)
+        {
+            return Array.Empty<RecomputeJobInfoDto>();
+        }
+
+        var jobs = await jobStore.GetForArchiveAsync(archiveRtId, 50);
+        return jobs.Select(RecomputeJobInfoDto.From).ToList();
     }
 
     private async Task<object?> ResolveStreamDataQueryAsync(IResolveConnectionContext<object?> arg)

@@ -15,4 +15,13 @@ public sealed record RollupArchiveInfoRestDto(
     long WatermarkLagMs,
     DateTime? LastAggregatedBucketEnd,
     DateTime? FrozenUntil,
-    int AggregationCount);
+    int AggregationCount,
+    // Recompute observability (AB#4184) — same fields as the GraphQL RollupArchiveInfo so CLI /
+    // studio consumers see recompute health over either transport.
+    bool RecomputeInProgress,
+    DateTime? LastRecomputeStartedAt,
+    DateTime? LastRecomputeSuccessAt,
+    DateTime? LastRecomputeFailureAt,
+    string? LastRecomputeFailureReason,
+    int DirtyWindowsPending,
+    int PendingRecomputeRanges);

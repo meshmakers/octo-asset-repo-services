@@ -18,4 +18,13 @@ internal sealed record RollupArchiveInfoDto(
     long WatermarkLagMs,
     DateTime? LastAggregatedBucketEnd,
     DateTime? FrozenUntil,
-    int AggregationCount);
+    int AggregationCount,
+    // Recompute observability (AB#4184) — lets the studio show recompute health alongside the
+    // rollup's schedule/watermark without a second query.
+    bool RecomputeInProgress,
+    DateTime? LastRecomputeStartedAt,
+    DateTime? LastRecomputeSuccessAt,
+    DateTime? LastRecomputeFailureAt,
+    string? LastRecomputeFailureReason,
+    int DirtyWindowsPending,
+    int PendingRecomputeRanges);
