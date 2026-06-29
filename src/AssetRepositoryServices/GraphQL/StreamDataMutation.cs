@@ -116,6 +116,13 @@ internal sealed class StreamDataMutation : ObjectGraphType
             .Argument<NonNullGraphType<OctoObjectIdType>>(Statics.RtIdArg, "Runtime id of the archive to remove the computed column from.")
             .Argument<NonNullGraphType<StringGraphType>>("name", "Name of the computed column to remove.")
             .ResolveAsync(ResolveRemoveComputedColumnAsync);
+
+        Field<NonNullGraphType<ArchiveTransitionResultDtoType>>("updateComputedColumnFormula")
+            .Description("Changes the formula of an existing computed column on an active archive with optimistic / atomic semantics: readers keep seeing the previous formula's values while the new one is backfilled, then switch atomically. Rejected when another computed column references this one (it would orphan the reference) — re-point or remove the dependent first. The result type is unchanged. Requires StreamDataAdmin. AB#4189.")
+            .Argument<NonNullGraphType<OctoObjectIdType>>(Statics.RtIdArg, "Runtime id of the archive carrying the computed column.")
+            .Argument<NonNullGraphType<StringGraphType>>("name", "Name of the computed column to re-formulate.")
+            .Argument<NonNullGraphType<StringGraphType>>("formula", "The new mXparser formula.")
+            .ResolveAsync(ResolveUpdateComputedColumnFormulaAsync);
     }
 
     private async Task<object?> ResolveRecomputeAsync(IResolveFieldContext<object?> ctx)
@@ -218,6 +225,43 @@ internal sealed class StreamDataMutation : ObjectGraphType
             var snapshot = await store.GetAsync(archiveRtId)
                 ?? throw new ArchiveNotFoundException(archiveRtId);
             return new ArchiveTransitionResultDto(archiveRtId, snapshot.Status, "RemoveComputedColumn");
+        }
+        catch (Exception e)
+        {
+            return ctx.HandleException(e);
+        }
+    }
+
+    private async Task<object?> ResolveUpdateComputedColumnFormulaAsync(IResolveFieldContext<object?> ctx)
+    {
+        try
+        {
+            var archiveRtId = ctx.GetArgument<OctoObjectId>(Statics.RtIdArg);
+            var name = ctx.GetArgument<string>("name");
+            var formula = ctx.GetArgument<string>("formula");
+            _logger.LogDebug("Update computed column '{Column}' formula requested for archive {ArchiveRtId}",
+                name, archiveRtId);
+
+            var gql = (GraphQlUserContext)ctx.UserContext;
+            if (gql.User?.IsInRole(CommonConstants.StreamDataAdminRole) != true)
+            {
+                ctx.Errors.Add(new ExecutionError(
+                    $"Changing a computed column formula requires the '{CommonConstants.StreamDataAdminRole}' role.")
+                {
+                    Code = Statics.GraphQlForbidden,
+                });
+                return null;
+            }
+
+            var lifecycle = gql.TenantContext.GetArchiveLifecycleService()
+                ?? throw AssetRepositoryException.StreamDataNotAvailable();
+            var store = gql.TenantContext.GetArchiveRuntimeStore();
+
+            await lifecycle.UpdateComputedColumnFormulaAsync(archiveRtId, name, formula);
+
+            var snapshot = await store.GetAsync(archiveRtId)
+                ?? throw new ArchiveNotFoundException(archiveRtId);
+            return new ArchiveTransitionResultDto(archiveRtId, snapshot.Status, "UpdateComputedColumnFormula");
         }
         catch (Exception e)
         {

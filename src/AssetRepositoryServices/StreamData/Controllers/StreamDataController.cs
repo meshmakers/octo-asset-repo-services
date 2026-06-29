@@ -238,6 +238,19 @@ public class StreamDataController : ControllerBase
             (lifecycle, id) => lifecycle.RemoveComputedColumnAsync(id, name));
 
     /// <summary>
+    /// Changes the formula of an existing computed column on an active archive with optimistic /
+    /// atomic semantics (AB#4189 Phase 7): readers keep the previous values while the new formula is
+    /// backfilled, then switch atomically. Rejected when another computed column references this one.
+    /// </summary>
+    [HttpPut("archives/{archiveRtId}/computed-columns/{name}")]
+    [Microsoft.AspNetCore.Authorization.Authorize(AssetRepositoryServiceConstants.SystemAssetApiReadWritePolicy)]
+    public Task<IActionResult> UpdateComputedColumnFormula(
+        [Required] string tenantId, [Required] string archiveRtId, [Required] string name,
+        [Required] string formula)
+        => InvokeArchiveTransitionAsync(tenantId, archiveRtId, "UpdateComputedColumnFormula",
+            (lifecycle, id) => lifecycle.UpdateComputedColumnFormulaAsync(id, name, formula));
+
+    /// <summary>
     /// Triggers (or coalesces) an optimistic recompute of a rollup archive over the half-open range
     /// <c>[from, to)</c>, optionally scoped to a single entity. Returns the resulting job snapshot.
     /// AB#4184.
