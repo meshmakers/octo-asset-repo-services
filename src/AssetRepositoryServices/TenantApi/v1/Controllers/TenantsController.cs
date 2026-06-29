@@ -159,25 +159,45 @@ public class TenantsController : ControllerBase
             using var session = await tenantContext.GetAdminSessionAsync();
             session.StartTransaction();
 
-            if (!string.IsNullOrEmpty(blueprintId))
+            try
             {
-                var bpId = new BlueprintId(blueprintId);
-                var result = await tenantContext.CreateChildTenantAsync(session, databaseName, childTenantId, bpId);
+                if (!string.IsNullOrEmpty(blueprintId))
+                {
+                    var bpId = new BlueprintId(blueprintId);
+                    var result = await tenantContext.CreateChildTenantAsync(session, databaseName, childTenantId, bpId);
 
-                if (result != null && !result.IsSuccess)
+                    if (result != null && !result.IsSuccess)
+                    {
+                        await session.AbortTransactionAsync();
+                        var messages = result.OperationResult?.Messages?.Select(m => m.MessageText) ?? [];
+                        return BadRequest(new OperationFailedErrorDto(
+                            $"Blueprint application failed: {string.Join(", ", messages)}"));
+                    }
+                }
+                else
+                {
+                    await tenantContext.CreateChildTenantAsync(session, databaseName, childTenantId);
+                }
+
+                await session.CommitTransactionAsync();
+            }
+            catch
+            {
+                // Abort so the octosystem tenant entries inserted in this transaction are rolled
+                // back (AB#1958). The engine has already dropped the tenant database/user and
+                // written the failure to the event log.
+                try
                 {
                     await session.AbortTransactionAsync();
-                    var messages = result.OperationResult?.Messages?.Select(m => m.MessageText) ?? [];
-                    return BadRequest(new OperationFailedErrorDto(
-                        $"Blueprint application failed: {string.Join(", ", messages)}"));
                 }
-            }
-            else
-            {
-                await tenantContext.CreateChildTenantAsync(session, databaseName, childTenantId);
+                catch
+                {
+                    // The driver may have already aborted the transaction - ignore.
+                }
+
+                throw;
             }
 
-            await session.CommitTransactionAsync();
             return NoContent();
         }
         catch (PersistenceException e)

@@ -59,6 +59,12 @@ try
         .AddCrateDbStreamDataRepository<ConfigureStreamDataConfiguration>()
         .AddRollupOrchestratorBackgroundService();
 
+    // Surface platform events (e.g. failed tenant creation, AB#1958) in the event log. Registers
+    // IEventRepository and replaces the engine's default logging IAuditEventSink with the
+    // event-repository-backed sink, so engine audit events are persisted as AssetRepositoryService
+    // events instead of only being logged.
+    builder.Services.AddOctoNotification();
+
     // Bind rollup orchestrator options so the StreamData:Rollup config section can override
     // the defaults (tick interval, startup delay, tenant id list). Composition roots with
     // dynamic tenant discovery can replace IRollupTenantSource after this call.
