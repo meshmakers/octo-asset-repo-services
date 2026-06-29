@@ -90,6 +90,7 @@ internal sealed class CkTypeAssociationSourceDtoType : ObjectGraphType<CkTypeAss
             RoleId = typeAssociationGraph.CkRoleId,
             RtRoleId = typeAssociationGraph.CkRoleId.ToRtCkId(),
             OriginCkTypeId = typeAssociationGraph.OriginCkTypeId,
+            RtOriginCkTypeId = typeAssociationGraph.OriginCkTypeId.ToRtCkId(),
             Multiplicity =  typeAssociationGraph.Multiplicity,
             NavigationPropertyName =  typeAssociationGraph.NavigationPropertyName,
             TargetCkTypeId = typeAssociationGraph.TargetCkTypeId,

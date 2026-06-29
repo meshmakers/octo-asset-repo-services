@@ -19,6 +19,8 @@ internal sealed class CkTypeAssociationDtoType : ObjectGraphType<CkTypeAssociati
             .Description("Runtime construction kit id of the association role.");
         Field(x => x.OriginCkTypeId, typeof(NonNullGraphType<CkIdGraph<CkTypeId>>))
             .Description("Type id of the construction kit type of the origin side of the association");
+        Field(x => x.RtOriginCkTypeId, typeof(NonNullGraphType<RtCkIdGraph<CkTypeId>>))
+            .Description("Runtime construction kit type id of the origin side of the association");
         Field(x => x.TargetCkTypeId, typeof(NonNullGraphType<CkIdGraph<CkTypeId>>))
             .Description("Type id of the construction kit type of the target side of the association");
         Field(x => x.RtTargetCkTypeId, typeof(NonNullGraphType<RtCkIdGraph<CkTypeId>>))
