@@ -94,6 +94,7 @@ internal sealed class CkRecordDtoType : ObjectGraphType<CkRecordDto>
         var ckRecordDto = new CkRecordDto
         {
             CkRecordId = ckRecord.CkRecordId,
+            RtCkRecordId = ckRecord.CkRecordId.ToRtCkId(),
             Description = ckRecord.Description,
             IsFinal = ckRecord.IsFinal,
             IsAbstract = ckRecord.IsAbstract
@@ -106,6 +107,7 @@ internal sealed class CkRecordDtoType : ObjectGraphType<CkRecordDto>
         var ckRecordDto = new CkRecordDto
         {
             CkRecordId = ckEntity.CkRecordId,
+            RtCkRecordId = ckEntity.CkRecordId.ToRtCkId(),
             Description = ckEntity.Description,
             IsFinal = ckEntity.IsFinal,
             IsAbstract = ckEntity.IsAbstract
