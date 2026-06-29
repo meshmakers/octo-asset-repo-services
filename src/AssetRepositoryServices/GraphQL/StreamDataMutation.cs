@@ -7,6 +7,7 @@ using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Scalars;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Utils;
 using Meshmakers.Octo.Communication.Contracts;
 using Meshmakers.Octo.ConstructionKit.Contracts;
+using Meshmakers.Octo.Runtime.Contracts.Formulas;
 using Meshmakers.Octo.Runtime.Contracts.StreamData;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL;
@@ -98,6 +99,23 @@ internal sealed class StreamDataMutation : ObjectGraphType
             .Argument<NonNullGraphType<DateTimeGraphType>>("to", "Exclusive range end, ISO-8601.")
             .Argument<OctoObjectIdType>("rtIdScope", "Optional: restrict the recompute to a single entity (metering point / stream).")
             .ResolveAsync(ResolveRecomputeAsync);
+
+        // ---- Computed columns (AB#4189 Phase 7) ----
+
+        Field<NonNullGraphType<ArchiveTransitionResultDtoType>>("addComputedColumn")
+            .Description("Adds a computed column to an Activated raw or time-range archive and backfills it across the existing rows. The column stays hidden until the backfill completes, then becomes visible atomically; a backfill failure leaves the previous archive state intact. Requires StreamDataAdmin. AB#4189.")
+            .Argument<NonNullGraphType<OctoObjectIdType>>(Statics.RtIdArg, "Runtime id of the archive to add the computed column to.")
+            .Argument<NonNullGraphType<StringGraphType>>("name", "Output column name — the identifier formulas reference and the column appears under.")
+            .Argument<NonNullGraphType<StringGraphType>>("formula", "mXparser formula over other columns of the same row (e.g. 'activePower / apparentPower').")
+            .Argument<NonNullGraphType<EnumerationGraphType<FormulaResultType>>>("resultType", "Declared type the formula result is cast back to (Boolean / Int / Int64 / Double / DateTime).")
+            .Argument<BooleanGraphType>("indexed", "Whether the physical column is indexed. Defaults to true.")
+            .ResolveAsync(ResolveAddComputedColumnAsync);
+
+        Field<NonNullGraphType<ArchiveTransitionResultDtoType>>("removeComputedColumn")
+            .Description("Removes a computed column from an archive. Rejected when another computed column still references it. The physical CrateDB column is left as a harmless orphan the read path no longer projects. Requires StreamDataAdmin. AB#4189.")
+            .Argument<NonNullGraphType<OctoObjectIdType>>(Statics.RtIdArg, "Runtime id of the archive to remove the computed column from.")
+            .Argument<NonNullGraphType<StringGraphType>>("name", "Name of the computed column to remove.")
+            .ResolveAsync(ResolveRemoveComputedColumnAsync);
     }
 
     private async Task<object?> ResolveRecomputeAsync(IResolveFieldContext<object?> ctx)
@@ -127,6 +145,79 @@ internal sealed class StreamDataMutation : ObjectGraphType
                 rollupRtId, from, to, rtIdScope, RecomputeTrigger.Manual, ctx.CancellationToken);
 
             return RecomputeJobInfoDto.From(job);
+        }
+        catch (Exception e)
+        {
+            return ctx.HandleException(e);
+        }
+    }
+
+    private async Task<object?> ResolveAddComputedColumnAsync(IResolveFieldContext<object?> ctx)
+    {
+        try
+        {
+            var archiveRtId = ctx.GetArgument<OctoObjectId>(Statics.RtIdArg);
+            var name = ctx.GetArgument<string>("name");
+            var formula = ctx.GetArgument<string>("formula");
+            var resultType = ctx.GetArgument<FormulaResultType>("resultType");
+            var indexed = ctx.GetArgument<bool?>("indexed") ?? true;
+            _logger.LogDebug("Add computed column '{Column}' requested for archive {ArchiveRtId}", name, archiveRtId);
+
+            var gql = (GraphQlUserContext)ctx.UserContext;
+            if (gql.User?.IsInRole(CommonConstants.StreamDataAdminRole) != true)
+            {
+                ctx.Errors.Add(new ExecutionError(
+                    $"Adding a computed column requires the '{CommonConstants.StreamDataAdminRole}' role.")
+                {
+                    Code = Statics.GraphQlForbidden,
+                });
+                return null;
+            }
+
+            var lifecycle = gql.TenantContext.GetArchiveLifecycleService()
+                ?? throw AssetRepositoryException.StreamDataNotAvailable();
+            var store = gql.TenantContext.GetArchiveRuntimeStore();
+
+            await lifecycle.AddComputedColumnAsync(archiveRtId, name, formula, resultType, indexed);
+
+            var snapshot = await store.GetAsync(archiveRtId)
+                ?? throw new ArchiveNotFoundException(archiveRtId);
+            return new ArchiveTransitionResultDto(archiveRtId, snapshot.Status, "AddComputedColumn");
+        }
+        catch (Exception e)
+        {
+            return ctx.HandleException(e);
+        }
+    }
+
+    private async Task<object?> ResolveRemoveComputedColumnAsync(IResolveFieldContext<object?> ctx)
+    {
+        try
+        {
+            var archiveRtId = ctx.GetArgument<OctoObjectId>(Statics.RtIdArg);
+            var name = ctx.GetArgument<string>("name");
+            _logger.LogDebug("Remove computed column '{Column}' requested for archive {ArchiveRtId}", name, archiveRtId);
+
+            var gql = (GraphQlUserContext)ctx.UserContext;
+            if (gql.User?.IsInRole(CommonConstants.StreamDataAdminRole) != true)
+            {
+                ctx.Errors.Add(new ExecutionError(
+                    $"Removing a computed column requires the '{CommonConstants.StreamDataAdminRole}' role.")
+                {
+                    Code = Statics.GraphQlForbidden,
+                });
+                return null;
+            }
+
+            var lifecycle = gql.TenantContext.GetArchiveLifecycleService()
+                ?? throw AssetRepositoryException.StreamDataNotAvailable();
+            var store = gql.TenantContext.GetArchiveRuntimeStore();
+
+            await lifecycle.RemoveComputedColumnAsync(archiveRtId, name);
+
+            var snapshot = await store.GetAsync(archiveRtId)
+                ?? throw new ArchiveNotFoundException(archiveRtId);
+            return new ArchiveTransitionResultDto(archiveRtId, snapshot.Status, "RemoveComputedColumn");
         }
         catch (Exception e)
         {

@@ -5,6 +5,7 @@ using IdentityModel;
 using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb.Configuration;
+using Meshmakers.Octo.Runtime.Contracts.Formulas;
 using Meshmakers.Octo.Runtime.Contracts.StreamData;
 using Meshmakers.Octo.Services.Infrastructure;
 using Microsoft.AspNetCore.Authorization;
@@ -209,6 +210,32 @@ public class StreamDataController : ControllerBase
         [Required] string tenantId, [Required] string rollupRtId, [Required] DateTime toBucketEnd)
         => InvokeRollupAsync(tenantId, rollupRtId, "RewindRollup",
             (lifecycle, id) => lifecycle.RewindWatermarkAsync(id, toBucketEnd));
+
+    /// <summary>
+    /// Adds a computed column to an Activated raw or time-range archive and backfills it across the
+    /// existing rows (AB#4189 Phase 7). The column stays hidden until the backfill completes, then
+    /// becomes visible atomically; a backfill failure leaves the previous archive state intact. Same
+    /// lifecycle path as the <c>addComputedColumn</c> GraphQL mutation.
+    /// </summary>
+    [HttpPost("archives/{archiveRtId}/computed-columns")]
+    [Microsoft.AspNetCore.Authorization.Authorize(AssetRepositoryServiceConstants.SystemAssetApiReadWritePolicy)]
+    public Task<IActionResult> AddComputedColumn(
+        [Required] string tenantId, [Required] string archiveRtId,
+        [Required] string name, [Required] string formula, [Required] FormulaResultType resultType,
+        bool indexed = true)
+        => InvokeArchiveTransitionAsync(tenantId, archiveRtId, "AddComputedColumn",
+            (lifecycle, id) => lifecycle.AddComputedColumnAsync(id, name, formula, resultType, indexed));
+
+    /// <summary>
+    /// Removes a computed column from an archive (AB#4189 Phase 7). Rejected when another computed
+    /// column still references it; the physical CrateDB column is left as a harmless orphan.
+    /// </summary>
+    [HttpDelete("archives/{archiveRtId}/computed-columns/{name}")]
+    [Microsoft.AspNetCore.Authorization.Authorize(AssetRepositoryServiceConstants.SystemAssetApiReadWritePolicy)]
+    public Task<IActionResult> RemoveComputedColumn(
+        [Required] string tenantId, [Required] string archiveRtId, [Required] string name)
+        => InvokeArchiveTransitionAsync(tenantId, archiveRtId, "RemoveComputedColumn",
+            (lifecycle, id) => lifecycle.RemoveComputedColumnAsync(id, name));
 
     /// <summary>
     /// Triggers (or coalesces) an optimistic recompute of a rollup archive over the half-open range
