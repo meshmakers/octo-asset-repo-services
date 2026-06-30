@@ -288,6 +288,43 @@ public class StreamDataController : ControllerBase
     }
 
     /// <summary>
+    /// Populates / resets a rollup over the ENTIRE history of its source archive without supplying a
+    /// timestamp (AB#4269): resolves the source archive's earliest timestamp and recomputes
+    /// <c>[sourceMin, now)</c> over the same reader-safe optimistic recompute path as
+    /// <see cref="RecomputeArchive"/>. Returns the resulting job snapshot, or 204 No Content when the
+    /// source archive holds no data (no-op).
+    /// </summary>
+    [HttpPost("archives/{rollupRtId}/backfill-from-source")]
+    [Microsoft.AspNetCore.Authorization.Authorize(AssetRepositoryServiceConstants.SystemAssetApiReadWritePolicy)]
+    public async Task<ActionResult<RecomputeJobInfoRestDto>> BackfillRollupFromSource(
+        [Required] string tenantId, [Required] string rollupRtId)
+    {
+        try
+        {
+            var tenantContext = await _systemContext.FindTenantContextAsync(tenantId);
+            var orchestrator = tenantContext.GetRecomputeOrchestrator()
+                ?? throw new StreamDataException(
+                    $"Recompute support is not wired for tenant '{tenantId}'. Ensure stream data is enabled and a rollup store is registered.");
+
+            var job = await orchestrator.BackfillRollupFromSourceAsync(
+                new OctoObjectId(rollupRtId), HttpContext.RequestAborted);
+
+            // Null = empty source archive (no-op): 204 so the SDK can return null.
+            return job is null ? NoContent() : Ok(RecomputeJobInfoRestDto.From(job));
+        }
+        catch (ConfigurationException e)
+        {
+            return BadRequest(e.Message);
+        }
+        catch (StreamDataException e)
+        {
+            _logger.LogWarning("Backfill refused for tenant '{TenantId}', rollup '{RollupRtId}': {Reason}",
+                tenantId, rollupRtId, e.Message);
+            return BadRequest(e.Message);
+        }
+    }
+
+    /// <summary>
     /// Lists the most recent recompute jobs for a rollup archive (newest first, capped at 50) — for
     /// debugging why a recompute failed. AB#4184.
     /// </summary>

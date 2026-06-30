@@ -100,6 +100,11 @@ internal sealed class StreamDataMutation : ObjectGraphType
             .Argument<OctoObjectIdType>("rtIdScope", "Optional: restrict the recompute to a single entity (metering point / stream).")
             .ResolveAsync(ResolveRecomputeAsync);
 
+        Field<RecomputeJobInfoDtoType>("backfillRollupFromSource")
+            .Description("Populates / resets a rollup over the ENTIRE history of its source archive without supplying a timestamp (AB#4269). Resolves the source archive's earliest timestamp and recomputes [sourceMin, now) over the same reader-safe optimistic recompute path as recomputeArchive. Returns the resulting job snapshot, or null when the source archive holds no data. Requires StreamDataAdmin.")
+            .Argument<NonNullGraphType<OctoObjectIdType>>(Statics.RtIdArg, "Runtime id of the CkRollupArchive to backfill from its source.")
+            .ResolveAsync(ResolveBackfillRollupAsync);
+
         // ---- Computed columns (AB#4189 Phase 7) ----
 
         Field<NonNullGraphType<ArchiveTransitionResultDtoType>>("addComputedColumn")
@@ -152,6 +157,38 @@ internal sealed class StreamDataMutation : ObjectGraphType
                 rollupRtId, from, to, rtIdScope, RecomputeTrigger.Manual, ctx.CancellationToken);
 
             return RecomputeJobInfoDto.From(job);
+        }
+        catch (Exception e)
+        {
+            return ctx.HandleException(e);
+        }
+    }
+
+    private async Task<object?> ResolveBackfillRollupAsync(IResolveFieldContext<object?> ctx)
+    {
+        try
+        {
+            var rollupRtId = ctx.GetArgument<OctoObjectId>(Statics.RtIdArg);
+            _logger.LogDebug("Backfill-from-source requested for rollup {RollupRtId}", rollupRtId);
+
+            var gql = (GraphQlUserContext)ctx.UserContext;
+            if (gql.User?.IsInRole(CommonConstants.StreamDataAdminRole) != true)
+            {
+                ctx.Errors.Add(new ExecutionError(
+                    $"Backfill requires the '{CommonConstants.StreamDataAdminRole}' role.")
+                {
+                    Code = Statics.GraphQlForbidden,
+                });
+                return null;
+            }
+
+            var orchestrator = gql.TenantContext.GetRecomputeOrchestrator()
+                ?? throw AssetRepositoryException.StreamDataNotAvailable();
+
+            var job = await orchestrator.BackfillRollupFromSourceAsync(rollupRtId, ctx.CancellationToken);
+
+            // Null = empty source archive (no-op); surface as a null job rather than an error.
+            return job is null ? null : RecomputeJobInfoDto.From(job);
         }
         catch (Exception e)
         {
