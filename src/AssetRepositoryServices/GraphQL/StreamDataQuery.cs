@@ -13,6 +13,7 @@ using Meshmakers.Octo.ConstructionKit.Models.System.Generated.System.v2;
 using Meshmakers.Octo.Runtime.Contracts.StreamData;
 using Meshmakers.Octo.Runtime.Engine.CrateDb;
 using Meshmakers.Octo.Runtime.Engine.CrateDb.Dtos;
+using Meshmakers.Octo.Runtime.Engine.StreamData;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL;
 
@@ -53,6 +54,50 @@ internal sealed class StreamDataQuery : ObjectGraphType
             .Description("Returns the studio's query-editor metadata for a rollup archive: bucket size and the distinct *logical* CK-attribute paths the rollup aggregates. Cascade rollups (rollup over rollup) have their physical sourcePath storage columns reversed back to the original CK attribute paths via RollupLogicalPathResolver (concept-time-range §7). Null if the rtId doesn't resolve to a rollup archive.")
             .Argument<NonNullGraphType<OctoObjectIdType>>(Statics.RtIdArg, "Runtime id of the rollup archive to fetch metadata for.")
             .ResolveAsync(ResolveRollupQueryMetadataAsync);
+
+        Field<ResolveSeriesQueryDtoType>("resolveSeriesQuery")
+            .Description("Resolution-aware series routing (AB#4290): given a base archive family, a time window, a target point count and the required aggregation, returns the archive/rollup to query at the best resolution — without the caller knowing which physical archive holds the data at a usable grain. The caller then runs the existing downsampling query against the returned archiveRtId with limit = points. Null if StreamData is not enabled for the tenant.")
+            .Argument<NonNullGraphType<ResolveSeriesQueryInputType>>("input", "The series identity, time window, target point count and required aggregation.")
+            .ResolveAsync(ResolveSeriesQueryAsync);
+    }
+
+    private static async Task<object?> ResolveSeriesQueryAsync(IResolveFieldContext<object?> ctx)
+    {
+        var input = ctx.GetArgument<ResolveSeriesQueryInputDto>("input");
+        var gql = (GraphQlUserContext)ctx.UserContext;
+        var rollupStore = gql.TenantContext.GetRollupArchiveRuntimeStore();
+        if (rollupStore is null)
+        {
+            // StreamData not enabled for this tenant — surface null so callers can fall back.
+            return null;
+        }
+
+        var archiveStore = gql.TenantContext.GetArchiveRuntimeStore();
+        var service = new SeriesResolutionService(archiveStore, new RollupDependencyGraph(rollupStore));
+
+        var request = new SeriesResolutionRequest(
+            input.BaseArchiveRtId,
+            TargetCkTypeId: null,
+            input.From,
+            input.To,
+            input.TargetPoints,
+            input.RequiredAggregation,
+            input.SourcePath)
+        {
+            RtIds = input.RtIds,
+            ObisFilter = input.ObisFilter,
+        };
+
+        var result = await service.ResolveAsync(request, ctx.CancellationToken).ConfigureAwait(false);
+
+        return new ResolveSeriesQueryDto(
+            result.ArchiveRtId,
+            result.EffectiveBucketMs,
+            result.Points,
+            result.ReducingFunction,
+            result.Signal,
+            result.ActualPoints,
+            result.Diagnostic);
     }
 
     private static async Task<object?> ResolveRollupQueryMetadataAsync(IResolveFieldContext<object?> ctx)
@@ -145,7 +190,11 @@ internal sealed class StreamDataQuery : ObjectGraphType
                 rollup.LastRecomputeFailureAt,
                 rollup.LastRecomputeFailureReason,
                 rollup.DirtyWindowsPending,
-                rollup.PendingRecomputeRanges));
+                rollup.PendingRecomputeRanges,
+                rollup.BucketAlignment.ToString(),
+                rollup.Aggregations
+                    .Select(a => new RollupAggregationInfoDto(a.SourcePath, a.Function.ToString()))
+                    .ToList()));
         }
         return result;
     }

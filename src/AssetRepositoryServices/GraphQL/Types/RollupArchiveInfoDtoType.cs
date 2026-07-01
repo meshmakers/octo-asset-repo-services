@@ -80,5 +80,36 @@ internal sealed class RollupArchiveInfoDtoType : ObjectGraphType<RollupArchiveIn
         Field<NonNullGraphType<IntGraphType>>("pendingRecomputeRanges")
             .Description("Number of pending recompute ranges queued on this archive (the recompute work list still to drain). 0 in the steady state.")
             .Resolve(ctx => ctx.Source!.PendingRecomputeRanges);
+
+        // ---------- Resolution-aware series routing metadata (AB#4290) ----------
+        Field<NonNullGraphType<StringGraphType>>("bucketAlignment")
+            .Description("Bucket-boundary alignment: FixedSize / CalendarDay / Iso8601Week / CalendarMonth / CalendarYear.")
+            .Resolve(ctx => ctx.Source!.BucketAlignment);
+
+        Field<NonNullGraphType<ListGraphType<NonNullGraphType<RollupAggregationInfoDtoType>>>>("aggregations")
+            .Description("The rollup's aggregation specs (source column path + stored function), for resolution-family walking.")
+            .Resolve(ctx => ctx.Source!.Aggregations);
+    }
+}
+
+/// <summary>
+/// GraphQL projection of <see cref="RollupAggregationInfoDto"/> — one (sourcePath, function) pair
+/// of a rollup, surfaced in the <c>rollupsFor</c> family metadata (AB#4290).
+/// </summary>
+// ReSharper disable once ClassNeverInstantiated.Global
+internal sealed class RollupAggregationInfoDtoType : ObjectGraphType<RollupAggregationInfoDto>
+{
+    public RollupAggregationInfoDtoType()
+    {
+        Name = "RollupAggregationInfo";
+        Description = "One aggregation of a rollup: source column path plus the stored aggregation function.";
+
+        Field<NonNullGraphType<StringGraphType>>("sourcePath")
+            .Description("Source column path the rollup aggregates. Logical CK attribute path for single-step rollups; parent physical storage column for cascade rollups.")
+            .Resolve(ctx => ctx.Source!.SourcePath);
+
+        Field<NonNullGraphType<StringGraphType>>("function")
+            .Description("Stored aggregation function (Avg / Min / Max / Sum / Count).")
+            .Resolve(ctx => ctx.Source!.Function);
     }
 }

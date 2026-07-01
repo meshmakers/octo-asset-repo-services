@@ -27,4 +27,17 @@ internal sealed record RollupArchiveInfoDto(
     DateTime? LastRecomputeFailureAt,
     string? LastRecomputeFailureReason,
     int DirtyWindowsPending,
-    int PendingRecomputeRanges);
+    int PendingRecomputeRanges,
+    // Resolution-aware series routing metadata (AB#4290) — bucket alignment + the per-column stored
+    // aggregation functions, so a client can walk the resolution family and know each rung's grain
+    // and function in one round-trip instead of one rollupQueryMetadata call per rollup.
+    string BucketAlignment,
+    IReadOnlyList<RollupAggregationInfoDto> Aggregations);
+
+/// <summary>
+/// One aggregation spec of a rollup, projected for the <c>rollupsFor</c> family metadata (AB#4290):
+/// the source column path and the stored aggregation function. For single-step rollups the
+/// <see cref="SourcePath"/> is the logical CK attribute path; for cascade rollups it is the parent
+/// rollup's physical storage column (use <c>rollupQueryMetadata</c> for the reversed logical path).
+/// </summary>
+internal sealed record RollupAggregationInfoDto(string SourcePath, string Function);
