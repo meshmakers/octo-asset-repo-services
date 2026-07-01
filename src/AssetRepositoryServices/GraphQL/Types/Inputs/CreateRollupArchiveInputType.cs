@@ -23,10 +23,10 @@ internal sealed class CreateRollupArchiveInputType : InputObjectGraphType<Create
         Field<NonNullGraphType<OctoObjectIdType>>("sourceArchiveRtId")
             .Description("Runtime id of the source archive (raw CkArchive or another CkRollupArchive for chained rollups).");
 
-        Field<NonNullGraphType<IntGraphType>>("bucketSizeMs")
+        Field<NonNullGraphType<LongGraphType>>("bucketSizeMs")
             .Description("Bucket width in milliseconds. Must be > 0.");
 
-        Field<NonNullGraphType<IntGraphType>>("watermarkLagMs")
+        Field<NonNullGraphType<LongGraphType>>("watermarkLagMs")
             .Description("Safety-wait after bucketEnd before aggregating, in milliseconds. >= 0.");
 
         Field<NonNullGraphType<ListGraphType<NonNullGraphType<RollupAggregationInputType>>>>("aggregations")
