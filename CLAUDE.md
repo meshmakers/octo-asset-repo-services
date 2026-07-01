@@ -163,7 +163,15 @@ Located in versioned API folders:
 
 #### 4. Stream Data Management
 Time-series data support (`StreamData/`):
-- **StreamDataController** - REST API for stream data operations
+- **StreamDataController** - REST API for stream data operations. **Tenant-scoped (AB#4287):**
+  the whole controller moved from `api/v1/streamdata` to `{tenantId}/v1/streamdata` — the
+  tenant now travels in the route (`{tenantId:tenantId}` constraint) instead of a `tenantId`
+  query parameter on every action. Write actions (enable/disable, all archive/rollup/computed-
+  column lifecycle) use `TenantAssetApiReadWritePolicy`; read actions (`status`,
+  `.../rollups`, `.../recompute-jobs`) use `TenantAssetApiReadOnlyPolicy` — the same policy
+  constants as `TenantApi/v1/Controllers/BlueprintsController`. Both policies are scope-only
+  (`octo_api.full_access` / `octo_api.read_only`), so CLI/MCP/client-credentials callers keep
+  working. The `api/v1/streamdata` route no longer exists.
 - **TenantManager** - Manages stream data tenant contexts
 - **StreamDataDatabaseManager** - Database operations for time-series data
 - **StreamDataTenantContext** - Per-tenant stream data context

@@ -21,7 +21,7 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.StreamData.Controllers
 
 [Microsoft.AspNetCore.Authorization.Authorize(AuthenticationSchemes = OidcConstants.AuthenticationSchemes.AuthorizationHeaderBearer)]
 [ApiController]
-[Route("api/v{version:apiVersion}/[controller]")]
+[Route("{tenantId:tenantId}/v{version:apiVersion}/streamdata")]
 [ApiVersion("1.0")]
 public class StreamDataController : ControllerBase
 {
@@ -52,7 +52,7 @@ public class StreamDataController : ControllerBase
     /// </summary>
     /// <param name="tenantId">Tenant whose flag is reported.</param>
     [HttpGet("status")]
-    [Microsoft.AspNetCore.Authorization.Authorize]
+    [Microsoft.AspNetCore.Authorization.Authorize(AssetRepositoryServiceConstants.TenantAssetApiReadOnlyPolicy)]
     public async Task<ActionResult<StreamDataStatusDto>> Status([Required] string tenantId)
     {
         var instanceEnabled = _instanceConfiguration.Value.Enabled;
@@ -84,7 +84,7 @@ public class StreamDataController : ControllerBase
     /// Enables stream data for a given tenant
     /// </summary>
     [HttpPost("enable")]
-    [Microsoft.AspNetCore.Authorization.Authorize(AssetRepositoryServiceConstants.SystemAssetApiReadWritePolicy)]
+    [Microsoft.AspNetCore.Authorization.Authorize(AssetRepositoryServiceConstants.TenantAssetApiReadWritePolicy)]
     public async Task<IActionResult> Enable([Required] string tenantId)
     {
         try
@@ -114,7 +114,7 @@ public class StreamDataController : ControllerBase
     /// the rt-import → activate handshake without a GraphQL client.
     /// </summary>
     [HttpPost("archives/{archiveRtId}/activate")]
-    [Microsoft.AspNetCore.Authorization.Authorize(AssetRepositoryServiceConstants.SystemAssetApiReadWritePolicy)]
+    [Microsoft.AspNetCore.Authorization.Authorize(AssetRepositoryServiceConstants.TenantAssetApiReadWritePolicy)]
     public Task<IActionResult> ActivateArchive([Required] string tenantId, [Required] string archiveRtId)
         => InvokeArchiveTransitionAsync(tenantId, archiveRtId, "ActivateArchive",
             (lifecycle, id) => lifecycle.ActivateAsync(id));
@@ -123,7 +123,7 @@ public class StreamDataController : ControllerBase
     /// Disables stream data for a given tenant
     /// </summary>
     [HttpPost("disable")]
-    [Microsoft.AspNetCore.Authorization.Authorize(AssetRepositoryServiceConstants.SystemAssetApiReadWritePolicy)]
+    [Microsoft.AspNetCore.Authorization.Authorize(AssetRepositoryServiceConstants.TenantAssetApiReadWritePolicy)]
     public async Task<IActionResult> Disable([Required] string tenantId)
     {
         try
@@ -148,7 +148,7 @@ public class StreamDataController : ControllerBase
     /// Allowed only from <c>Activated</c>.
     /// </summary>
     [HttpPost("archives/{archiveRtId}/disable")]
-    [Microsoft.AspNetCore.Authorization.Authorize(AssetRepositoryServiceConstants.SystemAssetApiReadWritePolicy)]
+    [Microsoft.AspNetCore.Authorization.Authorize(AssetRepositoryServiceConstants.TenantAssetApiReadWritePolicy)]
     public Task<IActionResult> DisableArchive([Required] string tenantId, [Required] string archiveRtId)
         => InvokeArchiveTransitionAsync(tenantId, archiveRtId, "DisableArchive",
             (lifecycle, id) => lifecycle.DisableAsync(id));
@@ -158,7 +158,7 @@ public class StreamDataController : ControllerBase
     /// column paths against the current CK model; no DDL because the table already exists.
     /// </summary>
     [HttpPost("archives/{archiveRtId}/enable")]
-    [Microsoft.AspNetCore.Authorization.Authorize(AssetRepositoryServiceConstants.SystemAssetApiReadWritePolicy)]
+    [Microsoft.AspNetCore.Authorization.Authorize(AssetRepositoryServiceConstants.TenantAssetApiReadWritePolicy)]
     public Task<IActionResult> EnableArchive([Required] string tenantId, [Required] string archiveRtId)
         => InvokeArchiveTransitionAsync(tenantId, archiveRtId, "EnableArchive",
             (lifecycle, id) => lifecycle.EnableAsync(id));
@@ -167,7 +167,7 @@ public class StreamDataController : ControllerBase
     /// Retries activation after a previous DDL failure. Allowed only from <c>Failed</c>.
     /// </summary>
     [HttpPost("archives/{archiveRtId}/retry")]
-    [Microsoft.AspNetCore.Authorization.Authorize(AssetRepositoryServiceConstants.SystemAssetApiReadWritePolicy)]
+    [Microsoft.AspNetCore.Authorization.Authorize(AssetRepositoryServiceConstants.TenantAssetApiReadWritePolicy)]
     public Task<IActionResult> RetryArchiveActivation([Required] string tenantId, [Required] string archiveRtId)
         => InvokeArchiveTransitionAsync(tenantId, archiveRtId, "RetryArchiveActivation",
             (lifecycle, id) => lifecycle.RetryActivationAsync(id));
@@ -177,7 +177,7 @@ public class StreamDataController : ControllerBase
     /// entity. Destructive — historical data is lost. Allowed from any status.
     /// </summary>
     [HttpDelete("archives/{archiveRtId}")]
-    [Microsoft.AspNetCore.Authorization.Authorize(AssetRepositoryServiceConstants.SystemAssetApiReadWritePolicy)]
+    [Microsoft.AspNetCore.Authorization.Authorize(AssetRepositoryServiceConstants.TenantAssetApiReadWritePolicy)]
     public Task<IActionResult> DeleteArchive([Required] string tenantId, [Required] string archiveRtId)
         => InvokeArchiveTransitionAsync(tenantId, archiveRtId, "DeleteArchive",
             (lifecycle, id) => lifecycle.DeleteAsync(id));
@@ -187,7 +187,7 @@ public class StreamDataController : ControllerBase
     /// value is earlier than the current FrozenUntil. Rollup-archives concept §9.
     /// </summary>
     [HttpPost("archives/{rollupRtId}/freeze")]
-    [Microsoft.AspNetCore.Authorization.Authorize(AssetRepositoryServiceConstants.SystemAssetApiReadWritePolicy)]
+    [Microsoft.AspNetCore.Authorization.Authorize(AssetRepositoryServiceConstants.TenantAssetApiReadWritePolicy)]
     public Task<IActionResult> FreezeRollupArchive(
         [Required] string tenantId, [Required] string rollupRtId, [Required] DateTime until)
         => InvokeRollupAsync(tenantId, rollupRtId, "FreezeRollup",
@@ -197,7 +197,7 @@ public class StreamDataController : ControllerBase
     /// Clears FrozenUntil on the rollup archive. Idempotent. Concept §9.
     /// </summary>
     [HttpPost("archives/{rollupRtId}/unfreeze")]
-    [Microsoft.AspNetCore.Authorization.Authorize(AssetRepositoryServiceConstants.SystemAssetApiReadWritePolicy)]
+    [Microsoft.AspNetCore.Authorization.Authorize(AssetRepositoryServiceConstants.TenantAssetApiReadWritePolicy)]
     public Task<IActionResult> UnfreezeRollupArchive(
         [Required] string tenantId, [Required] string rollupRtId, bool acceptGaps = false)
         => InvokeRollupAsync(tenantId, rollupRtId, "UnfreezeRollup",
@@ -209,7 +209,7 @@ public class StreamDataController : ControllerBase
     /// temporarily out of sync until the orchestrator catches up. Concept §5, §9.
     /// </summary>
     [HttpPost("archives/{rollupRtId}/rewind")]
-    [Microsoft.AspNetCore.Authorization.Authorize(AssetRepositoryServiceConstants.SystemAssetApiReadWritePolicy)]
+    [Microsoft.AspNetCore.Authorization.Authorize(AssetRepositoryServiceConstants.TenantAssetApiReadWritePolicy)]
     public Task<IActionResult> RewindRollupWatermark(
         [Required] string tenantId, [Required] string rollupRtId, [Required] DateTime toBucketEnd)
         => InvokeRollupAsync(tenantId, rollupRtId, "RewindRollup",
@@ -222,7 +222,7 @@ public class StreamDataController : ControllerBase
     /// lifecycle path as the <c>addComputedColumn</c> GraphQL mutation.
     /// </summary>
     [HttpPost("archives/{archiveRtId}/computed-columns")]
-    [Microsoft.AspNetCore.Authorization.Authorize(AssetRepositoryServiceConstants.SystemAssetApiReadWritePolicy)]
+    [Microsoft.AspNetCore.Authorization.Authorize(AssetRepositoryServiceConstants.TenantAssetApiReadWritePolicy)]
     public Task<IActionResult> AddComputedColumn(
         [Required] string tenantId, [Required] string archiveRtId,
         [Required] string name, [Required] string formula, [Required] FormulaResultType resultType,
@@ -235,7 +235,7 @@ public class StreamDataController : ControllerBase
     /// column still references it; the physical CrateDB column is left as a harmless orphan.
     /// </summary>
     [HttpDelete("archives/{archiveRtId}/computed-columns/{name}")]
-    [Microsoft.AspNetCore.Authorization.Authorize(AssetRepositoryServiceConstants.SystemAssetApiReadWritePolicy)]
+    [Microsoft.AspNetCore.Authorization.Authorize(AssetRepositoryServiceConstants.TenantAssetApiReadWritePolicy)]
     public Task<IActionResult> RemoveComputedColumn(
         [Required] string tenantId, [Required] string archiveRtId, [Required] string name)
         => InvokeArchiveTransitionAsync(tenantId, archiveRtId, "RemoveComputedColumn",
@@ -247,7 +247,7 @@ public class StreamDataController : ControllerBase
     /// backfilled, then switch atomically. Rejected when another computed column references this one.
     /// </summary>
     [HttpPut("archives/{archiveRtId}/computed-columns/{name}")]
-    [Microsoft.AspNetCore.Authorization.Authorize(AssetRepositoryServiceConstants.SystemAssetApiReadWritePolicy)]
+    [Microsoft.AspNetCore.Authorization.Authorize(AssetRepositoryServiceConstants.TenantAssetApiReadWritePolicy)]
     public Task<IActionResult> UpdateComputedColumnFormula(
         [Required] string tenantId, [Required] string archiveRtId, [Required] string name,
         [Required] string formula)
@@ -260,7 +260,7 @@ public class StreamDataController : ControllerBase
     /// AB#4184.
     /// </summary>
     [HttpPost("archives/{rollupRtId}/recompute")]
-    [Microsoft.AspNetCore.Authorization.Authorize(AssetRepositoryServiceConstants.SystemAssetApiReadWritePolicy)]
+    [Microsoft.AspNetCore.Authorization.Authorize(AssetRepositoryServiceConstants.TenantAssetApiReadWritePolicy)]
     public async Task<ActionResult<RecomputeJobInfoRestDto>> RecomputeArchive(
         [Required] string tenantId, [Required] string rollupRtId,
         [Required] DateTime from, [Required] DateTime to, string? rtIdScope)
@@ -308,7 +308,7 @@ public class StreamDataController : ControllerBase
     /// holds no data (no-op).
     /// </summary>
     [HttpPost("archives/{rollupRtId}/backfill-from-source")]
-    [Microsoft.AspNetCore.Authorization.Authorize(AssetRepositoryServiceConstants.SystemAssetApiReadWritePolicy)]
+    [Microsoft.AspNetCore.Authorization.Authorize(AssetRepositoryServiceConstants.TenantAssetApiReadWritePolicy)]
     public async Task<ActionResult<RecomputeJobInfoRestDto>> BackfillRollupFromSource(
         [Required] string tenantId, [Required] string rollupRtId)
     {
@@ -345,6 +345,7 @@ public class StreamDataController : ControllerBase
     /// debugging why a recompute failed. AB#4184.
     /// </summary>
     [HttpGet("archives/{archiveRtId}/recompute-jobs")]
+    [Microsoft.AspNetCore.Authorization.Authorize(AssetRepositoryServiceConstants.TenantAssetApiReadOnlyPolicy)]
     public async Task<ActionResult<IReadOnlyList<RecomputeJobInfoRestDto>>> ListRecomputeJobsForArchive(
         [Required] string tenantId, [Required] string archiveRtId)
     {
@@ -374,7 +375,7 @@ public class StreamDataController : ControllerBase
     /// range archives reject the call with HTTP 400.
     /// </summary>
     [HttpPost("archives/{archiveRtId}/insertTimeRange")]
-    [Microsoft.AspNetCore.Authorization.Authorize(AssetRepositoryServiceConstants.SystemAssetApiReadWritePolicy)]
+    [Microsoft.AspNetCore.Authorization.Authorize(AssetRepositoryServiceConstants.TenantAssetApiReadWritePolicy)]
     public async Task<IActionResult> InsertTimeRange(
         [Required] string tenantId,
         [Required] string archiveRtId,
@@ -429,7 +430,7 @@ public class StreamDataController : ControllerBase
     /// Concept §9.
     /// </summary>
     [HttpGet("archives/{archiveRtId}/rollups")]
-    [Microsoft.AspNetCore.Authorization.Authorize]
+    [Microsoft.AspNetCore.Authorization.Authorize(AssetRepositoryServiceConstants.TenantAssetApiReadOnlyPolicy)]
     public async Task<ActionResult<IReadOnlyList<RollupArchiveInfoRestDto>>> ListRollupsForArchive(
         [Required] string tenantId, [Required] string archiveRtId)
     {
