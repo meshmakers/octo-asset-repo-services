@@ -13,8 +13,8 @@ internal sealed class CreateRollupArchiveInputDto
 {
     public string? RtWellKnownName { get; set; }
     public OctoObjectId SourceArchiveRtId { get; set; }
-    public int BucketSizeMs { get; set; }
-    public int WatermarkLagMs { get; set; }
+    public long BucketSizeMs { get; set; }
+    public long WatermarkLagMs { get; set; }
     public List<RollupAggregationInputDto> Aggregations { get; set; } = new();
 }
 
