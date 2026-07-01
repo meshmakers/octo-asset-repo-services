@@ -101,7 +101,7 @@ internal sealed class StreamDataMutation : ObjectGraphType
             .ResolveAsync(ResolveRecomputeAsync);
 
         Field<RecomputeJobInfoDtoType>("backfillRollupFromSource")
-            .Description("Populates / resets a rollup over the ENTIRE history of its source archive without supplying a timestamp (AB#4269). Resolves the source archive's earliest timestamp and recomputes [sourceMin, now) over the same reader-safe optimistic recompute path as recomputeArchive. Returns the resulting job snapshot, or null when the source archive holds no data. Requires StreamDataAdmin.")
+            .Description("Queues a durable, background backfill that populates / resets a rollup over the ENTIRE history of its source archive without supplying a timestamp (AB#4269 / AB#4286). Resolves the source archive's earliest timestamp, enqueues a persisted pending recompute range [sourceMin, now) and a Pending RecomputeJob, and returns that job immediately. The heavy recompute runs later on the background orchestrator under the host application-lifetime token — not this request — so a client timeout can no longer cancel a long backfill and the queued work survives a restart. Poll the returned job to observe Pending → Running → Completed. Returns null when the source archive holds no data. Requires StreamDataAdmin.")
             .Argument<NonNullGraphType<OctoObjectIdType>>(Statics.RtIdArg, "Runtime id of the CkRollupArchive to backfill from its source.")
             .ResolveAsync(ResolveBackfillRollupAsync);
 
@@ -185,7 +185,11 @@ internal sealed class StreamDataMutation : ObjectGraphType
             var orchestrator = gql.TenantContext.GetRecomputeOrchestrator()
                 ?? throw AssetRepositoryException.StreamDataNotAvailable();
 
-            var job = await orchestrator.BackfillRollupFromSourceAsync(rollupRtId, ctx.CancellationToken);
+            // AB#4286: enqueue a durable background backfill and return the Pending job immediately;
+            // the heavy recompute runs later on the background orchestrator under the host
+            // application-lifetime token, not this GraphQL request. ctx.CancellationToken only bounds
+            // the fast source-min resolve + enqueue writes.
+            var job = await orchestrator.EnqueueBackfillFromSourceAsync(rollupRtId, ctx.CancellationToken);
 
             // Null = empty source archive (no-op); surface as a null job rather than an error.
             return job is null ? null : RecomputeJobInfoDto.From(job);

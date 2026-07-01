@@ -10,6 +10,7 @@ using Meshmakers.Octo.Runtime.Contracts.StreamData;
 using Meshmakers.Octo.Services.Infrastructure;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.StreamData.Controllers;
@@ -27,6 +28,7 @@ public class StreamDataController : ControllerBase
     private readonly ILogger<StreamDataController> _logger;
     private readonly ISystemContext _systemContext;
     private readonly IOptions<StreamDataInstanceConfiguration> _instanceConfiguration;
+    private readonly IHostApplicationLifetime _appLifetime;
 
     /// <summary>
     /// Constructor
@@ -34,11 +36,13 @@ public class StreamDataController : ControllerBase
     public StreamDataController(
         ILogger<StreamDataController> logger,
         ISystemContext systemContext,
-        IOptions<StreamDataInstanceConfiguration> instanceConfiguration)
+        IOptions<StreamDataInstanceConfiguration> instanceConfiguration,
+        IHostApplicationLifetime appLifetime)
     {
         _logger = logger;
         _systemContext = systemContext;
         _instanceConfiguration = instanceConfiguration;
+        _appLifetime = appLifetime;
     }
 
     /// <summary>
@@ -268,10 +272,14 @@ public class StreamDataController : ControllerBase
                 ?? throw new StreamDataException(
                     $"Recompute support is not wired for tenant '{tenantId}'. Ensure stream data is enabled and a rollup store is registered.");
 
+            // AB#4286: run under the host application-lifetime token, NOT HttpContext.RequestAborted —
+            // a client HTTP timeout / disconnect must never cancel a server-side recompute (the octo-cli
+            // HttpClient's 100s default previously killed long recomputes mid-flight). The job is
+            // pollable via the recompute-jobs endpoint even if the client has already gone away.
             var job = await orchestrator.RecomputeArchiveAsync(
                 new OctoObjectId(rollupRtId), from, to,
                 rtIdScope is not null ? new OctoObjectId(rtIdScope) : null,
-                RecomputeTrigger.Manual, HttpContext.RequestAborted);
+                RecomputeTrigger.Manual, _appLifetime.ApplicationStopping);
 
             return Ok(RecomputeJobInfoRestDto.From(job));
         }
@@ -288,11 +296,16 @@ public class StreamDataController : ControllerBase
     }
 
     /// <summary>
-    /// Populates / resets a rollup over the ENTIRE history of its source archive without supplying a
-    /// timestamp (AB#4269): resolves the source archive's earliest timestamp and recomputes
-    /// <c>[sourceMin, now)</c> over the same reader-safe optimistic recompute path as
-    /// <see cref="RecomputeArchive"/>. Returns the resulting job snapshot, or 204 No Content when the
-    /// source archive holds no data (no-op).
+    /// Queues a <em>durable, background</em> backfill that populates / resets a rollup over the ENTIRE
+    /// history of its source archive without supplying a timestamp (AB#4269 / AB#4286). Resolves the
+    /// source archive's earliest timestamp, enqueues a persisted pending recompute range
+    /// <c>[sourceMin, now)</c> and a Pending <c>RecomputeJob</c>, and returns <em>immediately</em> with
+    /// that job snapshot. The heavy recompute is executed later by the background recompute orchestrator
+    /// under the host application-lifetime token — never bound to this HTTP request — so a client
+    /// timeout / disconnect can no longer cancel a multi-minute (e.g. decade-long) backfill, and the
+    /// queued work survives an asset-repo restart. Poll the returned job id via the recompute-jobs
+    /// endpoint to observe Pending → Running → Completed. Returns 204 No Content when the source archive
+    /// holds no data (no-op).
     /// </summary>
     [HttpPost("archives/{rollupRtId}/backfill-from-source")]
     [Microsoft.AspNetCore.Authorization.Authorize(AssetRepositoryServiceConstants.SystemAssetApiReadWritePolicy)]
@@ -306,8 +319,11 @@ public class StreamDataController : ControllerBase
                 ?? throw new StreamDataException(
                     $"Recompute support is not wired for tenant '{tenantId}'. Ensure stream data is enabled and a rollup store is registered.");
 
-            var job = await orchestrator.BackfillRollupFromSourceAsync(
-                new OctoObjectId(rollupRtId), HttpContext.RequestAborted);
+            // Enqueue + return the Pending job immediately. Use the app-lifetime token for the quick
+            // resolve/enqueue writes (not HttpContext.RequestAborted) so even the enqueue is not tied to
+            // the client connection; the recompute itself runs later on the background orchestrator tick.
+            var job = await orchestrator.EnqueueBackfillFromSourceAsync(
+                new OctoObjectId(rollupRtId), _appLifetime.ApplicationStopping);
 
             // Null = empty source archive (no-op): 204 so the SDK can return null.
             return job is null ? NoContent() : Ok(RecomputeJobInfoRestDto.From(job));
