@@ -456,7 +456,9 @@ internal sealed class StreamDataMutation : ObjectGraphType
                 input.SourceArchiveRtId,
                 TimeSpan.FromMilliseconds(input.BucketSizeMs),
                 TimeSpan.FromMilliseconds(input.WatermarkLagMs),
-                aggregations);
+                aggregations,
+                input.BucketAlignment,
+                input.ReferenceTimeZone);
 
             return rtId;
         }

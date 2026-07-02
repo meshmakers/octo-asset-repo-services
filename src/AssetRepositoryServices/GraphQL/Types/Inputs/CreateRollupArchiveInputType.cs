@@ -1,5 +1,6 @@
 using GraphQL.Types;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Scalars;
+using Meshmakers.Octo.Runtime.Contracts.StreamData;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Inputs;
 
@@ -29,7 +30,28 @@ internal sealed class CreateRollupArchiveInputType : InputObjectGraphType<Create
         Field<NonNullGraphType<LongGraphType>>("watermarkLagMs")
             .Description("Safety-wait after bucketEnd before aggregating, in milliseconds. >= 0.");
 
+        Field<BucketAlignmentGraphType>("bucketAlignment")
+            .Description("Optional bucket-boundary alignment. Defaults to FIXED_SIZE. Calendar variants (CALENDAR_DAY / ISO_8601_WEEK / CALENDAR_MONTH / CALENDAR_YEAR) make day/week/month/year rollups expressible and are the only ones for which referenceTimeZone has any effect.")
+            .DefaultValue(BucketAlignment.FixedSize);
+
+        Field<StringGraphType>("referenceTimeZone")
+            .Description("Optional IANA reference time-zone (e.g. 'Europe/Vienna') that aligns calendar bucket boundaries to local wall-clock time so they are DST-correct. Null keeps UTC boundaries. Ignored for FIXED_SIZE; an unknown zone id is rejected.");
+
         Field<NonNullGraphType<ListGraphType<NonNullGraphType<RollupAggregationInputType>>>>("aggregations")
             .Description("Aggregation specs. At least one required; duplicate target column names are rejected.");
+    }
+}
+
+/// <summary>
+/// GraphQL enum for <see cref="BucketAlignment"/> (AB#4300). Lets the studio send the same alignment
+/// values it displays on the read side. The C# enum names map to CONSTANT_CASE (FixedSize →
+/// FIXED_SIZE, CalendarDay → CALENDAR_DAY, …) via the default enum-value converter.
+/// </summary>
+internal sealed class BucketAlignmentGraphType : EnumerationGraphType<BucketAlignment>
+{
+    public BucketAlignmentGraphType()
+    {
+        Name = "BucketAlignmentInput";
+        Description = "Bucket-boundary alignment for a rollup archive: FIXED_SIZE / CALENDAR_DAY / ISO_8601_WEEK / CALENDAR_MONTH / CALENDAR_YEAR.";
     }
 }

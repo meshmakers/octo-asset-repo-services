@@ -86,6 +86,10 @@ internal sealed class RollupArchiveInfoDtoType : ObjectGraphType<RollupArchiveIn
             .Description("Bucket-boundary alignment: FixedSize / CalendarDay / Iso8601Week / CalendarMonth / CalendarYear.")
             .Resolve(ctx => ctx.Source!.BucketAlignment);
 
+        Field<StringGraphType>("referenceTimeZone")
+            .Description("IANA reference time-zone (e.g. Europe/Vienna) that aligns calendar bucket boundaries to local wall-clock time so they are DST-correct. Null means UTC calendar boundaries. Only meaningful for the calendar bucketAlignment variants; ignored for FixedSize.")
+            .Resolve(ctx => ctx.Source!.ReferenceTimeZone);
+
         Field<NonNullGraphType<ListGraphType<NonNullGraphType<RollupAggregationInfoDtoType>>>>("aggregations")
             .Description("The rollup's aggregation specs (source column path + stored function), for resolution-family walking.")
             .Resolve(ctx => ctx.Source!.Aggregations);
