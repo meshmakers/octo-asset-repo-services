@@ -32,6 +32,11 @@ internal sealed record RollupArchiveInfoDto(
     // aggregation functions, so a client can walk the resolution family and know each rung's grain
     // and function in one round-trip instead of one rollupQueryMetadata call per rollup.
     string BucketAlignment,
+    // IANA reference time-zone (AB#4300 / decision O6) that aligns calendar bucket boundaries to
+    // local wall-clock time. Null ⇒ UTC calendar boundaries. Only meaningful for the calendar
+    // BucketAlignment variants; ignored for FixedSize. Surfaced so the studio can show operators
+    // whether a rollup is DST-correct instead of leaving it invisible on the entity.
+    string? ReferenceTimeZone,
     IReadOnlyList<RollupAggregationInfoDto> Aggregations);
 
 /// <summary>

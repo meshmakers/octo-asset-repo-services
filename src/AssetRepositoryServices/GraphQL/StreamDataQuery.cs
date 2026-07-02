@@ -192,6 +192,7 @@ internal sealed class StreamDataQuery : ObjectGraphType
                 rollup.DirtyWindowsPending,
                 rollup.PendingRecomputeRanges,
                 rollup.BucketAlignment.ToString(),
+                rollup.ReferenceTimeZone,
                 rollup.Aggregations
                     .Select(a => new RollupAggregationInfoDto(a.SourcePath, a.Function.ToString()))
                     .ToList()));
