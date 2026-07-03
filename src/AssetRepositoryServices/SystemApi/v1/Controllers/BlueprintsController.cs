@@ -159,6 +159,60 @@ public class BlueprintsController : ControllerBase
         }
     }
 
+    // POST system/v1/blueprints/catalogs/refresh
+    /// <summary>
+    ///     Refreshes the caches of all blueprint catalogs (always forced)
+    /// </summary>
+    /// <returns>Per-catalog refresh results</returns>
+    [HttpPost("catalogs/refresh")]
+    [Authorize(AssetRepositoryServiceConstants.DataModelManagementPolicy)]
+    [ProducesResponseType(typeof(BlueprintCatalogRefreshResponseDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(InternalServerErrorDto), StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> RefreshAllCatalogs()
+    {
+        try
+        {
+            var results = await _catalogManager.RefreshAllCatalogCachesAsync(force: true);
+
+            return Ok(MapToRefreshResponse(results));
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(StatusCodes.Status500InternalServerError, new InternalServerErrorDto(ex.Message));
+        }
+    }
+
+    // POST system/v1/blueprints/catalogs/{catalogName}/refresh
+    /// <summary>
+    ///     Refreshes the cache of a specific blueprint catalog (always forced)
+    /// </summary>
+    /// <param name="catalogName">Name of the catalog to refresh (case-insensitive)</param>
+    /// <returns>The refresh result for the catalog</returns>
+    [HttpPost("catalogs/{catalogName}/refresh")]
+    [Authorize(AssetRepositoryServiceConstants.DataModelManagementPolicy)]
+    [ProducesResponseType(typeof(BlueprintCatalogRefreshResponseDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(NotFoundErrorDto), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(InternalServerErrorDto), StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> RefreshCatalog([Required] string catalogName)
+    {
+        try
+        {
+            var result = await _catalogManager.RefreshCatalogCacheAsync(catalogName, force: true);
+
+            return Ok(MapToRefreshResponse([result]));
+        }
+        catch (BlueprintCatalogException ex)
+        {
+            // The only BlueprintCatalogException the manager throws on this path is CatalogNotFound;
+            // refresh failures of the catalog itself are reported inside the result.
+            return NotFound(new NotFoundErrorDto(ex.Message));
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(StatusCodes.Status500InternalServerError, new InternalServerErrorDto(ex.Message));
+        }
+    }
+
     // HEAD system/v1/blueprints/{blueprintId}
     /// <summary>
     ///     Checks if a blueprint exists
@@ -234,5 +288,19 @@ public class BlueprintsController : ControllerBase
         {
             return StatusCode(StatusCodes.Status500InternalServerError, new InternalServerErrorDto(ex.Message));
         }
+    }
+
+    private static BlueprintCatalogRefreshResponseDto MapToRefreshResponse(
+        IReadOnlyList<BlueprintCatalogRefreshResult> results)
+    {
+        return new BlueprintCatalogRefreshResponseDto
+        {
+            Results = results.Select(r => new BlueprintCatalogRefreshResultDto
+            {
+                CatalogName = r.CatalogName,
+                Status = r.Status.ToString(),
+                Message = r.Message
+            }).ToList()
+        };
     }
 }

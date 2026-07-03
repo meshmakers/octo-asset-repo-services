@@ -269,12 +269,36 @@ System-scoped REST endpoints for browsing and managing Construction Kit model ca
 | `GET` | `system/v1/ckmodelcatalog/{catalogName}` | ReadOnly | List models from specific catalog |
 | `HEAD` | `system/v1/ckmodelcatalog/{modelId}` | ReadOnly | Check if model exists |
 | `GET` | `system/v1/ckmodelcatalog/{catalogName}/{modelId}` | ReadOnly | Get model details |
-| `POST` | `system/v1/ckmodelcatalog/refresh` | ReadWrite | Refresh all catalog caches |
-| `POST` | `system/v1/ckmodelcatalog/{catalogName}/refresh` | ReadWrite | Refresh specific catalog cache |
+| `POST` | `system/v1/ckmodelcatalog/refresh` | DataModelManagement | Refresh all catalog caches |
+| `POST` | `system/v1/ckmodelcatalog/{catalogName}/refresh` | DataModelManagement | Refresh specific catalog cache |
 
 **DTOs:** `DataTransferObjects/CkModelCatalog/` - `CkModelCatalogDto`, `CkModelCatalogItemDto`, `CkModelCatalogListResponseDto`
 
 **Delegates to:** `ICatalogService` from `ConstructionKit.Contracts` (registered via `AddConstructionKit()`).
+
+### Blueprint Catalog REST API (System API)
+
+System-scoped REST endpoints for browsing and refreshing blueprint catalogs. Implemented in `SystemApi/v1/Controllers/BlueprintsController.cs`.
+
+| Method | Endpoint | Auth Policy | Description |
+|--------|----------|-------------|-------------|
+| `GET` | `system/v1/blueprints` | ReadOnly | List all blueprints from all catalogs (paged) |
+| `GET` | `system/v1/blueprints/search?q={term}` | ReadOnly | Search blueprints by term |
+| `GET` | `system/v1/blueprints/catalogs` | ReadOnly | List available catalog sources |
+| `HEAD` | `system/v1/blueprints/{blueprintId}` | ReadOnly | Check if blueprint exists |
+| `GET` | `system/v1/blueprints/{blueprintId}` | ReadOnly | Get blueprint details |
+| `POST` | `system/v1/blueprints/catalogs/refresh` | DataModelManagement | Refresh all blueprint catalog caches (AB#4309) |
+| `POST` | `system/v1/blueprints/catalogs/{catalogName}/refresh` | DataModelManagement | Refresh a specific blueprint catalog cache (case-insensitive name) |
+
+The refresh endpoints always perform a **forced** refresh (bypassing the engine's 60s cache-file TTL
+and the GitHub unchanged-remote-timestamp short-circuit) and return a
+`BlueprintCatalogRefreshResponseDto` with one entry per catalog (`Status`: `Refreshed`, `Skipped` or
+`Failed` plus an optional message). A failing catalog does not abort the refresh of the others; an
+unknown catalog name yields `404` with a `NotFoundErrorDto`.
+
+**DTOs:** `DataTransferObjects/Blueprints/` - `BlueprintCatalogRefreshResponseDto`, `BlueprintCatalogRefreshResultDto`
+
+**Delegates to:** `IBlueprintCatalogManager` from `ConstructionKit.Engine` (registered via `AddConstructionKit()`).
 
 ### CK Model Import from Catalog (Tenant API)
 
