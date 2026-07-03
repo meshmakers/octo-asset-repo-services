@@ -382,8 +382,16 @@ public class TenantsController : ControllerBase
             using var session = await tenantContext.GetAdminSessionAsync();
             session.StartTransaction();
 
-            await tenantContext.DropChildTenantAsync(session, childTenantId);
+            // Two-phase delete: remove the tenant metadata records first and COMMIT them, then drop
+            // the physical database. Dropping the database while the tenant record is still visible
+            // to other sessions leaves a window in which a concurrent tenant-resolve re-creates the
+            // database via CK-model auto-import (it still finds the committed record), resurrecting
+            // the just-dropped database and poisoning an immediately following tenant Create
+            // (e.g. re-running om_initialize_tenant). Committing the record deletion first makes the
+            // subsequent resolve fail with "tenant does not exist", so the drop is final.
+            var deletion = await tenantContext.DeleteChildTenantMetadataAsync(session, childTenantId);
             await session.CommitTransactionAsync();
+            await tenantContext.DropTenantDatabaseAsync(deletion, childTenantId);
             return Ok();
         }
         catch (TenantException e)
