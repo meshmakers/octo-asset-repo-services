@@ -43,6 +43,12 @@ internal sealed class StreamDataQueryDtoType : ObjectGraphType<StreamDataQueryDt
         Field(d => d.AssociatedCkTypeId, typeof(NonNullGraphType<RtCkIdGraph<CkTypeId>>));
         Field(d => d.Columns, typeof(NonNullGraphType<ListGraphType<NonNullGraphType<RtQueryColumnType>>>));
 
+        Field<NonNullGraphType<OctoObjectIdType>>("archiveRtId")
+            .Description("The rtId of the archive this persisted query reads from. For a resolution-aware " +
+                         "series query (AB#4290) this is the base archive of the series' resolution family, so a " +
+                         "caller can resolve the best rollup/archive without a separate lookup.")
+            .Resolve(ctx => ((StreamDataQueryUserContext)ctx.Source!.UserContext!).ArchiveRtId);
+
         Connection<NonNullGraphType<StreamDataQueryRowDtoType>>("Rows")
             .Description("Executes the persisted stream-data query and returns the result rows. " +
                          "Accepts optional runtime overrides for the time range, limit, and sort order, " +
