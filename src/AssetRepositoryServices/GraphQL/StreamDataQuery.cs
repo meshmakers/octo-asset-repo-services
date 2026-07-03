@@ -86,6 +86,8 @@ internal sealed class StreamDataQuery : ObjectGraphType
         {
             RtIds = input.RtIds,
             ObisFilter = input.ObisFilter,
+            QueryTimeZone = input.TimeZone,
+            ComparisonPolicy = input.ComparisonPolicy,
         };
 
         var result = await service.ResolveAsync(request, ctx.CancellationToken).ConfigureAwait(false);

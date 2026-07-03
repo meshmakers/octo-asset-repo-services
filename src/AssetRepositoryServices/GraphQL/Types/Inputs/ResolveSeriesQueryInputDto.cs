@@ -19,4 +19,16 @@ internal sealed class ResolveSeriesQueryInputDto
     public string SourcePath { get; set; } = string.Empty;
     public List<OctoObjectId>? RtIds { get; set; }
     public string? ObisFilter { get; set; }
+
+    /// <summary>
+    /// Optional IANA time zone (e.g. <c>Europe/Vienna</c>) the query is resolved in (AB#4190). Aligns
+    /// calendar (day/week/month/year) rungs to that zone's DST-correct civil boundaries; null ⇒ UTC.
+    /// </summary>
+    public string? TimeZone { get; set; }
+
+    /// <summary>
+    /// How civil boundaries are resolved when the series spans multiple reference time zones
+    /// (AB#4190). Defaults to <see cref="SeriesComparisonPolicy.PerQuery"/>.
+    /// </summary>
+    public SeriesComparisonPolicy ComparisonPolicy { get; set; } = SeriesComparisonPolicy.PerQuery;
 }
