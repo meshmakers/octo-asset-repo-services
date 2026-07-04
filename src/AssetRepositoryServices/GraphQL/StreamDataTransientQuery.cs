@@ -127,8 +127,12 @@ internal sealed class StreamDataTransientQuery : ObjectGraphType
                 sortDtos?.Select(s => s.AttributePath),
                 fieldFilters?.Where(f => f.ComparisonValue != null).Select(f => f.AttributePath));
 
+            // Stream-data archives only carry physical columns — navigation paths are meaningless
+            // for CrateDB tables, and unbounded navigation expansion over a densely connected CK
+            // model explodes combinatorially (observed as a multi-GB runaway allocation).
             var typeQueryColumns = ctx.GetCkCacheService()
-                .GetCkTypeQueryColumnPathsByRtCkId(gql.TenantId, ckTypeId);
+                .GetCkTypeQueryColumnPathsByRtCkId(gql.TenantId, ckTypeId,
+                    new CkTypeQueryColumnOptions { IgnoreNavigationProperties = true });
             var columns = columnPaths
                 .Select(p => BuildSimpleColumn(p, typeQueryColumns))
                 .ToList();
@@ -222,8 +226,12 @@ internal sealed class StreamDataTransientQuery : ObjectGraphType
                     StreamDataGraphQlMapper.MapAggregationFunctionDto(c.AggregationType)))
                 .ToList();
 
+            // Stream-data archives only carry physical columns — navigation paths are meaningless
+            // for CrateDB tables, and unbounded navigation expansion over a densely connected CK
+            // model explodes combinatorially (observed as a multi-GB runaway allocation).
             var typeQueryColumns = ctx.GetCkCacheService()
-                .GetCkTypeQueryColumnPathsByRtCkId(gql.TenantId, ckTypeId);
+                .GetCkTypeQueryColumnPathsByRtCkId(gql.TenantId, ckTypeId,
+                    new CkTypeQueryColumnOptions { IgnoreNavigationProperties = true });
             var columns = columnInputs
                 .Select(c => BuildAggregationColumn(c.AttributePath, MapAggregationFunctionDtoToDto(c.AggregationType), typeQueryColumns))
                 .ToList();
@@ -286,8 +294,12 @@ internal sealed class StreamDataTransientQuery : ObjectGraphType
                     StreamDataGraphQlMapper.MapAggregationFunctionDto(c.AggregationType)))
                 .ToList();
 
+            // Stream-data archives only carry physical columns — navigation paths are meaningless
+            // for CrateDB tables, and unbounded navigation expansion over a densely connected CK
+            // model explodes combinatorially (observed as a multi-GB runaway allocation).
             var typeQueryColumns = ctx.GetCkCacheService()
-                .GetCkTypeQueryColumnPathsByRtCkId(gql.TenantId, ckTypeId);
+                .GetCkTypeQueryColumnPathsByRtCkId(gql.TenantId, ckTypeId,
+                    new CkTypeQueryColumnOptions { IgnoreNavigationProperties = true });
             var groupByColumns = groupByColumnPaths
                 .Select(p => BuildSimpleColumn(p, typeQueryColumns));
             var aggColumnDtos = columnInputs
@@ -354,8 +366,12 @@ internal sealed class StreamDataTransientQuery : ObjectGraphType
                     StreamDataGraphQlMapper.MapAggregationFunctionDto(c.AggregationType)))
                 .ToList();
 
+            // Stream-data archives only carry physical columns — navigation paths are meaningless
+            // for CrateDB tables, and unbounded navigation expansion over a densely connected CK
+            // model explodes combinatorially (observed as a multi-GB runaway allocation).
             var typeQueryColumns = ctx.GetCkCacheService()
-                .GetCkTypeQueryColumnPathsByRtCkId(gql.TenantId, ckTypeId);
+                .GetCkTypeQueryColumnPathsByRtCkId(gql.TenantId, ckTypeId,
+                    new CkTypeQueryColumnOptions { IgnoreNavigationProperties = true });
             var columns = columnInputs
                 .Select(c => BuildAggregationColumn(c.AttributePath, MapAggregationFunctionDtoToDto(c.AggregationType), typeQueryColumns))
                 .ToList();
