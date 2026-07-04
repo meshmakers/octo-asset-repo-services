@@ -54,23 +54,10 @@ internal sealed class DistributedBlueprintNotifications : IBlueprintNotification
             notification.EntitiesAdded,
             notification.EntitiesUpdated,
             notification.EntitiesDeleted,
-            notification.BackupId,
             notification.CorrelationId,
             notification.Timestamp);
 
         await PublishAsync(ev, "BlueprintUpdated", cancellationToken).ConfigureAwait(false);
-    }
-
-    public async Task NotifyRolledBackAsync(BlueprintRolledBackNotification notification, CancellationToken cancellationToken = default)
-    {
-        var ev = new BlueprintRolledBack(
-            notification.TenantId,
-            notification.BlueprintId?.FullName,
-            notification.BackupId,
-            notification.CorrelationId,
-            notification.Timestamp);
-
-        await PublishAsync(ev, "BlueprintRolledBack", cancellationToken).ConfigureAwait(false);
     }
 
     public async Task NotifyUninstalledAsync(BlueprintUninstalledNotification notification, CancellationToken cancellationToken = default)

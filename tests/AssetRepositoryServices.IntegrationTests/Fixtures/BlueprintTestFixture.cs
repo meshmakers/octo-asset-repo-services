@@ -44,14 +44,6 @@ public class BlueprintTestFixture : AssetRepoFixture
     }
 
     /// <summary>
-    /// Gets the Tenant Backup service
-    /// </summary>
-    public ITenantBackupService GetBackupService()
-    {
-        return GetService<ITenantBackupService>();
-    }
-
-    /// <summary>
     /// Gets the Blueprint service
     /// </summary>
     public IBlueprintService GetBlueprintService()

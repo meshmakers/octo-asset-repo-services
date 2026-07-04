@@ -6,7 +6,7 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Blueprin
 /// <summary>
 /// GraphQL projection of <see cref="BlueprintInstallationDto"/>. One row of the tenant's
 /// currently installed blueprints view — distinct from the append-only history (which records
-/// every install / update / rollback / uninstall operation).
+/// every install / update / uninstall operation).
 /// </summary>
 // ReSharper disable once ClassNeverInstantiated.Global
 internal sealed class BlueprintInstallationDtoType : ObjectGraphType<BlueprintInstallationDto>

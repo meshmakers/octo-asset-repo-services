@@ -5,7 +5,7 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Tenan
 
 /// <summary>
 /// Integration tests for Tenant API Blueprint operations.
-/// Tests ITenantBlueprintHistory, ITenantBackupService, and IBlueprintService.
+/// Tests ITenantBlueprintHistory and IBlueprintService.
 /// </summary>
 [Collection("Sequential")]
 public class BlueprintTests(BlueprintTestFixture fixture)
@@ -32,18 +32,6 @@ public class BlueprintTests(BlueprintTestFixture fixture)
         var current = await blueprintHistory.GetCurrentAsync(tenantId, CancellationToken.None);
 
         Assert.Null(current);
-    }
-
-    [Fact]
-    public async Task ListBackupsAsync_ShouldReturnEmptyList_ForNewTenant()
-    {
-        var backupService = fixture.GetBackupService();
-        var tenantId = fixture.TestTenantId;
-
-        var backups = await backupService.ListBackupsAsync(tenantId, CancellationToken.None);
-
-        Assert.NotNull(backups);
-        Assert.Empty(backups);
     }
 
     [Fact]

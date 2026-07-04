@@ -24,7 +24,7 @@ internal sealed class OctoMutation : ObjectGraphType
         Field("StreamData", new StreamDataMutation(loggerFactory.CreateLogger<StreamDataMutation>()))
             .Resolve(_ => new object());
 
-        // Blueprint install / update / uninstall / rollback. Per-mutation field-level
+        // Blueprint install / update / uninstall. Per-mutation field-level
         // gating on AdminPanelManagementRole is enforced inside the resolvers.
         Field("Blueprints", new BlueprintsMutation(loggerFactory.CreateLogger<BlueprintsMutation>()))
             .Resolve(_ => new object());

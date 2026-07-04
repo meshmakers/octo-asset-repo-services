@@ -20,9 +20,6 @@ internal sealed class BlueprintUpdateRequestInputType : InputObjectGraphType<Blu
         Field<BlueprintUpdateModeEnumType>("updateMode")
             .Description("Update reconciliation mode. Defaults to Merge.");
 
-        Field<BooleanGraphType>("createBackup")
-            .Description("Capture a pre-update tenant snapshot. Defaults to true.");
-
         Field<BooleanGraphType>("dryRun")
             .Description("Compute the diff without persisting any changes.");
 

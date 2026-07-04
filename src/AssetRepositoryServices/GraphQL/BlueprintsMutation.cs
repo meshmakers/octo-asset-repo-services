@@ -14,7 +14,7 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL;
 /// <summary>
 /// Write-side blueprint resolvers. Mounted under the <c>blueprints</c> field on the tenant
 /// <c>OctoMutation</c> root. Mirrors the REST <see cref="TenantApi.v1.Controllers.BlueprintsController"/>
-/// surface (install / applyUpdate / uninstall / rollback) but as typed GraphQL.
+/// surface (install / applyUpdate / uninstall) but as typed GraphQL.
 ///
 /// Each mutation enforces the <see cref="CommonConstants.AdminPanelManagementRole"/> role at
 /// field level — the AspNetCore policy on the GraphQL endpoint only verifies authentication,
@@ -29,7 +29,7 @@ internal sealed class BlueprintsMutation : ObjectGraphType
     {
         _logger = logger;
         Name = "BlueprintsMutation";
-        Description = "Install, update, uninstall and rollback blueprints on the active tenant.";
+        Description = "Install, update and uninstall blueprints on the active tenant.";
 
         Field<NonNullGraphType<BlueprintApplyResultDtoType>>("install")
             .Description("Applies a blueprint to the tenant for the first time. With force=true, re-applies seed data via upsert (recovery path).")
@@ -38,7 +38,7 @@ internal sealed class BlueprintsMutation : ObjectGraphType
             .ResolveAsync(ResolveInstallAsync);
 
         Field<NonNullGraphType<BlueprintApplyResultDtoType>>("applyUpdate")
-            .Description("Applies a blueprint update to the tenant. Conflict resolutions, dry-run, and pre-update backup are controlled by the input. Returns the resulting apply summary.")
+            .Description("Applies a blueprint update to the tenant. Conflict resolutions and dry-run are controlled by the input. Returns the resulting apply summary.")
             .Argument<NonNullGraphType<BlueprintUpdateRequestInputType>>("input", "Update parameters.")
             .ResolveAsync(ResolveApplyUpdateAsync);
 
@@ -47,11 +47,6 @@ internal sealed class BlueprintsMutation : ObjectGraphType
             .Argument<NonNullGraphType<StringGraphType>>("blueprintName", "Blueprint name (without version).")
             .Argument<BooleanGraphType>("cascade", "Also uninstall dependents and orphan dependencies. Defaults to false.")
             .ResolveAsync(ResolveUninstallAsync);
-
-        Field<NonNullGraphType<BlueprintRestoreResultDtoType>>("rollback")
-            .Description("Restores the tenant from a previously-captured backup.")
-            .Argument<NonNullGraphType<StringGraphType>>("backupId", "Opaque backup id from `blueprints.backups`.")
-            .ResolveAsync(ResolveRollbackAsync);
     }
 
     private async Task<object?> ResolveInstallAsync(IResolveFieldContext<object?> ctx)
@@ -145,7 +140,6 @@ internal sealed class BlueprintsMutation : ObjectGraphType
 
             var options = new BlueprintUpdateOptions
             {
-                CreateBackup = input.CreateBackup,
                 DryRun = input.DryRun
             };
 
@@ -222,47 +216,6 @@ internal sealed class BlueprintsMutation : ObjectGraphType
         catch (Exception e)
         {
             _logger.LogError(e, "Blueprint uninstall failed");
-            return ctx.HandleException(e);
-        }
-    }
-
-    private async Task<object?> ResolveRollbackAsync(IResolveFieldContext<object?> ctx)
-    {
-        try
-        {
-            if (!RequireAdminPanelRole(ctx, "rollback")) return null;
-
-            var backupId = ctx.GetArgument<string>("backupId");
-            if (string.IsNullOrWhiteSpace(backupId))
-            {
-                ctx.Errors.Add(new ExecutionError("backupId is required") { Code = "BAD_REQUEST" });
-                return null;
-            }
-
-            var gql = (GraphQlUserContext)ctx.UserContext;
-            var blueprintService = ctx.RequestServices!.GetRequiredService<IBlueprintService>();
-
-            var result = await blueprintService.RollbackAsync(gql.TenantId, backupId, ctx.CancellationToken);
-            if (!result.Success)
-            {
-                ctx.Errors.Add(new ExecutionError(string.Join(", ",
-                    result.Errors.Count > 0 ? result.Errors : new[] { "Blueprint rollback failed" }))
-                {
-                    Code = "OPERATION_FAILED"
-                });
-                return null;
-            }
-
-            return new BlueprintRestoreResultDto
-            {
-                Success = result.Success,
-                EntitiesRestored = result.EntitiesRestored,
-                Messages = result.Warnings.ToList()
-            };
-        }
-        catch (Exception e)
-        {
-            _logger.LogError(e, "Blueprint rollback failed");
             return ctx.HandleException(e);
         }
     }

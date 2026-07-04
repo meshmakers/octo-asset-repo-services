@@ -23,7 +23,6 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.TenantApi.v1.Controlle
 public class BlueprintsController : ControllerBase
 {
     private readonly ITenantBlueprintHistory _blueprintHistory;
-    private readonly ITenantBackupService _backupService;
     private readonly IBlueprintService _blueprintService;
     private readonly ITenantBlueprintInstallations _blueprintInstallations;
 
@@ -31,17 +30,14 @@ public class BlueprintsController : ControllerBase
     ///     Constructor
     /// </summary>
     /// <param name="blueprintHistory">Blueprint history service</param>
-    /// <param name="backupService">Backup service</param>
     /// <param name="blueprintService">Blueprint service</param>
     /// <param name="blueprintInstallations">Tenant blueprint installations service</param>
     public BlueprintsController(
         ITenantBlueprintHistory blueprintHistory,
-        ITenantBackupService backupService,
         IBlueprintService blueprintService,
         ITenantBlueprintInstallations blueprintInstallations)
     {
         _blueprintHistory = blueprintHistory;
-        _backupService = backupService;
         _blueprintService = blueprintService;
         _blueprintInstallations = blueprintInstallations;
     }
@@ -378,7 +374,6 @@ public class BlueprintsController : ControllerBase
 
             var options = new BlueprintUpdateOptions
             {
-                CreateBackup = request.CreateBackup,
                 DryRun = request.DryRun
             };
 
@@ -410,107 +405,6 @@ public class BlueprintsController : ControllerBase
         catch (ArgumentException e)
         {
             return BadRequest(new OperationFailedErrorDto(e.Message));
-        }
-        catch (PersistenceException e)
-        {
-            return BadRequest(new OperationFailedErrorDto(e.Message));
-        }
-        catch (Exception ex)
-        {
-            return StatusCode(StatusCodes.Status500InternalServerError, new InternalServerErrorDto(ex.Message));
-        }
-    }
-
-    // GET {tenantId}/v1/blueprints/backups
-    /// <summary>
-    ///     Lists all backups for a tenant
-    /// </summary>
-    /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>List of backups</returns>
-    [HttpGet("backups")]
-    [Authorize(AssetRepositoryServiceConstants.TenantAssetApiReadOnlyPolicy)]
-    [ProducesResponseType(typeof(IEnumerable<BlueprintBackupDto>), StatusCodes.Status200OK)]
-    [ProducesResponseType(typeof(OperationFailedErrorDto), StatusCodes.Status400BadRequest)]
-    [ProducesResponseType(typeof(InternalServerErrorDto), StatusCodes.Status500InternalServerError)]
-    public async Task<IActionResult> GetBackups(CancellationToken cancellationToken = default)
-    {
-        try
-        {
-            var tenantId = HttpContext.GetTenantId();
-            if (string.IsNullOrEmpty(tenantId))
-            {
-                return BadRequest(new OperationFailedErrorDto("TenantId is required"));
-            }
-
-            var backups = await _backupService.ListBackupsAsync(tenantId, cancellationToken);
-
-            var response = backups.Select(b => new BlueprintBackupDto
-            {
-                BackupId = b.BackupId,
-                CreatedAt = b.CreatedAt,
-                BlueprintId = b.BlueprintVersion ?? string.Empty,
-                Reason = b.Reason ?? string.Empty,
-                SizeBytes = b.SizeBytes
-            });
-
-            return Ok(response);
-        }
-        catch (PersistenceException e)
-        {
-            return BadRequest(new OperationFailedErrorDto(e.Message));
-        }
-        catch (Exception ex)
-        {
-            return StatusCode(StatusCodes.Status500InternalServerError, new InternalServerErrorDto(ex.Message));
-        }
-    }
-
-    // POST {tenantId}/v1/blueprints/backups/{backupId}/restore
-    /// <summary>
-    ///     Restores a backup
-    /// </summary>
-    /// <param name="backupId">Backup ID to restore</param>
-    /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>Restore result</returns>
-    [HttpPost("backups/{backupId}/restore")]
-    [Authorize(AssetRepositoryServiceConstants.TenantAssetApiReadWritePolicy)]
-    [ProducesResponseType(typeof(BlueprintRestoreResultDto), StatusCodes.Status200OK)]
-    [ProducesResponseType(typeof(OperationFailedErrorDto), StatusCodes.Status400BadRequest)]
-    [ProducesResponseType(StatusCodes.Status404NotFound)]
-    [ProducesResponseType(typeof(InternalServerErrorDto), StatusCodes.Status500InternalServerError)]
-    public async Task<IActionResult> RestoreBackup(
-        [Required] string backupId,
-        CancellationToken cancellationToken = default)
-    {
-        try
-        {
-            var tenantId = HttpContext.GetTenantId();
-            if (string.IsNullOrEmpty(tenantId))
-            {
-                return BadRequest(new OperationFailedErrorDto("TenantId is required"));
-            }
-
-            if (string.IsNullOrEmpty(backupId))
-            {
-                return BadRequest(new OperationFailedErrorDto("BackupId is required"));
-            }
-
-            var result = await _blueprintService.RollbackAsync(tenantId, backupId, cancellationToken);
-
-            if (!result.Success)
-            {
-                return BadRequest(new OperationFailedErrorDto(
-                    string.Join(", ", result.Errors.Count > 0 ? result.Errors : ["Restore failed"])));
-            }
-
-            var response = new BlueprintRestoreResultDto
-            {
-                Success = result.Success,
-                EntitiesRestored = result.EntitiesRestored,
-                Messages = result.Warnings.ToList()
-            };
-
-            return Ok(response);
         }
         catch (PersistenceException e)
         {

@@ -24,7 +24,7 @@ internal sealed class BlueprintHistoryItemDtoType : ObjectGraphType<BlueprintHis
             .Resolve(ctx => ctx.Source!.AppliedAt);
 
         Field<NonNullGraphType<StringGraphType>>("applicationMode")
-            .Description("Application mode: Initial / ReApply / Update / Rollback / Uninstall.")
+            .Description("Application mode: Initial / Update / Migration / ReApply.")
             .Resolve(ctx => ctx.Source!.ApplicationMode);
 
         Field<StringGraphType>("previousVersion")

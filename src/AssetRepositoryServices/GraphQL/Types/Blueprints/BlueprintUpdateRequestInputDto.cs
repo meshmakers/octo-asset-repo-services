@@ -16,9 +16,6 @@ internal sealed class BlueprintUpdateRequestInputDto
     /// <summary>Update reconciliation mode. Defaults to <c>Merge</c>.</summary>
     public BlueprintUpdateMode UpdateMode { get; set; } = BlueprintUpdateMode.Merge;
 
-    /// <summary>Create a pre-update tenant snapshot. Defaults to <c>true</c>.</summary>
-    public bool CreateBackup { get; set; } = true;
-
     /// <summary>Compute the diff without persisting changes.</summary>
     public bool DryRun { get; set; }
 

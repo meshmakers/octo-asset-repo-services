@@ -16,11 +16,6 @@ public class BlueprintUpdateRequestDto
     public string UpdateMode { get; set; } = "Merge";
 
     /// <summary>
-    ///     Whether to create a backup before updating
-    /// </summary>
-    public bool CreateBackup { get; set; } = true;
-
-    /// <summary>
     ///     Whether this is a dry run (preview only, no changes)
     /// </summary>
     public bool DryRun { get; set; }

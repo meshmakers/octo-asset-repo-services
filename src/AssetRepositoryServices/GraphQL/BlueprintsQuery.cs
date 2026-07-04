@@ -15,7 +15,7 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL;
 /// Read-side blueprint resolvers. Mounted under the <c>blueprints</c> field on the tenant
 /// <c>OctoQuery</c> root. Delegates to <see cref="IBlueprintCatalogManager"/> for catalog
 /// discovery and <see cref="IBlueprintService"/> / <see cref="ITenantBlueprintHistory"/> /
-/// <see cref="ITenantBlueprintInstallations"/> / <see cref="ITenantBackupService"/> for
+/// <see cref="ITenantBlueprintInstallations"/> for
 /// tenant-scoped state — same wiring as the REST <c>BlueprintsController</c>, just exposed
 /// as typed GraphQL instead of REST DTOs.
 /// </summary>
@@ -28,7 +28,7 @@ internal sealed class BlueprintsQuery : ObjectGraphType
     {
         _logger = logger;
         Name = "BlueprintsQuery";
-        Description = "Blueprint catalog discovery + tenant-scoped installation, history, and backup queries.";
+        Description = "Blueprint catalog discovery + tenant-scoped installation and history queries.";
 
         Field<NonNullGraphType<BlueprintListResponseDtoType>>("list")
             .Description("Paged list of all blueprints across the configured catalogs.")
@@ -58,10 +58,6 @@ internal sealed class BlueprintsQuery : ObjectGraphType
         Field<BlueprintHistoryItemDtoType>("current")
             .Description("Most recent history entry, or null when no blueprint has been applied to the tenant yet.")
             .ResolveAsync(ResolveCurrentAsync);
-
-        Field<NonNullGraphType<ListGraphType<NonNullGraphType<BlueprintBackupDtoType>>>>("backups")
-            .Description("Pre-update tenant snapshots available for rollback.")
-            .ResolveAsync(ResolveBackupsAsync);
 
         Field<NonNullGraphType<BlueprintUpdateInfoDtoType>>("updateInfo")
             .Description("Available updates for the tenant's installed blueprint.")
@@ -175,30 +171,6 @@ internal sealed class BlueprintsQuery : ObjectGraphType
         catch (Exception e)
         {
             _logger.LogError(e, "Blueprint current query failed");
-            return ctx.HandleException(e);
-        }
-    }
-
-    private async Task<object?> ResolveBackupsAsync(IResolveFieldContext<object?> ctx)
-    {
-        try
-        {
-            var gql = (GraphQlUserContext)ctx.UserContext;
-            var backupService = ctx.RequestServices!.GetRequiredService<ITenantBackupService>();
-
-            var backups = await backupService.ListBackupsAsync(gql.TenantId, ctx.CancellationToken);
-            return backups.Select(b => new BlueprintBackupDto
-            {
-                BackupId = b.BackupId,
-                CreatedAt = b.CreatedAt,
-                BlueprintId = b.BlueprintVersion ?? string.Empty,
-                Reason = b.Reason ?? string.Empty,
-                SizeBytes = b.SizeBytes
-            }).ToList();
-        }
-        catch (Exception e)
-        {
-            _logger.LogError(e, "Blueprint backups query failed");
             return ctx.HandleException(e);
         }
     }
