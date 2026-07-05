@@ -92,8 +92,11 @@ internal sealed class RtSimpleQueryRowDtoType : ObjectGraphType<RtSimpleQueryRow
         RtEntityGraphItem rtEntity,
         CkTypeQueryColumn ckTypeQueryColumn, bool resolveEnumValuesToNames)
     {
-        // For N:M associations, return totalCount or exists based on path suffix
-        if (ckTypeQueryColumn.AssociationTuple is { Multiplicity: MultiplicitiesDto.N })
+        // For N:M association META columns (::totalCount / ::exists), return the count.
+        // Value columns across an N association (nav.type->attr, AB#4323) also carry the
+        // association tuple but resolve to the first matching target's attribute value below.
+        if (ckTypeQueryColumn.AssociationTuple is { Multiplicity: MultiplicitiesDto.N } &&
+            ckTypeQueryColumn.Path.Contains("::"))
         {
             var accessPathList = ckTypeQueryColumn.AccessPathList.ToArray();
             var navigationTerm = accessPathList.FirstOrDefault(p => p.Type == PathType.Navigation);
@@ -115,6 +118,15 @@ internal sealed class RtSimpleQueryRowDtoType : ObjectGraphType<RtSimpleQueryRow
         var resolveFlags = resolveEnumValuesToNames
             ? AttributeValueResolveFlags.ResolveEnumsToNames
             : AttributeValueResolveFlags.Default;
+
+        // Navigated value columns resolve per row to the deterministic first match instead of
+        // failing the whole rows connection with MultipleNavigationEndsUnsupported. This covers
+        // N-multiplicity navigation (AB#4323) including enum columns, whose collector
+        // constructor cannot carry the association tuple.
+        if (ckTypeQueryColumn.AccessPathList.Any(p => p.Type == PathType.Navigation))
+        {
+            resolveFlags |= AttributeValueResolveFlags.FirstMatchNavigation;
+        }
 
         var cellDto = new RtQueryCellDto
         {

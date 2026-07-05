@@ -70,18 +70,19 @@ public sealed class RtTransientQuery: ObjectGraphType
         var columnPaths = arg.GetArgument<IEnumerable<string>>(Statics.ColumnPathsArg);
         var columnPathList = columnPaths.ToList();
 
-        var typeQueryColumnPaths =
-            ckCacheService.GetCkTypeQueryColumnPathsByRtCkId(graphQlUserContext.TenantId, queryCkTypeId);
-        var invalidColumnPaths = columnPathList
-            .Where(cp => typeQueryColumnPaths.All(ckTypeQueryColumn => ckTypeQueryColumn.Path != cp)).ToList();
+        var typeQueryColumnPaths = QueryColumnPathResolver.GetColumnsForPaths(ckCacheService,
+            graphQlUserContext.TenantId, queryCkTypeId, columnPathList);
+        var resolvedColumns = columnPathList
+            .Select(cp => (Path: cp, Column: QueryColumnPathResolver.TryResolveColumn(typeQueryColumnPaths, cp)))
+            .ToList();
+        var invalidColumnPaths = resolvedColumns.Where(rc => rc.Column == null).Select(rc => rc.Path).ToList();
         if (invalidColumnPaths.Any())
         {
             throw AssetRepositoryException.InvalidColumnPaths(invalidColumnPaths);
         }
 
-        var selectedTypeQueryColumns = typeQueryColumnPaths
-            .Where(ckTypeQueryColumn => columnPathList.Contains(ckTypeQueryColumn.Path))
-            .Select(ckTypeQueryColumn => Tuple.Create(ckTypeQueryColumn, AggregationTypesDto.None))
+        var selectedTypeQueryColumns = resolvedColumns
+            .Select(rc => Tuple.Create(rc.Column!, AggregationTypesDto.None))
             .ToList();
 
         var queryOptions = arg.GetQueryOptions();
@@ -105,9 +106,9 @@ public sealed class RtTransientQuery: ObjectGraphType
         var columnPaths = arg.GetArgument<IEnumerable<RtQueryColumnInputDto>>(Statics.ColumnPathsArg);
         var columnPathList = columnPaths.ToList();
 
-        var typeQueryColumnPaths =
-            ckCacheService.GetCkTypeQueryColumnPathsByRtCkId(graphQlUserContext.TenantId,
-                queryCkTypeId);
+        var typeQueryColumnPaths = QueryColumnPathResolver.GetColumnsForPaths(ckCacheService,
+            graphQlUserContext.TenantId, queryCkTypeId,
+            columnPathList.Select(c => c.AttributePath).ToList());
         var invalidColumnPaths = columnPathList.Where(cp => typeQueryColumnPaths.All(ckTypeQueryColumn => ckTypeQueryColumn.Path != cp.AttributePath)).ToList();
         if (invalidColumnPaths.Any())
         {
@@ -146,8 +147,9 @@ public sealed class RtTransientQuery: ObjectGraphType
         var columnPaths = arg.GetArgument<IEnumerable<RtQueryColumnInputDto>>(Statics.ColumnPathsArg);
         var columnPathList = columnPaths.ToList();
 
-        var typeQueryColumnPaths =
-            ckCacheService.GetCkTypeQueryColumnPathsByRtCkId(graphQlUserContext.TenantId, queryCkTypeId);
+        var typeQueryColumnPaths = QueryColumnPathResolver.GetColumnsForPaths(ckCacheService,
+            graphQlUserContext.TenantId, queryCkTypeId,
+            groupByColumnPathList.Concat(columnPathList.Select(c => c.AttributePath)).ToList());
 
         // Validate groupBy column paths
         var invalidGroupByColumnPaths = groupByColumnPathList

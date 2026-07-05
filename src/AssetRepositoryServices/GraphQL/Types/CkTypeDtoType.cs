@@ -57,6 +57,10 @@ internal sealed class CkTypeDtoType : ObjectGraphType<CkTypeDto>
                 "When false, navigation properties are excluded. Default: true.")
             .Argument<IntGraphType>(Statics.MaxDepthArg,
                 "Limits the depth of navigation property traversal. Default: 1.")
+            .Argument<BooleanGraphType>("includeManyNavigations",
+                "When true, value navigation columns across inbound and N-multiplicity associations " +
+                "are included (first-match semantics). Default: false — the fan-out multiplies the " +
+                "column count on densely connected models.")
             .Resolve(ResolveAvailableQueryColumns);
 
         Connection<CkTypeDtoType>("derivedTypes")
@@ -146,6 +150,8 @@ internal sealed class CkTypeDtoType : ObjectGraphType<CkTypeDto>
             out bool? includeNavigationProperties);
         arg.TryGetArgument(Statics.MaxDepthArg,
             out int? maxDepth);
+        arg.TryGetArgument("includeManyNavigations",
+            out bool? includeManyNavigations);
 
         var options = new CkTypeQueryColumnOptions
         {
@@ -155,7 +161,8 @@ internal sealed class CkTypeDtoType : ObjectGraphType<CkTypeDto>
             // expansion is combinatorial and trips the engine's MaxColumns fail-fast cap, leaving
             // the column picker with no columns at all. Deeper traversal must be requested
             // explicitly via maxDepth.
-            MaxDepth = maxDepth ?? DefaultNavigationMaxDepth
+            MaxDepth = maxDepth ?? DefaultNavigationMaxDepth,
+            IncludeManyNavigations = includeManyNavigations ?? false
         };
 
         var resultList =

@@ -1087,4 +1087,120 @@ public class RtTransientQueryTests : IClassFixture<GraphQlTestFixture>
     }
 
     #endregion
+
+    #region Inbound / N-multiplicity value navigation (AB#4323)
+
+    [Fact]
+    public async Task TransientSimpleQuery_InboundNValueColumn_ResolvesFirstMatchPerRow()
+    {
+        // Vehicle <- (inbound System/ParentChild "Children", N) - VehicleReading.
+        // The value column resolves per vehicle to the FIRST reading (ordered by rtId).
+        var query = """
+            query {
+              runtime {
+                transientQuery {
+                  simple(
+                    ckId: "AssetRepositoryIntegrationTest/Vehicle"
+                    columnPaths: ["rtWellKnownName", "children.assetRepositoryIntegrationTestVehicleReading->readingValue"]
+                  ) {
+                    items {
+                      rows {
+                        items {
+                          ... on RtSimpleQueryRow {
+                            rtWellKnownName
+                            cells {
+                              items {
+                                attributePath
+                                value
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+            """;
+
+        var result = await _fixture.ExecuteGraphQlAsync(query);
+
+        result.Should().NotBeNull();
+        result.Errors.Should().BeNullOrEmpty();
+
+        var answer = JObject.Parse(_fixture.SerializeGraphQl(result));
+        var rows = (JArray)answer.SelectToken("data.runtime.transientQuery.simple.items[0].rows.items")!;
+
+        // Include mode: vehicles without readings must still appear
+        rows.Should().HaveCount(4);
+
+        var readingByVehicle = rows.ToDictionary(
+            r => (string)r["rtWellKnownName"]!,
+            r => ((JArray)r.SelectToken("cells.items")!)
+                .Single(c => ((string)c["attributePath"]!).Contains("->"))["value"]);
+
+        // BMW has readings ...ffff0001 (45678.5) and ...ffff0002 (75.0); first by rtId wins
+        ((double?)readingByVehicle["CarSalzburgABC123"]).Should().Be(45678.5);
+        ((double?)readingByVehicle["TruckSalzburgDEF456"]).Should().Be(2500.0);
+        ((double?)readingByVehicle["TruckElsbethenGHI012"]).Should().Be(12345.0);
+        // VW Golf has no readings; null cell, row still present (Include mode)
+        readingByVehicle["CarSalzburgXYZ789"]!.Type.Should().Be(JTokenType.Null);
+    }
+
+    [Fact]
+    public async Task TransientSimpleQuery_InboundNValueColumn_WithEntitySelector_PinsTarget()
+    {
+        // The entity selector pins the exact reading; rows without a match get null.
+        var query = """
+            query {
+              runtime {
+                transientQuery {
+                  simple(
+                    ckId: "AssetRepositoryIntegrationTest/Vehicle"
+                    columnPaths: ["rtWellKnownName", "children.assetRepositoryIntegrationTestVehicleReading[wellKnownName='ReadingBMW320i_002']->readingValue"]
+                  ) {
+                    items {
+                      rows {
+                        items {
+                          ... on RtSimpleQueryRow {
+                            rtWellKnownName
+                            cells {
+                              items {
+                                attributePath
+                                value
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+            """;
+
+        var result = await _fixture.ExecuteGraphQlAsync(query);
+
+        result.Should().NotBeNull();
+        result.Errors.Should().BeNullOrEmpty();
+
+        var answer = JObject.Parse(_fixture.SerializeGraphQl(result));
+        var rows = (JArray)answer.SelectToken("data.runtime.transientQuery.simple.items[0].rows.items")!;
+        rows.Should().HaveCount(4);
+
+        var readingByVehicle = rows.ToDictionary(
+            r => (string)r["rtWellKnownName"]!,
+            r => ((JArray)r.SelectToken("cells.items")!)
+                .Single(c => ((string)c["attributePath"]!).Contains("->"))["value"]);
+
+        // The selected reading (75.0) belongs to the BMW; without the selector the first
+        // reading (45678.5) would win
+        ((double?)readingByVehicle["CarSalzburgABC123"]).Should().Be(75.0);
+        // Other vehicles have no matching child; null cell, row still present
+        readingByVehicle["TruckSalzburgDEF456"]!.Type.Should().Be(JTokenType.Null);
+    }
+
+    #endregion
 }

@@ -10,6 +10,7 @@ using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
 using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.ConstructionKit.Contracts.DataTransferObjects;
 using Meshmakers.Octo.ConstructionKit.Contracts.DependencyGraph;
+using Meshmakers.Octo.ConstructionKit.Contracts.Services;
 using Meshmakers.Octo.ConstructionKit.Models.System.Generated.System.v2;
 using Meshmakers.Octo.Runtime.Contracts;
 using Meshmakers.Octo.Runtime.Contracts.Repositories;
@@ -191,10 +192,13 @@ internal sealed class RtQueryDtoType : ObjectGraphType<RtQueryDto>
                 tenantRepository.TenantId, rtQueryDto.AssociatedCkTypeId,
                 columnPaths, fieldFilters);
 
-            // For N:M column-only navigation pairs (no field filter, default totalCount >= 0),
-            // use Include mode so entities without associations are not filtered out
+            // For N:M column-only navigation pairs (no field filter, default totalCount >= 0)
+            // and for value navigation across N-multiplicity associations (AB#4323),
+            // use Include mode so entities without associations are not filtered out —
+            // a Space without the selected sensor must still appear with a null cell.
             if (roleIdDirectionPairs.Any(np =>
-                    np.AssociationCountFilter is { Operator: FieldFilterOperator.GreaterEqualThan, ComparisonValue: 0 }))
+                    np.AssociationCountFilter is { Operator: FieldFilterOperator.GreaterEqualThan, ComparisonValue: 0 } ||
+                    QueryColumnPathResolver.IsFirstMatchValueNavigation(np, ckCacheService, tenantRepository.TenantId)))
             {
                 queryOptions.UseNavigationFilterMode(NavigationFilterMode.Include);
             }

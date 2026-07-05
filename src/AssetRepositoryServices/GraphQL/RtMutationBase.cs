@@ -1,6 +1,7 @@
 using GraphQL.Types;
 using Meshmakers.Common.Shared;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Utils;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.Services;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
 using Meshmakers.Octo.ConstructionKit.Contracts;
@@ -91,17 +92,20 @@ internal abstract class RtMutationBase : ObjectGraphType
             resultSetComplete.AddRange(resultSet.Items);
         }
 
-        var typeQueryColumnPaths = ckCacheService.GetCkTypeQueryColumnPathsByRtCkId(repository.TenantId, rtQuery.QueryCkTypeId);
-        var invalidColumnPaths = rtQuery.Columns
-            .Where(cp => typeQueryColumnPaths.All(ckTypeQueryColumn => ckTypeQueryColumn.Path != cp)).ToList();
+        var storedColumnPaths = rtQuery.Columns.ToList();
+        var typeQueryColumnPaths = QueryColumnPathResolver.GetColumnsForPaths(ckCacheService,
+            repository.TenantId, rtQuery.QueryCkTypeId, storedColumnPaths);
+        var resolvedColumns = storedColumnPaths
+            .Select(cp => (Path: cp, Column: QueryColumnPathResolver.TryResolveColumn(typeQueryColumnPaths, cp)))
+            .ToList();
+        var invalidColumnPaths = resolvedColumns.Where(rc => rc.Column == null).Select(rc => rc.Path).ToList();
         if (invalidColumnPaths.Any())
         {
             throw OctoGraphQLException.InvalidColumnPaths(invalidColumnPaths);
         }
 
-        var selectedTypeQueryColumns = typeQueryColumnPaths
-            .Where(ckTypeQueryColumn => rtQuery.Columns.Contains(ckTypeQueryColumn.Path))
-            .Select(ckTypeQueryColumn => Tuple.Create(ckTypeQueryColumn, AggregationTypesDto.None))
+        var selectedTypeQueryColumns = resolvedColumns
+            .Select(rc => Tuple.Create(rc.Column!, AggregationTypesDto.None))
             .ToList();
 
         return resultSetComplete.Select((entity, _) =>

@@ -144,4 +144,24 @@ public class CkTypeAvailableQueryColumnsTests : IClassFixture<CkQueryTestFixture
             column["attributePath"]!.Value<string>()!.ToLower().Should().Contain("rtid");
         }
     }
+
+    [Fact]
+    public async Task AvailableQueryColumns_IncludeManyNavigations_AddsNValueColumns()
+    {
+        // System/Entity carries the Related self-association (N:N, outbound RelatesTo /
+        // inbound RelatesFrom). Value columns across N navigations are opt-in (AB#4323).
+        var defaultColumns = await QueryAvailableColumnsAsync();
+        defaultColumns.Should().NotContain(c =>
+            c!["attributePath"]!.Value<string>()!.StartsWith("relatesTo.") &&
+            c["attributePath"]!.Value<string>()!.Contains("->"));
+
+        var manyColumns = await QueryAvailableColumnsAsync("includeManyNavigations: true");
+        manyColumns.Should().Contain(c =>
+            c!["attributePath"]!.Value<string>()!.StartsWith("relatesTo.") &&
+            c["attributePath"]!.Value<string>()!.Contains("->"));
+        // Inbound navigation value columns are offered too
+        manyColumns.Should().Contain(c =>
+            c!["attributePath"]!.Value<string>()!.StartsWith("relatesFrom.") &&
+            c["attributePath"]!.Value<string>()!.Contains("->"));
+    }
 }
