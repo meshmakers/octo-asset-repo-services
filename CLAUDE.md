@@ -93,6 +93,13 @@ Three execution shapes, all archive-driven (per CK Archive snapshot, which carri
 | `streamData.streamDataQuery(rtId)` | Execute a persisted `RtStreamDataQuery`. Loaded entity holds `ArchiveRtId`, columns, filters, sort, time range. The resolver dispatches to the correct repo method based on the loaded subtype (`RtSimpleSdQuery` / `RtAggregationSdQuery` / `RtGroupingAggregationSdQuery` / `RtDownsamplingSdQuery`). |
 | `streamData.transientStreamDataQuery` | Ad-hoc execution without persistence. Four sub-connections: `simple`, `aggregation`, `groupingAggregation`, `downsampling`. The server derives `ckTypeId` from the archive snapshot (no client argument). All four resolvers collect CK query columns with `IgnoreNavigationProperties = true` — archive tables only carry physical columns, and unbounded navigation expansion over a densely connected CK model explodes combinatorially (observed as a >60 GB runaway allocation that killed the service; the engine additionally enforces `CkTypeQueryColumnOptions.MaxColumns` as a fail-fast cap). |
 
+For the same reason, the CK metadata connection `constructionKit.types.availableQueryColumns`
+(`CkTypeDtoType.ResolveAvailableQueryColumns`) defaults `maxDepth` to **1** when navigation
+properties are included and no explicit depth is given — one navigation level instead of
+unbounded traversal, so column pickers keep working on densely connected models instead of
+tripping the `MaxColumns` cap and erroring with an empty list. Deeper traversal must be
+requested explicitly via the `maxDepth` argument (still backstopped by `MaxColumns`).
+
 Both surfaces accept runtime overrides on the `rows` / sub-connection level:
 
 - `arg: StreamDataArguments` — override time range and limit

@@ -18,6 +18,8 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
 // ReSharper disable once ClassNeverInstantiated.Global
 internal sealed class CkTypeDtoType : ObjectGraphType<CkTypeDto>
 {
+    private const int DefaultNavigationMaxDepth = 1;
+
     public CkTypeDtoType()
     {
         Name = "CkType";
@@ -54,7 +56,7 @@ internal sealed class CkTypeDtoType : ObjectGraphType<CkTypeDto>
             .Argument<BooleanGraphType>(Statics.IncludeNavigationPropertiesArg,
                 "When false, navigation properties are excluded. Default: true.")
             .Argument<IntGraphType>(Statics.MaxDepthArg,
-                "Limits the depth of navigation property traversal.")
+                "Limits the depth of navigation property traversal. Default: 1.")
             .Resolve(ResolveAvailableQueryColumns);
 
         Connection<CkTypeDtoType>("derivedTypes")
@@ -148,7 +150,12 @@ internal sealed class CkTypeDtoType : ObjectGraphType<CkTypeDto>
         var options = new CkTypeQueryColumnOptions
         {
             IgnoreNavigationProperties = includeNavigationProperties.HasValue && !includeNavigationProperties.Value,
-            MaxDepth = maxDepth
+            // No explicit depth means ONE navigation level, not unbounded traversal — on a densely
+            // connected model (self-association on a root type + derived-type fan-out) unbounded
+            // expansion is combinatorial and trips the engine's MaxColumns fail-fast cap, leaving
+            // the column picker with no columns at all. Deeper traversal must be requested
+            // explicitly via maxDepth.
+            MaxDepth = maxDepth ?? DefaultNavigationMaxDepth
         };
 
         var resultList =
