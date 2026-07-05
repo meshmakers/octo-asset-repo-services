@@ -242,9 +242,16 @@ internal sealed class StreamDataQuery : ObjectGraphType
             // Build the column list from the concrete subtype so clients can inspect them.
             // The CK cache lookup gives us the real attributeValueType per column path —
             // hardcoding `STRING` here (the bug) breaks numeric pickers in studio dialogs.
+            //
+            // Stream-data archives only carry physical columns — navigation paths are meaningless
+            // for CrateDB tables, and unbounded navigation expansion over a densely connected CK
+            // model explodes combinatorially (same landmine the four transient resolvers already
+            // defused; without this option loading ANY persisted SD query on such a model fails
+            // with the MaxColumns cap before the resolver even returns metadata).
             var ckCacheService = arg.GetCkCacheService();
             var typeQueryColumns = ckCacheService
-                .GetCkTypeQueryColumnPathsByRtCkId(graphQlUserContext.TenantId, new RtCkId<CkTypeId>(loaded.QueryCkTypeId));
+                .GetCkTypeQueryColumnPathsByRtCkId(graphQlUserContext.TenantId, new RtCkId<CkTypeId>(loaded.QueryCkTypeId),
+                    new CkTypeQueryColumnOptions { IgnoreNavigationProperties = true });
             var columns = BuildColumnsFromLoaded(loaded, typeQueryColumns);
 
             var dto = new StreamDataQueryDto

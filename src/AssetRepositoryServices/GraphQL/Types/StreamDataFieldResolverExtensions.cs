@@ -1,6 +1,7 @@
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Utils;
 using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.ConstructionKit.Contracts.DataTransferObjects;
+using Meshmakers.Octo.ConstructionKit.Contracts.DependencyGraph;
 using Meshmakers.Octo.ConstructionKit.Contracts.Services;
 using Meshmakers.Octo.Runtime.Contracts.Repositories.Query;
 using Meshmakers.Octo.Runtime.Contracts.StreamData;
@@ -31,7 +32,11 @@ internal static class StreamDataFieldResolverExtensions
         var enumColumns = new Dictionary<string, CkId<CkEnumId>>(StringComparer.OrdinalIgnoreCase);
         try
         {
-            foreach (var c in ckCacheService.GetCkTypeQueryColumnPathsByRtCkId(tenantId, ckTypeId))
+            // Stream-data archives only carry physical columns — skip navigation expansion,
+            // which explodes combinatorially on densely connected CK models (see the transient
+            // stream-data resolvers). Enum-typed columns are always direct attributes.
+            foreach (var c in ckCacheService.GetCkTypeQueryColumnPathsByRtCkId(tenantId, ckTypeId,
+                         new CkTypeQueryColumnOptions { IgnoreNavigationProperties = true }))
             {
                 if (c.ValueType == AttributeValueTypesDto.Enum && c.CkEnumId != null)
                 {
