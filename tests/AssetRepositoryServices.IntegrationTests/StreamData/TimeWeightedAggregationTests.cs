@@ -174,6 +174,48 @@ public class TimeWeightedAggregationTests(StreamDataFixture fixture, ITestOutput
     }
 
     [Fact]
+    public async Task RawGroupedStateDurationQuery_MatchesHandComputedMsInState()
+    {
+        // The exact path the energyiq burn-time board uses (AB#4341): a grouped StateDuration
+        // query over the raw event archive. status == 2 held from 11:15 to 11:45 for A
+        // (1 800 000 ms); B never reaches state 2 → 0 (its carry is state 1). NULL comparison
+        // value is rejected.
+        var setup = await CreateEventArchiveWithRollupAsync("StateDurationRaw");
+        var repo = setup.Repo;
+
+        var options = StreamDataGroupedAggregationQueryOptions.Create()
+            .WithCkTypeId(new RtCkId<CkTypeId>(fixture.TestCkTypeId))
+            .WithGroupByColumns(new List<string> { "rtId" })
+            .WithAggregationColumns(new List<AggregationColumn>
+            {
+                new("OperatingStatus", AggregationFunction.StateDuration, "2"),
+            })
+            .WithTimeRange(B0Start, B2End);
+
+        var result = await repo.ExecuteGroupedAggregationQueryAsync(setup.SourceRtId, options);
+
+        result.Rows.Should().HaveCount(2);
+        StateDurationFor(result.Rows, setup.RtIdA).Should().Be(1_800_000L);
+        StateDurationFor(result.Rows, setup.RtIdB).Should().Be(0L, "B's carry is state 1, never 2, and it has no state-2 event");
+    }
+
+    [Fact]
+    public async Task RawStateDurationQuery_WithoutComparisonValue_Throws()
+    {
+        var setup = await CreateEventArchiveWithRollupAsync("StateDurationGuard");
+        var options = StreamDataAggregationQueryOptions.Create()
+            .WithCkTypeId(new RtCkId<CkTypeId>(fixture.TestCkTypeId))
+            .WithAggregationColumns(new List<AggregationColumn>
+            {
+                new("OperatingStatus", AggregationFunction.StateDuration),
+            })
+            .WithTimeRange(B0Start, B2End);
+
+        var act = async () => await setup.Repo.ExecuteAggregationQueryAsync(setup.SourceRtId, options);
+        await act.Should().ThrowAsync<Exception>();
+    }
+
+    [Fact]
     public async Task CascadeRollup_SumChainedTwaPair_RecombinesExactly()
     {
         var setup = await CreateEventArchiveWithRollupAsync("TwaCascade");
@@ -332,6 +374,13 @@ public class TimeWeightedAggregationTests(StreamDataFixture fixture, ITestOutput
         var row = rows.Single(r =>
             string.Equals(r.Values.TryGetValue("rtid", out var v) ? v?.ToString() : null, rtId, StringComparison.Ordinal));
         return Convert.ToDouble(row.Values["voltage_twavg"], CultureInfo.InvariantCulture);
+    }
+
+    private static long StateDurationFor(IReadOnlyList<StreamDataRow> rows, string rtId)
+    {
+        var row = rows.Single(r =>
+            string.Equals(r.Values.TryGetValue("rtid", out var v) ? v?.ToString() : null, rtId, StringComparison.Ordinal));
+        return Convert.ToInt64(row.Values["operatingstatus_stateduration"], CultureInfo.InvariantCulture);
     }
 
     private static long ToUnixMs(DateTime utc) => new DateTimeOffset(utc).ToUnixTimeMilliseconds();

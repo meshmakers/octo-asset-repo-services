@@ -223,7 +223,8 @@ internal sealed class StreamDataTransientQuery : ObjectGraphType
             var aggColumns = columnInputs
                 .Select(c => new AggregationColumn(
                     c.AttributePath,
-                    StreamDataGraphQlMapper.MapAggregationFunctionDto(c.AggregationType)))
+                    StreamDataGraphQlMapper.MapAggregationFunctionDto(c.AggregationType),
+                    c.ComparisonValue))
                 .ToList();
 
             // Stream-data archives only carry physical columns — navigation paths are meaningless
@@ -291,7 +292,8 @@ internal sealed class StreamDataTransientQuery : ObjectGraphType
             var aggColumns = columnInputs
                 .Select(c => new AggregationColumn(
                     c.AttributePath,
-                    StreamDataGraphQlMapper.MapAggregationFunctionDto(c.AggregationType)))
+                    StreamDataGraphQlMapper.MapAggregationFunctionDto(c.AggregationType),
+                    c.ComparisonValue))
                 .ToList();
 
             // Stream-data archives only carry physical columns — navigation paths are meaningless
@@ -363,7 +365,8 @@ internal sealed class StreamDataTransientQuery : ObjectGraphType
             var aggColumns = columnInputs
                 .Select(c => new AggregationColumn(
                     c.AttributePath,
-                    StreamDataGraphQlMapper.MapAggregationFunctionDto(c.AggregationType)))
+                    StreamDataGraphQlMapper.MapAggregationFunctionDto(c.AggregationType),
+                    c.ComparisonValue))
                 .ToList();
 
             // Stream-data archives only carry physical columns — navigation paths are meaningless
@@ -422,6 +425,8 @@ internal sealed class StreamDataTransientQuery : ObjectGraphType
             AggregationFunctionDto.Max   => AggregationTypesDto.Maximum,
             AggregationFunctionDto.Count => AggregationTypesDto.Count,
             AggregationFunctionDto.Sum   => AggregationTypesDto.Sum,
+            AggregationFunctionDto.TimeWeightedAvg => AggregationTypesDto.TimeWeightedAverage,
+            AggregationFunctionDto.StateDuration => AggregationTypesDto.StateDuration,
             _ => AggregationTypesDto.None
         };
     }
@@ -480,6 +485,8 @@ internal sealed class StreamDataTransientQuery : ObjectGraphType
             AggregationTypesDto.Average => Meshmakers.Octo.ConstructionKit.Contracts.DataTransferObjects.AttributeValueTypesDto.Double,
             AggregationTypesDto.Minimum => sourceType,
             AggregationTypesDto.Maximum => sourceType,
+            // AB#4341: absolute milliseconds-in-state — an integer duration regardless of source.
+            AggregationTypesDto.StateDuration => Meshmakers.Octo.ConstructionKit.Contracts.DataTransferObjects.AttributeValueTypesDto.Integer,
             _ => sourceType
         };
     }

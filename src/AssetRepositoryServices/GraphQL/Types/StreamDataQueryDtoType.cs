@@ -259,7 +259,8 @@ internal sealed class StreamDataQueryDtoType : ObjectGraphType<StreamDataQueryDt
                     var aggInputAgg = aggregationColumns
                         .Select(c => new AggregationColumn(
                             c.AttributePath,
-                            StreamDataGraphQlMapper.MapCkAggregationType(c.AggregationType)))
+                            StreamDataGraphQlMapper.MapCkAggregationType(c.AggregationType),
+                            c.ComparisonValue))
                         .ToList();
                     resolvedColumnNames = fieldResolver.ResolveAggregationMappings(aggInputAgg, enumIdResolver);
 
@@ -271,7 +272,8 @@ internal sealed class StreamDataQueryDtoType : ObjectGraphType<StreamDataQueryDt
                         AggregationColumns = aggregationColumns
                             .Select(c => new AggregationColumn(
                                 c.AttributePath,
-                                StreamDataGraphQlMapper.MapCkAggregationType(c.AggregationType)))
+                                StreamDataGraphQlMapper.MapCkAggregationType(c.AggregationType),
+                                c.ComparisonValue))
                             .ToList(),
                         RtIds = execOverride?.RtIds ?? aggregation.RtIds?.Select(id => new OctoObjectId(id)).ToList(),
                         From = execOverride?.From ?? aggregation.From,
@@ -307,7 +309,8 @@ internal sealed class StreamDataQueryDtoType : ObjectGraphType<StreamDataQueryDt
                     var aggInputGrp = aggregationColumns
                         .Select(c => new AggregationColumn(
                             c.AttributePath,
-                            StreamDataGraphQlMapper.MapCkAggregationType(c.AggregationType)))
+                            StreamDataGraphQlMapper.MapCkAggregationType(c.AggregationType),
+                            c.ComparisonValue))
                         .ToList();
                     resolvedColumnNames = fieldResolver
                         .ResolveToMappings(groupingColumns, enumIdResolver)
@@ -323,7 +326,8 @@ internal sealed class StreamDataQueryDtoType : ObjectGraphType<StreamDataQueryDt
                         AggregationColumns = aggregationColumns
                             .Select(c => new AggregationColumn(
                                 c.AttributePath,
-                                StreamDataGraphQlMapper.MapCkAggregationType(c.AggregationType)))
+                                StreamDataGraphQlMapper.MapCkAggregationType(c.AggregationType),
+                                c.ComparisonValue))
                             .ToList(),
                         RtIds = execOverride?.RtIds ?? grouping.RtIds?.Select(id => new OctoObjectId(id)).ToList(),
                         From = execOverride?.From ?? grouping.From,
@@ -358,7 +362,8 @@ internal sealed class StreamDataQueryDtoType : ObjectGraphType<StreamDataQueryDt
                     var aggInputDs = aggregationColumns
                         .Select(c => new AggregationColumn(
                             c.AttributePath,
-                            StreamDataGraphQlMapper.MapCkAggregationType(c.AggregationType)))
+                            StreamDataGraphQlMapper.MapCkAggregationType(c.AggregationType),
+                            c.ComparisonValue))
                         .ToList();
                     // Timestamp first (canonical PascalCase, wire camelCase), then aggregation
                     // columns with function-suffixed keys (matches engine MapAggregationRow).
@@ -375,7 +380,8 @@ internal sealed class StreamDataQueryDtoType : ObjectGraphType<StreamDataQueryDt
                         AggregationColumns = aggregationColumns
                             .Select(c => new AggregationColumn(
                                 c.AttributePath,
-                                StreamDataGraphQlMapper.MapCkAggregationType(c.AggregationType)))
+                                StreamDataGraphQlMapper.MapCkAggregationType(c.AggregationType),
+                                c.ComparisonValue))
                             .ToList(),
                         RtIds = execOverride?.RtIds ?? downsampling.RtIds?.Select(id => new OctoObjectId(id)).ToList(),
                         From = execOverride?.From ?? downsampling.From,

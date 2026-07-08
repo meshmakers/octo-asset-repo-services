@@ -17,6 +17,13 @@ public class StreamDataQueryColumnInputDto
     ///     The attribute path to aggregate.
     /// </summary>
     public string AttributePath { get; set; } = string.Empty;
+
+    /// <summary>
+    ///     State literal a STATE_DURATION column matches the attribute against — a number ('2'),
+    ///     a boolean ('true'/'false') or a string state name. Required for STATE_DURATION;
+    ///     ignored for every other aggregation type. AB#4336 / AB#4341.
+    /// </summary>
+    public string? ComparisonValue { get; set; }
 }
 
 internal sealed class StreamDataQueryColumnInputDtoType : InputObjectGraphType<StreamDataQueryColumnInputDto>
@@ -26,5 +33,7 @@ internal sealed class StreamDataQueryColumnInputDtoType : InputObjectGraphType<S
         Name = "StreamDataQueryColumnInput";
         Field(x => x.AggregationType, typeof(NonNullGraphType<AggregationGraphType>));
         Field(x => x.AttributePath, typeof(NonNullGraphType<StringGraphType>));
+        Field(x => x.ComparisonValue, typeof(StringGraphType))
+            .Description("State literal a STATE_DURATION column matches the attribute against (number / true / false / string). Required for STATE_DURATION; ignored otherwise.");
     }
 }

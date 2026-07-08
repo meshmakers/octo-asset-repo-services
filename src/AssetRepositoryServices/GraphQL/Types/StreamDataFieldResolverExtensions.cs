@@ -122,6 +122,9 @@ internal static class StreamDataFieldResolverExtensions
         // rollup column naming (AB#4336 decision D5) — the enum name would drift to
         // "timeweightedaverage" and the cell lookup would miss the engine's output key.
         AggregationFunction.TimeWeightedAverage => "twavg",
+        // "stateduration" also equals the enum-name fallback, but be explicit so the alias
+        // contract stays visible next to the engine's "{col}_stateduration" output (AB#4341).
+        AggregationFunction.StateDuration => "stateduration",
         _ => f.ToString().ToLowerInvariant()
     };
 
