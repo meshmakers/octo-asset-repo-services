@@ -458,7 +458,8 @@ internal sealed class StreamDataMutation : ObjectGraphType
                 TimeSpan.FromMilliseconds(input.WatermarkLagMs),
                 aggregations,
                 input.BucketAlignment,
-                input.ReferenceTimeZone);
+                input.ReferenceTimeZone,
+                input.CarryLookbackMs is { } carryMs ? TimeSpan.FromMilliseconds(carryMs) : null);
 
             return rtId;
         }

@@ -32,6 +32,13 @@ internal sealed class CreateRollupArchiveInputDto
     /// </summary>
     public string? ReferenceTimeZone { get; set; }
 
+    /// <summary>
+    /// Optional bound on the TimeWeightedAvg carry-in scan (LOCF opening state) in milliseconds
+    /// (AB#4336 / decision D1). Null keeps the engine default of 35 days. Only meaningful when the
+    /// aggregations include TIME_WEIGHTED_AVG; ignored otherwise.
+    /// </summary>
+    public long? CarryLookbackMs { get; set; }
+
     public List<RollupAggregationInputDto> Aggregations { get; set; } = new();
 }
 

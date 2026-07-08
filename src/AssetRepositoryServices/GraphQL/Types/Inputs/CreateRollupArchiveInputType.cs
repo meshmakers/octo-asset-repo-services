@@ -37,6 +37,9 @@ internal sealed class CreateRollupArchiveInputType : InputObjectGraphType<Create
         Field<StringGraphType>("referenceTimeZone")
             .Description("Optional IANA reference time-zone (e.g. 'Europe/Vienna') that aligns calendar bucket boundaries to local wall-clock time so they are DST-correct. Null keeps UTC boundaries. Ignored for FIXED_SIZE; an unknown zone id is rejected.");
 
+        Field<LongGraphType>("carryLookbackMs")
+            .Description("Optional bound on the TIME_WEIGHTED_AVG carry-in scan (last observation carried forward) in milliseconds. Null keeps the engine default of 35 days. Only meaningful when the aggregations include TIME_WEIGHTED_AVG; ignored otherwise. Must be > 0 when set.");
+
         Field<NonNullGraphType<ListGraphType<NonNullGraphType<RollupAggregationInputType>>>>("aggregations")
             .Description("Aggregation specs. At least one required; duplicate target column names are rejected.");
     }
