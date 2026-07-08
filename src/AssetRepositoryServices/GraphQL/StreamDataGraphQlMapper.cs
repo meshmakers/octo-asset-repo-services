@@ -95,6 +95,8 @@ internal static class StreamDataGraphQlMapper
             "Min"     => AggregationFunction.Minimum,
             "Maximum" => AggregationFunction.Maximum,
             "Max"     => AggregationFunction.Maximum,
+            "TimeWeightedAverage" => AggregationFunction.TimeWeightedAverage,
+            "TimeWeightedAvg"     => AggregationFunction.TimeWeightedAverage,
             _ => throw new ArgumentOutOfRangeException(nameof(aggregationType), aggregationType,
                 $"Unknown aggregation type: {name}")
         };
@@ -119,6 +121,8 @@ internal static class StreamDataGraphQlMapper
                 => AggregationFunction.Count,
             Meshmakers.Octo.Runtime.Engine.CrateDb.Dtos.AggregationFunctionDto.Sum
                 => AggregationFunction.Sum,
+            Meshmakers.Octo.Runtime.Engine.CrateDb.Dtos.AggregationFunctionDto.TimeWeightedAvg
+                => AggregationFunction.TimeWeightedAverage,
             _ => throw new ArgumentOutOfRangeException(nameof(func), func, null)
         };
     }
