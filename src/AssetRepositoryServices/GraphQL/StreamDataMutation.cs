@@ -448,7 +448,7 @@ internal sealed class StreamDataMutation : ObjectGraphType
                 ?? throw AssetRepositoryException.StreamDataNotAvailable();
 
             var aggregations = input.Aggregations
-                .Select(a => new CkRollupAggregationSpec(a.SourcePath, a.Function, a.TargetColumnName))
+                .Select(a => new CkRollupAggregationSpec(a.SourcePath, a.Function, a.TargetColumnName, a.ComparisonValue))
                 .ToList();
 
             var rtId = await lifecycle.CreateAsync(

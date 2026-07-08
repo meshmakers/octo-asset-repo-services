@@ -23,6 +23,9 @@ internal sealed class RollupAggregationInputType : InputObjectGraphType<RollupAg
 
         Field<StringGraphType>("targetColumnName")
             .Description("Optional explicit storage column name. Null falls back to '{sourcePath}_{function}' lower-cased.");
+
+        Field<StringGraphType>("comparisonValue")
+            .Description("State literal a STATE_DURATION aggregation matches the source column against — a number ('2', '100'), a boolean ('true'/'false') or a string state name. Required for STATE_DURATION; ignored for every other function.");
     }
 }
 

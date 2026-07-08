@@ -47,4 +47,10 @@ internal sealed class RollupAggregationInputDto
     public string SourcePath { get; set; } = string.Empty;
     public CkRollupFunction Function { get; set; }
     public string? TargetColumnName { get; set; }
+
+    /// <summary>
+    /// State literal a STATE_DURATION aggregation matches the source column against (AB#4336).
+    /// Required for STATE_DURATION (validated at save time); ignored for every other function.
+    /// </summary>
+    public string? ComparisonValue { get; set; }
 }
