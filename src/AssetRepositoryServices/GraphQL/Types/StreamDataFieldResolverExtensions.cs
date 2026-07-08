@@ -118,6 +118,10 @@ internal static class StreamDataFieldResolverExtensions
         AggregationFunction.Average => "avg",
         AggregationFunction.Sum => "sum",
         AggregationFunction.Count => "count",
+        // Short token, matching the engine's chain-resolver alias ("{path}_twavg") and the
+        // rollup column naming (AB#4336 decision D5) — the enum name would drift to
+        // "timeweightedaverage" and the cell lookup would miss the engine's output key.
+        AggregationFunction.TimeWeightedAverage => "twavg",
         _ => f.ToString().ToLowerInvariant()
     };
 
