@@ -323,9 +323,8 @@ internal sealed class StreamDataTransientQueryDtoType : ObjectGraphType<StreamDa
 
     private static StreamDataFieldResolver BuildFieldResolver(ArchiveSnapshot archiveSnapshot)
     {
-        // Per-archive table contents are bounded by the archive's column spec.
-        return new StreamDataFieldResolver(
-            archiveSnapshot.Columns.Select(c => c.Path),
-            usesWindowedStorage: archiveSnapshot.UsesWindowedStorage);
+        // Per-archive table contents are bounded by the archive's column spec. The factory
+        // handles computed columns (empty Path, versioned physical name).
+        return StreamDataFieldResolver.CreateForArchive(archiveSnapshot);
     }
 }

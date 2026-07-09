@@ -147,7 +147,7 @@ internal static class StreamDataFieldResolverExtensions
         GraphQlUserContext gql,
         CancellationToken cancellationToken)
     {
-        var paths = archiveSnapshot.Columns.Select(c => c.Path).ToList();
+        var logicalPaths = new List<string>();
 
         if (archiveSnapshot.RollupAggregations is not null)
         {
@@ -163,13 +163,14 @@ internal static class StreamDataFieldResolverExtensions
                         id => archiveStore.GetAsync(id),
                         id => rollupStore.GetAsync(id),
                         cancellationToken).ConfigureAwait(false);
-                    paths.AddRange(logical);
+                    logicalPaths.AddRange(logical);
                 }
             }
         }
 
-        return new StreamDataFieldResolver(
-            paths,
-            usesWindowedStorage: archiveSnapshot.UsesWindowedStorage);
+        // The factory filters computed columns (empty Path by design) out of the ctor's path
+        // mapping and registers them under their logical Name → versioned physical column —
+        // feeding snapshot columns to the ctor directly throws on any archive that has one.
+        return StreamDataFieldResolver.CreateForArchive(archiveSnapshot, logicalPaths);
     }
 }

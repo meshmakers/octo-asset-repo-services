@@ -407,13 +407,11 @@ internal sealed class StreamDataTransientQuery : ObjectGraphType
     /// <summary>
     /// Builds the field resolver for a transient stream-data query. Attribute paths come from the
     /// CkArchive's column spec — that's the canonical set of paths the per-archive table actually
-    /// stores after T17.
+    /// stores after T17. The factory handles computed columns (empty Path, versioned physical name).
     /// </summary>
     private static StreamDataFieldResolver BuildFieldResolver(ArchiveSnapshot archiveSnapshot)
     {
-        return new StreamDataFieldResolver(
-            archiveSnapshot.Columns.Select(c => c.Path),
-            usesWindowedStorage: archiveSnapshot.UsesWindowedStorage);
+        return StreamDataFieldResolver.CreateForArchive(archiveSnapshot);
     }
 
     private static AggregationTypesDto MapAggregationFunctionDtoToDto(AggregationFunctionDto func)
