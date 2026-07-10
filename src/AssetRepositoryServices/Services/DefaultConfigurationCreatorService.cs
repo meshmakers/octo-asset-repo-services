@@ -5,6 +5,7 @@ using Meshmakers.Octo.Backend.AssetRepositoryServices.Configuration.DependencyIn
 using Meshmakers.Octo.Common.DistributionEventHub.Services;
 using Meshmakers.Octo.Communication.Contracts;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb;
+using Meshmakers.Octo.Runtime.Contracts.MongoDb.TenantLifecycle;
 using Meshmakers.Octo.Services.Contracts.DistributionEventHub.Commands;
 using Meshmakers.Octo.Services.Contracts.DistributionEventHub.Commands.Payloads;
 using Meshmakers.Octo.Services.Infrastructure.Services;
@@ -18,14 +19,18 @@ internal class DefaultConfigurationCreatorService(
     IOptions<OctoAssetRepositoryServicesOptions> options,
     ISystemContext systemContext,
     ICommandClient<CreateIdentityDataCommandRequest> createIdentityDataCommandClient,
-    OctoAssetRepositoryServicesOptions octoAssetRepositoryServicesOptions)
+    OctoAssetRepositoryServicesOptions octoAssetRepositoryServicesOptions,
+    ITenantLifecycleStore tenantLifecycleStore)
     : DefaultConfigurationCreatorServiceStandardized(logger, systemContext, createIdentityDataCommandClient,
         AssetRepositoryServiceConstants.AssetServiceIdentityDataVersionKey,
         AssetRepositoryServiceConstants.AssetServiceIdentityDataVersionValue,
         null, // migrationService - we don't need migrations here
         null, // ckModelUpgradeService - we don't need CK model migrations
         null, // runtimeRepositoryProvider - not needed without CK model migrations
-        null) // serviceEnabledKey - the service is auto-enabled
+        null, // serviceEnabledKey - the service is auto-enabled
+        // Asset-Repo owns the durable tenant-lifecycle record (it runs setup for every tenant and drives
+        // identity seeding), so it is the single writer of Creating/Active/Failed states (AB#4348).
+        tenantLifecycleStore: tenantLifecycleStore)
 {
     public override async Task InitializeAsync()
     {
