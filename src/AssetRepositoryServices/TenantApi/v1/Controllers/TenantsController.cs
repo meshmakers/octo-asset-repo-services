@@ -142,6 +142,7 @@ public class TenantsController : ControllerBase
     [Authorize(AssetRepositoryServiceConstants.TenantAssetApiReadWritePolicy)]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(typeof(OperationFailedErrorDto), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(OperationFailedErrorDto), StatusCodes.Status409Conflict)]
     [ProducesResponseType(typeof(InternalServerErrorDto), StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> Post(
         [Required] string childTenantId,
@@ -199,6 +200,14 @@ public class TenantsController : ControllerBase
             }
 
             return NoContent();
+        }
+        catch (TenantException e) when (e.IsConflict)
+        {
+            // Tenant or its database already exists. For the database case this is often a previous
+            // deletion still completing its async drop (or an orphaned database) rather than a genuine
+            // clash — surface it as a retryable 409 with an actionable message instead of a 400 that
+            // reads like a permanent name conflict (AB#4348).
+            return Conflict(new OperationFailedErrorDto(e.Message));
         }
         catch (PersistenceException e)
         {
