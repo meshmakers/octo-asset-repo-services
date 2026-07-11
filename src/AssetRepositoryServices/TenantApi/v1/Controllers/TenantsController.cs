@@ -1,6 +1,7 @@
 using System.ComponentModel.DataAnnotations;
 using Asp.Versioning;
 using IdentityModel;
+using Meshmakers.Common.Shared;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.Services;
 using Meshmakers.Octo.Common.DistributionEventHub.Services;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
@@ -8,6 +9,7 @@ using Meshmakers.Octo.Communication.Contracts.DataTransferObjects.ApiErrors;
 using Meshmakers.Octo.ConstructionKit.Contracts.BlueprintCatalogs;
 using Meshmakers.Octo.Runtime.Contracts;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb;
+using Meshmakers.Octo.Runtime.Contracts.MongoDb.TenantLifecycle;
 using Meshmakers.Octo.Services.Contracts.DistributionEventHub.Messages;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -27,14 +29,17 @@ public class TenantsController : ControllerBase
 {
     private readonly IDistributionEventHubService _distributionEventHubService;
     private readonly IOctoService _octoService;
+    private readonly ITenantLifecycleStore _tenantLifecycleStore;
 
     /// <summary>
     ///     Constructor
     /// </summary>
-    public TenantsController(IOctoService octoService, IDistributionEventHubService distributionEventHubService)
+    public TenantsController(IOctoService octoService, IDistributionEventHubService distributionEventHubService,
+        ITenantLifecycleStore tenantLifecycleStore)
     {
         _octoService = octoService;
         _distributionEventHubService = distributionEventHubService;
+        _tenantLifecycleStore = tenantLifecycleStore;
     }
 
     private async Task<ITenantContext?> GetTenantContextAsync()
@@ -155,6 +160,17 @@ public class TenantsController : ControllerBase
             if (tenantContext == null)
             {
                 return BadRequest(new OperationFailedErrorDto("TenantId is required"));
+            }
+
+            // Serialize against an in-flight deletion: if the lifecycle store still records this tenant as
+            // Deleting, its database drop has not finished yet. Surface a retryable 409 instead of letting
+            // the create proceed and fail later on "database already exists" (AB#4348 Phase 3).
+            var normalizedTenantId = childTenantId.NormalizeString();
+            var existingLifecycle = await _tenantLifecycleStore.GetAsync(normalizedTenantId);
+            if (existingLifecycle is { State: TenantLifecycleState.Deleting })
+            {
+                return Conflict(new OperationFailedErrorDto(
+                    $"Tenant '{childTenantId}' deletion is still in progress. Please retry shortly."));
             }
 
             using var session = await tenantContext.GetAdminSessionAsync();
@@ -377,9 +393,12 @@ public class TenantsController : ControllerBase
     [Authorize(AssetRepositoryServiceConstants.TenantAssetApiReadWritePolicy)]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(OperationFailedErrorDto), StatusCodes.Status409Conflict)]
     [ProducesResponseType(typeof(InternalServerErrorDto), StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> Delete([Required] string childTenantId)
     {
+        var normalizedTenantId = childTenantId.NormalizeString();
+        var markedDeleting = false;
         try
         {
             var tenantContext = await GetTenantContextAsync();
@@ -387,6 +406,22 @@ public class TenantsController : ControllerBase
             {
                 return BadRequest(new OperationFailedErrorDto("TenantId is required"));
             }
+
+            // Q2: refuse to delete a tenant that is still being created. The reconciler drives a stalled
+            // Creating tenant to Active or Failed, at which point the operator can retry the delete
+            // (AB#4348 Phase 3).
+            var lifecycle = await _tenantLifecycleStore.GetAsync(normalizedTenantId);
+            if (lifecycle is { State: TenantLifecycleState.Creating })
+            {
+                return Conflict(new OperationFailedErrorDto(
+                    $"Tenant '{childTenantId}' is still being created. Retry the delete once it is active or failed."));
+            }
+
+            // Mark the tenant as being deleted (durable tombstone) BEFORE dropping its database, so a
+            // concurrent Create serializes against it and returns a retryable 409 instead of racing the
+            // async drop (AB#4348 Phase 3).
+            await _tenantLifecycleStore.MarkDeletingAsync(normalizedTenantId);
+            markedDeleting = true;
 
             using var session = await tenantContext.GetAdminSessionAsync();
             session.StartTransaction();
@@ -401,15 +436,43 @@ public class TenantsController : ControllerBase
             var deletion = await tenantContext.DeleteChildTenantMetadataAsync(session, childTenantId);
             await session.CommitTransactionAsync();
             await tenantContext.DropTenantDatabaseAsync(deletion, childTenantId);
+
+            // The database drop has completed → remove the tombstone so the tenant id can be re-created
+            // cleanly (AB#4348 Phase 3).
+            await _tenantLifecycleStore.RemoveAsync(normalizedTenantId);
             return Ok();
         }
         catch (TenantException e)
         {
+            await ClearDeletingTombstoneOnFailureAsync(normalizedTenantId, markedDeleting);
             return NotFound(e.Message);
         }
         catch (Exception ex)
         {
+            await ClearDeletingTombstoneOnFailureAsync(normalizedTenantId, markedDeleting);
             return StatusCode(StatusCodes.Status500InternalServerError, new InternalServerErrorDto(ex.Message));
+        }
+    }
+
+    /// <summary>
+    ///     If a delete fails after the Deleting tombstone was written, remove it so a re-create is not
+    ///     blocked forever by the Create-side 409 guard. Correctness is still protected by the tenant /
+    ///     database-exists checks the retried create runs (AB#4348 Phase 3).
+    /// </summary>
+    private async Task ClearDeletingTombstoneOnFailureAsync(string normalizedTenantId, bool markedDeleting)
+    {
+        if (!markedDeleting)
+        {
+            return;
+        }
+
+        try
+        {
+            await _tenantLifecycleStore.RemoveAsync(normalizedTenantId);
+        }
+        catch
+        {
+            // Best-effort — a lingering tombstone is preferable to masking the original delete failure.
         }
     }
 
