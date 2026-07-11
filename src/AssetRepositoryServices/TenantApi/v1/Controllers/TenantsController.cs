@@ -476,6 +476,82 @@ public class TenantsController : ControllerBase
         }
     }
 
+    // GET: {tenantId}/v1/tenants/lifecycle?childTenantId=abc
+    /// <summary>
+    ///     Returns the durable provisioning lifecycle state of a child tenant, or 404 when the tenant has
+    ///     no lifecycle record (e.g. a legacy tenant created before lifecycle tracking) — AB#4348.
+    /// </summary>
+    /// <param name="childTenantId">ID of the child tenant</param>
+    [HttpGet("lifecycle")]
+    [Authorize(AssetRepositoryServiceConstants.TenantAssetApiReadOnlyPolicy)]
+    [ProducesResponseType(typeof(TenantLifecycleDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(InternalServerErrorDto), StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> GetLifecycle([Required] string childTenantId)
+    {
+        try
+        {
+            var record = await _tenantLifecycleStore.GetAsync(childTenantId.NormalizeString());
+            if (record == null)
+            {
+                return NotFound();
+            }
+
+            return Ok(CreateLifecycleDto(record));
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(StatusCodes.Status500InternalServerError, new InternalServerErrorDto(ex.Message));
+        }
+    }
+
+    // POST: {tenantId}/v1/tenants/rerunSetup?childTenantId=abc
+    /// <summary>
+    ///     Operator safety valve: re-opens a tenant's provisioning (resets it to Creating, clears the
+    ///     attempt budget / last error / lease) so the background reconciler drives it to completion.
+    ///     Returns the updated lifecycle state, or 404 when the tenant has no lifecycle record (AB#4348).
+    /// </summary>
+    /// <param name="childTenantId">ID of the child tenant</param>
+    [HttpPost("rerunSetup")]
+    [Authorize(AssetRepositoryServiceConstants.TenantAssetApiReadWritePolicy)]
+    [ProducesResponseType(typeof(TenantLifecycleDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(InternalServerErrorDto), StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> ReRunSetup([Required] string childTenantId)
+    {
+        try
+        {
+            var record = await _tenantLifecycleStore.RequeueForReconcileAsync(childTenantId.NormalizeString());
+            if (record == null)
+            {
+                return NotFound();
+            }
+
+            return Ok(CreateLifecycleDto(record));
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(StatusCodes.Status500InternalServerError, new InternalServerErrorDto(ex.Message));
+        }
+    }
+
+    private static TenantLifecycleDto CreateLifecycleDto(TenantLifecycleRecord record)
+    {
+        return new TenantLifecycleDto
+        {
+            TenantId = record.TenantId,
+            DatabaseName = record.DatabaseName,
+            State = record.State.ToString(),
+            Phase = record.Phase.ToString(),
+            AttemptCount = record.AttemptCount,
+            LastError = record.LastError,
+            CreatedUtc = record.CreatedUtc,
+            LastTransitionUtc = record.LastTransitionUtc,
+            LeaseOwner = record.LeaseOwner,
+            LeaseUntil = record.LeaseUntil
+        };
+    }
+
     private static TenantDto CreateTenantDto(OctoTenant octoTenant)
     {
         return new TenantDto
