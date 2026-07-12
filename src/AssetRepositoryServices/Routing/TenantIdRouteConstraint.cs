@@ -12,7 +12,14 @@ internal class TenantIdRouteConstraint : IRouteConstraint
         var isMatch = values.TryGetValue(routeKey, out var value) && value != null;
         if (isMatch)
         {
-            httpContext?.Items.Add("d", value);
+            // Idempotent assignment: route matching evaluates constraints for every candidate endpoint,
+            // so Match can run several times per request (e.g. a path that matches both a literal action
+            // like `tenants/lifecycle` and the `tenants/{id}` template). Dictionary.Add threw
+            // "same key already added" on the second evaluation (AB#4348 Phase 4).
+            if (httpContext != null)
+            {
+                httpContext.Items["d"] = value;
+            }
         }
 
         return isMatch;
