@@ -1,5 +1,6 @@
 using FluentAssertions;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Fixtures;
+using MongoDB.Bson;
 using Newtonsoft.Json.Linq;
 using System.Text.Json;
 using Xunit;
@@ -885,6 +886,104 @@ public class RtEntityGenericMutationTests : IClassFixture<GraphQlTestFixture>
 
         var deleteResult = answer.SelectToken("data.runtime.runtimeEntities.delete")?.Value<bool>();
         deleteResult.Should().BeTrue();
+    }
+
+    #endregion
+
+    #region Enum Coercion Tests (AB#4391)
+
+    // MeteringPoint inherits from Asset, so it is stored in RtEntity_AssetRepositoryIntegrationTestAsset.
+    // OperatingStatus is a (mandatory) Enum attribute: Unknown=0, OK=1, Maintenance=2.
+    private const string AssetCollectionSuffix = "AssetRepositoryIntegrationTestAsset";
+
+    private static string CreateMeteringPointVariables(string rtWellKnownName, object operatingStatusValue)
+    {
+        return JsonSerializer.Serialize(new
+        {
+            entities = new[]
+            {
+                new
+                {
+                    ckTypeId = MeteringPointCkTypeId,
+                    rtWellKnownName,
+                    attributes = new object[]
+                    {
+                        new { attributeName = "meteringPointNumber", value = "AT001234567890" },
+                        new { attributeName = "meterReading", value = 100 },
+                        new { attributeName = "operatingStatus", value = operatingStatusValue },
+                        new { attributeName = "name", value = "Test MeteringPoint" },
+                        new { attributeName = "description", value = "Test description" }
+                    }
+                }
+            }
+        });
+    }
+
+    private const string CreateMeteringPointMutation = @"
+        mutation ($entities: [RtEntityInput!]!) {
+            runtime {
+                runtimeEntities {
+                    create(entities: $entities) {
+                        rtId
+                    }
+                }
+            }
+        }";
+
+    [Fact]
+    public async Task Create_EnumAttributeByName_StoresIntegerKey()
+    {
+        // Arrange - write the enum by its NAME ("Maintenance"), the shape a generic-mutation client
+        // (e.g. the meshmakers-app frontend) would send. Pre-fix this was stored verbatim as the
+        // string "Maintenance" instead of the integer key 2, silently corrupting the enum field.
+        var variables = CreateMeteringPointVariables("MeteringPoint_Enum_ByName", "Maintenance");
+
+        // Act
+        var result = await _fixture.ExecuteGraphQlAsync(CreateMeteringPointMutation, variables);
+
+        // Assert
+        result.Errors.Should().BeNullOrEmpty();
+        var rtId = JObject.Parse(_fixture.SerializeGraphQl(result))
+            .SelectToken("data.runtime.runtimeEntities.create[0].rtId")?.Value<string>();
+        rtId.Should().NotBeNullOrEmpty();
+
+        var raw = await _fixture.ReadRawAttributeValueFromMongoDb(rtId!, "operatingStatus", AssetCollectionSuffix);
+        raw.BsonType.Should().Be(BsonType.Int32, "the enum name must be coerced to its integer key, not stored as a string");
+        raw.AsInt32.Should().Be(2);
+    }
+
+    [Fact]
+    public async Task Create_EnumAttributeByIntegerKey_StoresIntegerKey()
+    {
+        // Arrange - integer keys (the frontend mitigation) must keep working and round-trip unchanged.
+        var variables = CreateMeteringPointVariables("MeteringPoint_Enum_ByKey", 1);
+
+        // Act
+        var result = await _fixture.ExecuteGraphQlAsync(CreateMeteringPointMutation, variables);
+
+        // Assert
+        result.Errors.Should().BeNullOrEmpty();
+        var rtId = JObject.Parse(_fixture.SerializeGraphQl(result))
+            .SelectToken("data.runtime.runtimeEntities.create[0].rtId")?.Value<string>();
+        rtId.Should().NotBeNullOrEmpty();
+
+        var raw = await _fixture.ReadRawAttributeValueFromMongoDb(rtId!, "operatingStatus", AssetCollectionSuffix);
+        raw.BsonType.Should().Be(BsonType.Int32);
+        raw.AsInt32.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task Create_EnumAttributeInvalidName_ReturnsError()
+    {
+        // Arrange - an undefined enum value must be rejected, not silently stored.
+        var variables = CreateMeteringPointVariables("MeteringPoint_Enum_Invalid", "NotARealStatus");
+
+        // Act
+        var result = await _fixture.ExecuteGraphQlAsync(CreateMeteringPointMutation, variables);
+
+        // Assert
+        result.Errors.Should().NotBeNullOrEmpty("an invalid enum value must produce an error");
+        result.Errors!.First().Message.Should().Contain("OperatingStatus");
     }
 
     #endregion

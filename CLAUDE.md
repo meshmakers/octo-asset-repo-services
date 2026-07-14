@@ -252,7 +252,30 @@ N:M associations are exposed as query columns with `::totalCount` (INT64) and `:
 ### When Adding New Operations
 - Place mutations in appropriate mutation classes (RtMutation, CkMutation)
 - Use `OperationResult` and call `ResolveConnectionContextExtensions.ValidateOperationResult()` for consistency
-- Handle exceptions via `arg.HandleException(e)` in GraphQL resolvers
+- Handle exceptions via `arg.HandleException(e)` in GraphQL resolvers. `HandleException` maps known
+  exception types to stable GraphQL error codes with their real message; `OctoGraphQLException` and
+  `CkEnumValueNotFoundException` are surfaced with their message (code `GraphQlModelValidationErrors`)
+  instead of the generic `"An error occurred"` (AB#4391). Any other exception type is still masked —
+  add a branch if a resolver needs to surface a client-facing message.
+
+### Generic Runtime Mutation Attribute Handling (`RtMutationBase`)
+
+The generic `runtime.runtimeEntities.create/update` path (`RtEntityMutationGeneric` →
+`RtMutationBase.RtEntityFromInputObjectAsync` → `TryHandleAttributeAsync`) sets attributes by calling
+`RtTypeWithAttributes.SetAttributeValue` **directly** — it does **not** go through
+`RtPathEvaluator.SetValue` (only the RtQuery-row update path in `QueryMapper` does). This means every
+attribute-value-type coercion that lives in `RtPathEvaluator.SetValueByPath` must be mirrored in
+`TryHandleAttributeAsync`'s `switch`, or the generic path stores raw client values verbatim.
+
+- **Enum** (`AttributeValueTypesDto.Enum`, AB#4391): `TryHandleAttributeAsync` resolves the value to
+  the integer enum key via `ResolveEnumKey` (name → key case-insensitively, or a whole-number key),
+  validating against the CK enum and throwing `OctoGraphQLException.EnumValueNotFound` /
+  `InvalidEnumValueType` on bad input. Before the fix, a name string (e.g. `"NEW"`) was stored
+  verbatim instead of its key `0`, silently corrupting enum fields and breaking downstream integer
+  filters. Note the generic GraphQL SimpleScalar path can box a numeric key as `double`, so numeric
+  coercion accepts every whole-number CLR type — not just `int` (which is all `RtPathEvaluator`
+  handles). The same `TryHandleAttributeAsync` is reused by `HandleRecordAsync`, so enum attributes
+  inside records are covered too.
 
 ### Authentication
 The service supports dual authentication:

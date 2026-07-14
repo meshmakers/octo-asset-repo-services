@@ -143,6 +143,18 @@ internal static class ResolveConnectionContextExtensions
         {
             HandleStreamDataException(context, streamDataException);
         }
+        else if (exception is CkEnumValueNotFoundException ckEnumValueNotFoundException)
+        {
+            // AB#4391: an invalid enum value supplied to a mutation is a client input error — surface
+            // its message instead of masking it as a generic "An error occurred".
+            context.Errors.Add(new ExecutionError(ckEnumValueNotFoundException.Message, ckEnumValueNotFoundException)
+                { Code = Statics.GraphQlModelValidationErrors });
+        }
+        else if (exception is OctoGraphQLException octoGraphQLException)
+        {
+            context.Errors.Add(new ExecutionError(octoGraphQLException.Message, octoGraphQLException)
+                { Code = Statics.GraphQlModelValidationErrors });
+        }
         else
         {
             context.Errors.Add(new ExecutionError("An error occurred", exception)

@@ -217,6 +217,22 @@ internal abstract class RtMutationBase : ObjectGraphType
                     rtTypeWithAttributes.SetAttributeValue(ckTypeAttributeGraph.AttributeName,
                         ckTypeAttributeGraph.ValueType, binaryData);
                     return true;
+                case AttributeValueTypesDto.Enum:
+                    if (value == null)
+                    {
+                        rtTypeWithAttributes.SetAttributeValue(ckTypeAttributeGraph.AttributeName,
+                            ckTypeAttributeGraph.ValueType, null);
+                        return true;
+                    }
+
+                    // AB#4391: the generic runtime mutation must coerce/validate enum values to their
+                    // integer key instead of storing the verbatim name string (which silently corrupts
+                    // enum fields and breaks downstream integer filters). Mirrors the coercion in
+                    // RtPathEvaluator.SetValueByPath and the adapter CreateUpdateInfo path.
+                    var enumKey = ResolveEnumKey(ckCacheService, tenantId, ckTypeAttributeGraph, value);
+                    rtTypeWithAttributes.SetAttributeValue(ckTypeAttributeGraph.AttributeName,
+                        ckTypeAttributeGraph.ValueType, enumKey);
+                    return true;
                 default:
                     rtTypeWithAttributes.SetAttributeValue(ckTypeAttributeGraph.AttributeName,
                         ckTypeAttributeGraph.ValueType, value);
@@ -225,6 +241,93 @@ internal abstract class RtMutationBase : ObjectGraphType
         }
 
         return false;
+    }
+
+    /// <summary>
+    /// Resolves an enum attribute value (supplied as a name string or an integer key) to its integer
+    /// enum key, validating it against the CK enum. Mirrors the coercion in
+    /// <c>RtPathEvaluator.SetValueByPath</c> so the generic mutation never stores a verbatim enum name
+    /// string (AB#4391).
+    /// </summary>
+    private static int ResolveEnumKey(ICkCacheService ckCacheService, string tenantId,
+        CkTypeAttributeGraph ckTypeAttributeGraph, object value)
+    {
+        if (ckTypeAttributeGraph.ValueCkEnumId == null)
+        {
+            throw OctoGraphQLException.EnumAttributeHasNoCkEnumId(ckTypeAttributeGraph.AttributeName);
+        }
+
+        var ckEnumId = ckTypeAttributeGraph.ValueCkEnumId;
+        var ckEnumGraph = ckCacheService.GetCkEnum(tenantId, ckEnumId);
+
+        if (value is string strValue)
+        {
+            var byName = ckEnumGraph.Values.FirstOrDefault(v =>
+                             string.Compare(v.Name, strValue, StringComparison.OrdinalIgnoreCase) == 0)
+                         ?? ckEnumGraph.Values.FirstOrDefault(v =>
+                             string.Compare(v.Key.ToString(), strValue, StringComparison.OrdinalIgnoreCase) == 0);
+
+            if (byName == null)
+            {
+                throw OctoGraphQLException.EnumValueNotFound(ckTypeAttributeGraph.AttributeName, ckEnumId, strValue);
+            }
+
+            return byName.Key;
+        }
+
+        // Integer keys (e.g. the frontend mitigation sends the numeric key directly). The generic
+        // GraphQL SimpleScalar path may deliver the number as any boxed numeric CLR type (int, long,
+        // or even double), so accept every whole-number shape; reject anything else with a clear error
+        // rather than silently mis-storing.
+        if (TryGetIntegerKey(value, out var intValue))
+        {
+            var byKey = ckEnumGraph.Values.FirstOrDefault(v => v.Key == intValue);
+            if (byKey == null)
+            {
+                throw OctoGraphQLException.EnumValueNotFound(ckTypeAttributeGraph.AttributeName, ckEnumId, intValue);
+            }
+
+            return byKey.Key;
+        }
+
+        throw OctoGraphQLException.InvalidEnumValueType(ckTypeAttributeGraph.AttributeName, ckEnumId,
+            value.GetType().Name);
+    }
+
+    /// <summary>
+    /// Tries to interpret a boxed numeric value as an <see cref="int"/> enum key. Accepts the integer
+    /// CLR types and whole-number real types (the generic GraphQL scalar path can box a JSON number as
+    /// <see cref="double"/>); rejects fractional or out-of-range values.
+    /// </summary>
+    private static bool TryGetIntegerKey(object value, out int key)
+    {
+        key = 0;
+        switch (value)
+        {
+            case int i:
+                key = i;
+                return true;
+            case long l when l is >= int.MinValue and <= int.MaxValue:
+                key = (int)l;
+                return true;
+            case short s:
+                key = s;
+                return true;
+            case byte b:
+                key = b;
+                return true;
+            case double d when !double.IsInfinity(d) && Math.Floor(d) == d && d is >= int.MinValue and <= int.MaxValue:
+                key = (int)d;
+                return true;
+            case float f when !float.IsInfinity(f) && MathF.Floor(f) == f && f is >= int.MinValue and <= int.MaxValue:
+                key = (int)f;
+                return true;
+            case decimal m when Math.Floor(m) == m && m is >= int.MinValue and <= int.MaxValue:
+                key = (int)m;
+                return true;
+            default:
+                return false;
+        }
     }
 
     /// <summary>

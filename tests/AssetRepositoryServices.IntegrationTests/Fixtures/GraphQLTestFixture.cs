@@ -88,6 +88,43 @@ public class GraphQlTestFixture : SampleDataFixture
     }
 
     /// <summary>
+    /// Reads the raw stored value of an attribute directly from MongoDB, bypassing the GraphQL
+    /// enum-to-name resolution. Used to assert on the actually-persisted CLR/BSON type (e.g. that an
+    /// enum is stored as its integer key, not a verbatim name string — AB#4391).
+    /// </summary>
+    /// <param name="rtId">The RtId of the entity</param>
+    /// <param name="attributeName">The attribute name (camelCase, as stored under the "attributes" subdocument)</param>
+    /// <param name="collectionSuffix">The collection suffix (the base type, e.g. "AssetRepositoryIntegrationTestAsset" for MeteringPoint)</param>
+    /// <returns>The raw <see cref="BsonValue"/>, or <see cref="BsonNull.Value"/> when absent.</returns>
+    public async Task<BsonValue> ReadRawAttributeValueFromMongoDb(string rtId, string attributeName,
+        string collectionSuffix)
+    {
+        if (_mongoClient == null)
+        {
+            throw new InvalidOperationException("MongoDB client not initialized");
+        }
+
+        var database = _mongoClient.GetDatabase(SystemDatabaseName);
+        var collection = database.GetCollection<BsonDocument>($"RtEntity_{collectionSuffix}");
+
+        var filter = Builders<BsonDocument>.Filter.Eq("_id", ObjectId.Parse(rtId));
+        var document = await collection.Find(filter).FirstOrDefaultAsync();
+        if (document == null)
+        {
+            throw new InvalidOperationException($"Document with rtId '{rtId}' not found in 'RtEntity_{collectionSuffix}'.");
+        }
+
+        if (document.TryGetValue("attributes", out var attributes)
+            && attributes is BsonDocument attributesDoc
+            && attributesDoc.TryGetValue(attributeName, out var value))
+        {
+            return value;
+        }
+
+        return BsonNull.Value;
+    }
+
+    /// <summary>
     /// Removes an attribute from a MongoDB document to simulate legacy data
     /// that was created before the attribute was added to the schema.
     /// </summary>

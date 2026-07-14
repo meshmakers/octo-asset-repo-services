@@ -48,6 +48,19 @@ public class OctoGraphQLException : Exception
         return new OctoGraphQLException($"Enum attribute {attributeName} has no CkEnumId.");
     }
 
+    public static Exception EnumValueNotFound(string attributeName, CkId<CkEnumId> ckEnumId, object value)
+    {
+        return new OctoGraphQLException(
+            $"Enum value '{value}' is not defined in CkEnum '{ckEnumId}' for attribute '{attributeName}'.");
+    }
+
+    public static Exception InvalidEnumValueType(string attributeName, CkId<CkEnumId> ckEnumId, string valueTypeName)
+    {
+        return new OctoGraphQLException(
+            $"Enum attribute '{attributeName}' (CkEnum '{ckEnumId}') expects a name (string) or integer key, " +
+            $"but got a value of type '{valueTypeName}'.");
+    }
+
     public static Exception SchemaCreationFailed(string tenantId, Exception exception)
     {
         return new OctoGraphQLException($"Schema creation failed for tenant {tenantId}.", exception);
