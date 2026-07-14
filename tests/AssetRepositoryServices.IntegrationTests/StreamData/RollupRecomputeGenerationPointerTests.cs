@@ -141,6 +141,104 @@ public class RollupRecomputeGenerationPointerTests(StreamDataFixture fixture, IT
         read2.Rows.Count.Should().Be((int)generationOneRows);
     }
 
+    /// <summary>
+    /// AB#4188 — a rollup carrying several aggregations across <em>different</em> attributes
+    /// (Sum(Voltage) + Max(Current) + First(Voltage) + Last(Current)) recomputes all of them in one
+    /// pass and swaps the whole multi-column row atomically to the next generation — consumers never
+    /// see a partial set. Also the end-to-end validation that the First/Last arg_min/arg_max SQL
+    /// (CrateDB's <c>(MIN|MAX(ARRAY[time, value]))[2]</c> idiom) actually executes and populates its
+    /// column against a real CrateDB, not just as a generated string.
+    /// </summary>
+    [Fact]
+    public async Task Recompute_MultiAttributeRollup_PopulatesAllAggregatesAtomically_IncludingFirstLast()
+    {
+        fixture.OutputHelper = output;
+
+        var systemContext = fixture.GetSystemContext();
+        var tenantContext = await systemContext.FindTenantContextAsync(systemContext.TenantId);
+
+        var rollupLifecycle = tenantContext.GetRollupArchiveLifecycleService()
+            ?? throw new InvalidOperationException("Rollup lifecycle service not available.");
+        var archiveLifecycle = tenantContext.GetArchiveLifecycleService()
+            ?? throw new InvalidOperationException("Archive lifecycle service not available.");
+        var archiveStore = tenantContext.GetArchiveRuntimeStore();
+        var rollupStore = tenantContext.GetRollupArchiveRuntimeStore()
+            ?? throw new InvalidOperationException("Rollup runtime store not available.");
+        var repo = tenantContext.GetStreamDataRepository()
+            ?? throw new InvalidOperationException("StreamData repository not available.");
+        var executor = (IArchiveRecomputeExecutor)repo;
+
+        // Four aggregations over two different source attributes, including First/Last (AB#4188).
+        var rollupRtId = await rollupLifecycle.CreateAsync(
+            rtWellKnownName: "MultiAttrFirstLastRollup",
+            sourceArchiveRtId: fixture.ArchiveRtId,
+            bucketSize: BucketSize,
+            watermarkLag: TimeSpan.Zero,
+            aggregations: new[]
+            {
+                new CkRollupAggregationSpec("Voltage", CkRollupFunction.Sum, null),
+                new CkRollupAggregationSpec("Current", CkRollupFunction.Max, null),
+                new CkRollupAggregationSpec("Voltage", CkRollupFunction.First, null),
+                new CkRollupAggregationSpec("Current", CkRollupFunction.Last, null),
+            });
+        await archiveLifecycle.ActivateAsync(rollupRtId);
+
+        var sourceSnapshot = await archiveStore.GetAsync(fixture.ArchiveRtId)
+            ?? throw new InvalidOperationException("Source archive snapshot missing.");
+        var rollupSnapshot = await rollupStore.GetAsync(rollupRtId)
+            ?? throw new InvalidOperationException("Rollup archive snapshot missing.");
+
+        var rollupTable = $"\"{fixture.StreamDataTenantId}\".\"archive_{rollupRtId}\"";
+        var genMapTable = $"\"{fixture.StreamDataTenantId}\".\"archive_{rollupRtId}__genmap\"";
+
+        // ── Recompute #1 → all four aggregate columns materialise under generation 1 ──
+        var result1 = await executor.ExecuteAsync(
+            sourceSnapshot, rollupSnapshot, RangeStart, RangeEnd, rtIdScope: null, CancellationToken.None);
+        await RefreshAsync(rollupTable);
+        // The genmap must be visible before the next recompute reads the active generation
+        // (CrateDB applies writes to the read path asynchronously).
+        await RefreshAsync(genMapTable);
+
+        result1.WindowsProcessed.Should().Be(ExpectedBuckets);
+
+        var totalRows = await ScalarLongAsync($"SELECT count(*) FROM {rollupTable} WHERE \"generation\" = 1");
+        totalRows.Should().BeGreaterThan(0);
+
+        // Every declared aggregate is populated on the SAME rows — one pass produced all four,
+        // First/Last included (the arg SQL ran on CrateDB and wrote a value, not null).
+        var fullyPopulated = await ScalarLongAsync(
+            $"SELECT count(*) FROM {rollupTable} WHERE \"generation\" = 1 " +
+            "AND \"voltage_sum\" IS NOT NULL AND \"current_max\" IS NOT NULL " +
+            "AND \"voltage_first\" IS NOT NULL AND \"current_last\" IS NOT NULL");
+        fullyPopulated.Should().Be(totalRows, "all four aggregates are produced together in one pass");
+
+        // Each rtId has a single in-range point, so First(Voltage) == Sum(Voltage) and
+        // Last(Current) == Max(Current) — cross-checks that the arg idiom returns the actual value.
+        (await ScalarLongAsync(
+            $"SELECT count(*) FROM {rollupTable} WHERE \"generation\" = 1 AND \"voltage_first\" != \"voltage_sum\""))
+            .Should().Be(0, "First(Voltage) must equal the single point's Voltage");
+        (await ScalarLongAsync(
+            $"SELECT count(*) FROM {rollupTable} WHERE \"generation\" = 1 AND \"current_last\" != \"current_max\""))
+            .Should().Be(0, "Last(Current) must equal the single point's Current");
+
+        // ── Recompute #2 → the whole multi-column row swaps to generation 2 atomically ──
+        var result2 = await executor.ExecuteAsync(
+            sourceSnapshot, rollupSnapshot, RangeStart, RangeEnd, rtIdScope: null, CancellationToken.None);
+        await RefreshAsync(rollupTable);
+        await RefreshAsync(genMapTable);
+
+        result2.WindowsProcessed.Should().Be(ExpectedBuckets);
+
+        // No generation older than 2 survives, and every column is still populated together — a
+        // consumer reading the active generation never observes a partial aggregate set.
+        (await DistinctGenerationsAsync(rollupTable)).Should().Equal(2L);
+        (await ScalarLongAsync(
+            $"SELECT count(*) FROM {rollupTable} WHERE \"generation\" = 2 " +
+            "AND \"voltage_sum\" IS NOT NULL AND \"current_max\" IS NOT NULL " +
+            "AND \"voltage_first\" IS NOT NULL AND \"current_last\" IS NOT NULL"))
+            .Should().Be(totalRows, "the atomic swap moved all four aggregate columns to generation 2 together");
+    }
+
     // ── CrateDB helpers (direct npgsql, mirrors StreamDataFixture.RefreshArchiveTableAsync) ──
 
     private async Task RefreshAsync(string qualifiedTable)
