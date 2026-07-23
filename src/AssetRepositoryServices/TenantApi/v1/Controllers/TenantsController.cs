@@ -100,6 +100,8 @@ public class TenantsController : ControllerBase
 
                 Response.Headers.Append("X-Pagination", pagedResult.GetHeader().ToJson());
 
+                await session.CommitTransactionAsync();
+
                 return Ok(pagedResult);
             }
 
