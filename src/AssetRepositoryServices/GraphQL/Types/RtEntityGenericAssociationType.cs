@@ -77,8 +77,15 @@ public sealed class RtEntityGenericAssociationType : ObjectGraphType<RtEntityGen
             RtAssociationExtendedQueryOptions.Create(direction, ckAssociationRoleId, relatedRtCkTypeId,
                 relatedRtId, offset, ctx.First);
 
+        // Create a unique cache key for this batch loader based on all query parameters (AB#4532).
+        // GetOrAddBatchLoader ignores the delegate of subsequent calls with the same key, so a key
+        // missing roleId/relatedRtCkId/relatedRtId/paging would silently apply the first selection's
+        // arguments to every definitions selection of the same type and direction.
+        var cacheKey =
+            $"GenericAssocDefs_{ctx.Source.RtEntityDto.CkTypeId}_{direction}_{ckAssociationRoleId}_{relatedRtCkTypeId}_{relatedRtId}_{offset}_{ctx.First}";
+
         var loader = dataLoaderAccessor.Context.GetOrAddBatchLoader<RtEntityId, IResultSet<RtAssociation>>(
-            $"Get{ctx.Source.RtEntityDto.CkTypeId}_{direction}", async rtEntityIds =>
+            cacheKey, async rtEntityIds =>
                 await tenantRepository.GetRtAssociationsAsync(sessionAccessor.Session, rtEntityIds, queryOptions));
         var dataLoaderResult = loader.LoadAsync(ctx.Source.RtEntityDto.ToRtEntityId());
 
@@ -115,8 +122,12 @@ public sealed class RtEntityGenericAssociationType : ObjectGraphType<RtEntityGen
 
         if (indirectAssociations.Value)
         {
+            // Cache key covers all query parameters, see AB#4532
+            var cacheKey =
+                $"GenericAssocTargetsIndirect_{ctx.Source.RtEntityDto.CkTypeId}_{targetCkId}_{roleId}_{direction}_{offset}_{ctx.First}_{queryOptions.GetHashCode()}";
+
             var loader = dataLoaderAccessor.Context.GetOrAddBatchLoader<RtEntityId, IResultSet<RtEntity>>(
-                $"Get{ctx.Source.RtEntityDto.CkTypeId}_{targetCkId}_{roleId}_{direction}", async rtEntityIds =>
+                cacheKey, async rtEntityIds =>
                     await tenantRepository.GetIndirectRtAssociationTargetsAsync(
                         sessionAccessor.Session, rtEntityIds.Select(x => x.RtId), ctx.Source.RtEntityDto.CkTypeId,
                         new RtCkId<CkAssociationRoleId>(roleId),
@@ -131,8 +142,12 @@ public sealed class RtEntityGenericAssociationType : ObjectGraphType<RtEntityGen
         }
         else
         {
+            // Cache key covers all query parameters, see AB#4532
+            var cacheKey =
+                $"GenericAssocTargetsDirect_{ctx.Source.RtEntityDto.CkTypeId}_{targetCkId}_{roleId}_{direction}_{offset}_{ctx.First}_{queryOptions.GetHashCode()}";
+
             var loader = dataLoaderAccessor.Context.GetOrAddBatchLoader<RtEntityId, IResultSet<RtEntity>>(
-                $"Get{ctx.Source.RtEntityDto.CkTypeId}_{targetCkId}_{roleId}_{direction}", async rtEntityIds =>
+                cacheKey, async rtEntityIds =>
                     await tenantRepository.GetRtAssociationTargetsAsync(
                         sessionAccessor.Session, rtEntityIds.Select(x => x.RtId), ctx.Source.RtEntityDto.CkTypeId,
                         new RtCkId<CkAssociationRoleId>(roleId),

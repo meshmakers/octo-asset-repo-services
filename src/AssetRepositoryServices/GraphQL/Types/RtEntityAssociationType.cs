@@ -79,8 +79,12 @@ internal class RtEntityAssociationType : ObjectGraphType
 
         var graphQlContext = (GraphQlUserContext)ctx.UserContext;
         var tenantRepository = graphQlContext.TenantContext.GetTenantRepository();
+        // Cache key covers all query parameters, see AB#4532
+        var cacheKey =
+            $"AssocTyped_{_originCkId}_{targetCkId}_{_roleId}_{_graphDirection}_{offset}_{ctx.First}_{queryOptions.GetHashCode()}_{string.Join(",", keysList?.Select(k => k.ToString()) ?? [])}";
+
         var loader = dataLoaderAccessor.Context.GetOrAddBatchLoader<RtEntityId, IResultSet<RtEntity>>(
-            $"Get{_originCkId}_{targetCkId}_{_roleId}_{_graphDirection}", async rtIds =>
+            cacheKey, async rtIds =>
                 await tenantRepository.GetRtAssociationTargetsAsync(sessionAccessor.Session,
                     rtIds.Select(x => x.RtId), _originCkId, _roleId, targetCkId, _graphDirection, keysList,
                     queryOptions, offset, ctx.First)
