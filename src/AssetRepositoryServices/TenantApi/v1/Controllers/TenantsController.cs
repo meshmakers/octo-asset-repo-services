@@ -55,7 +55,7 @@ public class TenantsController : ControllerBase
 
     // GET {tenantId}/v1/tenants
     /// <summary>
-    ///     Returns all child tenants of the current tenant using pages
+    ///     Returns the current (own) tenant followed by its child tenants, using pages.
     /// </summary>
     [HttpGet]
     [Authorize(AssetRepositoryServiceConstants.TenantAssetApiReadOnlyPolicy)]
@@ -75,21 +75,41 @@ public class TenantsController : ControllerBase
             using var session = await tenantContext.GetAdminSessionAsync();
             session.StartTransaction();
 
-            var result = await tenantContext.GetChildTenantsAsync(session, pagingParams?.Skip, pagingParams?.Take);
+            var ownTenant = new TenantDto
+            {
+                TenantId = tenantContext.TenantId,
+                Database = tenantContext.DatabaseName
+            };
 
             if (pagingParams != null)
             {
-                var pagedResult = new PagedResult<TenantDto>(result.Items.Select(CreateTenantDto),
-                    pagingParams.Skip, pagingParams.Take, result.TotalCount);
+                var includeOwn = pagingParams.Skip <= 0;
+                var childSkip = includeOwn ? 0 : pagingParams.Skip - 1;
+                var childCapacity = includeOwn ? Math.Max(pagingParams.Take - 1, 0) : pagingParams.Take;
+
+                var childResult = await tenantContext.GetChildTenantsAsync(session, childSkip, Math.Max(childCapacity, 1));
+
+                var items = childResult.Items.Take(childCapacity).Select(CreateTenantDto);
+                if (includeOwn)
+                {
+                    items = items.Prepend(ownTenant);
+                }
+
+                var pagedResult = new PagedResult<TenantDto>(items,
+                    pagingParams.Skip, pagingParams.Take, childResult.TotalCount + 1);
 
                 Response.Headers.Append("X-Pagination", pagedResult.GetHeader().ToJson());
+
+                await session.CommitTransactionAsync();
 
                 return Ok(pagedResult);
             }
 
+            var result = await tenantContext.GetChildTenantsAsync(session, null, null);
+
             await session.CommitTransactionAsync();
 
-            return Ok(result.Items.Select(CreateTenantDto));
+            return Ok(result.Items.Select(CreateTenantDto).Prepend(ownTenant));
         }
         catch (Exception ex)
         {
