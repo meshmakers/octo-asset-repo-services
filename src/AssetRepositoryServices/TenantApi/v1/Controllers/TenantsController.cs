@@ -55,7 +55,7 @@ public class TenantsController : ControllerBase
 
     // GET {tenantId}/v1/tenants
     /// <summary>
-    ///     Returns the current (own) tenant followed by its child tenants, using pages.
+    ///     Returns all child tenants of the current tenant using pages
     /// </summary>
     [HttpGet]
     [Authorize(AssetRepositoryServiceConstants.TenantAssetApiReadOnlyPolicy)]
@@ -75,28 +75,12 @@ public class TenantsController : ControllerBase
             using var session = await tenantContext.GetAdminSessionAsync();
             session.StartTransaction();
 
-            var ownTenant = new TenantDto
-            {
-                TenantId = tenantContext.TenantId,
-                Database = tenantContext.DatabaseName
-            };
+            var result = await tenantContext.GetChildTenantsAsync(session, pagingParams?.Skip, pagingParams?.Take);
 
             if (pagingParams != null)
             {
-                var includeOwn = pagingParams.Skip <= 0;
-                var childSkip = includeOwn ? 0 : pagingParams.Skip - 1;
-                var childCapacity = includeOwn ? Math.Max(pagingParams.Take - 1, 0) : pagingParams.Take;
-
-                var childResult = await tenantContext.GetChildTenantsAsync(session, childSkip, Math.Max(childCapacity, 1));
-
-                var items = childResult.Items.Take(childCapacity).Select(CreateTenantDto);
-                if (includeOwn)
-                {
-                    items = items.Prepend(ownTenant);
-                }
-
-                var pagedResult = new PagedResult<TenantDto>(items,
-                    pagingParams.Skip, pagingParams.Take, childResult.TotalCount + 1);
+                var pagedResult = new PagedResult<TenantDto>(result.Items.Select(CreateTenantDto),
+                    pagingParams.Skip, pagingParams.Take, result.TotalCount);
 
                 Response.Headers.Append("X-Pagination", pagedResult.GetHeader().ToJson());
 
@@ -105,11 +89,49 @@ public class TenantsController : ControllerBase
                 return Ok(pagedResult);
             }
 
-            var result = await tenantContext.GetChildTenantsAsync(session, null, null);
-
             await session.CommitTransactionAsync();
 
-            return Ok(result.Items.Select(CreateTenantDto).Prepend(ownTenant));
+            return Ok(result.Items.Select(CreateTenantDto));
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(StatusCodes.Status500InternalServerError, new InternalServerErrorDto(ex.Message));
+        }
+    }
+
+    // GET {tenantId}/v1/tenants/self
+    /// <summary>
+    ///     Returns the current (own) tenant of the request, including its database name.
+    /// </summary>
+    /// <remarks>
+    ///     A tenant's own <see cref="TenantDto.Database" /> is only resolvable server-side: the tenant
+    ///     registry entry describing it lives in its parent's database (and in the system database),
+    ///     never in its own, so neither the tenants list nor the runtime GraphQL surface of this tenant
+    ///     can supply it. This endpoint exists so a tenant owner can back up and restore the tenant they
+    ///     are currently in without access to the parent tenant.
+    /// </remarks>
+    [HttpGet("self")]
+    [Authorize(AssetRepositoryServiceConstants.TenantAssetApiReadOnlyPolicy)]
+    [ProducesResponseType(typeof(TenantDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(OperationFailedErrorDto), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(InternalServerErrorDto), StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> GetSelf()
+    {
+        try
+        {
+            var tenantContext = await GetTenantContextAsync();
+            if (tenantContext == null)
+            {
+                return BadRequest(new OperationFailedErrorDto("TenantId is required"));
+            }
+
+            var ownTenant = new TenantDto
+            {
+                TenantId = tenantContext.TenantId,
+                Database = tenantContext.DatabaseName
+            };
+
+            return Ok(ownTenant);
         }
         catch (Exception ex)
         {
