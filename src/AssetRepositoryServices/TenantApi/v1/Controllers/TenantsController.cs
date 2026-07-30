@@ -55,7 +55,9 @@ public class TenantsController : ControllerBase
 
     // GET {tenantId}/v1/tenants
     /// <summary>
-    ///     Returns all child tenants of the current tenant using pages
+    ///     Returns all child tenants of the current tenant. Supplying paging parameters returns a
+    ///     <see cref="PagedResult{T}" /> plus an <c>X-Pagination</c> header; omitting them returns the
+    ///     plain list.
     /// </summary>
     [HttpGet]
     [Authorize(AssetRepositoryServiceConstants.TenantAssetApiReadOnlyPolicy)]
