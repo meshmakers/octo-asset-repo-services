@@ -191,6 +191,20 @@ Time-series data support (`StreamData/`):
   - `System` - System-level configuration
   - `AssetRepository` - Asset repository specific settings
 
+**Tenant setup failure handling.** `DefaultConfigurationCreatorService` wires two durable stores from the
+engine: `ITenantLifecycleStore` (AB#4348 — asset-repo is its single writer, recording each tenant's
+Creating/Active/Failed state and driving the reconcile pass) and `ITenantSetupRetryStore` (AB#4690 — a
+setup run that throws is recorded and re-run in the background instead of being lost with the process
+that observed it). Both are drained from `RetryFailedTenantsAsync` on the 30 s
+`FailedTenantRetryBackgroundService` timer. Note that a tenant reaching lifecycle state `Active` means
+the Identity service confirmed **and** seeded its default configuration — since AB#4690 the identity
+consumer reports `SuccessIdentityDataSeedPending` while the tenant still has no roles, which keeps the
+tenant in `Creating` instead of marking it provisioned.
+
+Operational: `PUT {tenantId}/v1/tenants/clearCache?childTenantId=<child>` (octo-cli `ClearCache`)
+publishes `PreUpdateTenant` + `PosUpdateTenant` and thereby makes **every** service re-run its tenant
+setup — the cheapest way to recover a half-provisioned tenant without restarting pods.
+
 #### 6. Dynamic Type System
 GraphQL types are generated dynamically based on Construction Kit models:
 - **RtEntityMutationGeneric** - Generic mutations for runtime entities (create, update, delete)

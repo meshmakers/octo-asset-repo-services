@@ -20,7 +20,8 @@ internal class DefaultConfigurationCreatorService(
     ISystemContext systemContext,
     ICommandClient<CreateIdentityDataCommandRequest> createIdentityDataCommandClient,
     OctoAssetRepositoryServicesOptions octoAssetRepositoryServicesOptions,
-    ITenantLifecycleStore tenantLifecycleStore)
+    ITenantLifecycleStore tenantLifecycleStore,
+    ITenantSetupRetryStore tenantSetupRetryStore)
     : DefaultConfigurationCreatorServiceStandardized(logger, systemContext, createIdentityDataCommandClient,
         AssetRepositoryServiceConstants.AssetServiceIdentityDataVersionKey,
         AssetRepositoryServiceConstants.AssetServiceIdentityDataVersionValue,
@@ -30,7 +31,9 @@ internal class DefaultConfigurationCreatorService(
         null, // serviceEnabledKey - the service is auto-enabled
         // Asset-Repo owns the durable tenant-lifecycle record (it runs setup for every tenant and drives
         // identity seeding), so it is the single writer of Creating/Active/Failed states (AB#4348).
-        tenantLifecycleStore: tenantLifecycleStore)
+        tenantLifecycleStore: tenantLifecycleStore,
+        // A setup run that throws is recorded durably and retried in the background (AB#4690).
+        tenantSetupRetryStore: tenantSetupRetryStore)
 {
     public override async Task InitializeAsync()
     {
