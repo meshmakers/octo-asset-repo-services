@@ -18,7 +18,6 @@ internal sealed class ResolveSeriesQueryInputDto
     public CkRollupFunction RequiredAggregation { get; set; }
     public string SourcePath { get; set; } = string.Empty;
     public List<OctoObjectId>? RtIds { get; set; }
-    public string? ObisFilter { get; set; }
 
     /// <summary>
     /// Optional IANA time zone (e.g. <c>Europe/Vienna</c>) the query is resolved in (AB#4190). Aligns

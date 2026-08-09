@@ -85,7 +85,6 @@ internal sealed class StreamDataQuery : ObjectGraphType
             input.SourcePath)
         {
             RtIds = input.RtIds,
-            ObisFilter = input.ObisFilter,
             QueryTimeZone = input.TimeZone,
             ComparisonPolicy = input.ComparisonPolicy,
         };

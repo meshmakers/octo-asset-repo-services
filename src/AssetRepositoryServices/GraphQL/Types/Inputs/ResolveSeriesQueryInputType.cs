@@ -33,10 +33,7 @@ internal sealed class ResolveSeriesQueryInputType : InputObjectGraphType<Resolve
             .Description("Logical CK attribute path of the measured column (e.g. Amount.Value) — used to match a rollup's aggregation spec.");
 
         Field<ListGraphType<NonNullGraphType<OctoObjectIdType>>>("rtIds")
-            .Description("Optional source-entity rtId scope (e.g. the EnergyMeasurement entities of a MeteringPoint). Forwarded by the caller to the downsampling query.");
-
-        Field<StringGraphType>("obisFilter")
-            .Description("Optional OBIS-code filter narrowing the series. Forwarded by the caller to the downsampling query.");
+            .Description("Optional source-entity rtId scope narrowing the series to a subset of source entities. Forwarded by the caller to the downsampling query.");
 
         Field<StringGraphType>("timeZone")
             .Description("Optional IANA time zone (e.g. Europe/Vienna) the query is resolved in (AB#4190). Aligns calendar (day/week/month/year) rungs to that zone's DST-correct civil boundaries; null ⇒ UTC. Sub-day rungs are unaffected.");
