@@ -286,7 +286,11 @@ public class StreamDataFixture : AssetRepoFixture
     /// </summary>
     private Task RefreshArchiveTableAsync() => RefreshArchiveTableAsync(ArchiveRtIdString);
 
-    private async Task RefreshArchiveTableAsync(string archiveRtIdString)
+    /// <summary>
+    /// Public so a test that writes after seeding (e.g. adding a computed column and backfilling it)
+    /// can force read-after-write consistency for its own assertions.
+    /// </summary>
+    public async Task RefreshArchiveTableAsync(string archiveRtIdString)
     {
         var qualifiedTable = $"\"{StreamDataTenantId}\".\"archive_{archiveRtIdString}\"";
         await using var conn = new NpgsqlConnection(CrateDbConnectionString);
