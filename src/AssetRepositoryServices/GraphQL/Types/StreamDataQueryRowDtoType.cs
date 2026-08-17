@@ -77,10 +77,10 @@ internal sealed class StreamDataQueryRowDtoType : ObjectGraphType<StreamDataQuer
 
         Field(d => d.RtId, typeof(OctoObjectIdType));
         Field(d => d.CkTypeId, typeof(RtCkIdGraph<CkTypeId>));
-        Field(d => d.Timestamp, typeof(DateTimeGraphType));
+        Field(d => d.Timestamp, typeof(UtcDateTimeGraphType));
         Field(d => d.RtWellKnownName, true);
-        Field(d => d.RtCreationDateTime, typeof(DateTimeGraphType));
-        Field(d => d.RtChangedDateTime, typeof(DateTimeGraphType));
+        Field(d => d.RtCreationDateTime, typeof(UtcDateTimeGraphType));
+        Field(d => d.RtChangedDateTime, typeof(UtcDateTimeGraphType));
 
         Connection<NonNullGraphType<RtQueryCellDtoType>>("Cells")
             .Description("The data cells for this row, one per selected column.")

@@ -74,7 +74,7 @@ internal sealed class StreamDataMutation : ObjectGraphType
         Field<NonNullGraphType<ArchiveTransitionResultDtoType>>("freezeRollupArchive")
             .Description("Sets FrozenUntil on the rollup archive. Monotonic — rejected when the new value is earlier than the current FrozenUntil (use unfreezeRollupArchive instead). When set, the orchestrator stops producing buckets whose bucketEnd falls within the frozen range.")
             .Argument<NonNullGraphType<OctoObjectIdType>>(Statics.RtIdArg, "Runtime id of the CkRollupArchive to freeze.")
-            .Argument<NonNullGraphType<DateTimeGraphType>>("until", "Inclusive upper bound of the frozen range, ISO-8601.")
+            .Argument<NonNullGraphType<UtcDateTimeGraphType>>("until", "Inclusive upper bound of the frozen range, ISO-8601.")
             .ResolveAsync(ctx => ResolveRollupAsync(ctx, "Freeze",
                 (svc, id) => svc.FreezeAsync(id, ctx.GetArgument<DateTime>("until"))));
 
@@ -88,15 +88,15 @@ internal sealed class StreamDataMutation : ObjectGraphType
         Field<NonNullGraphType<ArchiveTransitionResultDtoType>>("rewindRollupWatermark")
             .Description("Resets LastAggregatedBucketEnd to the given timestamp (truncated to the bucket boundary). Subsequent orchestrator ticks re-aggregate the rewound range. Destructive: previously committed rows in that range are temporarily out of sync until the orchestrator catches up.")
             .Argument<NonNullGraphType<OctoObjectIdType>>(Statics.RtIdArg, "Runtime id of the CkRollupArchive to rewind.")
-            .Argument<NonNullGraphType<DateTimeGraphType>>("toBucketEnd", "Target bucket-end (exclusive) the watermark is reset to, ISO-8601. Will be truncated down to the bucket boundary.")
+            .Argument<NonNullGraphType<UtcDateTimeGraphType>>("toBucketEnd", "Target bucket-end (exclusive) the watermark is reset to, ISO-8601. Will be truncated down to the bucket boundary.")
             .ResolveAsync(ctx => ResolveRollupAsync(ctx, "RewindWatermark",
                 (svc, id) => svc.RewindWatermarkAsync(id, ctx.GetArgument<DateTime>("toBucketEnd"))));
 
         Field<NonNullGraphType<RecomputeJobInfoDtoType>>("recomputeArchive")
             .Description("Triggers (or coalesces) an optimistic recompute of a rollup archive over the half-open range [from, to). Returns the resulting job snapshot. While a recompute runs, readers keep seeing a consistent snapshot. Requires StreamDataAdmin. AB#4184.")
             .Argument<NonNullGraphType<OctoObjectIdType>>(Statics.RtIdArg, "Runtime id of the CkRollupArchive to recompute.")
-            .Argument<NonNullGraphType<DateTimeGraphType>>("from", "Inclusive range start, ISO-8601.")
-            .Argument<NonNullGraphType<DateTimeGraphType>>("to", "Exclusive range end, ISO-8601.")
+            .Argument<NonNullGraphType<UtcDateTimeGraphType>>("from", "Inclusive range start, ISO-8601.")
+            .Argument<NonNullGraphType<UtcDateTimeGraphType>>("to", "Exclusive range end, ISO-8601.")
             .Argument<OctoObjectIdType>("rtIdScope", "Optional: restrict the recompute to a single entity (metering point / stream).")
             .ResolveAsync(ResolveRecomputeAsync);
 

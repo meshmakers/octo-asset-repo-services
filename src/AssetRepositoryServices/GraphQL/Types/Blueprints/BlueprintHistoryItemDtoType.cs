@@ -1,3 +1,4 @@
+using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Scalars;
 using GraphQL.Types;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.DataTransferObjects.Blueprints;
 
@@ -19,7 +20,7 @@ internal sealed class BlueprintHistoryItemDtoType : ObjectGraphType<BlueprintHis
             .Description("Fully-qualified blueprint id that was applied.")
             .Resolve(ctx => ctx.Source!.BlueprintId);
 
-        Field<NonNullGraphType<DateTimeGraphType>>("appliedAt")
+        Field<NonNullGraphType<UtcDateTimeGraphType>>("appliedAt")
             .Description("UTC timestamp of the operation.")
             .Resolve(ctx => ctx.Source!.AppliedAt);
 

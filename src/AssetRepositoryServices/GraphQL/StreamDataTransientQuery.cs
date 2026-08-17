@@ -87,9 +87,9 @@ internal sealed class StreamDataTransientQuery : ObjectGraphType
                 "Aggregation columns with attribute path and aggregation type.")
             .Argument<NonNullGraphType<IntGraphType>>("limit",
                 "Number of time buckets to produce.")
-            .Argument<NonNullGraphType<DateTimeGraphType>>("from",
+            .Argument<NonNullGraphType<UtcDateTimeGraphType>>("from",
                 "Start of time range.")
-            .Argument<NonNullGraphType<DateTimeGraphType>>("to",
+            .Argument<NonNullGraphType<UtcDateTimeGraphType>>("to",
                 "End of time range.")
             .Argument<ListGraphType<FieldFilterDtoType>>(Statics.FieldFilterArg,
                 "Field-level comparison filters.")

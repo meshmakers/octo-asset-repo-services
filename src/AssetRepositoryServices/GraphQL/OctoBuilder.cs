@@ -81,7 +81,7 @@ internal class OctoBuilder<TSourceType>(
             case AttributeValueTypesDto.Double:
                 return (null, typeof(DecimalGraphType));
             case AttributeValueTypesDto.DateTime:
-                return (null, typeof(DateTimeGraphType));
+                return (null, typeof(UtcDateTimeGraphType));
             case AttributeValueTypesDto.DateTimeOffset:
                 return (null, typeof(DateTimeOffsetGraphType));
             case AttributeValueTypesDto.TimeSpan:

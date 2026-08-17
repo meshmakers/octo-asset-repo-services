@@ -1,3 +1,4 @@
+using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Scalars;
 using GraphQL.Types;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.DataTransferObjects.Blueprints;
 
@@ -20,11 +21,11 @@ internal sealed class BlueprintInstallationDtoType : ObjectGraphType<BlueprintIn
             .Description("Fully-qualified blueprint id (Name-Version).")
             .Resolve(ctx => ctx.Source!.BlueprintId);
 
-        Field<NonNullGraphType<DateTimeGraphType>>("installedAt")
+        Field<NonNullGraphType<UtcDateTimeGraphType>>("installedAt")
             .Description("UTC timestamp of the initial install on this tenant.")
             .Resolve(ctx => ctx.Source!.InstalledAt);
 
-        Field<NonNullGraphType<DateTimeGraphType>>("lastUpdatedAt")
+        Field<NonNullGraphType<UtcDateTimeGraphType>>("lastUpdatedAt")
             .Description("UTC timestamp of the most recent update or re-apply touching this row.")
             .Resolve(ctx => ctx.Source!.LastUpdatedAt);
 

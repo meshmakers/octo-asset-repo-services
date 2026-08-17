@@ -32,11 +32,11 @@ internal sealed class RecomputeJobInfoDtoType : ObjectGraphType<RecomputeJobInfo
             .Description("Buckets recomputed; null while pending.")
             .Resolve(ctx => ctx.Source!.WindowsProcessed);
 
-        Field<DateTimeGraphType>("startedAt")
+        Field<UtcDateTimeGraphType>("startedAt")
             .Description("When compute started; null while pending.")
             .Resolve(ctx => ctx.Source!.StartedAt);
 
-        Field<DateTimeGraphType>("finishedAt")
+        Field<UtcDateTimeGraphType>("finishedAt")
             .Description("When the job reached a terminal state; null while running.")
             .Resolve(ctx => ctx.Source!.FinishedAt);
 

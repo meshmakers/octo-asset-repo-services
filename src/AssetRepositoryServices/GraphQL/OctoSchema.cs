@@ -1,5 +1,6 @@
 ﻿using GraphQL;
 using GraphQL.Types;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Scalars;
 using Meshmakers.Octo.ConstructionKit.Contracts;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL;
@@ -39,5 +40,10 @@ internal sealed class OctoSchema : Schema
         Query = octoQuery;
         Mutation = octoMutation;
         Subscription = octoSubscriptions;
+
+        // Auto-mapped CLR DateTime fields must resolve to the UTC-normalizing scalar as well;
+        // the stock DateTimeGraphType would register a second scalar named "DateTime" and
+        // serialize Unspecified-kind values naive (AB#4821).
+        this.RegisterTypeMapping(typeof(DateTime), typeof(UtcDateTimeGraphType));
     }
 }

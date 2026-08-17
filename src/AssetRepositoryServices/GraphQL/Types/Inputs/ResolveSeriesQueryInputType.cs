@@ -17,10 +17,10 @@ internal sealed class ResolveSeriesQueryInputType : InputObjectGraphType<Resolve
         Field<NonNullGraphType<OctoObjectIdType>>("baseArchiveRtId")
             .Description("Runtime id of the base (raw / time-range) archive of the series' resolution family.");
 
-        Field<NonNullGraphType<DateTimeGraphType>>("from")
+        Field<NonNullGraphType<UtcDateTimeGraphType>>("from")
             .Description("Inclusive start of the query window (UTC).");
 
-        Field<NonNullGraphType<DateTimeGraphType>>("to")
+        Field<NonNullGraphType<UtcDateTimeGraphType>>("to")
             .Description("Exclusive end of the query window (UTC).");
 
         Field<NonNullGraphType<IntGraphType>>("targetPoints")

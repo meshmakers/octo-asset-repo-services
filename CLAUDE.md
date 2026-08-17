@@ -253,6 +253,15 @@ N:M associations are exposed as query columns with `::totalCount` (INT64) and `:
 - Determines association direction (inbound/outbound) from CK model
 
 ### When Working with GraphQL
+- **DateTime scalar is `UtcDateTimeGraphType`** (`GraphQL/Types/Scalars/`), not the stock
+  GraphQL.NET `DateTimeGraphType` (AB#4821). It keeps the wire name `DateTime` but normalizes
+  every instant to `DateTimeKind.Utc` before serialization (Unspecified is *labelled* UTC —
+  the platform convention — never shifted), so responses always carry the ISO-8601 `Z`
+  designator. The stock scalar formats kind-dependently inside `Serialize` and would emit
+  naive strings for Unspecified-kind values from DB read paths. Never reference the stock
+  `DateTimeGraphType` in field/argument declarations (two scalars named `DateTime` also break
+  schema init); `OctoSchema` maps CLR `DateTime` to the UTC scalar for auto-mapped fields.
+  `SimpleScalarType.Serialize` applies the same normalization to top-level DateTime cell values.
 - Schema caching is automatic per tenant (up to 64 cached schemas)
 - Schema invalidation happens via `SchemaContext.Invalidate(tenantId)`
 - All GraphQL types must be thread-safe (they're cached and reused)

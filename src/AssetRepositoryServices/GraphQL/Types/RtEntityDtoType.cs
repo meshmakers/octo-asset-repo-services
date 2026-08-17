@@ -46,8 +46,8 @@ internal sealed class RtEntityDtoType : ObjectGraphType<RtEntityDto>
 
         Field(d => d.RtId, typeof(NonNullGraphType<OctoObjectIdType>));
         Field(d => d.CkTypeId, typeof(NonNullGraphType<RtCkIdGraph<CkTypeId>>));
-        Field(d => d.RtCreationDateTime, typeof(DateTimeGraphType));
-        Field(d => d.RtChangedDateTime, typeof(DateTimeGraphType));
+        Field(d => d.RtCreationDateTime, typeof(UtcDateTimeGraphType));
+        Field(d => d.RtChangedDateTime, typeof(UtcDateTimeGraphType));
         Field(x => x.RtWellKnownName, true);
         Field<NonNullGraphType<StringGraphType>>("rtDisplayName")
             .Description("Engine-computed display name (from the CK type's displayNameRule). " +

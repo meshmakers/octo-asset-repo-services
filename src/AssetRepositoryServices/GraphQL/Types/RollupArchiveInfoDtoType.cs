@@ -40,11 +40,11 @@ internal sealed class RollupArchiveInfoDtoType : ObjectGraphType<RollupArchiveIn
             .Description("Watermark lag in milliseconds — how far behind real-time the orchestrator stays before closing a bucket.")
             .Resolve(ctx => ctx.Source!.WatermarkLagMs);
 
-        Field<DateTimeGraphType>("lastAggregatedBucketEnd")
+        Field<UtcDateTimeGraphType>("lastAggregatedBucketEnd")
             .Description("Exclusive end timestamp of the most recently committed bucket. Null before the first orchestrator tick.")
             .Resolve(ctx => ctx.Source!.LastAggregatedBucketEnd);
 
-        Field<DateTimeGraphType>("frozenUntil")
+        Field<UtcDateTimeGraphType>("frozenUntil")
             .Description("Upper bound of the frozen range, if set. Buckets ending at or before this point are not re-aggregated by the orchestrator.")
             .Resolve(ctx => ctx.Source!.FrozenUntil);
 
@@ -57,15 +57,15 @@ internal sealed class RollupArchiveInfoDtoType : ObjectGraphType<RollupArchiveIn
             .Description("True while a recompute job for this rollup is running or swapping.")
             .Resolve(ctx => ctx.Source!.RecomputeInProgress);
 
-        Field<DateTimeGraphType>("lastRecomputeStartedAt")
+        Field<UtcDateTimeGraphType>("lastRecomputeStartedAt")
             .Description("Start timestamp of the most recent recompute run. Null before the first run.")
             .Resolve(ctx => ctx.Source!.LastRecomputeStartedAt);
 
-        Field<DateTimeGraphType>("lastRecomputeSuccessAt")
+        Field<UtcDateTimeGraphType>("lastRecomputeSuccessAt")
             .Description("Finish timestamp of the most recent successfully committed recompute run. Null before the first success.")
             .Resolve(ctx => ctx.Source!.LastRecomputeSuccessAt);
 
-        Field<DateTimeGraphType>("lastRecomputeFailureAt")
+        Field<UtcDateTimeGraphType>("lastRecomputeFailureAt")
             .Description("Timestamp of the most recent failed recompute run. Null if the last run succeeded.")
             .Resolve(ctx => ctx.Source!.LastRecomputeFailureAt);
 

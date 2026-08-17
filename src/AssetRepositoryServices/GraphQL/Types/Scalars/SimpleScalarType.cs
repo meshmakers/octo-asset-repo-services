@@ -8,7 +8,9 @@ internal class SimpleScalarType : ScalarGraphType
 {
     public override object? Serialize(object? value)
     {
-        return value;
+        // Instants must leave the GraphQL layer with an explicit UTC designator (AB#4821);
+        // a DB read path may hand over Unspecified-kind values which would serialize naive.
+        return value is DateTime dateTime ? UtcDateTimeGraphType.EnsureUtc(dateTime) : value;
     }
 
     public override object? ParseValue(object? value)
