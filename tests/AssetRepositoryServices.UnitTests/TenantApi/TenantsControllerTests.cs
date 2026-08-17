@@ -10,6 +10,7 @@ using Meshmakers.Octo.Runtime.Contracts.MongoDb.TenantLifecycle;
 using Meshmakers.Octo.Runtime.Contracts.Repositories.Query;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Logging;
 using Xunit;
 
 namespace AssetRepositoryServices.UnitTests.TenantApi;
@@ -22,6 +23,7 @@ public class TenantsControllerTests
     private readonly IOctoService _octoService;
     private readonly ISystemContext _systemContext;
     private readonly ITenantContext _tenantContext;
+    private readonly ITenantLifecycleStore _tenantLifecycleStore;
     private readonly TenantsController _controller;
 
     public TenantsControllerTests()
@@ -36,10 +38,13 @@ public class TenantsControllerTests
         A.CallTo(() => _tenantContext.DatabaseName).Returns(OwnDatabase);
         A.CallTo(() => _tenantContext.GetAdminSessionAsync()).Returns(A.Fake<IOctoAdminSession>());
 
+        _tenantLifecycleStore = A.Fake<ITenantLifecycleStore>();
+
         _controller = new TenantsController(
             _octoService,
             A.Fake<IDistributionEventHubService>(),
-            A.Fake<ITenantLifecycleStore>());
+            _tenantLifecycleStore,
+            A.Fake<ILogger<TenantsController>>());
 
         var httpContext = new DefaultHttpContext();
         httpContext.Request.RouteValues["tenantId"] = OwnTenantId;

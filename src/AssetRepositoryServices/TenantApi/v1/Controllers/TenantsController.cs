@@ -28,6 +28,7 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.TenantApi.v1.Controlle
 public class TenantsController : ControllerBase
 {
     private readonly IDistributionEventHubService _distributionEventHubService;
+    private readonly ILogger<TenantsController> _logger;
     private readonly IOctoService _octoService;
     private readonly ITenantLifecycleStore _tenantLifecycleStore;
 
@@ -35,11 +36,12 @@ public class TenantsController : ControllerBase
     ///     Constructor
     /// </summary>
     public TenantsController(IOctoService octoService, IDistributionEventHubService distributionEventHubService,
-        ITenantLifecycleStore tenantLifecycleStore)
+        ITenantLifecycleStore tenantLifecycleStore, ILogger<TenantsController> logger)
     {
         _octoService = octoService;
         _distributionEventHubService = distributionEventHubService;
         _tenantLifecycleStore = tenantLifecycleStore;
+        _logger = logger;
     }
 
     private async Task<ITenantContext?> GetTenantContextAsync()
@@ -207,14 +209,22 @@ public class TenantsController : ControllerBase
             }
 
             // Serialize against an in-flight deletion: if the lifecycle store still records this tenant as
-            // Deleting, its database drop has not finished yet. Surface a retryable 409 instead of letting
-            // the create proceed and fail later on "database already exists" (AB#4348 Phase 3).
+            // Deleting, its database drop has not finished yet. Surface a 409 instead of letting the
+            // create proceed and fail later on "database already exists" (AB#4348 Phase 3).
+            // The body is the engine's generic tenant-id conflict, reused verbatim so the two cannot
+            // drift apart: the lifecycle store is platform-global and this endpoint takes any tenant id,
+            // so a distinguishable "deletion in progress" answer would let any caller probe the state of
+            // tenants they cannot see (AB#4763). The real state is logged instead.
             var normalizedTenantId = childTenantId.NormalizeString();
             var existingLifecycle = await _tenantLifecycleStore.GetAsync(normalizedTenantId);
             if (existingLifecycle is { State: TenantLifecycleState.Deleting })
             {
+                _logger.LogWarning(
+                    "Rejected creation of tenant '{TenantId}' because its deletion is still in progress. " +
+                    "The caller only sees a generic conflict message.", normalizedTenantId);
+
                 return Conflict(new OperationFailedErrorDto(
-                    $"Tenant '{childTenantId}' deletion is still in progress. Please retry shortly."));
+                    TenantException.TenantIdNotAvailable(childTenantId).Message));
             }
 
             using var session = await tenantContext.GetAdminSessionAsync();
@@ -245,8 +255,10 @@ public class TenantsController : ControllerBase
             catch
             {
                 // Abort so the octosystem tenant entries inserted in this transaction are rolled
-                // back (AB#1958). The engine has already dropped the tenant database/user and
-                // written the failure to the event log.
+                // back (AB#1958). The engine rolls back the tenant database/user only when it
+                // created them itself, and writes the failure to the event log — a create rejected
+                // because the name was already taken leaves the existing database untouched
+                // (AB#4762).
                 try
                 {
                     await session.AbortTransactionAsync();
@@ -297,6 +309,7 @@ public class TenantsController : ControllerBase
     [Authorize(AssetRepositoryServiceConstants.TenantAssetApiReadWritePolicy)]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(typeof(OperationFailedErrorDto), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(OperationFailedErrorDto), StatusCodes.Status409Conflict)]
     [ProducesResponseType(typeof(InternalServerErrorDto), StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> Attach([Required] string childTenantId, [Required] string databaseName)
     {
@@ -314,6 +327,12 @@ public class TenantsController : ControllerBase
             await tenantContext.AttachChildTenantAsync(session, databaseName, childTenantId);
             await session.CommitTransactionAsync();
             return NoContent();
+        }
+        catch (TenantException e) when (e.IsConflict)
+        {
+            // Same mapping as Post: attach shares both namespaces with create, so an identical
+            // condition must not answer with a different status code (AB#4763).
+            return Conflict(new OperationFailedErrorDto(e.Message));
         }
         catch (PersistenceException e)
         {
@@ -457,8 +476,15 @@ public class TenantsController : ControllerBase
             var lifecycle = await _tenantLifecycleStore.GetAsync(normalizedTenantId);
             if (lifecycle is { State: TenantLifecycleState.Creating })
             {
+                // Generic for the same reason as the create-side guard: the lifecycle store is
+                // platform-global and this endpoint accepts any tenant id, so a distinguishable answer
+                // would expose the provisioning state of tenants outside the caller's subtree (AB#4763).
+                _logger.LogWarning(
+                    "Rejected deletion of tenant '{TenantId}' because it is still being created. " +
+                    "The caller only sees a generic conflict message.", normalizedTenantId);
+
                 return Conflict(new OperationFailedErrorDto(
-                    $"Tenant '{childTenantId}' is still being created. Retry the delete once it is active or failed."));
+                    TenantException.TenantIdNotAvailable(childTenantId).Message));
             }
 
             // Mark the tenant as being deleted (durable tombstone) BEFORE dropping its database, so a
@@ -502,6 +528,10 @@ public class TenantsController : ControllerBase
     ///     If a delete fails after the Deleting tombstone was written, remove it so a re-create is not
     ///     blocked forever by the Create-side 409 guard. Correctness is still protected by the tenant /
     ///     database-exists checks the retried create runs (AB#4348 Phase 3).
+    ///     Note that since AB#4762 those checks only reject the re-create — they no longer drop a
+    ///     leftover database, so a delete that failed after committing its metadata removal leaves an
+    ///     orphaned database that an operator has to reclaim (attach it, or drop it) before the tenant
+    ///     id and database name become usable again. The engine logs both names when it rejects.
     /// </summary>
     private async Task ClearDeletingTombstoneOnFailureAsync(string normalizedTenantId, bool markedDeleting)
     {
@@ -522,19 +552,45 @@ public class TenantsController : ControllerBase
 
     // GET: {tenantId}/v1/tenants/lifecycle?childTenantId=abc
     /// <summary>
-    ///     Returns the durable provisioning lifecycle state of a child tenant, or 404 when the tenant has
-    ///     no lifecycle record (e.g. a legacy tenant created before lifecycle tracking) — AB#4348.
+    ///     Returns the durable provisioning lifecycle state of a child tenant, or 404 when the tenant is
+    ///     not a child of the current tenant or has no lifecycle record (e.g. a legacy tenant created
+    ///     before lifecycle tracking) — AB#4348.
     /// </summary>
+    /// <remarks>
+    ///     The child check is what keeps the generic conflict messages on create and delete meaningful:
+    ///     the lifecycle store is platform-global, so without it a caller could take the deliberately
+    ///     reason-free "Tenant ID is already in use" and then read the colliding tenant's database name,
+    ///     last error and lease owner from here (AB#4763). Mirrors the check in <see cref="Get(string)" />.
+    /// </remarks>
     /// <param name="childTenantId">ID of the child tenant</param>
     [HttpGet("lifecycle")]
     [Authorize(AssetRepositoryServiceConstants.TenantAssetApiReadOnlyPolicy)]
     [ProducesResponseType(typeof(TenantLifecycleDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(OperationFailedErrorDto), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(typeof(InternalServerErrorDto), StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> GetLifecycle([Required] string childTenantId)
     {
         try
         {
+            var tenantContext = await GetTenantContextAsync();
+            if (tenantContext == null)
+            {
+                return BadRequest(new OperationFailedErrorDto("TenantId is required"));
+            }
+
+            using (var session = await tenantContext.GetAdminSessionAsync())
+            {
+                session.StartTransaction();
+                var isChild = await tenantContext.IsChildTenantExistingAsync(session, childTenantId);
+                await session.CommitTransactionAsync();
+
+                if (!isChild)
+                {
+                    return NotFound();
+                }
+            }
+
             var record = await _tenantLifecycleStore.GetAsync(childTenantId.NormalizeString());
             if (record == null)
             {
