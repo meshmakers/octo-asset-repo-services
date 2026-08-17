@@ -162,6 +162,31 @@ Located in versioned API folders:
 
 **Tenant APIs** (`TenantApi/v1/Controllers/`):
 - `TenantsController.cs` - Tenant management. `GET {tenantId}/v1/tenants` returns **only the child tenants** of the current tenant; `GET {tenantId}/v1/tenants/self` returns the current (own) tenant, including its `Database`. Keeping the two apart is deliberate (AB#4601): AB#4432 had injected the own tenant into the *list* as a virtual index 0, which made every list-row action (`Detach`, `Delete` in the Refinery Studio context menu) offer itself on the tenant the operator was signed into — an operation the API must never expose. The own tenant is only resolvable server-side (its `Database` comes from the request's `ITenantContext`; the registry entry describing a tenant lives in its **parent's** database and in the system database, never in its own), which is why `self` exists at all instead of the frontend deriving it. `self` needs no extra tenant check beyond its `TenantAssetApiReadOnlyPolicy`: it sits under the `{tenantId:tenantId}` prefix, so `TenantAuthorizationMiddleware` already 403s a user token whose `tenant_id` claim does not match the route (client-credentials tokens are exempt there by design). Child tenants come back in the underlying query's default order — the endpoint imposes **no explicit sort**, so cross-page ordering is only as stable as that default (`GetChildTenantsAsync` in the engine exposes no sort parameter). Note that none of these policies check a **role**: they are scope-only, so `TenantManagement` is enforced by the Studio's route guard for UX, not by this API.
+
+  **Ownership is settled before the platform-global stores are read (AB#4763).** The tenant lifecycle
+  store knows *every* tenant on the platform, so any endpoint that answers based on its contents leaks
+  the state of tenants outside the caller's subtree. `GetLifecycle` and `Delete` therefore both check
+  `IsChildTenantExistingAsync` **first** and 404 otherwise — the same idiom `Get(id)` already used —
+  and only then consult the store. `GetLifecycle` without that gate defeated the whole point of the
+  engine's reason-free conflicts: a caller took the deliberately vague *"Tenant ID is already in use"*
+  from `Post` and then read the colliding tenant's database name, last error and lease owner from here.
+
+  **Conflicts are the engine's two generic messages, verbatim.** `Post`'s in-flight-deletion guard
+  reuses `TenantException.TenantIdNotAvailable(...).Message` rather than naming the lifecycle state,
+  because it queries the store globally. `Delete`'s "still being created" guard may state its reason —
+  ownership is already established at that point — and must, since *"already in use"* is nonsense as
+  the answer to a delete. `Attach` maps `TenantException.IsConflict` to **409** exactly like `Post`;
+  it used to return 400 for the identical condition because `TenantException` derives from
+  `PersistenceException`.
+
+  **`Delete` clears the tenant's setup-retry entries** (`ITenantSetupRetryStore.ClearAllForTenantAsync`)
+  after the drop. The retry loop otherwise keeps calling `SetupAsync` for a tenant that no longer
+  exists and re-creates its database as an empty shell; since AB#4762 the create path no longer
+  reclaims such a shell, so the leftover would permanently block its own database name.
+
+  Still open on this controller (filed separately): `ReRunSetup` and `ClearCache` accept any tenant id
+  with no subtree check — `ClearCache` will even upsert `tenant_setup_retry` rows for a tenant that
+  does not exist, which the background retry then drives forever.
 - `ModelsController.cs` - Construction kit and runtime model import/export (includes `ImportFromCatalog` endpoint)
 - `LargeBinariesController.cs` - Binary file download. Falls back to magic-byte sniffing via `BinaryContentTypeDetector` when the stored `ContentType` is missing or `application/octet-stream` (legacy data uploaded before detection existed). For non-seekable source streams the head bytes are re-prepended via `PrependedReadStream`.
 - `DiagnosticsController.cs` - Per-tenant diagnostics.
