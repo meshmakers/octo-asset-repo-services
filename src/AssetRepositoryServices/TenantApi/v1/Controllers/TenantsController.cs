@@ -31,16 +31,19 @@ public class TenantsController : ControllerBase
     private readonly ILogger<TenantsController> _logger;
     private readonly IOctoService _octoService;
     private readonly ITenantLifecycleStore _tenantLifecycleStore;
+    private readonly ITenantSetupRetryStore _tenantSetupRetryStore;
 
     /// <summary>
     ///     Constructor
     /// </summary>
     public TenantsController(IOctoService octoService, IDistributionEventHubService distributionEventHubService,
-        ITenantLifecycleStore tenantLifecycleStore, ILogger<TenantsController> logger)
+        ITenantLifecycleStore tenantLifecycleStore, ITenantSetupRetryStore tenantSetupRetryStore,
+        ILogger<TenantsController> logger)
     {
         _octoService = octoService;
         _distributionEventHubService = distributionEventHubService;
         _tenantLifecycleStore = tenantLifecycleStore;
+        _tenantSetupRetryStore = tenantSetupRetryStore;
         _logger = logger;
     }
 
@@ -470,21 +473,32 @@ public class TenantsController : ControllerBase
                 return BadRequest(new OperationFailedErrorDto("TenantId is required"));
             }
 
+            // Establish that the tenant is ours BEFORE consulting the platform-global lifecycle store.
+            // That store knows every tenant on the platform, so reading it first and answering on its
+            // contents leaked the provisioning state of tenants outside the caller's subtree — and it
+            // also forced the reply to be a generic "already in use", which reads as nonsense in
+            // response to a delete. With the ownership settled first, the guard below can say what it
+            // actually means (AB#4763).
+            using (var probeSession = await tenantContext.GetAdminSessionAsync())
+            {
+                probeSession.StartTransaction();
+                var isChild = await tenantContext.IsChildTenantExistingAsync(probeSession, childTenantId);
+                await probeSession.CommitTransactionAsync();
+
+                if (!isChild)
+                {
+                    return NotFound();
+                }
+            }
+
             // Q2: refuse to delete a tenant that is still being created. The reconciler drives a stalled
             // Creating tenant to Active or Failed, at which point the operator can retry the delete
             // (AB#4348 Phase 3).
             var lifecycle = await _tenantLifecycleStore.GetAsync(normalizedTenantId);
             if (lifecycle is { State: TenantLifecycleState.Creating })
             {
-                // Generic for the same reason as the create-side guard: the lifecycle store is
-                // platform-global and this endpoint accepts any tenant id, so a distinguishable answer
-                // would expose the provisioning state of tenants outside the caller's subtree (AB#4763).
-                _logger.LogWarning(
-                    "Rejected deletion of tenant '{TenantId}' because it is still being created. " +
-                    "The caller only sees a generic conflict message.", normalizedTenantId);
-
                 return Conflict(new OperationFailedErrorDto(
-                    TenantException.TenantIdNotAvailable(childTenantId).Message));
+                    $"Tenant '{childTenantId}' is still being created. Retry the delete once it is active or failed."));
             }
 
             // Mark the tenant as being deleted (durable tombstone) BEFORE dropping its database, so a
@@ -510,6 +524,29 @@ public class TenantsController : ControllerBase
             // The database drop has completed → remove the tombstone so the tenant id can be re-created
             // cleanly (AB#4348 Phase 3).
             await _tenantLifecycleStore.RemoveAsync(normalizedTenantId);
+
+            // Take the tenant's pending setup retries with it. Otherwise every service's retry loop
+            // keeps calling SetupAsync for a tenant that no longer exists, and that setup re-creates
+            // the database as an empty CkModel+SysLock shell seconds after the drop. Since AB#4762 the
+            // create path no longer reclaims such a shell, so the leftover would permanently block its
+            // own database name behind a deliberately reason-free conflict.
+            try
+            {
+                var removedRetries = await _tenantSetupRetryStore.ClearAllForTenantAsync(normalizedTenantId);
+                if (removedRetries > 0)
+                {
+                    _logger.LogInformation(
+                        "Removed {Count} pending setup-retry entries of deleted tenant '{TenantId}'",
+                        removedRetries, normalizedTenantId);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex,
+                    "Deleted tenant '{TenantId}' but failed to clear its setup-retry entries; a background " +
+                    "retry may re-create its database as an orphan", normalizedTenantId);
+            }
+
             return Ok();
         }
         catch (TenantException e)

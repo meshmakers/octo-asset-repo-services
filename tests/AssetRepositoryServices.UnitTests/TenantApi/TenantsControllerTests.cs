@@ -45,6 +45,7 @@ public class TenantsControllerTests
             _octoService,
             A.Fake<IDistributionEventHubService>(),
             _tenantLifecycleStore,
+            A.Fake<ITenantSetupRetryStore>(),
             A.Fake<ILogger<TenantsController>>());
 
         var httpContext = new DefaultHttpContext();
@@ -172,18 +173,38 @@ public class TenantsControllerTests
     }
 
     [Fact]
-    public async Task Delete_ReturnsGenericConflict_WhenTenantIsStillBeingCreated()
+    public async Task Delete_ReturnsNotFound_ForATenantOutsideTheOwnSubtree()
+    {
+        const string foreignTenantId = "somebody-elses-tenant";
+        A.CallTo(() => _tenantContext.IsChildTenantExistingAsync(A<IOctoAdminSession>._, foreignTenantId))
+            .Returns(false);
+
+        var result = await _controller.Delete(foreignTenantId);
+
+        result.Should().BeOfType<NotFoundResult>();
+
+        // Ownership must be settled before the platform-global lifecycle store is consulted, otherwise
+        // the reply exposes the provisioning state of a tenant the caller cannot see (AB#4763).
+        A.CallTo(() => _tenantLifecycleStore.GetAsync(A<string>._, A<CancellationToken>._))
+            .MustNotHaveHappened();
+    }
+
+    [Fact]
+    public async Task Delete_ReturnsConflict_WhenAnOwnChildIsStillBeingCreated()
     {
         const string childTenantId = "child-a";
+        A.CallTo(() => _tenantContext.IsChildTenantExistingAsync(A<IOctoAdminSession>._, childTenantId))
+            .Returns(true);
         A.CallTo(() => _tenantLifecycleStore.GetAsync(childTenantId, A<CancellationToken>._))
             .Returns(new TenantLifecycleRecord { TenantId = childTenantId, State = TenantLifecycleState.Creating });
 
         var result = await _controller.Delete(childTenantId);
 
+        // The caller owns this tenant, so the reason is safe to state — and "already in use" would be
+        // nonsense as the answer to a delete.
         var error = result.Should().BeOfType<ConflictObjectResult>().Subject
             .Value.Should().BeOfType<OperationFailedErrorDto>().Subject;
-        error.Message.Should().Be(GenericTenantIdConflict(childTenantId));
-        error.Message.Should().NotContain("created");
+        error.Message.Should().Contain("still being created");
     }
 
     [Fact]
