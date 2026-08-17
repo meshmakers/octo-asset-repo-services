@@ -58,6 +58,13 @@ internal sealed class RtSimpleQueryRowDtoType : ObjectGraphType<RtSimpleQueryRow
         Field(x => x.RtCreationDateTime, true);
         Field(x => x.RtChangedDateTime, true);
         Field(x => x.RtWellKnownName, true);
+        Field<NonNullGraphType<StringGraphType>>("rtDisplayName")
+            .Description("Engine-computed display name (from the CK type's displayNameRule). " +
+                         "Falls back to '<ckTypeId>@<rtId>' when no computed value is stored. " +
+                         "Filtering and sorting operate on the stored value.")
+            .Resolve(ctx => ctx.Source.RtDisplayName ?? $"{ctx.Source.CkTypeId}@{ctx.Source.RtId}");
+        Field(x => x.RtDisplayDescription, true)
+            .Description("Engine-computed display description (from the CK type's displayDescriptionRule).");
         Field(x => x.RtVersion, true);
 
         Connection<NonNullGraphType<RtQueryCellDtoType>>("Cells")
@@ -152,6 +159,8 @@ internal sealed class RtSimpleQueryRowDtoType : ObjectGraphType<RtSimpleQueryRow
             RtCreationDateTime = rtEntityGraphItem.RtCreationDateTime,
             RtChangedDateTime = rtEntityGraphItem.RtChangedDateTime,
             RtWellKnownName = rtEntityGraphItem.RtWellKnownName,
+            RtDisplayName = rtEntityGraphItem.RtDisplayName,
+            RtDisplayDescription = rtEntityGraphItem.RtDisplayDescription,
             RtVersion = rtEntityGraphItem.RtVersion,
             UserContext = new RtQueryRowUserContext(tenantId, rtEntityGraphItem, ckTypeQueryColumns)
         };

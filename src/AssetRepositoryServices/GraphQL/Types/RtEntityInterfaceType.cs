@@ -40,6 +40,12 @@ internal sealed class RtEntityInterfaceType : InterfaceGraphType<RtEntityDto>
         Field(d => d.RtCreationDateTime, typeof(DateTimeGraphType));
         Field(d => d.RtChangedDateTime, typeof(DateTimeGraphType));
         Field(x => x.RtWellKnownName, true);
+        Field<NonNullGraphType<StringGraphType>>("rtDisplayName")
+            .Description("Engine-computed display name (from the CK type's displayNameRule). " +
+                         "Falls back to '<ckTypeId>@<rtId>' when no computed value is stored. " +
+                         "Filtering and sorting operate on the stored value.");
+        Field(x => x.RtDisplayDescription, true)
+            .Description("Engine-computed display description (from the CK type's displayDescriptionRule).");
         Field(x => x.RtVersion, true);
 
         // ResolveType determines the concrete type for a given object

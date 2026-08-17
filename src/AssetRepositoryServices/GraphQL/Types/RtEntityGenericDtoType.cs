@@ -29,6 +29,13 @@ internal sealed class RtEntityGenericDtoType : ObjectGraphType<RtEntityDto>
         Field(x => x.RtCreationDateTime, true);
         Field(x => x.RtChangedDateTime, true);
         Field(x => x.RtWellKnownName, true);
+        Field<NonNullGraphType<StringGraphType>>("rtDisplayName")
+            .Description("Engine-computed display name (from the CK type's displayNameRule). " +
+                         "Falls back to '<ckTypeId>@<rtId>' when no computed value is stored. " +
+                         "Filtering and sorting operate on the stored value.")
+            .Resolve(ctx => ctx.Source.RtDisplayName ?? $"{ctx.Source.CkTypeId}@{ctx.Source.RtId}");
+        Field(x => x.RtDisplayDescription, true)
+            .Description("Engine-computed display description (from the CK type's displayDescriptionRule).");
         Field(x => x.RtVersion, true);
         Field("associations", typeof(RtEntityGenericAssociationType)).Description(
                 "A list of associations of this entity. The association role id is used to filter the associations.")

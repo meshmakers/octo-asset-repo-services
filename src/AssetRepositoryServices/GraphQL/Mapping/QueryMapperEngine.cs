@@ -107,6 +107,8 @@ internal class QueryMapperEngine
                                                                    .CannotConvertValueToString(v)));
                             break;
                         case nameof(RtEntity.RtWellKnownName):
+                        case nameof(RtEntity.RtDisplayName):
+                        case nameof(RtEntity.RtDisplayDescription):
                             break;
                         case nameof(RtEntity.RtCreationDateTime):
                         case nameof(RtEntity.RtChangedDateTime):
