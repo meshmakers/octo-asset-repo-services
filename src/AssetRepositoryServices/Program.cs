@@ -58,7 +58,8 @@ try
             options => builder.Configuration.GetSection("AssetRepository").Bind(options))
         .AddCrateDbStreamDataRepository<ConfigureStreamDataConfiguration>()
         .AddRollupOrchestratorBackgroundService()
-        .AddRecomputeOrchestratorBackgroundService();
+        .AddRecomputeOrchestratorBackgroundService()
+        .AddDisplayRuleSweepBackgroundService();
 
     // Surface platform events (e.g. failed tenant creation, AB#1958) in the event log. Registers
     // IEventRepository and replaces the engine's default logging IAuditEventSink with the
