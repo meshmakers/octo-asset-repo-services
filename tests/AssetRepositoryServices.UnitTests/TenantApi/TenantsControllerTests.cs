@@ -4,6 +4,7 @@ using Meshmakers.Octo.Backend.AssetRepositoryServices.Services;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.TenantApi.v1.Controllers;
 using Meshmakers.Octo.Common.DistributionEventHub.Services;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
+using Meshmakers.Octo.Communication.Contracts.DataTransferObjects.ApiErrors;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb.Repositories;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb.TenantLifecycle;
@@ -146,5 +147,88 @@ public class TenantsControllerTests
         var result = await _controller.Get(pagingParams);
         return result.Should().BeOfType<OkObjectResult>().Subject
             .Value.Should().BeOfType<PagedResult<TenantDto>>().Subject;
+    }
+
+    // --- Namespace conflicts and lifecycle disclosure (AB#4762 / AB#4763) ---
+
+    private static string GenericTenantIdConflict(string tenantId) =>
+        TenantException.TenantIdNotAvailable(tenantId).Message;
+
+    [Fact]
+    public async Task Post_ReturnsGenericConflict_WhenTenantIsBeingDeleted()
+    {
+        const string childTenantId = "child-a";
+        A.CallTo(() => _tenantLifecycleStore.GetAsync(childTenantId, A<CancellationToken>._))
+            .Returns(new TenantLifecycleRecord { TenantId = childTenantId, State = TenantLifecycleState.Deleting });
+
+        var result = await _controller.Post(childTenantId, "child-a-db");
+
+        // Must be indistinguishable from "the id is taken by a tenant you cannot see": the lifecycle
+        // store is platform-global, so a distinguishable answer would be an existence oracle.
+        var error = result.Should().BeOfType<ConflictObjectResult>().Subject
+            .Value.Should().BeOfType<OperationFailedErrorDto>().Subject;
+        error.Message.Should().Be(GenericTenantIdConflict(childTenantId));
+        error.Message.Should().NotContain("deletion");
+    }
+
+    [Fact]
+    public async Task Delete_ReturnsGenericConflict_WhenTenantIsStillBeingCreated()
+    {
+        const string childTenantId = "child-a";
+        A.CallTo(() => _tenantLifecycleStore.GetAsync(childTenantId, A<CancellationToken>._))
+            .Returns(new TenantLifecycleRecord { TenantId = childTenantId, State = TenantLifecycleState.Creating });
+
+        var result = await _controller.Delete(childTenantId);
+
+        var error = result.Should().BeOfType<ConflictObjectResult>().Subject
+            .Value.Should().BeOfType<OperationFailedErrorDto>().Subject;
+        error.Message.Should().Be(GenericTenantIdConflict(childTenantId));
+        error.Message.Should().NotContain("created");
+    }
+
+    [Fact]
+    public async Task Attach_MapsConflictTo409_LikePost()
+    {
+        A.CallTo(() => _tenantContext.AttachChildTenantAsync(A<IOctoAdminSession>._, "child-a-db", "child-a"))
+            .Throws(TenantException.DatabaseNameNotAvailable("child-a-db"));
+
+        var result = await _controller.Attach("child-a", "child-a-db");
+
+        // TenantException derives from PersistenceException, so without the dedicated branch this
+        // identical condition answered 400 on attach and 409 on create.
+        result.Should().BeOfType<ConflictObjectResult>();
+    }
+
+    [Fact]
+    public async Task GetLifecycle_ReturnsNotFound_ForATenantOutsideTheOwnSubtree()
+    {
+        const string foreignTenantId = "somebody-elses-tenant";
+        A.CallTo(() => _tenantContext.IsChildTenantExistingAsync(A<IOctoAdminSession>._, foreignTenantId))
+            .Returns(false);
+
+        var result = await _controller.GetLifecycle(foreignTenantId);
+
+        result.Should().BeOfType<NotFoundResult>();
+
+        // Without this gate the generic conflict above is pointless: the caller would simply read the
+        // colliding tenant's database name and last error from here (AB#4763).
+        A.CallTo(() => _tenantLifecycleStore.GetAsync(A<string>._, A<CancellationToken>._))
+            .MustNotHaveHappened();
+    }
+
+    [Fact]
+    public async Task GetLifecycle_ReturnsRecord_ForAnOwnChildTenant()
+    {
+        const string childTenantId = "child-a";
+        A.CallTo(() => _tenantContext.IsChildTenantExistingAsync(A<IOctoAdminSession>._, childTenantId))
+            .Returns(true);
+        A.CallTo(() => _tenantLifecycleStore.GetAsync(childTenantId, A<CancellationToken>._))
+            .Returns(new TenantLifecycleRecord { TenantId = childTenantId, State = TenantLifecycleState.Active });
+
+        var result = await _controller.GetLifecycle(childTenantId);
+
+        result.Should().BeOfType<OkObjectResult>().Subject
+            .Value.Should().BeOfType<TenantLifecycleDto>().Subject
+            .TenantId.Should().Be(childTenantId);
     }
 }
