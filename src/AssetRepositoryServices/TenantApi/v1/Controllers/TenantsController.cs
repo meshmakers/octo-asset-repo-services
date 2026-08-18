@@ -471,7 +471,6 @@ public class TenantsController : ControllerBase
     public async Task<IActionResult> Delete([Required] string childTenantId)
     {
         var normalizedTenantId = childTenantId.NormalizeString();
-        var markedDeleting = false;
         try
         {
             var tenantContext = await GetTenantContextAsync();
@@ -512,7 +511,6 @@ public class TenantsController : ControllerBase
             // concurrent Create serializes against it and returns a retryable 409 instead of racing the
             // async drop (AB#4348 Phase 3).
             await _tenantLifecycleStore.MarkDeletingAsync(normalizedTenantId);
-            markedDeleting = true;
 
             using var session = await tenantContext.GetAdminSessionAsync();
             session.StartTransaction();
@@ -553,49 +551,46 @@ public class TenantsController : ControllerBase
                     "retry may re-create its database as an orphan", normalizedTenantId);
             }
 
-            // The database drop has completed → remove the tombstone so the tenant id can be re-created
-            // cleanly (AB#4348 Phase 3).
-            await _tenantLifecycleStore.RemoveAsync(normalizedTenantId);
+            // The tombstone deliberately STAYS (AB#4829): events and setups already in flight across
+            // the platform can re-seed retry rows and resurrect the just-dropped database as an empty
+            // shell for up to the settle period, and since AB#4762 the create path never reclaims such
+            // a leftover — it would permanently block its own database name. EnsureDeleting upserts the
+            // tombstone (covering legacy tenants MarkDeleting skipped), records the database name the
+            // sweep needs for a re-drop, and restamps the settle clock to start at the drop. The
+            // reconciler's settle sweep then completes the delete (re-drop, retry-row clear, tombstone
+            // removal) roughly 90–120 s later; until then a re-create of this tenant id answers a
+            // retryable 409 via the Deleting guard above. Best-effort: the delete itself has already
+            // happened, and MarkDeleting's tombstone still stands for the sweep.
+            try
+            {
+                await _tenantLifecycleStore.EnsureDeletingAsync(normalizedTenantId, deletion.DatabaseName,
+                    deletion.CorrelationId);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex,
+                    "Deleted tenant '{TenantId}' but failed to restamp its settle tombstone; the sweep " +
+                    "completes with whatever the tombstone holds", normalizedTenantId);
+            }
 
             return Ok();
         }
         catch (TenantException e)
         {
-            await ClearDeletingTombstoneOnFailureAsync(normalizedTenantId, markedDeleting);
+            // Any tombstone written above deliberately stays (AB#4829): the settle sweep arbitrates a
+            // failed delete — it rolls the tombstone back when the tenant is still fully registered
+            // (the delete died before its metadata commit) and completes the delete when the registry
+            // entry is gone, including the re-drop of a half-deleted database. Until then a re-create
+            // of the tenant id answers a retryable 409.
             return NotFound(e.Message);
         }
         catch (Exception ex)
         {
-            await ClearDeletingTombstoneOnFailureAsync(normalizedTenantId, markedDeleting);
+            // See the TenantException branch — the sweep arbitrates, the tombstone stays.
             return StatusCode(StatusCodes.Status500InternalServerError, new InternalServerErrorDto(ex.Message));
         }
     }
 
-    /// <summary>
-    ///     If a delete fails after the Deleting tombstone was written, remove it so a re-create is not
-    ///     blocked forever by the Create-side 409 guard. Correctness is still protected by the tenant /
-    ///     database-exists checks the retried create runs (AB#4348 Phase 3).
-    ///     Note that since AB#4762 those checks only reject the re-create — they no longer drop a
-    ///     leftover database, so a delete that failed after committing its metadata removal leaves an
-    ///     orphaned database that an operator has to reclaim (attach it, or drop it) before the tenant
-    ///     id and database name become usable again. The engine logs both names when it rejects.
-    /// </summary>
-    private async Task ClearDeletingTombstoneOnFailureAsync(string normalizedTenantId, bool markedDeleting)
-    {
-        if (!markedDeleting)
-        {
-            return;
-        }
-
-        try
-        {
-            await _tenantLifecycleStore.RemoveAsync(normalizedTenantId);
-        }
-        catch
-        {
-            // Best-effort — a lingering tombstone is preferable to masking the original delete failure.
-        }
-    }
 
     // GET: {tenantId}/v1/tenants/lifecycle?childTenantId=abc
     /// <summary>
