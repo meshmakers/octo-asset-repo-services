@@ -341,6 +341,13 @@ public class TenantsController : ControllerBase
         {
             return BadRequest(new OperationFailedErrorDto(e.Message));
         }
+        catch (ArgumentException e)
+        {
+            // The namespace gate rejects a format-invalid tenant id or database name with an
+            // ArgumentException before any conflict check. Same mapping as Post — without this
+            // branch the identical invalid input answered 400 on create but 500 on attach.
+            return BadRequest(new OperationFailedErrorDto(e.Message));
+        }
         catch (Exception ex)
         {
             return StatusCode(StatusCodes.Status500InternalServerError, new InternalServerErrorDto(ex.Message));
@@ -521,15 +528,14 @@ public class TenantsController : ControllerBase
             await session.CommitTransactionAsync();
             await tenantContext.DropTenantDatabaseAsync(deletion, childTenantId);
 
-            // The database drop has completed → remove the tombstone so the tenant id can be re-created
-            // cleanly (AB#4348 Phase 3).
-            await _tenantLifecycleStore.RemoveAsync(normalizedTenantId);
-
             // Take the tenant's pending setup retries with it. Otherwise every service's retry loop
             // keeps calling SetupAsync for a tenant that no longer exists, and that setup re-creates
             // the database as an empty CkModel+SysLock shell seconds after the drop. Since AB#4762 the
             // create path no longer reclaims such a shell, so the leftover would permanently block its
             // own database name behind a deliberately reason-free conflict.
+            // Ordered BEFORE the tombstone removal below: the tombstone is what blocks a re-create of
+            // this tenant id, so removing it first would open a window in which a re-created tenant
+            // still had the old tenant's retry entries driving setup against it.
             try
             {
                 var removedRetries = await _tenantSetupRetryStore.ClearAllForTenantAsync(normalizedTenantId);
@@ -546,6 +552,10 @@ public class TenantsController : ControllerBase
                     "Deleted tenant '{TenantId}' but failed to clear its setup-retry entries; a background " +
                     "retry may re-create its database as an orphan", normalizedTenantId);
             }
+
+            // The database drop has completed → remove the tombstone so the tenant id can be re-created
+            // cleanly (AB#4348 Phase 3).
+            await _tenantLifecycleStore.RemoveAsync(normalizedTenantId);
 
             return Ok();
         }

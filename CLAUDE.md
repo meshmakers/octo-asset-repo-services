@@ -175,14 +175,18 @@ Located in versioned API folders:
   reuses `TenantException.TenantIdNotAvailable(...).Message` rather than naming the lifecycle state,
   because it queries the store globally. `Delete`'s "still being created" guard may state its reason —
   ownership is already established at that point — and must, since *"already in use"* is nonsense as
-  the answer to a delete. `Attach` maps `TenantException.IsConflict` to **409** exactly like `Post`;
-  it used to return 400 for the identical condition because `TenantException` derives from
-  `PersistenceException`.
+  the answer to a delete. `Attach` maps `TenantException.IsConflict` to **409** and the namespace
+  gate's format-validation `ArgumentException` to **400**, exactly like `Post`; it used to return
+  400 for the identical conflict because `TenantException` derives from `PersistenceException`, and
+  500 for the identical invalid input because nothing caught the `ArgumentException`.
 
   **`Delete` clears the tenant's setup-retry entries** (`ITenantSetupRetryStore.ClearAllForTenantAsync`)
-  after the drop. The retry loop otherwise keeps calling `SetupAsync` for a tenant that no longer
-  exists and re-creates its database as an empty shell; since AB#4762 the create path no longer
-  reclaims such a shell, so the leftover would permanently block its own database name.
+  after the drop but **before** removing the lifecycle tombstone. The retry loop otherwise keeps
+  calling `SetupAsync` for a tenant that no longer exists and re-creates its database as an empty
+  shell; since AB#4762 the create path no longer reclaims such a shell, so the leftover would
+  permanently block its own database name. The ordering matters: the tombstone is what blocks a
+  re-create of the tenant id, so removing it first would let a re-created tenant inherit the old
+  tenant's pending retries.
 
   Still open on this controller (filed separately): `ReRunSetup` and `ClearCache` accept any tenant id
   with no subtree check — `ClearCache` will even upsert `tenant_setup_retry` rows for a tenant that
