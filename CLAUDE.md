@@ -180,17 +180,31 @@ Located in versioned API folders:
   400 for the identical conflict because `TenantException` derives from `PersistenceException`, and
   500 for the identical invalid input because nothing caught the `ArgumentException`.
 
-  **`Delete` clears the tenant's setup-retry entries** (`ITenantSetupRetryStore.ClearAllForTenantAsync`)
-  after the drop but **before** removing the lifecycle tombstone. The retry loop otherwise keeps
-  calling `SetupAsync` for a tenant that no longer exists and re-creates its database as an empty
-  shell; since AB#4762 the create path no longer reclaims such a shell, so the leftover would
-  permanently block its own database name. The ordering matters: the tombstone is what blocks a
-  re-create of the tenant id, so removing it first would let a re-created tenant inherit the old
-  tenant's pending retries.
+  **`Delete` ends with a settle tombstone, not a clean slate (AB#4829).** Events and setups already
+  in flight across the platform (queued `PosUpdateTenant` echoes, setups whose tenant resolve predates
+  the registry commit) can re-seed `tenant_setup_retry` rows and lazily re-create the dropped database
+  as an empty `CkModel`+`SysLock` shell — and since AB#4762 the create path never reclaims such a
+  leftover, so it would permanently block its own database name. The delete therefore clears the retry
+  rows, then **upserts** the `Deleting` tombstone via `EnsureDeletingAsync` (covering legacy tenants
+  without a lifecycle record, recording the database name, restamping the settle clock at the drop)
+  and returns with the tombstone in place. The Standardized reconciler's **settle sweep**
+  (`ReconcileDeletingTenantsAsync` in octo-common-services; active only where the lifecycle store is
+  wired, i.e. here) completes the delete ~90–120 s later: it re-drops a resurrected shell (never a
+  database another tenant has legitimately claimed), clears re-seeded retry rows, and removes the
+  tombstone. Until then a re-create of the tenant id answers a retryable 409 via the `Deleting` guard.
+  A **failed** delete also leaves its tombstone — the sweep arbitrates: tenant still fully registered
+  → tombstone rollback (the delete died before its metadata commit); registry entry gone → the delete
+  is completed, including the drop. Crashed deletes therefore converge in both directions instead of
+  leaving operator-only orphans. During the settle window the tombstone is load-bearing, so every
+  route that could corrode or bypass it is guarded: `Post` **and** `Attach` answer the generic 409
+  while it stands, `rerunSetup` refuses it (`RequeueForReconcileAsync` returns null for Deleting), no
+  lifecycle writer other than the delete/sweep can leave the Deleting state, and the engine's restore
+  refuses a target tenant id or database name that a Deleting tombstone still holds (AB#4829).
 
   Still open on this controller (filed separately): `ReRunSetup` and `ClearCache` accept any tenant id
-  with no subtree check — `ClearCache` will even upsert `tenant_setup_retry` rows for a tenant that
-  does not exist, which the background retry then drives forever.
+  with no subtree check — `ClearCache` still publishes update events for nonexistent tenants. The
+  damage is now self-limiting (the update-event consumer drops unregistered tenants and the drain loop
+  clears not-found entries terminally, AB#4829), but the missing subtree check remains.
 - `ModelsController.cs` - Construction kit and runtime model import/export (includes `ImportFromCatalog` endpoint)
 - `LargeBinariesController.cs` - Binary file download. Falls back to magic-byte sniffing via `BinaryContentTypeDetector` when the stored `ContentType` is missing or `application/octet-stream` (legacy data uploaded before detection existed). For non-seekable source streams the head bytes are re-prepended via `PrependedReadStream`.
 - `DiagnosticsController.cs` - Per-tenant diagnostics.

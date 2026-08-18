@@ -209,6 +209,29 @@ public class TenantsControllerTests
         error.Message.Should().Contain("still being created");
     }
 
+    /// <summary>
+    ///     AB#4829 review follow-up. Attach lacked the Deleting guard Post has: during the ~2 min
+    ///     settle window an attach of the deleted tenant id succeeded and registered a tenant whose
+    ///     live tombstone made every service's setup skip silently — with nothing ever requeueing
+    ///     that setup once the sweep later removed the tombstone.
+    /// </summary>
+    [Fact]
+    public async Task Attach_ReturnsGenericConflict_WhenTenantIsBeingDeleted()
+    {
+        const string childTenantId = "child-a";
+        A.CallTo(() => _tenantLifecycleStore.GetAsync(childTenantId, A<CancellationToken>._))
+            .Returns(new TenantLifecycleRecord { TenantId = childTenantId, State = TenantLifecycleState.Deleting });
+
+        var result = await _controller.Attach(childTenantId, "child-a-db");
+
+        var error = result.Should().BeOfType<ConflictObjectResult>().Subject
+            .Value.Should().BeOfType<OperationFailedErrorDto>().Subject;
+        error.Message.Should().Be(GenericTenantIdConflict(childTenantId));
+        error.Message.Should().NotContain("deletion");
+        A.CallTo(() => _tenantContext.AttachChildTenantAsync(A<IOctoAdminSession>._, A<string>._, A<string>._))
+            .MustNotHaveHappened();
+    }
+
     [Fact]
     public async Task Attach_MapsConflictTo409_LikePost()
     {
@@ -239,8 +262,40 @@ public class TenantsControllerTests
     }
 
     [Fact]
-    public async Task Delete_ClearsSetupRetries_BeforeRemovingTheTombstone()
+    public async Task Delete_LeavesTheSettleTombstone_ForTheSweep()
     {
+        // AB#4829: events and setups already in flight can re-seed retry rows and resurrect the
+        // dropped database for up to the settle period, and since AB#4762 nothing reclaims such a
+        // shell. The delete therefore ends with an upserted Deleting tombstone (EnsureDeleting also
+        // covers legacy tenants and records the database name the sweep needs to re-drop); the
+        // reconciler's settle sweep completes the delete once the period has passed.
+        const string childTenantId = "child-a";
+        var correlationId = Guid.NewGuid();
+        A.CallTo(() => _tenantContext.IsChildTenantExistingAsync(A<IOctoAdminSession>._, childTenantId))
+            .Returns(true);
+        A.CallTo(() => _tenantLifecycleStore.GetAsync(childTenantId, A<CancellationToken>._))
+            .Returns((TenantLifecycleRecord?)null);
+        A.CallTo(() => _tenantContext.DeleteChildTenantMetadataAsync(A<IOctoAdminSession>._, childTenantId))
+            .Returns(new TenantDeletionHandle("child-a-db", correlationId));
+
+        var result = await _controller.Delete(childTenantId);
+
+        result.Should().BeOfType<OkResult>();
+        A.CallTo(() => _tenantSetupRetryStore.ClearAllForTenantAsync(childTenantId, A<CancellationToken>._))
+            .MustHaveHappened();
+        A.CallTo(() => _tenantLifecycleStore.EnsureDeletingAsync(childTenantId, "child-a-db", correlationId,
+                A<CancellationToken>._))
+            .MustHaveHappened();
+        A.CallTo(() => _tenantLifecycleStore.RemoveAsync(A<string>._, A<CancellationToken>._))
+            .MustNotHaveHappened();
+    }
+
+    [Fact]
+    public async Task Delete_SucceedsEvenIfTheSettleTombstoneWriteFails()
+    {
+        // The metadata is committed and the database dropped at that point - the delete HAS happened.
+        // MarkDeleting's tombstone still stands for the sweep; only the clock restamp / database name
+        // is lost, which the sweep tolerates.
         const string childTenantId = "child-a";
         A.CallTo(() => _tenantContext.IsChildTenantExistingAsync(A<IOctoAdminSession>._, childTenantId))
             .Returns(true);
@@ -248,18 +303,36 @@ public class TenantsControllerTests
             .Returns((TenantLifecycleRecord?)null);
         A.CallTo(() => _tenantContext.DeleteChildTenantMetadataAsync(A<IOctoAdminSession>._, childTenantId))
             .Returns(new TenantDeletionHandle("child-a-db", Guid.NewGuid()));
+        A.CallTo(() => _tenantLifecycleStore.EnsureDeletingAsync(A<string>._, A<string?>._, A<Guid>._,
+                A<CancellationToken>._))
+            .ThrowsAsync(new TimeoutException("store down"));
 
         var result = await _controller.Delete(childTenantId);
 
         result.Should().BeOfType<OkResult>();
+    }
 
-        // The tombstone is what blocks a re-create of this tenant id. Removing it before the
-        // retry entries are cleared opens a window in which a re-created tenant inherits the old
-        // tenant's pending setup retries.
-        A.CallTo(() => _tenantSetupRetryStore.ClearAllForTenantAsync(childTenantId, A<CancellationToken>._))
-            .MustHaveHappened()
-            .Then(A.CallTo(() => _tenantLifecycleStore.RemoveAsync(childTenantId, A<CancellationToken>._))
-                .MustHaveHappened());
+    [Fact]
+    public async Task Delete_KeepsTheTombstone_WhenTheDeleteFails()
+    {
+        // A failed delete leaves the tombstone for the settle sweep to arbitrate (AB#4829): tenant
+        // still registered -> rollback; registry entry gone -> completion, including the re-drop of a
+        // half-deleted database. Removing it here re-opened the tenant id while the tenant's state was
+        // undefined - and when the drop had already happened, left an orphan that permanently blocked
+        // its own database name.
+        const string childTenantId = "child-a";
+        A.CallTo(() => _tenantContext.IsChildTenantExistingAsync(A<IOctoAdminSession>._, childTenantId))
+            .Returns(true);
+        A.CallTo(() => _tenantLifecycleStore.GetAsync(childTenantId, A<CancellationToken>._))
+            .Returns((TenantLifecycleRecord?)null);
+        A.CallTo(() => _tenantContext.DeleteChildTenantMetadataAsync(A<IOctoAdminSession>._, childTenantId))
+            .Throws(new InvalidOperationException("mongo down"));
+
+        var result = await _controller.Delete(childTenantId);
+
+        result.Should().BeOfType<ObjectResult>().Subject.StatusCode.Should().Be(500);
+        A.CallTo(() => _tenantLifecycleStore.RemoveAsync(A<string>._, A<CancellationToken>._))
+            .MustNotHaveHappened();
     }
 
     [Fact]
