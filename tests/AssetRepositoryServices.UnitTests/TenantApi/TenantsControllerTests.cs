@@ -209,6 +209,29 @@ public class TenantsControllerTests
         error.Message.Should().Contain("still being created");
     }
 
+    /// <summary>
+    ///     AB#4829 review follow-up. Attach lacked the Deleting guard Post has: during the ~2 min
+    ///     settle window an attach of the deleted tenant id succeeded and registered a tenant whose
+    ///     live tombstone made every service's setup skip silently — with nothing ever requeueing
+    ///     that setup once the sweep later removed the tombstone.
+    /// </summary>
+    [Fact]
+    public async Task Attach_ReturnsGenericConflict_WhenTenantIsBeingDeleted()
+    {
+        const string childTenantId = "child-a";
+        A.CallTo(() => _tenantLifecycleStore.GetAsync(childTenantId, A<CancellationToken>._))
+            .Returns(new TenantLifecycleRecord { TenantId = childTenantId, State = TenantLifecycleState.Deleting });
+
+        var result = await _controller.Attach(childTenantId, "child-a-db");
+
+        var error = result.Should().BeOfType<ConflictObjectResult>().Subject
+            .Value.Should().BeOfType<OperationFailedErrorDto>().Subject;
+        error.Message.Should().Be(GenericTenantIdConflict(childTenantId));
+        error.Message.Should().NotContain("deletion");
+        A.CallTo(() => _tenantContext.AttachChildTenantAsync(A<IOctoAdminSession>._, A<string>._, A<string>._))
+            .MustNotHaveHappened();
+    }
+
     [Fact]
     public async Task Attach_MapsConflictTo409_LikePost()
     {

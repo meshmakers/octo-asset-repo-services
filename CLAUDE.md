@@ -195,7 +195,11 @@ Located in versioned API folders:
   A **failed** delete also leaves its tombstone — the sweep arbitrates: tenant still fully registered
   → tombstone rollback (the delete died before its metadata commit); registry entry gone → the delete
   is completed, including the drop. Crashed deletes therefore converge in both directions instead of
-  leaving operator-only orphans.
+  leaving operator-only orphans. During the settle window the tombstone is load-bearing, so every
+  route that could corrode or bypass it is guarded: `Post` **and** `Attach` answer the generic 409
+  while it stands, `rerunSetup` refuses it (`RequeueForReconcileAsync` returns null for Deleting), no
+  lifecycle writer other than the delete/sweep can leave the Deleting state, and the engine's restore
+  refuses a target tenant id or database name that a Deleting tombstone still holds (AB#4829).
 
   Still open on this controller (filed separately): `ReRunSetup` and `ClearCache` accept any tenant id
   with no subtree check — `ClearCache` still publishes update events for nonexistent tenants. The

@@ -324,6 +324,23 @@ public class TenantsController : ControllerBase
                 return BadRequest(new OperationFailedErrorDto("TenantId is required"));
             }
 
+            // Same Deleting guard as Post (AB#4829): during the delete's settle window the tenant id
+            // is tombstoned. An attach that slipped in here registered a tenant whose live tombstone
+            // made every service's setup skip silently — and nothing requeued that setup once the
+            // sweep later removed the tombstone. The reply reuses the engine's generic tenant-id
+            // conflict for the same no-existence-oracle reason as Post (AB#4763).
+            var normalizedChildTenantId = childTenantId.NormalizeString();
+            var attachLifecycle = await _tenantLifecycleStore.GetAsync(normalizedChildTenantId);
+            if (attachLifecycle is { State: TenantLifecycleState.Deleting })
+            {
+                _logger.LogWarning(
+                    "Rejected attach of tenant '{TenantId}' because its deletion is still settling. " +
+                    "The caller only sees a generic conflict message.", normalizedChildTenantId);
+
+                return Conflict(new OperationFailedErrorDto(
+                    TenantException.TenantIdNotAvailable(childTenantId).Message));
+            }
+
             using var session = await tenantContext.GetAdminSessionAsync();
             session.StartTransaction();
 
