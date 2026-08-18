@@ -4,12 +4,14 @@ using Meshmakers.Octo.Backend.AssetRepositoryServices.Services;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.TenantApi.v1.Controllers;
 using Meshmakers.Octo.Common.DistributionEventHub.Services;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
+using Meshmakers.Octo.Communication.Contracts.DataTransferObjects.ApiErrors;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb.Repositories;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb.TenantLifecycle;
 using Meshmakers.Octo.Runtime.Contracts.Repositories.Query;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Logging;
 using Xunit;
 
 namespace AssetRepositoryServices.UnitTests.TenantApi;
@@ -22,6 +24,8 @@ public class TenantsControllerTests
     private readonly IOctoService _octoService;
     private readonly ISystemContext _systemContext;
     private readonly ITenantContext _tenantContext;
+    private readonly ITenantLifecycleStore _tenantLifecycleStore;
+    private readonly ITenantSetupRetryStore _tenantSetupRetryStore;
     private readonly TenantsController _controller;
 
     public TenantsControllerTests()
@@ -36,10 +40,15 @@ public class TenantsControllerTests
         A.CallTo(() => _tenantContext.DatabaseName).Returns(OwnDatabase);
         A.CallTo(() => _tenantContext.GetAdminSessionAsync()).Returns(A.Fake<IOctoAdminSession>());
 
+        _tenantLifecycleStore = A.Fake<ITenantLifecycleStore>();
+        _tenantSetupRetryStore = A.Fake<ITenantSetupRetryStore>();
+
         _controller = new TenantsController(
             _octoService,
             A.Fake<IDistributionEventHubService>(),
-            A.Fake<ITenantLifecycleStore>());
+            _tenantLifecycleStore,
+            _tenantSetupRetryStore,
+            A.Fake<ILogger<TenantsController>>());
 
         var httpContext = new DefaultHttpContext();
         httpContext.Request.RouteValues["tenantId"] = OwnTenantId;
@@ -141,5 +150,148 @@ public class TenantsControllerTests
         var result = await _controller.Get(pagingParams);
         return result.Should().BeOfType<OkObjectResult>().Subject
             .Value.Should().BeOfType<PagedResult<TenantDto>>().Subject;
+    }
+
+    // --- Namespace conflicts and lifecycle disclosure (AB#4762 / AB#4763) ---
+
+    private static string GenericTenantIdConflict(string tenantId) =>
+        TenantException.TenantIdNotAvailable(tenantId).Message;
+
+    [Fact]
+    public async Task Post_ReturnsGenericConflict_WhenTenantIsBeingDeleted()
+    {
+        const string childTenantId = "child-a";
+        A.CallTo(() => _tenantLifecycleStore.GetAsync(childTenantId, A<CancellationToken>._))
+            .Returns(new TenantLifecycleRecord { TenantId = childTenantId, State = TenantLifecycleState.Deleting });
+
+        var result = await _controller.Post(childTenantId, "child-a-db");
+
+        // Must be indistinguishable from "the id is taken by a tenant you cannot see": the lifecycle
+        // store is platform-global, so a distinguishable answer would be an existence oracle.
+        var error = result.Should().BeOfType<ConflictObjectResult>().Subject
+            .Value.Should().BeOfType<OperationFailedErrorDto>().Subject;
+        error.Message.Should().Be(GenericTenantIdConflict(childTenantId));
+        error.Message.Should().NotContain("deletion");
+    }
+
+    [Fact]
+    public async Task Delete_ReturnsNotFound_ForATenantOutsideTheOwnSubtree()
+    {
+        const string foreignTenantId = "somebody-elses-tenant";
+        A.CallTo(() => _tenantContext.IsChildTenantExistingAsync(A<IOctoAdminSession>._, foreignTenantId))
+            .Returns(false);
+
+        var result = await _controller.Delete(foreignTenantId);
+
+        result.Should().BeOfType<NotFoundResult>();
+
+        // Ownership must be settled before the platform-global lifecycle store is consulted, otherwise
+        // the reply exposes the provisioning state of a tenant the caller cannot see (AB#4763).
+        A.CallTo(() => _tenantLifecycleStore.GetAsync(A<string>._, A<CancellationToken>._))
+            .MustNotHaveHappened();
+    }
+
+    [Fact]
+    public async Task Delete_ReturnsConflict_WhenAnOwnChildIsStillBeingCreated()
+    {
+        const string childTenantId = "child-a";
+        A.CallTo(() => _tenantContext.IsChildTenantExistingAsync(A<IOctoAdminSession>._, childTenantId))
+            .Returns(true);
+        A.CallTo(() => _tenantLifecycleStore.GetAsync(childTenantId, A<CancellationToken>._))
+            .Returns(new TenantLifecycleRecord { TenantId = childTenantId, State = TenantLifecycleState.Creating });
+
+        var result = await _controller.Delete(childTenantId);
+
+        // The caller owns this tenant, so the reason is safe to state — and "already in use" would be
+        // nonsense as the answer to a delete.
+        var error = result.Should().BeOfType<ConflictObjectResult>().Subject
+            .Value.Should().BeOfType<OperationFailedErrorDto>().Subject;
+        error.Message.Should().Contain("still being created");
+    }
+
+    [Fact]
+    public async Task Attach_MapsConflictTo409_LikePost()
+    {
+        A.CallTo(() => _tenantContext.AttachChildTenantAsync(A<IOctoAdminSession>._, "child-a-db", "child-a"))
+            .Throws(TenantException.DatabaseNameNotAvailable("child-a-db"));
+
+        var result = await _controller.Attach("child-a", "child-a-db");
+
+        // TenantException derives from PersistenceException, so without the dedicated branch this
+        // identical condition answered 400 on attach and 409 on create.
+        result.Should().BeOfType<ConflictObjectResult>();
+    }
+
+    [Fact]
+    public async Task Attach_MapsFormatValidationTo400_LikePost()
+    {
+        // The namespace gate throws ArgumentException for a format-invalid tenant id or database
+        // name, before any conflict check. Attach must map it to 400 like Post — without its own
+        // ArgumentException branch, the identical invalid input fell through to the generic
+        // catch and answered 500.
+        A.CallTo(() => _tenantContext.AttachChildTenantAsync(A<IOctoAdminSession>._, "bad$db", "child-a"))
+            .Throws(new ArgumentException("Database name 'bad$db' is invalid."));
+
+        var result = await _controller.Attach("child-a", "bad$db");
+
+        result.Should().BeOfType<BadRequestObjectResult>().Subject
+            .Value.Should().BeOfType<OperationFailedErrorDto>();
+    }
+
+    [Fact]
+    public async Task Delete_ClearsSetupRetries_BeforeRemovingTheTombstone()
+    {
+        const string childTenantId = "child-a";
+        A.CallTo(() => _tenantContext.IsChildTenantExistingAsync(A<IOctoAdminSession>._, childTenantId))
+            .Returns(true);
+        A.CallTo(() => _tenantLifecycleStore.GetAsync(childTenantId, A<CancellationToken>._))
+            .Returns((TenantLifecycleRecord?)null);
+        A.CallTo(() => _tenantContext.DeleteChildTenantMetadataAsync(A<IOctoAdminSession>._, childTenantId))
+            .Returns(new TenantDeletionHandle("child-a-db", Guid.NewGuid()));
+
+        var result = await _controller.Delete(childTenantId);
+
+        result.Should().BeOfType<OkResult>();
+
+        // The tombstone is what blocks a re-create of this tenant id. Removing it before the
+        // retry entries are cleared opens a window in which a re-created tenant inherits the old
+        // tenant's pending setup retries.
+        A.CallTo(() => _tenantSetupRetryStore.ClearAllForTenantAsync(childTenantId, A<CancellationToken>._))
+            .MustHaveHappened()
+            .Then(A.CallTo(() => _tenantLifecycleStore.RemoveAsync(childTenantId, A<CancellationToken>._))
+                .MustHaveHappened());
+    }
+
+    [Fact]
+    public async Task GetLifecycle_ReturnsNotFound_ForATenantOutsideTheOwnSubtree()
+    {
+        const string foreignTenantId = "somebody-elses-tenant";
+        A.CallTo(() => _tenantContext.IsChildTenantExistingAsync(A<IOctoAdminSession>._, foreignTenantId))
+            .Returns(false);
+
+        var result = await _controller.GetLifecycle(foreignTenantId);
+
+        result.Should().BeOfType<NotFoundResult>();
+
+        // Without this gate the generic conflict above is pointless: the caller would simply read the
+        // colliding tenant's database name and last error from here (AB#4763).
+        A.CallTo(() => _tenantLifecycleStore.GetAsync(A<string>._, A<CancellationToken>._))
+            .MustNotHaveHappened();
+    }
+
+    [Fact]
+    public async Task GetLifecycle_ReturnsRecord_ForAnOwnChildTenant()
+    {
+        const string childTenantId = "child-a";
+        A.CallTo(() => _tenantContext.IsChildTenantExistingAsync(A<IOctoAdminSession>._, childTenantId))
+            .Returns(true);
+        A.CallTo(() => _tenantLifecycleStore.GetAsync(childTenantId, A<CancellationToken>._))
+            .Returns(new TenantLifecycleRecord { TenantId = childTenantId, State = TenantLifecycleState.Active });
+
+        var result = await _controller.GetLifecycle(childTenantId);
+
+        result.Should().BeOfType<OkObjectResult>().Subject
+            .Value.Should().BeOfType<TenantLifecycleDto>().Subject
+            .TenantId.Should().Be(childTenantId);
     }
 }
