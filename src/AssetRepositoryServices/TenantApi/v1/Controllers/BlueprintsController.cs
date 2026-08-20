@@ -202,10 +202,15 @@ public class BlueprintsController : ControllerBase
                 return BadRequest(new OperationFailedErrorDto("TenantId is required"));
             }
 
-            var current = string.IsNullOrWhiteSpace(blueprintName)
+            // A blank argument means "not provided" - the engine rejects a blank name as a
+            // caller bug, which the generic catch below would turn into a 500. Trimming also
+            // saves a name that arrived with surrounding whitespace from a copy-paste.
+            var requestedBlueprint = NormaliseBlueprintName(blueprintName);
+
+            var current = requestedBlueprint == null
                 ? await _blueprintHistory.GetCurrentAsync(tenantId, cancellationToken)
                 : await _blueprintHistory.GetCurrentByBlueprintNameAsync(
-                    tenantId, blueprintName, cancellationToken);
+                    tenantId, requestedBlueprint, cancellationToken);
 
             if (current == null)
             {
@@ -264,7 +269,7 @@ public class BlueprintsController : ControllerBase
             }
 
             var updateInfo = await _blueprintService.GetUpdateInfoAsync(
-                tenantId, blueprintName, cancellationToken);
+                tenantId, NormaliseBlueprintName(blueprintName), cancellationToken);
 
             var response = new BlueprintUpdateInfoDto
             {
@@ -430,6 +435,15 @@ public class BlueprintsController : ControllerBase
         {
             return StatusCode(StatusCodes.Status500InternalServerError, new InternalServerErrorDto(ex.Message));
         }
+    }
+
+    /// <summary>
+    ///     Maps a blank <c>blueprintName</c> argument to <c>null</c> ("not provided") and trims
+    ///     the rest, so the optional parameter stays optional however the client sends it.
+    /// </summary>
+    private static string? NormaliseBlueprintName(string? blueprintName)
+    {
+        return string.IsNullOrWhiteSpace(blueprintName) ? null : blueprintName.Trim();
     }
 
     // GET {tenantId}/v1/blueprints/installations

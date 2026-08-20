@@ -165,15 +165,26 @@ internal sealed class BlueprintsQuery : ObjectGraphType
         }
     }
 
+    /// <summary>
+    /// Maps a blank <c>blueprintName</c> argument to <c>null</c> ("not provided") and trims the
+    /// rest, so the optional argument stays optional however the client sends it.
+    /// </summary>
+    private static string? NormaliseBlueprintName(string? blueprintName)
+    {
+        return string.IsNullOrWhiteSpace(blueprintName) ? null : blueprintName.Trim();
+    }
+
     private async Task<object?> ResolveCurrentAsync(IResolveFieldContext<object?> ctx)
     {
         try
         {
             var gql = (GraphQlUserContext)ctx.UserContext;
             var history = ctx.RequestServices!.GetRequiredService<ITenantBlueprintHistory>();
-            var blueprintName = ctx.GetArgument<string?>("blueprintName");
+            // A blank argument means "not provided": the engine rejects a blank name as a
+            // caller bug, and that would surface as a GraphQL error instead of the fallback.
+            var blueprintName = NormaliseBlueprintName(ctx.GetArgument<string?>("blueprintName"));
 
-            var current = string.IsNullOrWhiteSpace(blueprintName)
+            var current = blueprintName == null
                 ? await history.GetCurrentAsync(gql.TenantId, ctx.CancellationToken)
                 : await history.GetCurrentByBlueprintNameAsync(
                     gql.TenantId, blueprintName, ctx.CancellationToken);
@@ -193,7 +204,7 @@ internal sealed class BlueprintsQuery : ObjectGraphType
         {
             var gql = (GraphQlUserContext)ctx.UserContext;
             var blueprintService = ctx.RequestServices!.GetRequiredService<IBlueprintService>();
-            var blueprintName = ctx.GetArgument<string?>("blueprintName");
+            var blueprintName = NormaliseBlueprintName(ctx.GetArgument<string?>("blueprintName"));
 
             var info = await blueprintService.GetUpdateInfoAsync(
                 gql.TenantId, blueprintName, ctx.CancellationToken);
