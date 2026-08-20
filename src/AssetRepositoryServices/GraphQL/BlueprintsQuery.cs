@@ -56,11 +56,24 @@ internal sealed class BlueprintsQuery : ObjectGraphType
             .ResolveAsync(ResolveHistoryAsync);
 
         Field<BlueprintHistoryItemDtoType>("current")
-            .Description("Most recent history entry, or null when no blueprint has been applied to the tenant yet.")
+            .Description(
+                "Most recent history entry. Without blueprintName this is the blueprint applied "
+                + "last, whichever one that is; with it, the entry of that blueprint. Null when "
+                + "the tenant has no blueprint at all, or when the named blueprint was never "
+                + "applied to it.")
+            .Argument<StringGraphType>("blueprintName",
+                "Restrict to one blueprint (name without the version suffix). A tenant can host several blueprints concurrently.")
             .ResolveAsync(ResolveCurrentAsync);
 
         Field<NonNullGraphType<BlueprintUpdateInfoDtoType>>("updateInfo")
-            .Description("Available updates for the tenant's installed blueprint.")
+            .Description(
+                "Available updates for an installed blueprint. Without blueprintName the blueprint "
+                + "applied last is described. This field is never null: a blueprint that is not "
+                + "installed on the tenant yields an empty result (currentBlueprintId and "
+                + "currentVersion null, hasUpdate false, availableVersions empty) rather than null, "
+                + "so check currentBlueprintId to tell 'not installed' from 'installed, no update'.")
+            .Argument<StringGraphType>("blueprintName",
+                "Blueprint to describe (name without the version suffix).")
             .ResolveAsync(ResolveUpdateInfoAsync);
 
         Field<NonNullGraphType<BlueprintUpdatePreviewDtoType>>("previewUpdate")
@@ -158,14 +171,30 @@ internal sealed class BlueprintsQuery : ObjectGraphType
         }
     }
 
+    /// <summary>
+    /// Maps a blank <c>blueprintName</c> argument to <c>null</c> ("not provided") and trims the
+    /// rest, so the optional argument stays optional however the client sends it.
+    /// </summary>
+    private static string? NormalizeBlueprintName(string? blueprintName)
+    {
+        return string.IsNullOrWhiteSpace(blueprintName) ? null : blueprintName.Trim();
+    }
+
     private async Task<object?> ResolveCurrentAsync(IResolveFieldContext<object?> ctx)
     {
         try
         {
             var gql = (GraphQlUserContext)ctx.UserContext;
             var history = ctx.RequestServices!.GetRequiredService<ITenantBlueprintHistory>();
+            // A blank argument means "not provided": the engine rejects a blank name as a
+            // caller bug, and that would surface as a GraphQL error instead of the fallback.
+            var blueprintName = NormalizeBlueprintName(ctx.GetArgument<string?>("blueprintName"));
 
-            var current = await history.GetCurrentAsync(gql.TenantId, ctx.CancellationToken);
+            var current = blueprintName == null
+                ? await history.GetCurrentAsync(gql.TenantId, ctx.CancellationToken)
+                : await history.GetCurrentByBlueprintNameAsync(
+                    gql.TenantId, blueprintName, ctx.CancellationToken);
+
             return current == null ? null : MapHistoryItem(current);
         }
         catch (Exception e)
@@ -181,8 +210,10 @@ internal sealed class BlueprintsQuery : ObjectGraphType
         {
             var gql = (GraphQlUserContext)ctx.UserContext;
             var blueprintService = ctx.RequestServices!.GetRequiredService<IBlueprintService>();
+            var blueprintName = NormalizeBlueprintName(ctx.GetArgument<string?>("blueprintName"));
 
-            var info = await blueprintService.GetUpdateInfoAsync(gql.TenantId, ctx.CancellationToken);
+            var info = await blueprintService.GetUpdateInfoAsync(
+                gql.TenantId, blueprintName, ctx.CancellationToken);
             return new BlueprintUpdateInfoDto
             {
                 CurrentBlueprintId = info?.CurrentVersion.FullName,

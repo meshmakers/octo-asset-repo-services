@@ -178,15 +178,25 @@ public class BlueprintsController : ControllerBase
     /// <summary>
     ///     Gets the current blueprint of a tenant
     /// </summary>
+    /// <param name="blueprintName">
+    ///     Optional blueprint name (without the version suffix). A tenant can host several
+    ///     blueprints concurrently; without this the blueprint applied last is returned.
+    /// </param>
     /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>Current blueprint information or 404 if no blueprint is applied</returns>
+    /// <returns>
+    ///     Current blueprint information, or 404 when the tenant has no blueprint at all - and,
+    ///     when <paramref name="blueprintName" /> is given, also when that specific blueprint is
+    ///     not installed, even though others are.
+    /// </returns>
     [HttpGet("current")]
     [Authorize(AssetRepositoryServiceConstants.TenantAssetApiReadOnlyPolicy)]
     [ProducesResponseType(typeof(BlueprintHistoryItemDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(typeof(OperationFailedErrorDto), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(InternalServerErrorDto), StatusCodes.Status500InternalServerError)]
-    public async Task<IActionResult> GetCurrent(CancellationToken cancellationToken = default)
+    public async Task<IActionResult> GetCurrent(
+        [FromQuery] string? blueprintName = null,
+        CancellationToken cancellationToken = default)
     {
         try
         {
@@ -196,7 +206,15 @@ public class BlueprintsController : ControllerBase
                 return BadRequest(new OperationFailedErrorDto("TenantId is required"));
             }
 
-            var current = await _blueprintHistory.GetCurrentAsync(tenantId, cancellationToken);
+            // A blank argument means "not provided" - the engine rejects a blank name as a
+            // caller bug, which the generic catch below would turn into a 500. Trimming also
+            // saves a name that arrived with surrounding whitespace from a copy-paste.
+            var requestedBlueprint = NormalizeBlueprintName(blueprintName);
+
+            var current = requestedBlueprint == null
+                ? await _blueprintHistory.GetCurrentAsync(tenantId, cancellationToken)
+                : await _blueprintHistory.GetCurrentByBlueprintNameAsync(
+                    tenantId, requestedBlueprint, cancellationToken);
 
             if (current == null)
             {
@@ -231,6 +249,10 @@ public class BlueprintsController : ControllerBase
     /// <summary>
     ///     Gets available blueprint updates for a tenant
     /// </summary>
+    /// <param name="blueprintName">
+    ///     Optional blueprint name (without the version suffix) to describe. Without it the
+    ///     blueprint applied to the tenant last is described.
+    /// </param>
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>Update information</returns>
     [HttpGet("updates")]
@@ -238,7 +260,9 @@ public class BlueprintsController : ControllerBase
     [ProducesResponseType(typeof(BlueprintUpdateInfoDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(OperationFailedErrorDto), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(InternalServerErrorDto), StatusCodes.Status500InternalServerError)]
-    public async Task<IActionResult> GetAvailableUpdates(CancellationToken cancellationToken = default)
+    public async Task<IActionResult> GetAvailableUpdates(
+        [FromQuery] string? blueprintName = null,
+        CancellationToken cancellationToken = default)
     {
         try
         {
@@ -248,7 +272,8 @@ public class BlueprintsController : ControllerBase
                 return BadRequest(new OperationFailedErrorDto("TenantId is required"));
             }
 
-            var updateInfo = await _blueprintService.GetUpdateInfoAsync(tenantId, cancellationToken);
+            var updateInfo = await _blueprintService.GetUpdateInfoAsync(
+                tenantId, NormalizeBlueprintName(blueprintName), cancellationToken);
 
             var response = new BlueprintUpdateInfoDto
             {
@@ -414,6 +439,15 @@ public class BlueprintsController : ControllerBase
         {
             return StatusCode(StatusCodes.Status500InternalServerError, new InternalServerErrorDto(ex.Message));
         }
+    }
+
+    /// <summary>
+    ///     Maps a blank <c>blueprintName</c> argument to <c>null</c> ("not provided") and trims
+    ///     the rest, so the optional parameter stays optional however the client sends it.
+    /// </summary>
+    private static string? NormalizeBlueprintName(string? blueprintName)
+    {
+        return string.IsNullOrWhiteSpace(blueprintName) ? null : blueprintName.Trim();
     }
 
     // GET {tenantId}/v1/blueprints/installations
