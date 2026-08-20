@@ -183,7 +183,11 @@ public class BlueprintsController : ControllerBase
     ///     blueprints concurrently; without this the blueprint applied last is returned.
     /// </param>
     /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>Current blueprint information or 404 if no blueprint is applied</returns>
+    /// <returns>
+    ///     Current blueprint information, or 404 when the tenant has no blueprint at all - and,
+    ///     when <paramref name="blueprintName" /> is given, also when that specific blueprint is
+    ///     not installed, even though others are.
+    /// </returns>
     [HttpGet("current")]
     [Authorize(AssetRepositoryServiceConstants.TenantAssetApiReadOnlyPolicy)]
     [ProducesResponseType(typeof(BlueprintHistoryItemDto), StatusCodes.Status200OK)]
@@ -205,7 +209,7 @@ public class BlueprintsController : ControllerBase
             // A blank argument means "not provided" - the engine rejects a blank name as a
             // caller bug, which the generic catch below would turn into a 500. Trimming also
             // saves a name that arrived with surrounding whitespace from a copy-paste.
-            var requestedBlueprint = NormaliseBlueprintName(blueprintName);
+            var requestedBlueprint = NormalizeBlueprintName(blueprintName);
 
             var current = requestedBlueprint == null
                 ? await _blueprintHistory.GetCurrentAsync(tenantId, cancellationToken)
@@ -269,7 +273,7 @@ public class BlueprintsController : ControllerBase
             }
 
             var updateInfo = await _blueprintService.GetUpdateInfoAsync(
-                tenantId, NormaliseBlueprintName(blueprintName), cancellationToken);
+                tenantId, NormalizeBlueprintName(blueprintName), cancellationToken);
 
             var response = new BlueprintUpdateInfoDto
             {
@@ -441,7 +445,7 @@ public class BlueprintsController : ControllerBase
     ///     Maps a blank <c>blueprintName</c> argument to <c>null</c> ("not provided") and trims
     ///     the rest, so the optional parameter stays optional however the client sends it.
     /// </summary>
-    private static string? NormaliseBlueprintName(string? blueprintName)
+    private static string? NormalizeBlueprintName(string? blueprintName)
     {
         return string.IsNullOrWhiteSpace(blueprintName) ? null : blueprintName.Trim();
     }
