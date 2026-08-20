@@ -202,7 +202,7 @@ public class BlueprintsController : ControllerBase
                 return BadRequest(new OperationFailedErrorDto("TenantId is required"));
             }
 
-            var current = string.IsNullOrEmpty(blueprintName)
+            var current = string.IsNullOrWhiteSpace(blueprintName)
                 ? await _blueprintHistory.GetCurrentAsync(tenantId, cancellationToken)
                 : await _blueprintHistory.GetCurrentByBlueprintNameAsync(
                     tenantId, blueprintName, cancellationToken);

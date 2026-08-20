@@ -173,7 +173,7 @@ internal sealed class BlueprintsQuery : ObjectGraphType
             var history = ctx.RequestServices!.GetRequiredService<ITenantBlueprintHistory>();
             var blueprintName = ctx.GetArgument<string?>("blueprintName");
 
-            var current = string.IsNullOrEmpty(blueprintName)
+            var current = string.IsNullOrWhiteSpace(blueprintName)
                 ? await history.GetCurrentAsync(gql.TenantId, ctx.CancellationToken)
                 : await history.GetCurrentByBlueprintNameAsync(
                     gql.TenantId, blueprintName, ctx.CancellationToken);
