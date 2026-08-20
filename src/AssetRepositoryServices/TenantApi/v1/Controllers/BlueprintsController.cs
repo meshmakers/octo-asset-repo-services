@@ -178,6 +178,10 @@ public class BlueprintsController : ControllerBase
     /// <summary>
     ///     Gets the current blueprint of a tenant
     /// </summary>
+    /// <param name="blueprintName">
+    ///     Optional blueprint name (without the version suffix). A tenant can host several
+    ///     blueprints concurrently; without this the blueprint applied last is returned.
+    /// </param>
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>Current blueprint information or 404 if no blueprint is applied</returns>
     [HttpGet("current")]
@@ -186,7 +190,9 @@ public class BlueprintsController : ControllerBase
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(typeof(OperationFailedErrorDto), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(InternalServerErrorDto), StatusCodes.Status500InternalServerError)]
-    public async Task<IActionResult> GetCurrent(CancellationToken cancellationToken = default)
+    public async Task<IActionResult> GetCurrent(
+        [FromQuery] string? blueprintName = null,
+        CancellationToken cancellationToken = default)
     {
         try
         {
@@ -196,7 +202,10 @@ public class BlueprintsController : ControllerBase
                 return BadRequest(new OperationFailedErrorDto("TenantId is required"));
             }
 
-            var current = await _blueprintHistory.GetCurrentAsync(tenantId, cancellationToken);
+            var current = string.IsNullOrEmpty(blueprintName)
+                ? await _blueprintHistory.GetCurrentAsync(tenantId, cancellationToken)
+                : await _blueprintHistory.GetCurrentByBlueprintNameAsync(
+                    tenantId, blueprintName, cancellationToken);
 
             if (current == null)
             {
@@ -231,6 +240,10 @@ public class BlueprintsController : ControllerBase
     /// <summary>
     ///     Gets available blueprint updates for a tenant
     /// </summary>
+    /// <param name="blueprintName">
+    ///     Optional blueprint name (without the version suffix) to describe. Without it the
+    ///     blueprint applied to the tenant last is described.
+    /// </param>
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>Update information</returns>
     [HttpGet("updates")]
@@ -238,7 +251,9 @@ public class BlueprintsController : ControllerBase
     [ProducesResponseType(typeof(BlueprintUpdateInfoDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(OperationFailedErrorDto), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(InternalServerErrorDto), StatusCodes.Status500InternalServerError)]
-    public async Task<IActionResult> GetAvailableUpdates(CancellationToken cancellationToken = default)
+    public async Task<IActionResult> GetAvailableUpdates(
+        [FromQuery] string? blueprintName = null,
+        CancellationToken cancellationToken = default)
     {
         try
         {
@@ -248,7 +263,8 @@ public class BlueprintsController : ControllerBase
                 return BadRequest(new OperationFailedErrorDto("TenantId is required"));
             }
 
-            var updateInfo = await _blueprintService.GetUpdateInfoAsync(tenantId, cancellationToken);
+            var updateInfo = await _blueprintService.GetUpdateInfoAsync(
+                tenantId, blueprintName, cancellationToken);
 
             var response = new BlueprintUpdateInfoDto
             {

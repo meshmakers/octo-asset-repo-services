@@ -44,4 +44,32 @@ public class BlueprintTests(BlueprintTestFixture fixture)
 
         Assert.Null(updateInfo);
     }
+
+    /// <summary>
+    /// AB#4832: the name-filtered lookups the tenant API exposes as
+    /// <c>?blueprintName=</c> / <c>blueprintName:</c>.
+    /// </summary>
+    [Fact]
+    public async Task GetCurrentByBlueprintNameAsync_ShouldReturnNull_ForTenantWithoutBlueprint()
+    {
+        var blueprintHistory = fixture.GetBlueprintHistory();
+        var tenantId = fixture.TestTenantId;
+
+        var current = await blueprintHistory.GetCurrentByBlueprintNameAsync(
+            tenantId, "NoSuchBlueprint", CancellationToken.None);
+
+        Assert.Null(current);
+    }
+
+    [Fact]
+    public async Task GetUpdateInfoAsync_WithBlueprintName_ShouldReturnNull_ForTenantWithoutBlueprint()
+    {
+        var blueprintService = fixture.GetBlueprintService();
+        var tenantId = fixture.TestTenantId;
+
+        var updateInfo = await blueprintService.GetUpdateInfoAsync(
+            tenantId, "NoSuchBlueprint", CancellationToken.None);
+
+        Assert.Null(updateInfo);
+    }
 }

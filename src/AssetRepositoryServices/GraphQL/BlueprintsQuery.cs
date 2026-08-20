@@ -56,11 +56,18 @@ internal sealed class BlueprintsQuery : ObjectGraphType
             .ResolveAsync(ResolveHistoryAsync);
 
         Field<BlueprintHistoryItemDtoType>("current")
-            .Description("Most recent history entry, or null when no blueprint has been applied to the tenant yet.")
+            .Description(
+                "Most recent history entry, or null when no blueprint has been applied to the tenant yet. "
+                + "Without blueprintName this is the blueprint applied last, whichever one that is.")
+            .Argument<StringGraphType>("blueprintName",
+                "Restrict to one blueprint (name without the version suffix). A tenant can host several blueprints concurrently.")
             .ResolveAsync(ResolveCurrentAsync);
 
         Field<NonNullGraphType<BlueprintUpdateInfoDtoType>>("updateInfo")
-            .Description("Available updates for the tenant's installed blueprint.")
+            .Description(
+                "Available updates for an installed blueprint. Without blueprintName the blueprint applied last is described.")
+            .Argument<StringGraphType>("blueprintName",
+                "Blueprint to describe (name without the version suffix).")
             .ResolveAsync(ResolveUpdateInfoAsync);
 
         Field<NonNullGraphType<BlueprintUpdatePreviewDtoType>>("previewUpdate")
@@ -164,8 +171,13 @@ internal sealed class BlueprintsQuery : ObjectGraphType
         {
             var gql = (GraphQlUserContext)ctx.UserContext;
             var history = ctx.RequestServices!.GetRequiredService<ITenantBlueprintHistory>();
+            var blueprintName = ctx.GetArgument<string?>("blueprintName");
 
-            var current = await history.GetCurrentAsync(gql.TenantId, ctx.CancellationToken);
+            var current = string.IsNullOrEmpty(blueprintName)
+                ? await history.GetCurrentAsync(gql.TenantId, ctx.CancellationToken)
+                : await history.GetCurrentByBlueprintNameAsync(
+                    gql.TenantId, blueprintName, ctx.CancellationToken);
+
             return current == null ? null : MapHistoryItem(current);
         }
         catch (Exception e)
@@ -181,8 +193,10 @@ internal sealed class BlueprintsQuery : ObjectGraphType
         {
             var gql = (GraphQlUserContext)ctx.UserContext;
             var blueprintService = ctx.RequestServices!.GetRequiredService<IBlueprintService>();
+            var blueprintName = ctx.GetArgument<string?>("blueprintName");
 
-            var info = await blueprintService.GetUpdateInfoAsync(gql.TenantId, ctx.CancellationToken);
+            var info = await blueprintService.GetUpdateInfoAsync(
+                gql.TenantId, blueprintName, ctx.CancellationToken);
             return new BlueprintUpdateInfoDto
             {
                 CurrentBlueprintId = info?.CurrentVersion.FullName,
