@@ -238,7 +238,9 @@ Located in versioned API folders:
   `ConfigurationException`s stay 400, anything else propagates. The tenant drop (engine
   `DropTenantDatabaseAsync`, so `Delete` **and** `Clear`) also drops the tenant's CrateDB namespace —
   best-effort, gated on `StreamData:Enabled`; `Detach` keeps it. `Clear` therefore drops the tables of
-  Activated archives without refusing (no guard of its own, see above).
+  Activated archives without refusing (no guard of its own, see above). With CrateDB unreachable the
+  drop blocks for up to ~2 min in the CrateDB resilience pipeline before logging the error — the
+  delete still succeeds.
 - `ModelsController.cs` - Construction kit and runtime model import/export (includes `ImportFromCatalog` endpoint)
 - `LargeBinariesController.cs` - Binary file download. Falls back to magic-byte sniffing via `BinaryContentTypeDetector` when the stored `ContentType` is missing or `application/octet-stream` (legacy data uploaded before detection existed). For non-seekable source streams the head bytes are re-prepended via `PrependedReadStream`.
 - `DiagnosticsController.cs` - Per-tenant diagnostics.
