@@ -9,6 +9,7 @@ using Meshmakers.Octo.Runtime.Contracts.MongoDb;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb.Repositories;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb.TenantLifecycle;
 using Meshmakers.Octo.Runtime.Contracts.Repositories.Query;
+using Meshmakers.Octo.Services.Infrastructure.Services;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
@@ -26,6 +27,7 @@ public class TenantsControllerTests
     private readonly ITenantContext _tenantContext;
     private readonly ITenantLifecycleStore _tenantLifecycleStore;
     private readonly ITenantSetupRetryStore _tenantSetupRetryStore;
+    private readonly ITenantCapabilityStateReader _capabilityStateReader;
     private readonly TenantsController _controller;
 
     public TenantsControllerTests()
@@ -43,12 +45,18 @@ public class TenantsControllerTests
         _tenantLifecycleStore = A.Fake<ITenantLifecycleStore>();
         _tenantSetupRetryStore = A.Fake<ITenantSetupRetryStore>();
 
+        // Default: no capability enabled, so the guard (AB#4255) lets every existing scenario through.
+        _capabilityStateReader = A.Fake<ITenantCapabilityStateReader>();
+        A.CallTo(() => _capabilityStateReader.GetEnabledCapabilitiesAsync(A<ITenantContext>._, A<string>._))
+            .Returns(Array.Empty<TenantCapability>());
+
         _controller = new TenantsController(
             _octoService,
             A.Fake<IDistributionEventHubService>(),
             _tenantLifecycleStore,
             _tenantSetupRetryStore,
-            A.Fake<ILogger<TenantsController>>());
+            A.Fake<ILogger<TenantsController>>(),
+            _capabilityStateReader);
 
         var httpContext = new DefaultHttpContext();
         httpContext.Request.RouteValues["tenantId"] = OwnTenantId;
@@ -156,6 +164,19 @@ public class TenantsControllerTests
 
     private static string GenericTenantIdConflict(string tenantId) =>
         TenantException.TenantIdNotAvailable(tenantId).Message;
+
+    /// <summary>
+    ///     An own, active child tenant whose capability flags read as <paramref name="enabled" />.
+    /// </summary>
+    private void SetupOwnChild(string childTenantId, params TenantCapability[] enabled)
+    {
+        A.CallTo(() => _tenantContext.IsChildTenantExistingAsync(A<IOctoAdminSession>._, childTenantId))
+            .Returns(true);
+        A.CallTo(() => _tenantLifecycleStore.GetAsync(childTenantId, A<CancellationToken>._))
+            .Returns((TenantLifecycleRecord?)null);
+        A.CallTo(() => _capabilityStateReader.GetEnabledCapabilitiesAsync(_tenantContext, childTenantId))
+            .Returns(enabled);
+    }
 
     [Fact]
     public async Task Post_ReturnsGenericConflict_WhenTenantIsBeingDeleted()
@@ -366,5 +387,263 @@ public class TenantsControllerTests
         result.Should().BeOfType<OkObjectResult>().Subject
             .Value.Should().BeOfType<TenantLifecycleDto>().Subject
             .TenantId.Should().Be(childTenantId);
+    }
+
+    // --- Capability guard on delete / detach (AB#4255) ---
+
+    [Fact]
+    public async Task Delete_ReturnsConflict_WhenAChildCapabilityIsStillEnabled()
+    {
+        // Communication and Reporting own adapters/pools and report storage outside the tenant
+        // database; a plain metadata delete would orphan them. The reply names exactly the enabled
+        // capabilities, their disable verbs and the Dump-first advice.
+        const string childTenantId = "child-a";
+        SetupOwnChild(childTenantId, TenantCapability.Communication, TenantCapability.Reporting);
+
+        var result = await _controller.Delete(childTenantId);
+
+        var error = result.Should().BeOfType<ConflictObjectResult>().Subject
+            .Value.Should().BeOfType<OperationFailedErrorDto>().Subject;
+        error.Message.Should().Contain("cannot be deleted")
+            .And.Contain("Communication, Reporting")
+            .And.Contain("DisableCommunication, DisableReporting")
+            .And.Contain("Dump")
+            .And.Contain("Tenant Features")
+            .And.NotContain("Stream Data");
+        A.CallTo(() => _tenantLifecycleStore.MarkDeletingAsync(A<string>._, A<CancellationToken>._))
+            .MustNotHaveHappened();
+        A.CallTo(() => _tenantContext.DeleteChildTenantMetadataAsync(A<IOctoAdminSession>._, A<string>._))
+            .MustNotHaveHappened();
+        A.CallTo(() => _tenantContext.DropTenantDatabaseAsync(A<TenantDeletionHandle>._, A<string>._))
+            .MustNotHaveHappened();
+    }
+
+    [Fact]
+    public async Task Delete_ReturnsConflict_NamingEveryEnabledCapability_InFixedOrder()
+    {
+        const string childTenantId = "child-a";
+        SetupOwnChild(childTenantId, TenantCapability.StreamData, TenantCapability.Communication,
+            TenantCapability.Reporting, TenantCapability.AiServices);
+
+        var result = await _controller.Delete(childTenantId);
+
+        var error = result.Should().BeOfType<ConflictObjectResult>().Subject
+            .Value.Should().BeOfType<OperationFailedErrorDto>().Subject;
+        error.Message.Should().Contain("Stream Data, Communication, Reporting, AI Services")
+            .And.Contain("DisableStreamData, DisableCommunication, DisableReporting, DisableAi");
+    }
+
+    [Fact]
+    public async Task Delete_NamesAiServicesWithoutStudioHint_WhenOnlyThatFlagIsLeft()
+    {
+        // The Studio's Tenant Features panel has no AI toggle, so pointing there would be a dead end.
+        const string childTenantId = "child-a";
+        SetupOwnChild(childTenantId, TenantCapability.AiServices);
+
+        var result = await _controller.Delete(childTenantId);
+
+        var error = result.Should().BeOfType<ConflictObjectResult>().Subject
+            .Value.Should().BeOfType<OperationFailedErrorDto>().Subject;
+        error.Message.Should().Contain("AI Services").And.Contain("DisableAi").And.NotContain("Tenant Features");
+    }
+
+    [Fact]
+    public async Task Delete_LeavesNoTombstone_WhenRefusedForEnabledCapabilities()
+    {
+        // A refused delete must not tombstone the tenant id: the settle window would block the id
+        // (and the sweep would arbitrate a delete that never happened) for ~2 min (AB#4829).
+        const string childTenantId = "child-a";
+        SetupOwnChild(childTenantId, TenantCapability.StreamData);
+
+        await _controller.Delete(childTenantId);
+
+        A.CallTo(() => _tenantLifecycleStore.MarkDeletingAsync(A<string>._, A<CancellationToken>._))
+            .MustNotHaveHappened();
+        A.CallTo(() => _tenantLifecycleStore.EnsureDeletingAsync(A<string>._, A<string?>._, A<Guid>._,
+                A<CancellationToken>._))
+            .MustNotHaveHappened();
+    }
+
+    [Fact]
+    public async Task Delete_DoesNotReadCapabilities_ForATenantOutsideTheOwnSubtree()
+    {
+        // The read resolves the child and opens its database - for a foreign tenant that would be an
+        // existence oracle, so it must stay behind the ownership probe (AB#4763).
+        const string foreignTenantId = "somebody-elses-tenant";
+        A.CallTo(() => _tenantContext.IsChildTenantExistingAsync(A<IOctoAdminSession>._, foreignTenantId))
+            .Returns(false);
+
+        var result = await _controller.Delete(foreignTenantId);
+
+        result.Should().BeOfType<NotFoundResult>();
+        A.CallTo(() => _capabilityStateReader.GetEnabledCapabilitiesAsync(A<ITenantContext>._, A<string>._))
+            .MustNotHaveHappened();
+    }
+
+    [Fact]
+    public async Task Delete_DoesNotReadCapabilities_WhileTheChildIsStillBeingCreated()
+    {
+        // Resolving a half-built tenant runs the CK auto-imports on it; the Creating guard answers first.
+        const string childTenantId = "child-a";
+        A.CallTo(() => _tenantContext.IsChildTenantExistingAsync(A<IOctoAdminSession>._, childTenantId))
+            .Returns(true);
+        A.CallTo(() => _tenantLifecycleStore.GetAsync(childTenantId, A<CancellationToken>._))
+            .Returns(new TenantLifecycleRecord { TenantId = childTenantId, State = TenantLifecycleState.Creating });
+
+        var result = await _controller.Delete(childTenantId);
+
+        result.Should().BeOfType<ConflictObjectResult>().Subject
+            .Value.Should().BeOfType<OperationFailedErrorDto>().Subject
+            .Message.Should().Contain("still being created");
+        A.CallTo(() => _capabilityStateReader.GetEnabledCapabilitiesAsync(A<ITenantContext>._, A<string>._))
+            .MustNotHaveHappened();
+    }
+
+    [Fact]
+    public async Task Delete_Returns500AndWritesNoTombstone_WhenTheCapabilityStateCannotBeRead()
+    {
+        // An unreadable state is never "disabled": the delete does not proceed, and nothing is
+        // tombstoned because nothing was deleted.
+        const string childTenantId = "child-a";
+        SetupOwnChild(childTenantId);
+        A.CallTo(() => _capabilityStateReader.GetEnabledCapabilitiesAsync(_tenantContext, childTenantId))
+            .Throws(new InvalidOperationException("mongo down"));
+
+        var result = await _controller.Delete(childTenantId);
+
+        result.Should().BeOfType<ObjectResult>().Subject.StatusCode.Should().Be(500);
+        A.CallTo(() => _tenantLifecycleStore.MarkDeletingAsync(A<string>._, A<CancellationToken>._))
+            .MustNotHaveHappened();
+        A.CallTo(() => _tenantContext.DeleteChildTenantMetadataAsync(A<IOctoAdminSession>._, A<string>._))
+            .MustNotHaveHappened();
+    }
+
+    [Fact]
+    public async Task Delete_ReturnsNotFound_WhenTheChildVanishesBeforeTheCapabilityRead()
+    {
+        // Concurrent delete between the ownership probe and the read: the reader throws the engine's
+        // not-found, which the existing TenantException branch maps to 404 - no tombstone written.
+        const string childTenantId = "child-a";
+        SetupOwnChild(childTenantId);
+        A.CallTo(() => _capabilityStateReader.GetEnabledCapabilitiesAsync(_tenantContext, childTenantId))
+            .Throws(TenantException.TenantDoesNotExist(childTenantId));
+
+        var result = await _controller.Delete(childTenantId);
+
+        result.Should().BeOfType<NotFoundObjectResult>();
+        A.CallTo(() => _tenantLifecycleStore.MarkDeletingAsync(A<string>._, A<CancellationToken>._))
+            .MustNotHaveHappened();
+    }
+
+    [Fact]
+    public async Task Detach_ReturnsNotFound_ForATenantOutsideTheOwnSubtree()
+    {
+        // Detach used to let the engine answer a 400 naming the tenant; it now shares Delete's
+        // reason-free 404 (AB#4763) and never reads a foreign tenant's capabilities.
+        const string foreignTenantId = "somebody-elses-tenant";
+        A.CallTo(() => _tenantContext.IsChildTenantExistingAsync(A<IOctoAdminSession>._, foreignTenantId))
+            .Returns(false);
+
+        var result = await _controller.Detach(foreignTenantId);
+
+        result.Should().BeOfType<NotFoundResult>();
+        A.CallTo(() => _tenantContext.DetachChildTenantAsync(A<IOctoAdminSession>._, A<string>._))
+            .MustNotHaveHappened();
+        A.CallTo(() => _capabilityStateReader.GetEnabledCapabilitiesAsync(A<ITenantContext>._, A<string>._))
+            .MustNotHaveHappened();
+    }
+
+    [Fact]
+    public async Task Detach_ReturnsConflict_WhenAChildCapabilityIsStillEnabled()
+    {
+        // A detached tenant keeps its database but loses its registry entry - the archives it still
+        // owns would be orphaned exactly as on delete.
+        const string childTenantId = "child-a";
+        SetupOwnChild(childTenantId, TenantCapability.StreamData);
+
+        var result = await _controller.Detach(childTenantId);
+
+        var error = result.Should().BeOfType<ConflictObjectResult>().Subject
+            .Value.Should().BeOfType<OperationFailedErrorDto>().Subject;
+        error.Message.Should().Contain("cannot be detached")
+            .And.Contain("Stream Data")
+            .And.Contain("DisableStreamData")
+            .And.Contain("Dump");
+        A.CallTo(() => _tenantContext.DetachChildTenantAsync(A<IOctoAdminSession>._, A<string>._))
+            .MustNotHaveHappened();
+    }
+
+    [Fact]
+    public async Task Detach_ReturnsNoContent_WhenAllCapabilitiesAreDisabled()
+    {
+        const string childTenantId = "child-a";
+        SetupOwnChild(childTenantId);
+
+        var result = await _controller.Detach(childTenantId);
+
+        result.Should().BeOfType<NoContentResult>();
+        A.CallTo(() => _tenantContext.DetachChildTenantAsync(A<IOctoAdminSession>._, childTenantId))
+            .MustHaveHappened();
+    }
+
+    [Fact]
+    public async Task Detach_MapsConflictTo409_LikeAttach()
+    {
+        // TenantException derives from PersistenceException, so the 400 branch used to swallow it.
+        const string childTenantId = "child-a";
+        SetupOwnChild(childTenantId);
+        A.CallTo(() => _tenantContext.DetachChildTenantAsync(A<IOctoAdminSession>._, childTenantId))
+            .Throws(TenantException.TenantIdNotAvailable(childTenantId));
+
+        var result = await _controller.Detach(childTenantId);
+
+        result.Should().BeOfType<ConflictObjectResult>().Subject
+            .Value.Should().BeOfType<OperationFailedErrorDto>();
+    }
+
+    [Fact]
+    public async Task Detach_MapsTenantNotFoundTo404_WhenTheChildVanishesMidFlight()
+    {
+        const string childTenantId = "child-a";
+        SetupOwnChild(childTenantId);
+        A.CallTo(() => _tenantContext.DetachChildTenantAsync(A<IOctoAdminSession>._, childTenantId))
+            .Throws(TenantException.TenantDoesNotExist(childTenantId));
+
+        var result = await _controller.Detach(childTenantId);
+
+        result.Should().BeOfType<NotFoundResult>();
+    }
+
+    [Fact]
+    public async Task Detach_MapsPersistenceFailureTo400()
+    {
+        // A flag-less TenantException (neither conflict nor not-found) is a plain persistence failure.
+        const string childTenantId = "child-a";
+        SetupOwnChild(childTenantId);
+        A.CallTo(() => _tenantContext.DetachChildTenantAsync(A<IOctoAdminSession>._, childTenantId))
+            .Throws(TenantException.TenantDatabaseDoesNotExist("child-a-db"));
+
+        var result = await _controller.Detach(childTenantId);
+
+        result.Should().BeOfType<BadRequestObjectResult>().Subject
+            .Value.Should().BeOfType<OperationFailedErrorDto>();
+    }
+
+    [Fact]
+    public void BuildCapabilityConflictMessage_IsTheOperatorContract()
+    {
+        // The CLI prints this string raw, so wording, order and the context-based guidance (the
+        // octo-cli disable verbs take no tenant argument) are part of the contract.
+        var message = TenantsController.BuildCapabilityConflictMessage("child-a", "deleted",
+            [TenantCapability.Communication, TenantCapability.Reporting]);
+
+        message.Should().Be(
+            "Tenant 'child-a' cannot be deleted while the following capabilities are still enabled: " +
+            "Communication, Reporting. Disable them on tenant 'child-a' first: run DisableCommunication, " +
+            "DisableReporting with octo-cli in a context of that tenant (UseContext or --context), or use " +
+            "Refinery Studio (General > Settings > Tenant Features) of tenant 'child-a'. " +
+            "If the tenant's data is still needed, create a backup with Dump before disabling.");
+        message.Should().NotContain("-tid");
+        message.Should().Match(m => m.All(c => c < 128), "the CLI prints the raw JSON body");
     }
 }

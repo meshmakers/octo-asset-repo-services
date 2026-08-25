@@ -11,6 +11,7 @@ using Meshmakers.Octo.Runtime.Contracts;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb.TenantLifecycle;
 using Meshmakers.Octo.Services.Contracts.DistributionEventHub.Messages;
+using Meshmakers.Octo.Services.Infrastructure.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using MongoDB.Bson;
@@ -32,19 +33,21 @@ public class TenantsController : ControllerBase
     private readonly IOctoService _octoService;
     private readonly ITenantLifecycleStore _tenantLifecycleStore;
     private readonly ITenantSetupRetryStore _tenantSetupRetryStore;
+    private readonly ITenantCapabilityStateReader _capabilityStateReader;
 
     /// <summary>
     ///     Constructor
     /// </summary>
     public TenantsController(IOctoService octoService, IDistributionEventHubService distributionEventHubService,
         ITenantLifecycleStore tenantLifecycleStore, ITenantSetupRetryStore tenantSetupRetryStore,
-        ILogger<TenantsController> logger)
+        ILogger<TenantsController> logger, ITenantCapabilityStateReader capabilityStateReader)
     {
         _octoService = octoService;
         _distributionEventHubService = distributionEventHubService;
         _tenantLifecycleStore = tenantLifecycleStore;
         _tenantSetupRetryStore = tenantSetupRetryStore;
         _logger = logger;
+        _capabilityStateReader = capabilityStateReader;
     }
 
     private async Task<ITenantContext?> GetTenantContextAsync()
@@ -56,6 +59,71 @@ public class TenantsController : ControllerBase
         }
 
         return await _octoService.SystemContext.TryFindTenantContextAsync(tenantId);
+    }
+
+    /// <summary>
+    ///     Refuses to delete or detach a child tenant while Stream Data, Communication, Reporting or AI
+    ///     Services is still enabled for it (AB#4255). Those capabilities own state outside the tenant
+    ///     database — archives, adapters and pools, report storage, AI configuration — that the plain
+    ///     metadata delete/detach would orphan. Returns the 409 to send, or null to proceed.
+    /// </summary>
+    /// <remarks>
+    ///     Ordering matters. The read must run AFTER the ownership probe: it resolves the child and reads
+    ///     its database, which for a tenant outside the caller's subtree would be an existence oracle
+    ///     (AB#4763). On delete it must also run AFTER the Creating guard (resolving a half-built tenant
+    ///     runs the CK auto-imports on it) and BEFORE the Deleting tombstone is written — a refused delete
+    ///     must not leave a tombstone that blocks the tenant id for the settle window (AB#4829). A child
+    ///     that vanished since the probe surfaces as <see cref="TenantException" /> with
+    ///     <c>IsTenantNotFound</c>; any other read failure propagates, because an unreadable state is
+    ///     never "disabled".
+    /// </remarks>
+    private async Task<IActionResult?> RefuseWhileCapabilitiesEnabledAsync(ITenantContext tenantContext,
+        string childTenantId, string operation, string operationPastTense)
+    {
+        var enabled = await _capabilityStateReader.GetEnabledCapabilitiesAsync(tenantContext, childTenantId);
+        if (enabled.Count == 0)
+        {
+            return null;
+        }
+
+        _logger.LogWarning("Rejected {Operation} of tenant '{TenantId}': capabilities still enabled: {Capabilities}",
+            operation, childTenantId, string.Join(", ", enabled));
+
+        return Conflict(new OperationFailedErrorDto(
+            BuildCapabilityConflictMessage(childTenantId, operationPastTense, enabled)));
+    }
+
+    /// <summary>
+    ///     Builds the message of the 409 a delete/detach answers while capabilities are still enabled.
+    ///     Single line, ASCII only: the CLI prints the raw JSON body. Names only the enabled capabilities
+    ///     and only their disable verbs; the octo-cli disable verbs act on the tenant of the active
+    ///     context (there is no tenant argument), and the Studio has no toggle for AI Services.
+    /// </summary>
+    internal static string BuildCapabilityConflictMessage(string childTenantId, string operationPastTense,
+        IReadOnlyList<TenantCapability> enabledCapabilities)
+    {
+        var names = string.Join(", ", enabledCapabilities.Select(c => c.DisplayName()));
+        var verbs = string.Join(", ", enabledCapabilities.Select(GetDisableCommandName));
+        var studioHint = enabledCapabilities.Any(c => c != TenantCapability.AiServices)
+            ? $", or use Refinery Studio (General > Settings > Tenant Features) of tenant '{childTenantId}'"
+            : string.Empty;
+
+        return $"Tenant '{childTenantId}' cannot be {operationPastTense} while the following capabilities are " +
+               $"still enabled: {names}. Disable them on tenant '{childTenantId}' first: run {verbs} with octo-cli " +
+               $"in a context of that tenant (UseContext or --context){studioHint}. " +
+               "If the tenant's data is still needed, create a backup with Dump before disabling.";
+    }
+
+    private static string GetDisableCommandName(TenantCapability capability)
+    {
+        return capability switch
+        {
+            TenantCapability.StreamData => "DisableStreamData",
+            TenantCapability.Communication => "DisableCommunication",
+            TenantCapability.Reporting => "DisableReporting",
+            TenantCapability.AiServices => "DisableAi",
+            _ => throw new ArgumentOutOfRangeException(nameof(capability), capability, null),
+        };
     }
 
     // GET {tenantId}/v1/tenants
@@ -380,6 +448,8 @@ public class TenantsController : ControllerBase
     [Authorize(AssetRepositoryServiceConstants.TenantAssetApiReadWritePolicy)]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(typeof(OperationFailedErrorDto), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(OperationFailedErrorDto), StatusCodes.Status409Conflict)]
     [ProducesResponseType(typeof(InternalServerErrorDto), StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> Detach([Required] string childTenantId)
     {
@@ -391,12 +461,47 @@ public class TenantsController : ControllerBase
                 return BadRequest(new OperationFailedErrorDto("TenantId is required"));
             }
 
+            // Same ownership probe as Delete (AB#4763): a tenant outside the caller's subtree answers a
+            // reason-free 404. Before AB#4255 the engine's "does not exist" surfaced here as a 400 naming
+            // the tenant, and the capability read below must never run for a foreign tenant.
+            using (var probeSession = await tenantContext.GetAdminSessionAsync())
+            {
+                probeSession.StartTransaction();
+                var isChild = await tenantContext.IsChildTenantExistingAsync(probeSession, childTenantId);
+                await probeSession.CommitTransactionAsync();
+
+                if (!isChild)
+                {
+                    return NotFound();
+                }
+            }
+
+            // AB#4255: a detached tenant keeps its database but loses its registry entry, so adapters,
+            // pools and archives it still owns would be orphaned exactly as on delete.
+            var capabilityConflict =
+                await RefuseWhileCapabilitiesEnabledAsync(tenantContext, childTenantId, "detach", "detached");
+            if (capabilityConflict != null)
+            {
+                return capabilityConflict;
+            }
+
             using var session = await tenantContext.GetAdminSessionAsync();
             session.StartTransaction();
 
             await tenantContext.DetachChildTenantAsync(session, childTenantId);
             await session.CommitTransactionAsync();
             return NoContent();
+        }
+        catch (TenantException e) when (e.IsConflict)
+        {
+            // TenantException derives from PersistenceException, so the branch below used to swallow a
+            // conflict into a 400 — the same defect Attach had (AB#4763).
+            return Conflict(new OperationFailedErrorDto(e.Message));
+        }
+        catch (TenantException e) when (e.IsTenantNotFound)
+        {
+            // The child vanished between the ownership probe and the detach (concurrent delete).
+            return NotFound();
         }
         catch (PersistenceException e)
         {
@@ -482,6 +587,7 @@ public class TenantsController : ControllerBase
     [HttpDelete]
     [Authorize(AssetRepositoryServiceConstants.TenantAssetApiReadWritePolicy)]
     [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(OperationFailedErrorDto), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(typeof(OperationFailedErrorDto), StatusCodes.Status409Conflict)]
     [ProducesResponseType(typeof(InternalServerErrorDto), StatusCodes.Status500InternalServerError)]
@@ -522,6 +628,16 @@ public class TenantsController : ControllerBase
             {
                 return Conflict(new OperationFailedErrorDto(
                     $"Tenant '{childTenantId}' is still being created. Retry the delete once it is active or failed."));
+            }
+
+            // Q3 (AB#4255): refuse while Stream Data, Communication, Reporting or AI Services is still
+            // enabled. Ordered after the ownership probe and the Creating guard, and before the tombstone
+            // below — see RefuseWhileCapabilitiesEnabledAsync for why each of the three matters.
+            var capabilityConflict =
+                await RefuseWhileCapabilitiesEnabledAsync(tenantContext, childTenantId, "delete", "deleted");
+            if (capabilityConflict != null)
+            {
+                return capabilityConflict;
             }
 
             // Mark the tenant as being deleted (durable tombstone) BEFORE dropping its database, so a
