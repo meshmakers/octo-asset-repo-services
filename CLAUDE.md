@@ -229,6 +229,16 @@ Located in versioned API folders:
   clears not-found entries terminally, AB#4829), but the missing subtree check remains. `Clear` has no
   ownership probe, lifecycle guard or capability guard at all, and `Detach` (unlike `Delete`) still has
   no `Creating`/`Deleting` lifecycle guard — both are outside AB#4255 step 1.
+
+  **Stream Data (AB#4255 step 2, last part).** `StreamDataController.Disable` maps the engine's
+  `StreamDataDisableBlockedException` (thrown by `TenantContext.DisableStreamDataAsync` while any archive
+  of the tenant is still `Activated`) to **409** with an `OperationFailedErrorDto`: the engine names the
+  archives, the controller appends the remediation (`DisableArchive` / `DeleteArchive`, Studio
+  **Repository > Archives**, retry `DisableStreamData`); other `StreamDataException`s and
+  `ConfigurationException`s stay 400, anything else propagates. The tenant drop (engine
+  `DropTenantDatabaseAsync`, so `Delete` **and** `Clear`) also drops the tenant's CrateDB namespace —
+  best-effort, gated on `StreamData:Enabled`; `Detach` keeps it. `Clear` therefore drops the tables of
+  Activated archives without refusing (no guard of its own, see above).
 - `ModelsController.cs` - Construction kit and runtime model import/export (includes `ImportFromCatalog` endpoint)
 - `LargeBinariesController.cs` - Binary file download. Falls back to magic-byte sniffing via `BinaryContentTypeDetector` when the stored `ContentType` is missing or `application/octet-stream` (legacy data uploaded before detection existed). For non-seekable source streams the head bytes are re-prepended via `PrependedReadStream`.
 - `DiagnosticsController.cs` - Per-tenant diagnostics.
@@ -246,6 +256,12 @@ Time-series data support (`StreamData/`):
   constants as `TenantApi/v1/Controllers/BlueprintsController`. Both policies are scope-only
   (`octo_api.full_access` / `octo_api.read_only`), so CLI/MCP/client-credentials callers keep
   working. The `api/v1/streamdata` route no longer exists.
+  - `POST disable` is a **verified precondition, not a teardown (AB#4255)**: 409 +
+    `OperationFailedErrorDto` naming the archives while any is still `Activated` (guard in the
+    engine's `TenantContext.DisableStreamDataAsync`); on success only the tenant flag is switched
+    off — model, archive entities and the tables of Disabled/Failed archives stay until the tenant
+    is dropped. `GET status` (`{ instanceEnabled, tenantEnabled }`) is what the Studio's Tenant
+    Features toggle reflects — the CK model stays after a disable, so model presence would lie.
 - **TenantManager** - Manages stream data tenant contexts
 - **StreamDataDatabaseManager** - Database operations for time-series data
 - **StreamDataTenantContext** - Per-tenant stream data context
