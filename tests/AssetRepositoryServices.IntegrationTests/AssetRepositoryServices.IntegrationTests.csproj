@@ -12,10 +12,10 @@
     <ItemGroup>
         <PackageReference Include="FakeItEasy" Version="9.0.1" />
         <PackageReference Include="MartinCostello.Logging.XUnit.v3" Version="0.7.1" />
-        <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.9" />
-        <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="10.0.9" />
-        <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.6.0" />
-        <PackageReference Include="Testcontainers.MongoDb" Version="4.12.0" />
+        <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.11" />
+        <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="10.0.11" />
+        <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.9.0" />
+        <PackageReference Include="Testcontainers.MongoDb" Version="4.14.0" />
         <!-- Testcontainers pulls SSH.NET 2025.1.0 transitively, which is flagged by
              NuGet audit (GHSA-q939-rpr3-3284, high). Pin the patched 2026.0.0 here
              until Testcontainers bumps its own dependency (merged upstream, ships
