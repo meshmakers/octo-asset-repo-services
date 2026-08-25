@@ -201,10 +201,34 @@ Located in versioned API folders:
   lifecycle writer other than the delete/sweep can leave the Deleting state, and the engine's restore
   refuses a target tenant id or database name that a Deleting tombstone still holds (AB#4829).
 
+  **`Delete` and `Detach` refuse while a capability is still enabled (AB#4255).** Stream Data,
+  Communication, Reporting and AI Services own state outside the tenant database — CrateDB archives,
+  adapters and pools, report storage, AI configuration — that a plain metadata delete/detach would
+  orphan in the cluster. Both endpoints therefore answer **409** while any of the four enabled flags is
+  set, naming exactly the enabled capabilities, their octo-cli disable verbs (which act on the tenant of
+  the active context — there is no tenant argument), the Studio alternative where one exists (not for
+  AI), and the advice to `Dump` first if the data is still needed. The flags are the
+  `RtTenantConfiguration` documents in the **child's own database**, read through
+  `ITenantCapabilityStateReader` from octo-common-services; a missing key and a kept `false` flag both
+  mean disabled (Communication/Reporting/AI delete the key on Disable, Stream Data keeps it). The guard
+  sits at a fixed place in the order of checks: **after** the ownership probe (the read resolves the
+  child and opens its database, which for a foreign tenant would be the existence oracle AB#4763 closed),
+  on `Delete` **after** the `Creating` guard (resolving a half-built tenant runs the CK auto-imports on
+  it) and **before** `MarkDeletingAsync` (a refused delete must not tombstone the tenant id for the
+  settle window). A read failure answers 500 and writes nothing — an unreadable state is never
+  "disabled" — and there is deliberately no force flag. The guard lives in the controller only, so
+  `Dump` (bot-services, `ISystemContext.BackupTenantAsync`) is untouched and works regardless of
+  capability state. `Detach` gained the pieces it was missing for this: the ownership probe (foreign
+  ids answer the reason-free 404 instead of the engine's 400 naming the tenant), a declared 409, and
+  the `TenantException.IsConflict → 409` / `IsTenantNotFound → 404` split — its `PersistenceException`
+  branch used to swallow both into 400, the defect `Attach` had under AB#4763.
+
   Still open on this controller (filed separately): `ReRunSetup` and `ClearCache` accept any tenant id
   with no subtree check — `ClearCache` still publishes update events for nonexistent tenants. The
   damage is now self-limiting (the update-event consumer drops unregistered tenants and the drain loop
-  clears not-found entries terminally, AB#4829), but the missing subtree check remains.
+  clears not-found entries terminally, AB#4829), but the missing subtree check remains. `Clear` has no
+  ownership probe, lifecycle guard or capability guard at all, and `Detach` (unlike `Delete`) still has
+  no `Creating`/`Deleting` lifecycle guard — both are outside AB#4255 step 1.
 - `ModelsController.cs` - Construction kit and runtime model import/export (includes `ImportFromCatalog` endpoint)
 - `LargeBinariesController.cs` - Binary file download. Falls back to magic-byte sniffing via `BinaryContentTypeDetector` when the stored `ContentType` is missing or `application/octet-stream` (legacy data uploaded before detection existed). For non-seekable source streams the head bytes are re-prepended via `PrependedReadStream`.
 - `DiagnosticsController.cs` - Per-tenant diagnostics.
