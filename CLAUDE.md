@@ -235,12 +235,15 @@ Located in versioned API folders:
   of the tenant is still `Activated`) to **409** with an `OperationFailedErrorDto`: the engine names the
   archives, the controller appends the remediation (`DisableArchive` / `DeleteArchive`, Studio
   **Repository > Archives**, retry `DisableStreamData`); other `StreamDataException`s and
-  `ConfigurationException`s stay 400, anything else propagates. The tenant drop (engine
-  `DropTenantDatabaseAsync`, so `Delete` **and** `Clear`) also drops the tenant's CrateDB namespace —
-  best-effort, gated on `StreamData:Enabled`; `Detach` keeps it. `Clear` therefore drops the tables of
-  Activated archives without refusing (no guard of its own, see above). With CrateDB unreachable the
-  drop blocks for up to ~2 min in the CrateDB resilience pipeline before logging the error — the
-  delete still succeeds.
+  `ConfigurationException`s stay 400, anything else propagates. `Delete` passes `dropStreamData: true`
+  to the engine's `DeleteChildTenantMetadataAsync`, so the CrateDB tables of the tenant's own archives
+  (collected before the record is deleted; never "everything in the schema" — tenants whose ids differ
+  only in `-`/`_` share a CrateDB schema) go with the database — best-effort, gated on
+  `StreamData:Enabled`. Engine `Clear` does the same; a restore over an existing tenant, the
+  create-rollback and the settle sweep only swap/re-drop the database and keep the tables; `Detach`
+  keeps everything. `Clear` therefore drops the tables of Activated archives without refusing (no guard
+  of its own, see above). With CrateDB unreachable the drop of a tenant with archives blocks for up to
+  ~2 min in the CrateDB resilience pipeline before logging the error — the delete still succeeds.
 - `ModelsController.cs` - Construction kit and runtime model import/export (includes `ImportFromCatalog` endpoint)
 - `LargeBinariesController.cs` - Binary file download. Falls back to magic-byte sniffing via `BinaryContentTypeDetector` when the stored `ContentType` is missing or `application/octet-stream` (legacy data uploaded before detection existed). For non-seekable source streams the head bytes are re-prepended via `PrependedReadStream`.
 - `DiagnosticsController.cs` - Per-tenant diagnostics.
