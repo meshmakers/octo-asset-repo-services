@@ -655,7 +655,11 @@ public class TenantsController : ControllerBase
             // the just-dropped database and poisoning an immediately following tenant Create
             // (e.g. re-running om_initialize_tenant). Committing the record deletion first makes the
             // subsequent resolve fail with "tenant does not exist", so the drop is final.
-            var deletion = await tenantContext.DeleteChildTenantMetadataAsync(session, childTenantId);
+            // dropStreamData: this is the one caller that removes the tenant for good, so the CrateDB
+            // tables of its archives go with the database (AB#4255). A restore over an existing tenant
+            // only swaps the database and keeps them.
+            var deletion = await tenantContext.DeleteChildTenantMetadataAsync(session, childTenantId,
+                dropStreamData: true);
             await session.CommitTransactionAsync();
             await tenantContext.DropTenantDatabaseAsync(deletion, childTenantId);
 

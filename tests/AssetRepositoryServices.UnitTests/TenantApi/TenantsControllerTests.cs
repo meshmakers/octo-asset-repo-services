@@ -296,7 +296,7 @@ public class TenantsControllerTests
             .Returns(true);
         A.CallTo(() => _tenantLifecycleStore.GetAsync(childTenantId, A<CancellationToken>._))
             .Returns((TenantLifecycleRecord?)null);
-        A.CallTo(() => _tenantContext.DeleteChildTenantMetadataAsync(A<IOctoAdminSession>._, childTenantId))
+        A.CallTo(() => _tenantContext.DeleteChildTenantMetadataAsync(A<IOctoAdminSession>._, childTenantId, true))
             .Returns(new TenantDeletionHandle("child-a-db", correlationId));
 
         var result = await _controller.Delete(childTenantId);
@@ -309,6 +309,10 @@ public class TenantsControllerTests
             .MustHaveHappened();
         A.CallTo(() => _tenantLifecycleStore.RemoveAsync(A<string>._, A<CancellationToken>._))
             .MustNotHaveHappened();
+        // Delete is the caller that removes the tenant for good: its archives' CrateDB tables go with
+        // the database (dropStreamData: true, AB#4255).
+        A.CallTo(() => _tenantContext.DeleteChildTenantMetadataAsync(A<IOctoAdminSession>._, childTenantId, true))
+            .MustHaveHappenedOnceExactly();
     }
 
     [Fact]
@@ -322,7 +326,7 @@ public class TenantsControllerTests
             .Returns(true);
         A.CallTo(() => _tenantLifecycleStore.GetAsync(childTenantId, A<CancellationToken>._))
             .Returns((TenantLifecycleRecord?)null);
-        A.CallTo(() => _tenantContext.DeleteChildTenantMetadataAsync(A<IOctoAdminSession>._, childTenantId))
+        A.CallTo(() => _tenantContext.DeleteChildTenantMetadataAsync(A<IOctoAdminSession>._, childTenantId, true))
             .Returns(new TenantDeletionHandle("child-a-db", Guid.NewGuid()));
         A.CallTo(() => _tenantLifecycleStore.EnsureDeletingAsync(A<string>._, A<string?>._, A<Guid>._,
                 A<CancellationToken>._))
@@ -346,7 +350,7 @@ public class TenantsControllerTests
             .Returns(true);
         A.CallTo(() => _tenantLifecycleStore.GetAsync(childTenantId, A<CancellationToken>._))
             .Returns((TenantLifecycleRecord?)null);
-        A.CallTo(() => _tenantContext.DeleteChildTenantMetadataAsync(A<IOctoAdminSession>._, childTenantId))
+        A.CallTo(() => _tenantContext.DeleteChildTenantMetadataAsync(A<IOctoAdminSession>._, childTenantId, true))
             .Throws(new InvalidOperationException("mongo down"));
 
         var result = await _controller.Delete(childTenantId);
@@ -412,7 +416,7 @@ public class TenantsControllerTests
             .And.NotContain("Stream Data");
         A.CallTo(() => _tenantLifecycleStore.MarkDeletingAsync(A<string>._, A<CancellationToken>._))
             .MustNotHaveHappened();
-        A.CallTo(() => _tenantContext.DeleteChildTenantMetadataAsync(A<IOctoAdminSession>._, A<string>._))
+        A.CallTo(() => _tenantContext.DeleteChildTenantMetadataAsync(A<IOctoAdminSession>._, A<string>._, A<bool>._))
             .MustNotHaveHappened();
         A.CallTo(() => _tenantContext.DropTenantDatabaseAsync(A<TenantDeletionHandle>._, A<string>._))
             .MustNotHaveHappened();
@@ -514,7 +518,7 @@ public class TenantsControllerTests
         result.Should().BeOfType<ObjectResult>().Subject.StatusCode.Should().Be(500);
         A.CallTo(() => _tenantLifecycleStore.MarkDeletingAsync(A<string>._, A<CancellationToken>._))
             .MustNotHaveHappened();
-        A.CallTo(() => _tenantContext.DeleteChildTenantMetadataAsync(A<IOctoAdminSession>._, A<string>._))
+        A.CallTo(() => _tenantContext.DeleteChildTenantMetadataAsync(A<IOctoAdminSession>._, A<string>._, A<bool>._))
             .MustNotHaveHappened();
     }
 

@@ -129,8 +129,8 @@ public class StreamDataController : ControllerBase
     ///     tenant is still Activated (<see cref="StreamDataDisableBlockedException" />), mapped here to
     ///     409 with an <see cref="OperationFailedErrorDto" /> that names the archives and the remediation
     ///     verbs. A successful disable only switches the tenant flag off; the System.StreamData model, the
-    ///     archive entities and the tables of Disabled/Failed archives stay until the tenant database is
-    ///     dropped, which also drops the CrateDB namespace.
+    ///     archive entities and the tables of Disabled/Failed archives stay until the tenant is deleted,
+    ///     which also drops the CrateDB tables of its archives.
     /// </remarks>
     [HttpPost("disable")]
     [Microsoft.AspNetCore.Authorization.Authorize(AssetRepositoryServiceConstants.TenantAssetApiReadWritePolicy)]

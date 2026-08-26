@@ -11,8 +11,10 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Strea
 
 /// <summary>
 /// AB#4255 against a real CrateDB: the tenant-level disable is refused while an archive is still
-/// Activated (the fixture's system tenant owns one), and dropping a tenant drops its CrateDB
-/// namespace - proven on a temporary child tenant whose activated archive table disappears with it.
+/// Activated (the fixture's system tenant owns one); dropping a tenant for good drops the CrateDB
+/// tables of exactly its own archives - proven on temporary child tenants: the table disappears with
+/// the tenant, a database swap keeps it, and two tenants that share a CrateDB schema (ids differing
+/// only in <c>-</c>/<c>_</c>) do not take each other's tables along.
 /// </summary>
 [Collection("Sequential")]
 public class StreamDataDisableAndDropTests(StreamDataFixture fixture, ITestOutputHelper output)
@@ -34,91 +36,193 @@ public class StreamDataDisableAndDropTests(StreamDataFixture fixture, ITestOutpu
     }
 
     [Fact]
-    public async Task DropChildTenant_DropsItsCrateDbNamespace()
+    public async Task DropChildTenant_ForGood_DropsItsArchiveTables()
     {
         fixture.OutputHelper = output;
         const string childTenantId = "streamdropchild";
-        var systemContext = fixture.GetSystemContext();
-
-        using (var session = await systemContext.GetAdminSessionAsync())
-        {
-            session.StartTransaction();
-            await systemContext.CreateChildTenantAsync(session, childTenantId, childTenantId);
-            await session.CommitTransactionAsync();
-        }
+        await CreateChildAsync(childTenantId);
 
         try
         {
-            ITenantContext child;
-            using (var session = await systemContext.GetAdminSessionAsync())
-            {
-                session.StartTransaction();
-                child = await systemContext.GetChildTenantContextAsync(session, childTenantId);
-                await session.CommitTransactionAsync();
-            }
-
-            await child.EnableStreamDataAsync();
-            var import = new OperationResult();
-            await child.ImportCkModelAsync(new CkModelId("AssetRepositoryIntegrationTest"), import);
-            import.HasErrors.Should().BeFalse(string.Join(", ", import.Messages.Select(m => m.MessageText)));
-
-            var archive = new RtRawArchive
-            {
-                RtWellKnownName = "DropProbeArchive",
-                TargetCkTypeId = fixture.TestCkTypeId,
-                Status = RtCkArchiveStatusEnum.Created,
-                Columns = new AttributeRecordValueList<RtCkArchiveColumnRecord>
-                {
-                    new() { Path = "Voltage", Indexed = true, Required = false },
-                },
-            };
-            var repository = child.GetTenantRepository();
-            using (var session = await repository.GetSessionAsync())
-            {
-                session.StartTransaction();
-                await repository.InsertOneRtEntityAsync(session, archive);
-                await session.CommitTransactionAsync();
-            }
-
-            var lifecycle = child.GetArchiveLifecycleService()
-                ?? throw new InvalidOperationException("ArchiveLifecycleService not registered.");
-            await lifecycle.ActivateAsync(archive.RtId);
-            (await CountTablesAsync(childTenantId)).Should().Be(1, "activation provisions the archive table");
+            var child = await GetChildAsync(childTenantId);
+            var archive = await ActivateProbeArchiveAsync(child, "DropProbeArchive");
+            (await ListTablesAsync(childTenantId)).Should().ContainSingle("activation provisions the archive table");
 
             // Nothing live any more -> the tenant-level disable succeeds, the table is still there.
-            await lifecycle.DisableAsync(archive.RtId);
+            var lifecycle = child.GetArchiveLifecycleService()
+                ?? throw new InvalidOperationException("ArchiveLifecycleService not registered.");
+            await lifecycle.DisableAsync(archive);
             await child.DisableStreamDataAsync();
-            (await CountTablesAsync(childTenantId)).Should().Be(1, "a disabled archive keeps its table");
+            (await ListTablesAsync(childTenantId)).Should().ContainSingle("a disabled archive keeps its table");
 
-            using (var session = await systemContext.GetAdminSessionAsync())
-            {
-                session.StartTransaction();
-                await systemContext.DropChildTenantAsync(session, childTenantId);
-                await session.CommitTransactionAsync();
-            }
+            await DropChildAsync(childTenantId, dropStreamData: true);
 
-            (await CountTablesAsync(childTenantId)).Should().Be(0, "the tenant drop drops the CrateDB namespace");
+            (await ListTablesAsync(childTenantId)).Should().BeEmpty("dropping the tenant for good drops its tables");
         }
         finally
         {
-            using var session = await systemContext.GetAdminSessionAsync();
-            session.StartTransaction();
-            if (await systemContext.IsChildTenantExistingAsync(session, childTenantId))
-            {
-                await systemContext.DropChildTenantAsync(session, childTenantId);
-            }
-
-            await session.CommitTransactionAsync();
+            await DropChildIfExistingAsync(childTenantId);
         }
     }
 
-    private async Task<long> CountTablesAsync(string schema)
+    [Fact]
+    public async Task DropChildTenant_ForADatabaseSwap_KeepsItsArchiveTables()
+    {
+        // The restore-over-existing-tenant contract: RestoreTenantAsync drops the database with the
+        // default (dropStreamData: false) and restores it; the same archives exist afterwards and must
+        // find their tables again - a Mongo-only restore must not lose the stream data.
+        fixture.OutputHelper = output;
+        const string childTenantId = "streamdropswap";
+        await CreateChildAsync(childTenantId);
+        var expectedTable = string.Empty;
+
+        try
+        {
+            var child = await GetChildAsync(childTenantId);
+            var archive = await ActivateProbeArchiveAsync(child, "SwapProbeArchive");
+            expectedTable = $"archive_{archive}";
+
+            await DropChildAsync(childTenantId, dropStreamData: false);
+
+            (await ListTablesAsync(childTenantId)).Should().Equal(expectedTable);
+        }
+        finally
+        {
+            await DropChildIfExistingAsync(childTenantId);
+            await DropTableAsync(childTenantId, expectedTable);
+        }
+    }
+
+    [Fact]
+    public async Task DropChildTenant_LeavesTheTablesOfATenantSharingTheSchemaAlone()
+    {
+        // TenantSchema.SchemaName strips '-' and '_': both tenants live in the CrateDB schema "dropcoll".
+        // A schema-wide drop would have taken the neighbour's data with it (the reviewer's finding 3).
+        fixture.OutputHelper = output;
+        const string schema = "dropcoll";
+        const string deleted = "drop-coll";
+        const string neighbour = "drop_coll";
+        await CreateChildAsync(deleted, "dropcolldeleted");
+        await CreateChildAsync(neighbour, "dropcollneighbour");
+
+        try
+        {
+            var deletedArchive = await ActivateProbeArchiveAsync(await GetChildAsync(deleted), "DeletedArchive");
+            var neighbourArchive = await ActivateProbeArchiveAsync(await GetChildAsync(neighbour), "NeighbourArchive");
+            (await ListTablesAsync(schema)).Should().BeEquivalentTo($"archive_{deletedArchive}", $"archive_{neighbourArchive}");
+
+            await DropChildAsync(deleted, dropStreamData: true);
+
+            (await ListTablesAsync(schema)).Should().Equal($"archive_{neighbourArchive}");
+        }
+        finally
+        {
+            await DropChildIfExistingAsync(deleted);
+            await DropChildIfExistingAsync(neighbour);
+        }
+    }
+
+    /// <summary>Enables stream data on the child, imports the test model and activates a raw archive.</summary>
+    private async Task<OctoObjectId> ActivateProbeArchiveAsync(ITenantContext child, string wellKnownName)
+    {
+        await child.EnableStreamDataAsync();
+        var import = new OperationResult();
+        await child.ImportCkModelAsync(new CkModelId("AssetRepositoryIntegrationTest"), import);
+        import.HasErrors.Should().BeFalse(string.Join(", ", import.Messages.Select(m => m.MessageText)));
+
+        var archive = new RtRawArchive
+        {
+            RtWellKnownName = wellKnownName,
+            TargetCkTypeId = fixture.TestCkTypeId,
+            Status = RtCkArchiveStatusEnum.Created,
+            Columns = new AttributeRecordValueList<RtCkArchiveColumnRecord>
+            {
+                new() { Path = "Voltage", Indexed = true, Required = false },
+            },
+        };
+        var repository = child.GetTenantRepository();
+        using (var session = await repository.GetSessionAsync())
+        {
+            session.StartTransaction();
+            await repository.InsertOneRtEntityAsync(session, archive);
+            await session.CommitTransactionAsync();
+        }
+
+        var lifecycle = child.GetArchiveLifecycleService()
+            ?? throw new InvalidOperationException("ArchiveLifecycleService not registered.");
+        await lifecycle.ActivateAsync(archive.RtId);
+        return archive.RtId;
+    }
+
+    private async Task CreateChildAsync(string tenantId, string? databaseName = null)
+    {
+        var systemContext = fixture.GetSystemContext();
+        using var session = await systemContext.GetAdminSessionAsync();
+        session.StartTransaction();
+        await systemContext.CreateChildTenantAsync(session, databaseName ?? tenantId, tenantId);
+        await session.CommitTransactionAsync();
+    }
+
+    private async Task<ITenantContext> GetChildAsync(string tenantId)
+    {
+        var systemContext = fixture.GetSystemContext();
+        using var session = await systemContext.GetAdminSessionAsync();
+        session.StartTransaction();
+        var child = await systemContext.GetChildTenantContextAsync(session, tenantId);
+        await session.CommitTransactionAsync();
+        return child;
+    }
+
+    private async Task DropChildAsync(string tenantId, bool dropStreamData)
+    {
+        var systemContext = fixture.GetSystemContext();
+        using var session = await systemContext.GetAdminSessionAsync();
+        session.StartTransaction();
+        await systemContext.DropChildTenantAsync(session, tenantId, dropStreamData);
+        await session.CommitTransactionAsync();
+    }
+
+    private async Task DropChildIfExistingAsync(string tenantId)
+    {
+        var systemContext = fixture.GetSystemContext();
+        using var session = await systemContext.GetAdminSessionAsync();
+        session.StartTransaction();
+        if (await systemContext.IsChildTenantExistingAsync(session, tenantId))
+        {
+            await systemContext.DropChildTenantAsync(session, tenantId, dropStreamData: true);
+        }
+
+        await session.CommitTransactionAsync();
+    }
+
+    private async Task<List<string>> ListTablesAsync(string schema)
     {
         await using var connection = new NpgsqlConnection(fixture.CrateDbConnectionString);
         await connection.OpenAsync();
         await using var command = new NpgsqlCommand(
-            "SELECT count(*) FROM information_schema.tables WHERE table_schema = @schema", connection);
+            "SELECT table_name FROM information_schema.tables WHERE table_schema = @schema ORDER BY table_name",
+            connection);
         command.Parameters.AddWithValue("schema", schema);
-        return (long)(await command.ExecuteScalarAsync() ?? 0L);
+        var tables = new List<string>();
+        await using var reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            tables.Add(reader.GetString(0));
+        }
+
+        return tables;
+    }
+
+    private async Task DropTableAsync(string schema, string table)
+    {
+        if (string.IsNullOrEmpty(table))
+        {
+            return;
+        }
+
+        await using var connection = new NpgsqlConnection(fixture.CrateDbConnectionString);
+        await connection.OpenAsync();
+        await using var command = new NpgsqlCommand($"DROP TABLE IF EXISTS \"{schema}\".\"{table}\"", connection);
+        await command.ExecuteNonQueryAsync();
     }
 }
