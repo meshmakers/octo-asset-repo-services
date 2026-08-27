@@ -2,6 +2,7 @@ using System.ComponentModel.DataAnnotations;
 using Asp.Versioning;
 using GraphQL;
 using IdentityModel;
+using Meshmakers.Octo.Communication.Contracts.DataTransferObjects.ApiErrors;
 using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb.Configuration;
@@ -9,6 +10,7 @@ using Meshmakers.Octo.Runtime.Contracts.Formulas;
 using Meshmakers.Octo.Runtime.Contracts.StreamData;
 using Meshmakers.Octo.Services.Infrastructure;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
@@ -122,8 +124,19 @@ public class StreamDataController : ControllerBase
     /// <summary>
     /// Disables stream data for a given tenant
     /// </summary>
+    /// <remarks>
+    ///     Verified precondition, not a teardown (AB#4255): the engine refuses while any archive of the
+    ///     tenant is still Activated (<see cref="StreamDataDisableBlockedException" />), mapped here to
+    ///     409 with an <see cref="OperationFailedErrorDto" /> that names the archives and the remediation
+    ///     verbs. A successful disable only switches the tenant flag off; the System.StreamData model, the
+    ///     archive entities and the tables of Disabled/Failed archives stay until the tenant is deleted,
+    ///     which also drops the CrateDB tables of its archives.
+    /// </remarks>
     [HttpPost("disable")]
     [Microsoft.AspNetCore.Authorization.Authorize(AssetRepositoryServiceConstants.TenantAssetApiReadWritePolicy)]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(typeof(string), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(OperationFailedErrorDto), StatusCodes.Status409Conflict)]
     public async Task<IActionResult> Disable([Required] string tenantId)
     {
         try
@@ -131,6 +144,12 @@ public class StreamDataController : ControllerBase
             var tenantContext = await _systemContext.FindTenantContextAsync(tenantId);
             await tenantContext.DisableStreamDataAsync();
             return NoContent();
+        }
+        catch (StreamDataDisableBlockedException e)
+        {
+            // The engine already logged the refusal (WARN); this line names the HTTP outcome.
+            _logger.LogWarning("DisableStreamData answered 409 for tenant '{TenantId}': {Reason}", tenantId, e.Message);
+            return Conflict(new OperationFailedErrorDto(BuildDisableBlockedMessage(e)));
         }
         catch (ConfigurationException e)
         {
@@ -142,6 +161,15 @@ public class StreamDataController : ControllerBase
             return BadRequest(e.Message);
         }
     }
+
+    /// <summary>
+    ///     The engine names the blocking archives; the operator-facing remediation verbs are added here,
+    ///     where the surfaces (octo-cli, MCP, Studio) that call this endpoint are known.
+    /// </summary>
+    private static string BuildDisableBlockedMessage(StreamDataDisableBlockedException e) =>
+        e.Message +
+        " Use DisableArchive (data kept) or DeleteArchive - both act on the tenant of the active context - " +
+        "or Refinery Studio > Repository > Archives, then retry DisableStreamData.";
 
     /// <summary>
     /// Disables a CkArchive: transitions to <c>Disabled</c> (no DDL side-effect; data preserved).

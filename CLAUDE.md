@@ -201,10 +201,49 @@ Located in versioned API folders:
   lifecycle writer other than the delete/sweep can leave the Deleting state, and the engine's restore
   refuses a target tenant id or database name that a Deleting tombstone still holds (AB#4829).
 
+  **`Delete` and `Detach` refuse while a capability is still enabled (AB#4255).** Stream Data,
+  Communication, Reporting and AI Services own state outside the tenant database — CrateDB archives,
+  adapters and pools, report storage, AI configuration — that a plain metadata delete/detach would
+  orphan in the cluster. Both endpoints therefore answer **409** while any of the four enabled flags is
+  set, naming exactly the enabled capabilities, their octo-cli disable verbs (which act on the tenant of
+  the active context — there is no tenant argument), the Studio alternative where one exists (not for
+  AI), and the advice to `Dump` first if the data is still needed. The flags are the
+  `RtTenantConfiguration` documents in the **child's own database**, read through
+  `ITenantCapabilityStateReader` from octo-common-services; a missing key and a kept `false` flag both
+  mean disabled (Communication/Reporting/AI delete the key on Disable, Stream Data keeps it). The guard
+  sits at a fixed place in the order of checks: **after** the ownership probe (the read resolves the
+  child and opens its database, which for a foreign tenant would be the existence oracle AB#4763 closed),
+  on `Delete` **after** the `Creating` guard (resolving a half-built tenant runs the CK auto-imports on
+  it) and **before** `MarkDeletingAsync` (a refused delete must not tombstone the tenant id for the
+  settle window). A read failure answers 500 and writes nothing — an unreadable state is never
+  "disabled" — and there is deliberately no force flag. The guard lives in the controller only, so
+  `Dump` (bot-services, `ISystemContext.BackupTenantAsync`) is untouched and works regardless of
+  capability state. `Detach` gained the pieces it was missing for this: the ownership probe (foreign
+  ids answer the reason-free 404 instead of the engine's 400 naming the tenant), a declared 409, and
+  the `TenantException.IsConflict → 409` / `IsTenantNotFound → 404` split — its `PersistenceException`
+  branch used to swallow both into 400, the defect `Attach` had under AB#4763.
+
   Still open on this controller (filed separately): `ReRunSetup` and `ClearCache` accept any tenant id
   with no subtree check — `ClearCache` still publishes update events for nonexistent tenants. The
   damage is now self-limiting (the update-event consumer drops unregistered tenants and the drain loop
-  clears not-found entries terminally, AB#4829), but the missing subtree check remains.
+  clears not-found entries terminally, AB#4829), but the missing subtree check remains. `Clear` has no
+  ownership probe, lifecycle guard or capability guard at all, and `Detach` (unlike `Delete`) still has
+  no `Creating`/`Deleting` lifecycle guard — both are outside AB#4255 step 1.
+
+  **Stream Data (AB#4255 step 2, last part).** `StreamDataController.Disable` maps the engine's
+  `StreamDataDisableBlockedException` (thrown by `TenantContext.DisableStreamDataAsync` while any archive
+  of the tenant is still `Activated`) to **409** with an `OperationFailedErrorDto`: the engine names the
+  archives, the controller appends the remediation (`DisableArchive` / `DeleteArchive`, Studio
+  **Repository > Archives**, retry `DisableStreamData`); other `StreamDataException`s and
+  `ConfigurationException`s stay 400, anything else propagates. `Delete` passes `dropStreamData: true`
+  to the engine's `DeleteChildTenantMetadataAsync`, so the CrateDB tables of the tenant's own archives
+  (collected before the record is deleted; never "everything in the schema" — tenants whose ids differ
+  only in `-`/`_` share a CrateDB schema) go with the database — best-effort, gated on
+  `StreamData:Enabled`. Engine `Clear` does the same; a restore over an existing tenant, the
+  create-rollback and the settle sweep only swap/re-drop the database and keep the tables; `Detach`
+  keeps everything. `Clear` therefore drops the tables of Activated archives without refusing (no guard
+  of its own, see above). With CrateDB unreachable the drop of a tenant with archives blocks for up to
+  ~2 min in the CrateDB resilience pipeline before logging the error — the delete still succeeds.
 - `ModelsController.cs` - Construction kit and runtime model import/export (includes `ImportFromCatalog` endpoint)
 - `LargeBinariesController.cs` - Binary file download. Falls back to magic-byte sniffing via `BinaryContentTypeDetector` when the stored `ContentType` is missing or `application/octet-stream` (legacy data uploaded before detection existed). For non-seekable source streams the head bytes are re-prepended via `PrependedReadStream`.
 - `DiagnosticsController.cs` - Per-tenant diagnostics.
@@ -222,6 +261,12 @@ Time-series data support (`StreamData/`):
   constants as `TenantApi/v1/Controllers/BlueprintsController`. Both policies are scope-only
   (`octo_api.full_access` / `octo_api.read_only`), so CLI/MCP/client-credentials callers keep
   working. The `api/v1/streamdata` route no longer exists.
+  - `POST disable` is a **verified precondition, not a teardown (AB#4255)**: 409 +
+    `OperationFailedErrorDto` naming the archives while any is still `Activated` (guard in the
+    engine's `TenantContext.DisableStreamDataAsync`); on success only the tenant flag is switched
+    off — model, archive entities and the tables of Disabled/Failed archives stay until the tenant
+    is dropped. `GET status` (`{ instanceEnabled, tenantEnabled }`) is what the Studio's Tenant
+    Features toggle reflects — the CK model stays after a disable, so model presence would lie.
 - **TenantManager** - Manages stream data tenant contexts
 - **StreamDataDatabaseManager** - Database operations for time-series data
 - **StreamDataTenantContext** - Per-tenant stream data context
