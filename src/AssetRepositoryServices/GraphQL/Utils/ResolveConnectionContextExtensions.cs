@@ -281,7 +281,7 @@ internal static class ResolveConnectionContextExtensions
             foreach (var fieldFilterDto in fieldFilterDtoList)
             {
                 queryOptions = queryOptions.FieldFilter(fieldFilterDto.AttributePath,
-                    (FieldFilterOperator)fieldFilterDto.Operator, fieldFilterDto.ComparisonValue);
+                    fieldFilterDto.Operator.ToFieldFilterOperator(), fieldFilterDto.ComparisonValue);
             }
         }
 

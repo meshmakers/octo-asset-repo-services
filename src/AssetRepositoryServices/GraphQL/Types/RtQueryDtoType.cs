@@ -275,7 +275,7 @@ internal sealed class RtQueryDtoType : ObjectGraphType<RtQueryDto>
             foreach (var fieldFilter in rtAggregationRtQuery.FieldFilter)
             {
                 queryOptions.FieldFilter(fieldFilter.AttributePath.ToPascalCase(),
-                    (FieldFilterOperator)fieldFilter.Operator,
+                    StreamDataGraphQlMapper.MapCkFieldFilterOperator(fieldFilter.Operator),
                     fieldFilter.ComparisonValue);
             }
         }
@@ -307,7 +307,7 @@ internal sealed class RtQueryDtoType : ObjectGraphType<RtQueryDto>
             foreach (var fieldFilter in rtQuery.FieldFilter)
             {
                 queryOptions.FieldFilter(fieldFilter.AttributePath.ToPascalCase(),
-                    (FieldFilterOperator)fieldFilter.Operator,
+                    StreamDataGraphQlMapper.MapCkFieldFilterOperator(fieldFilter.Operator),
                     fieldFilter.ComparisonValue);
             }
         }
@@ -398,7 +398,7 @@ internal sealed class RtQueryDtoType : ObjectGraphType<RtQueryDto>
             foreach (var fieldFilter in rtGroupingAggregationRtQuery.FieldFilter)
             {
                 queryOptions.FieldFilter(fieldFilter.AttributePath.ToPascalCase(),
-                    (FieldFilterOperator)fieldFilter.Operator,
+                    StreamDataGraphQlMapper.MapCkFieldFilterOperator(fieldFilter.Operator),
                     fieldFilter.ComparisonValue);
             }
         }

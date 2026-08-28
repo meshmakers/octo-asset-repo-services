@@ -27,55 +27,22 @@ internal static class StreamDataGraphQlMapper
 
     /// <summary>
     /// Maps a FieldFilterOperatorDto (GraphQL) to the engine's <see cref="FieldFilterOperator"/>.
+    /// AB#4956: the conversion lives next to the DTO so every consumer shares one mapping.
     /// </summary>
     public static FieldFilterOperator MapFieldFilterOperator(FieldFilterOperatorDto op)
     {
-        return op switch
-        {
-            FieldFilterOperatorDto.Equals           => FieldFilterOperator.Equals,
-            FieldFilterOperatorDto.NotEquals        => FieldFilterOperator.NotEquals,
-            FieldFilterOperatorDto.LessThan         => FieldFilterOperator.LessThan,
-            FieldFilterOperatorDto.LessEqualThan    => FieldFilterOperator.LessEqualThan,
-            FieldFilterOperatorDto.GreaterThan      => FieldFilterOperator.GreaterThan,
-            FieldFilterOperatorDto.GreaterEqualThan => FieldFilterOperator.GreaterEqualThan,
-            FieldFilterOperatorDto.Like             => FieldFilterOperator.Like,
-            FieldFilterOperatorDto.In               => FieldFilterOperator.In,
-            FieldFilterOperatorDto.NotIn            => FieldFilterOperator.NotIn,
-            FieldFilterOperatorDto.Between          => FieldFilterOperator.Between,
-            FieldFilterOperatorDto.IsNull           => FieldFilterOperator.IsNull,
-            FieldFilterOperatorDto.IsNotNull        => FieldFilterOperator.IsNotNull,
-            FieldFilterOperatorDto.MatchRegEx       => FieldFilterOperator.MatchRegEx,
-            FieldFilterOperatorDto.AnyEq            => FieldFilterOperator.AnyEq,
-            FieldFilterOperatorDto.AnyLike          => FieldFilterOperator.AnyLike,
-            _ => throw new ArgumentOutOfRangeException(nameof(op), op,
-                $"Field filter operator '{op}' is not mapped")
-        };
+        return op.ToFieldFilterOperator();
     }
 
     /// <summary>
     /// Maps a CK model enum (e.g. RtFieldFilterOperatorEnum) to the engine's <see cref="FieldFilterOperator"/>.
-    /// Used by persisted queries where the operator is stored as a CK enum.
+    /// Used by persisted queries where the operator is stored as a CK enum. The mapping is by name, never by
+    /// numeric value - the CK enum (System/FieldFilterOperator) and the engine enum are two independent
+    /// numberings that only happen to agree up to Match (AB#4956).
     /// </summary>
     public static FieldFilterOperator MapCkFieldFilterOperator(Enum op)
     {
-        var name = op.ToString();
-        return name switch
-        {
-            "Equals"           => FieldFilterOperator.Equals,
-            "NotEquals"        => FieldFilterOperator.NotEquals,
-            "LessThan"         => FieldFilterOperator.LessThan,
-            "LessEqualThan"    => FieldFilterOperator.LessEqualThan,
-            "GreaterThan"      => FieldFilterOperator.GreaterThan,
-            "GreaterEqualThan" => FieldFilterOperator.GreaterEqualThan,
-            "Like"             => FieldFilterOperator.Like,
-            "In"               => FieldFilterOperator.In,
-            "NotIn"            => FieldFilterOperator.NotIn,
-            "Between"          => FieldFilterOperator.Between,
-            "IsNull"           => FieldFilterOperator.IsNull,
-            "IsNotNull"        => FieldFilterOperator.IsNotNull,
-            _ => throw new ArgumentOutOfRangeException(nameof(op), op,
-                $"Field filter operator '{name}' is not mapped")
-        };
+        return FieldFilterOperatorDtoExtensions.FromCkModelEnum(op);
     }
 
     /// <summary>

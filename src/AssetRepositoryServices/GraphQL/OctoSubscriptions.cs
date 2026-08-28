@@ -66,7 +66,7 @@ internal class OctoSubscriptions : ObjectGraphType<object>
             {
                 beforeFieldFilters.Add(
                     new FieldFilter(beforeFieldFilterDto.AttributePath.ToPascalCase(),
-                        (FieldFilterOperator)beforeFieldFilterDto.Operator, beforeFieldFilterDto.ComparisonValue));
+                        beforeFieldFilterDto.Operator.ToFieldFilterOperator(), beforeFieldFilterDto.ComparisonValue));
             }
         }
 
@@ -77,7 +77,7 @@ internal class OctoSubscriptions : ObjectGraphType<object>
             {
                 fieldFilters.Add(
                     new FieldFilter(fieldFilterDto.AttributePath.ToPascalCase(),
-                        (FieldFilterOperator)fieldFilterDto.Operator, fieldFilterDto.ComparisonValue));
+                        fieldFilterDto.Operator.ToFieldFilterOperator(), fieldFilterDto.ComparisonValue));
             }
         }
 
