@@ -35,6 +35,33 @@ internal static class Helpers
         return tenantContext;
     }
 
+    /// <summary>
+    ///     Builds the security context of the calling principal for repository sessions (RtCreatedBy
+    ///     stamping and data-level permissions, AB#4969). Fail-closed: an unauthenticated caller yields
+    ///     an empty user context, never the system context.
+    /// </summary>
+    internal static Runtime.Contracts.RtSecurityContext GetSecurityContext(IDictionary<string, object?> context)
+    {
+        var user = (context as GraphQlUserContext)?.User;
+        if (user?.Identity?.IsAuthenticated != true)
+        {
+            return Runtime.Contracts.RtSecurityContext.ForUser(null, null);
+        }
+
+        // "sub" may be remapped by the inbound-claim mapping; client-credentials tokens carry
+        // client_id instead of a subject.
+        var subjectId = user.FindFirst("sub")?.Value
+                        ?? user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
+                        ?? user.FindFirst("client_id")?.Value;
+        var roles = user.Identities
+            .SelectMany(i => i.FindAll(i.RoleClaimType))
+            .Select(c => c.Value)
+            .Distinct()
+            .ToArray();
+
+        return Runtime.Contracts.RtSecurityContext.ForUser(subjectId, roles);
+    }
+
 
     internal static FieldType Field<TSourceType>(this ComplexGraphType<TSourceType> complexGraphType,
         string name,

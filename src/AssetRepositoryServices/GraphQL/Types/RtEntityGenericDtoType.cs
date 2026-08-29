@@ -29,6 +29,8 @@ internal sealed class RtEntityGenericDtoType : ObjectGraphType<RtEntityDto>
         Field(x => x.RtCreationDateTime, true);
         Field(x => x.RtChangedDateTime, true);
         Field(x => x.RtWellKnownName, true);
+        Field(x => x.RtCreatedBy, true)
+            .Description("Subject id of the identity that created the entity (engine-stamped; read-only).");
         Field<NonNullGraphType<StringGraphType>>("rtDisplayName")
             .Description("Engine-computed display name (from the CK type's displayNameRule). " +
                          "Falls back to '<ckTypeId>@<rtId>' when no computed value is stored. " +

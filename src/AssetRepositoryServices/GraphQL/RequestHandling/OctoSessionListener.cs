@@ -3,6 +3,8 @@ using GraphQL.Validation;
 
 using GraphQLParser.AST;
 
+using Meshmakers.Octo.Runtime.Contracts.MongoDb.Repositories;
+
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.RequestHandling;
 
 /// <inheritdoc />
@@ -31,7 +33,7 @@ internal class OctoSessionListener : IDocumentExecutionListener
     {
         var tenantContext = Helpers.GetTenantContext(context.UserContext);
         var tenantRepository = tenantContext.GetTenantRepository();
-        _accessor.Session = tenantRepository.GetSession();
+        _accessor.Session = tenantRepository.GetSession(Helpers.GetSecurityContext(context.UserContext));
 
         // Only start a transaction for mutations. Read-only queries do not need
         // transactional guarantees and can avoid the MongoDB transactionLifetimeLimitSeconds

@@ -40,6 +40,8 @@ internal sealed class RtEntityInterfaceType : InterfaceGraphType<RtEntityDto>
         Field(d => d.RtCreationDateTime, typeof(UtcDateTimeGraphType));
         Field(d => d.RtChangedDateTime, typeof(UtcDateTimeGraphType));
         Field(x => x.RtWellKnownName, true);
+        Field(x => x.RtCreatedBy, true)
+            .Description("Subject id of the identity that created the entity (engine-stamped; read-only).");
         Field<NonNullGraphType<StringGraphType>>("rtDisplayName")
             .Description("Engine-computed display name (from the CK type's displayNameRule). " +
                          "Falls back to '<ckTypeId>@<rtId>' when no computed value is stored. " +
