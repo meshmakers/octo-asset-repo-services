@@ -302,9 +302,18 @@ public static class RuntimeEngineBuilderExtensions
             .AddUserContextBuilder<TenantUserContextBuilder>()
             .AddGraphTypes() // Add all IGraphType implementors in assembly
             .AddDocumentListener<OctoSessionListener>()
+            .AddDocumentListener<MutationScopeListener>()
             .AddDocumentListener<MongoStatsListener>()
             .Services.Register<IOctoSessionAccessor, OctoSessionAccessor>(GraphQL.DI.ServiceLifetime.Singleton)
         );
+
+        // Tolerant of hosts without IConfiguration (integration-test service collections).
+        builder.Services.AddOptions<GraphQlSecurityOptions>().Configure<IServiceProvider>((o, sp) =>
+        {
+            var configurationRoot = sp.GetService<IConfiguration>();
+            o.EnforceMutationScope =
+                bool.TryParse(configurationRoot?["GraphQl:EnforceMutationScope"], out var enforce) && enforce;
+        });
 
         builder.Services.AddSingleton<IDocumentExecuter<OctoSchema>, TenantDocumentExecutor>();
 

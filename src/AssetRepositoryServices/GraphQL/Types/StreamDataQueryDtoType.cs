@@ -92,6 +92,7 @@ internal sealed class StreamDataQueryDtoType : ObjectGraphType<StreamDataQueryDt
 
             var loaded = uc.LoadedQuery;
             var ckTypeId = dto.AssociatedCkTypeId;
+            await DataPermissionStreamGuard.EnsureStreamReadAllowedAsync(ctx, gql, ckTypeId);
 
             // Enum-id lookup for the target CK type, used to resolve raw integer enum keys to
             // their value names on the result cells (parity with the runtime query path).
@@ -445,6 +446,7 @@ internal sealed class StreamDataQueryDtoType : ObjectGraphType<StreamDataQueryDt
 
             var loaded = uc.LoadedQuery;
             var ckTypeId = dto.AssociatedCkTypeId;
+            await DataPermissionStreamGuard.EnsureStreamReadAllowedAsync(ctx, gql, ckTypeId);
             var aggInput = ctx.GetArgument<ResultAggregationInputDto>(Statics.AggregationsArg);
 
             // Build aggregation columns from the requested stats input.

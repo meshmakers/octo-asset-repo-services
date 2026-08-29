@@ -114,6 +114,7 @@ internal sealed class StreamDataTransientQuery : ObjectGraphType
             var archiveSnapshot = await gql.TenantContext.GetArchiveRuntimeStore().GetAsync(archiveRtId)
                 ?? throw new ArchiveNotFoundException(archiveRtId);
             var ckTypeId = archiveSnapshot.TargetCkTypeId;
+            await DataPermissionStreamGuard.EnsureStreamReadAllowedAsync(ctx, gql, ckTypeId);
             var fieldResolver = BuildFieldResolver(archiveSnapshot);
 
             ctx.TryGetArgument(Statics.SortOrderArg, out IEnumerable<SortDto>? sortDtos);
@@ -207,6 +208,7 @@ internal sealed class StreamDataTransientQuery : ObjectGraphType
             var archiveSnapshot = await gql.TenantContext.GetArchiveRuntimeStore().GetAsync(archiveRtId)
                 ?? throw new ArchiveNotFoundException(archiveRtId);
             var ckTypeId = archiveSnapshot.TargetCkTypeId;
+            await DataPermissionStreamGuard.EnsureStreamReadAllowedAsync(ctx, gql, ckTypeId);
             var fieldResolver = await StreamDataFieldResolverExtensions.BuildAggregationFieldResolverAsync(archiveSnapshot, gql, ctx.CancellationToken);
 
             ctx.TryGetArgument(Statics.FieldFilterArg, out IEnumerable<FieldFilterDto>? fieldFilterDtos);
@@ -276,6 +278,7 @@ internal sealed class StreamDataTransientQuery : ObjectGraphType
             var archiveSnapshot = await gql.TenantContext.GetArchiveRuntimeStore().GetAsync(archiveRtId)
                 ?? throw new ArchiveNotFoundException(archiveRtId);
             var ckTypeId = archiveSnapshot.TargetCkTypeId;
+            await DataPermissionStreamGuard.EnsureStreamReadAllowedAsync(ctx, gql, ckTypeId);
             var fieldResolver = await StreamDataFieldResolverExtensions.BuildAggregationFieldResolverAsync(archiveSnapshot, gql, ctx.CancellationToken);
 
             ctx.TryGetArgument(Statics.FieldFilterArg, out IEnumerable<FieldFilterDto>? fieldFilterDtos);
@@ -350,6 +353,7 @@ internal sealed class StreamDataTransientQuery : ObjectGraphType
             var archiveSnapshot = await gql.TenantContext.GetArchiveRuntimeStore().GetAsync(archiveRtId)
                 ?? throw new ArchiveNotFoundException(archiveRtId);
             var ckTypeId = archiveSnapshot.TargetCkTypeId;
+            await DataPermissionStreamGuard.EnsureStreamReadAllowedAsync(ctx, gql, ckTypeId);
             var fieldResolver = await StreamDataFieldResolverExtensions.BuildAggregationFieldResolverAsync(archiveSnapshot, gql, ctx.CancellationToken);
 
             ctx.TryGetArgument(Statics.FieldFilterArg, out IEnumerable<FieldFilterDto>? fieldFilterDtos);

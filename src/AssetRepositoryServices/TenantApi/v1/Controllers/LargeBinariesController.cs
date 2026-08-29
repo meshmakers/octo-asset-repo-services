@@ -40,7 +40,11 @@ public class LargeBinariesController : ControllerBase
     /// </summary>
     /// <returns></returns>
     [HttpGet]
-    [Authorize(AuthenticationSchemes = InfrastructureCommon.OidcAuthenticationScheme)]
+    // AB#4973: previously bearer-auth only — no scope requirement at all on a direct binary download.
+    // The read-only scope policy is the minimum; the per-entity check (does the caller see a
+    // referencing entity?) is concept point K1 and follows separately.
+    [Authorize(AuthenticationSchemes = InfrastructureCommon.OidcAuthenticationScheme,
+        Policy = AssetRepositoryServiceConstants.TenantAssetApiReadOnlyPolicy)]
     [ProducesResponseType(typeof(FileStreamResult), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status404NotFound)]
     [ProducesResponseType(typeof(InternalServerErrorDto), StatusCodes.Status400BadRequest)]

@@ -253,6 +253,9 @@ internal sealed class StreamDataQuery : ObjectGraphType
                     new CkTypeQueryColumnOptions { IgnoreNavigationProperties = true });
             var columns = BuildColumnsFromLoaded(loaded, typeQueryColumns);
 
+            await DataPermissionStreamGuard.EnsureStreamReadAllowedAsync(arg, graphQlUserContext,
+                new RtCkId<CkTypeId>(loaded.QueryCkTypeId));
+
             var dto = new StreamDataQueryDto
             {
                 QueryRtId = queryRtId,
