@@ -71,6 +71,13 @@ stages:
     jobs:
       - job: linux
         displayName: 'Build, test, and push Docker image'
+        # AB#4962: the definition default is 60 min and this job has no headroom against it.
+        # The integration suite takes ~20 min on a quiet agent but 55.7 min when the shared
+        # meshmakers-ci-agents pool is saturated (build 43767 was killed at 60.5 min, mid
+        # Docker step, with restore and all 496 tests already green). AB#4963 removes the
+        # underlying cost - one container set per test class - and this can go back to the
+        # default once that has landed and the suite is measured again.
+        timeoutInMinutes: 90
         pool:
           name: meshmakers-ci-agents
         steps:
