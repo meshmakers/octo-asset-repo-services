@@ -4,6 +4,7 @@ using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.Runtime.Contracts.StreamData;
 using Npgsql;
 using Xunit;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Collections;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.StreamData;
 
@@ -19,9 +20,8 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Strea
 /// SQL (generation column + PK, ON CONFLICT key, INSERT-at-generation, genmap flip, CASE read filter,
 /// sweep) so it cannot regress.
 /// </summary>
-[Collection("Sequential")]
+[Collection(StreamDataCollection.Name)]
 public class RollupRecomputeGenerationPointerTests(StreamDataFixture fixture, ITestOutputHelper output)
-    : IClassFixture<StreamDataFixture>
 {
     private static readonly DateTime RangeStart = new(2026, 1, 1, 10, 0, 0, DateTimeKind.Utc);
     private static readonly DateTime RangeEnd = new(2026, 1, 1, 11, 0, 0, DateTimeKind.Utc);

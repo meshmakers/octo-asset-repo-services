@@ -2,6 +2,7 @@ using Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Fixtures;
 using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.ConstructionKit.Contracts.Services;
 using Xunit;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Collections;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.System;
 
@@ -9,9 +10,8 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Syste
 /// Integration tests for CK model catalog operations.
 /// Tests the ICatalogService with real catalog implementations.
 /// </summary>
-[Collection("Sequential")]
+[Collection(AssetRepoCollection.Name)]
 public class CkModelCatalogTests(AssetRepoFixture fixture)
-    : IClassFixture<AssetRepoFixture>
 {
     [Fact]
     public async Task ListAsync_ShouldReturnModels()

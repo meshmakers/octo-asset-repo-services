@@ -2,6 +2,7 @@ using System.Text.Json;
 using FluentAssertions;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Fixtures;
 using Xunit;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Collections;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.StreamData;
 
@@ -11,9 +12,8 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Strea
 /// GraphQL layer can compute Count/Min/Max/Avg/Sum statistics on the same filter set that
 /// the .Rows sub-connection exposes.
 /// </summary>
-[Collection("Sequential")]
+[Collection(StreamDataCollection.Name)]
 public class StreamDataAggregationsSubConnectionTests(StreamDataFixture fixture, ITestOutputHelper output)
-    : IClassFixture<StreamDataFixture>
 {
     [Fact]
     public async Task TransientSimple_Aggregations_ReturnsAvgStatistics()

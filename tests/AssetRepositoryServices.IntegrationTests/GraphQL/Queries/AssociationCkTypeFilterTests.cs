@@ -2,6 +2,7 @@ using FluentAssertions;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Fixtures;
 using Newtonsoft.Json.Linq;
 using Xunit;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Collections;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.GraphQL.Queries;
 
@@ -11,9 +12,8 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Graph
 /// 1. ckTypeId can accept a base/abstract type and return all derived types
 /// 2. ckTypeIds can accept a list of type IDs for filtering
 /// </summary>
-[Collection("Sequential")]
+[Collection(GraphQlCollection.Name)]
 public class AssociationCkTypeFilterTests
-    : IClassFixture<GraphQlTestFixture>
 {
     private readonly GraphQlTestFixture _fixture;
 

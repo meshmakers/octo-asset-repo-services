@@ -5,6 +5,7 @@ using Meshmakers.Octo.Runtime.Contracts.MongoDb.Configuration;
 using Meshmakers.Octo.Services.Infrastructure.Services;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Collections;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Tenant;
 
@@ -15,8 +16,8 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Tenan
 ///     <c>DisableStreamDataAsync</c>, <c>DeleteConfigurationAsync</c> as in <c>DisableAsync</c>) and
 ///     check that the reader sees them, against a real MongoDB.
 /// </summary>
-[Collection("Sequential")]
-public class TenantCapabilityStateReaderTests(AssetRepoFixture fixture) : IClassFixture<AssetRepoFixture>
+[Collection(AssetRepoCollection.Name)]
+public class TenantCapabilityStateReaderTests(AssetRepoFixture fixture)
 {
     private readonly TenantCapabilityStateReader _reader = new(NullLogger<TenantCapabilityStateReader>.Instance);
 

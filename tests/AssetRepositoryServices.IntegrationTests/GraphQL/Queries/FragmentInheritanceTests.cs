@@ -2,6 +2,7 @@ using FluentAssertions;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Fixtures;
 using Newtonsoft.Json.Linq;
 using Xunit;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Collections;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.GraphQL.Queries;
 
@@ -14,9 +15,8 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Graph
 /// For example, `... on Vehicle` should match both Car and Truck entities,
 /// but currently only the specific type fragments work.
 /// </summary>
-[Collection("Sequential")]
+[Collection(GraphQlCollection.Name)]
 public class FragmentInheritanceTests
-    : IClassFixture<GraphQlTestFixture>
 {
     private readonly GraphQlTestFixture _fixture;
 

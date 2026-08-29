@@ -3,6 +3,7 @@ using Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Fixtures;
 using System.Text.Json;
 using Newtonsoft.Json.Linq;
 using Xunit;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Collections;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.GraphQL.Queries;
 
@@ -10,9 +11,8 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Graph
 /// Tests for basic GraphQL queries against the AssetRepositoryIntegrationTest model.
 /// Tests the GraphQL schema directly without HTTP.
 /// </summary>
-[Collection("Sequential")]
+[Collection(GraphQlCollection.Name)]
 public class BasicGraphQlTests
-    : IClassFixture<GraphQlTestFixture>
 {
     private readonly GraphQlTestFixture _fixture;
 

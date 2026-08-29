@@ -6,6 +6,7 @@ using Meshmakers.Octo.Runtime.Contracts.MongoDb;
 using Meshmakers.Octo.Runtime.Contracts.RepositoryEntities;
 using Npgsql;
 using Xunit;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Collections;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.StreamData;
 
@@ -16,9 +17,8 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Strea
 /// the tenant, a database swap keeps it, and two tenants that share a CrateDB schema (ids differing
 /// only in <c>-</c>/<c>_</c>) do not take each other's tables along.
 /// </summary>
-[Collection("Sequential")]
+[Collection(StreamDataLifecycleCollection.Name)]
 public class StreamDataDisableAndDropTests(StreamDataFixture fixture, ITestOutputHelper output)
-    : IClassFixture<StreamDataFixture>
 {
     [Fact]
     public async Task DisableStreamData_IsRefused_WhileTheFixtureArchiveIsActivated()

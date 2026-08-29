@@ -1,11 +1,11 @@
 using Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Fixtures;
 using Xunit;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Collections;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.System;
 
-[Collection("Sequential")]
+[Collection(AssetRepoCollection.Name)]
 public class TenantContextTests(AssetRepoFixture fixture)
-    : IClassFixture<AssetRepoFixture>
 {
     [Fact]
     public async Task IsSystemTenantExisting()

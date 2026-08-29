@@ -9,6 +9,7 @@ using Meshmakers.Octo.Runtime.Contracts.RepositoryEntities;
 using Meshmakers.Octo.Runtime.Contracts.StreamData;
 using Npgsql;
 using Xunit;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Collections;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.StreamData;
 
@@ -38,9 +39,8 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Strea
 /// - StateDuration(status == 2) A: [11:00, 12:00) = 1 800 000 ms; carry bucket = NULL (state 1).
 /// - Plain MAX(voltage) rides along carry-guarded: NULL in the pure-carry bucket.
 /// </remarks>
-[Collection("Sequential")]
+[Collection(StreamDataMutatingCollection.Name)]
 public class TimeWeightedAggregationTests(StreamDataFixture fixture, ITestOutputHelper output)
-    : IClassFixture<StreamDataFixture>
 {
     private static readonly DateTime B0Start = new(2026, 5, 1, 10, 0, 0, DateTimeKind.Utc);
     private static readonly DateTime B1Start = new(2026, 5, 1, 11, 0, 0, DateTimeKind.Utc);

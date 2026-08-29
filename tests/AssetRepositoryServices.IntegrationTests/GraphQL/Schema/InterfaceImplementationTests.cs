@@ -2,6 +2,7 @@ using FluentAssertions;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Fixtures;
 using Newtonsoft.Json.Linq;
 using Xunit;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Collections;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.GraphQL.Schema;
 
@@ -33,9 +34,8 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Graph
 /// - CncMachine (concrete) -> AutomatedMachine
 /// - SensorReading -> Entity with association to Equipment
 /// </summary>
-[Collection("Sequential")]
+[Collection(GraphQlCollection.Name)]
 public class InterfaceImplementationTests
-    : IClassFixture<GraphQlTestFixture>
 {
     private readonly GraphQlTestFixture _fixture;
 

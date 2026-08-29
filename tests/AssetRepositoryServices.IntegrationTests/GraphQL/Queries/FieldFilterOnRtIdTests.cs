@@ -2,6 +2,7 @@ using FluentAssertions;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Fixtures;
 using Newtonsoft.Json.Linq;
 using Xunit;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Collections;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.GraphQL.Queries;
 
@@ -10,9 +11,8 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Graph
 /// Verifies that string-based operators (LIKE, CONTAINS, etc.) work correctly
 /// on rtId without requiring a valid OctoObjectId format.
 /// </summary>
-[Collection("Sequential")]
+[Collection(GraphQlCollection.Name)]
 public class FieldFilterOnRtIdTests
-    : IClassFixture<GraphQlTestFixture>
 {
     private readonly GraphQlTestFixture _fixture;
 

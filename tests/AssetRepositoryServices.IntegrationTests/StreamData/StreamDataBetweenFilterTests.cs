@@ -2,6 +2,7 @@ using System.Text.Json;
 using FluentAssertions;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Fixtures;
 using Xunit;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Collections;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.StreamData;
 
@@ -10,9 +11,8 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Strea
 /// Guards Phase 1 of the stream/rt query symmetry refactor: proves the shared FieldFilter
 /// flows GraphQL → engine mapper → CrateDbStreamDataRepository → CrateDB SQL BETWEEN.
 /// </summary>
-[Collection("Sequential")]
+[Collection(StreamDataCollection.Name)]
 public class StreamDataBetweenFilterTests(StreamDataFixture fixture, ITestOutputHelper output)
-    : IClassFixture<StreamDataFixture>
 {
     [Fact]
     public async Task TransientStreamDataQuery_WithBetweenTimestampFilter_ReturnsExpectedRange()

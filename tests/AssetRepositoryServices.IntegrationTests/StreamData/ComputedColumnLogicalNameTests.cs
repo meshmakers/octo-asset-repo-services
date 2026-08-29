@@ -5,6 +5,7 @@ using Meshmakers.Octo.Runtime.Contracts.Formulas;
 using Meshmakers.Octo.Runtime.Contracts.StreamData;
 using Meshmakers.Octo.Runtime.Engine.CrateDb;
 using Xunit;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Collections;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.StreamData;
 
@@ -25,9 +26,8 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Strea
 /// formula may not reference at all).
 /// </para>
 /// </summary>
-[Collection("Sequential")]
+[Collection(StreamDataMutatingCollection.Name)]
 public class ComputedColumnLogicalNameTests(StreamDataFixture fixture, ITestOutputHelper output)
-    : IClassFixture<StreamDataFixture>
 {
     private const double Factor = 2.0;
 

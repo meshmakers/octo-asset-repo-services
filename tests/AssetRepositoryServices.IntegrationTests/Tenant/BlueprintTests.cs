@@ -1,5 +1,6 @@
 using Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Fixtures;
 using Xunit;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Collections;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Tenant;
 
@@ -7,9 +8,8 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Tenan
 /// Integration tests for Tenant API Blueprint operations.
 /// Tests ITenantBlueprintHistory and IBlueprintService.
 /// </summary>
-[Collection("Sequential")]
+[Collection(BlueprintCollection.Name)]
 public class BlueprintTests(BlueprintTestFixture fixture)
-    : IClassFixture<BlueprintTestFixture>
 {
     [Fact]
     public async Task GetHistoryAsync_ShouldReturnEmptyList_ForNewTenant()

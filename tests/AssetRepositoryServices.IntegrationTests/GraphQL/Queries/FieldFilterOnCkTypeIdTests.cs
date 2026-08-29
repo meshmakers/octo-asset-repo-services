@@ -3,6 +3,7 @@ using Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Fixtures;
 using Newtonsoft.Json.Linq;
 using Xunit;
 using ITestOutputHelper = Xunit.ITestOutputHelper;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Collections;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.GraphQL.Queries;
 
@@ -10,9 +11,8 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Graph
 /// Tests for GraphQL fieldFilter operators on ckTypeId field.
 /// Verifies that EQUALS operator works correctly on ckTypeId to filter entities by type.
 /// </summary>
-[Collection("Sequential")]
+[Collection(GraphQlCollection.Name)]
 public class FieldFilterOnCkTypeIdTests
-    : IClassFixture<GraphQlTestFixture>
 {
     private readonly GraphQlTestFixture _fixture;
 

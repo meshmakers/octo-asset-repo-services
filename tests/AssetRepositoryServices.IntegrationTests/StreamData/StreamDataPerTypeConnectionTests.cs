@@ -2,6 +2,7 @@ using System.Text.Json;
 using FluentAssertions;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Fixtures;
 using Xunit;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Collections;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.StreamData;
 
@@ -13,9 +14,8 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Strea
 /// the wire echoes the caller's requested column string verbatim, while the engine-side
 /// <c>StreamDataRow.Values</c> stays keyed by the lower-case CrateDB column name.
 /// </summary>
-[Collection("Sequential")]
+[Collection(StreamDataCollection.Name)]
 public class StreamDataPerTypeConnectionTests(StreamDataFixture fixture, ITestOutputHelper output)
-    : IClassFixture<StreamDataFixture>
 {
     [Fact]
     public async Task TransientSimpleQuery_ReturnsTypedAttributeValues()

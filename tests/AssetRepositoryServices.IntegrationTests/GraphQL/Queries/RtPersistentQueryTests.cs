@@ -2,6 +2,7 @@ using FluentAssertions;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Fixtures;
 using Newtonsoft.Json.Linq;
 using Xunit;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Collections;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.GraphQL.Queries;
 
@@ -9,8 +10,8 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Graph
 /// Tests for persistent GraphQL queries (runtime queries with persisted query definitions).
 /// Tests both simple queries and aggregation queries.
 /// </summary>
-[Collection("Sequential")]
-public class RtPersistentQueryTests : IClassFixture<GraphQlTestFixture>
+[Collection(PersistentQueryCollection.Name)]
+public class RtPersistentQueryTests
 {
     private readonly GraphQlTestFixture _fixture;
 

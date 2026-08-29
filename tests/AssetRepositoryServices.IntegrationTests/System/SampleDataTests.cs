@@ -4,12 +4,12 @@ using Meshmakers.Octo.Runtime.Contracts;
 using Meshmakers.Octo.Runtime.Contracts.Repositories.Query;
 using Meshmakers.Octo.Runtime.Contracts.RepositoryEntities;
 using Xunit;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Collections;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.System;
 
-[Collection("Sequential")]
+[Collection(SampleDataCollection.Name)]
 public class SampleDataTests(SampleDataFixture fixture)
-    : IClassFixture<SampleDataFixture>
 {
     [Fact]
     public async Task ConstructionKit_ShouldBeImported()

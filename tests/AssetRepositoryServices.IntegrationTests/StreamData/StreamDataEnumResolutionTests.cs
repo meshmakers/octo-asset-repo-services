@@ -2,6 +2,7 @@ using System.Text.Json;
 using FluentAssertions;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Fixtures;
 using Xunit;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Collections;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.StreamData;
 
@@ -14,9 +15,8 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Strea
 /// as the persisted entry point. The <c>resolveEnumValuesToNames: false</c> toggle returns the raw
 /// integer for API back-compat.
 /// </summary>
-[Collection("Sequential")]
+[Collection(StreamDataCollection.Name)]
 public class StreamDataEnumResolutionTests(StreamDataFixture fixture, ITestOutputHelper output)
-    : IClassFixture<StreamDataFixture>
 {
     private static readonly string[] EnumNames = ["Unknown", "OK", "Maintenance"];
 

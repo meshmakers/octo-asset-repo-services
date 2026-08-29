@@ -3,6 +3,7 @@ using Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Fixtures;
 using Newtonsoft.Json.Linq;
 using System.Text.Json;
 using Xunit;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Collections;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.GraphQL.Queries;
 
@@ -12,8 +13,8 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Graph
 /// This reproduces the bug AB#3306 where querying lastSyncedSequenceNumber returns
 /// "Cannot return null for a non-null type" error.
 /// </summary>
-[Collection("Sequential")]
-public class DefaultAttributeValueTests : IClassFixture<GraphQlTestFixture>
+[Collection(GraphQlMutatingCollection.Name)]
+public class DefaultAttributeValueTests
 {
     private readonly GraphQlTestFixture _fixture;
     private const string MeteringPointCkTypeId = "AssetRepositoryIntegrationTest/MeteringPoint";

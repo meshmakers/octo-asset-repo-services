@@ -2,6 +2,7 @@ using FluentAssertions;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Fixtures;
 using Newtonsoft.Json.Linq;
 using Xunit;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Collections;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.GraphQL.Queries;
 
@@ -11,9 +12,8 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Graph
 /// selection were silently applied to ALL aliased definitions selections of the same
 /// entity type and direction.
 /// </summary>
-[Collection("Sequential")]
+[Collection(GraphQlMutatingCollection.Name)]
 public class GenericAssociationDefinitionsAliasTests
-    : IClassFixture<GraphQlTestFixture>
 {
     // Car 1 (CarSalzburgABC123) has exactly one VehicleOwnership and one ParentChild
     // outbound association, and no Ownership association.

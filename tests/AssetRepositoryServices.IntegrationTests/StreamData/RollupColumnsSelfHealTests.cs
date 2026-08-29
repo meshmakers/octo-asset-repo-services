@@ -7,6 +7,7 @@ using Meshmakers.Octo.Runtime.Contracts.StreamData;
 using MongoDB.Bson;
 using MongoDB.Driver;
 using Xunit;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Collections;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.StreamData;
 
@@ -19,9 +20,8 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Strea
 /// real MongoDB write path: the seeded shape heals, computed columns survive, and the call is
 /// idempotent on healthy entities.
 /// </summary>
-[Collection("Sequential")]
+[Collection(StreamDataCollection.Name)]
 public class RollupColumnsSelfHealTests(StreamDataFixture fixture, ITestOutputHelper output)
-    : IClassFixture<StreamDataFixture>
 {
     [Fact]
     public async Task TryPersistDerivedColumns_EntityWithoutColumnsAttribute_HealsToGeneratorOutput()

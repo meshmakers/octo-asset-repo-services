@@ -4,6 +4,7 @@ using MongoDB.Bson;
 using Newtonsoft.Json.Linq;
 using System.Text.Json;
 using Xunit;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Collections;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.GraphQL.Mutations;
 
@@ -12,8 +13,8 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Graph
 /// Tests the GraphQL schema directly without HTTP.
 /// Uses the AssetRepositoryIntegrationTest model.
 /// </summary>
-[Collection("Sequential")]
-public class RtEntityGenericMutationTests : IClassFixture<GraphQlTestFixture>
+[Collection(GraphQlMutatingCollection.Name)]
+public class RtEntityGenericMutationTests
 {
     private readonly GraphQlTestFixture _fixture;
 

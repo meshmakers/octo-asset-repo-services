@@ -1,6 +1,7 @@
 using Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Fixtures;
 using Meshmakers.Octo.ConstructionKit.Contracts.BlueprintCatalogs;
 using Xunit;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Collections;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.System;
 
@@ -8,9 +9,8 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Syste
 /// Integration tests for System API Blueprint catalog operations.
 /// Tests the IBlueprintCatalogManager service.
 /// </summary>
-[Collection("Sequential")]
+[Collection(BlueprintCollection.Name)]
 public class BlueprintCatalogTests(BlueprintTestFixture fixture)
-    : IClassFixture<BlueprintTestFixture>
 {
     [Fact]
     public async Task ListAsync_ShouldReturnEmptyList_WhenNoBlueprintsRegistered()

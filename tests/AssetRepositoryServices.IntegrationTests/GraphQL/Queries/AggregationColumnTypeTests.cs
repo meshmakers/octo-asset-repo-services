@@ -2,6 +2,7 @@ using FluentAssertions;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Fixtures;
 using Newtonsoft.Json.Linq;
 using Xunit;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Collections;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.GraphQL.Queries;
 
@@ -9,8 +10,8 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Graph
 /// Tests that aggregation columns report the correct attributeValueType based on the aggregation operation,
 /// not the source column type.
 /// </summary>
-[Collection("Sequential")]
-public class AggregationColumnTypeTests : IClassFixture<GraphQlTestFixture>
+[Collection(GraphQlCollection.Name)]
+public class AggregationColumnTypeTests
 {
     private readonly GraphQlTestFixture _fixture;
 

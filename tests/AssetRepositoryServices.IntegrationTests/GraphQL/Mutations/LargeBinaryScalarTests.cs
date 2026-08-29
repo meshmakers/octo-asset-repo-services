@@ -3,6 +3,7 @@ using Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Fixtures;
 using Newtonsoft.Json.Linq;
 using System.Text.Json;
 using Xunit;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Collections;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.GraphQL.Mutations;
 
@@ -10,8 +11,8 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Graph
 /// Integration tests for LargeBinary scalar type (used for BinaryLinked attributes).
 /// Tests the parsing of byte arrays sent as JSON arrays.
 /// </summary>
-[Collection("Sequential")]
-public class LargeBinaryScalarTests : IClassFixture<GraphQlTestFixture>
+[Collection(GraphQlMutatingCollection.Name)]
+public class LargeBinaryScalarTests
 {
     private readonly GraphQlTestFixture _fixture;
 

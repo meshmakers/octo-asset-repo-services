@@ -1,14 +1,14 @@
 using Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Fixtures;
 using Meshmakers.Octo.Runtime.Engine.CrateDb;
 using Xunit;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Collections;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.StreamData;
 
 // Verifies the fixture's archive provisioning + insert path end-to-end against the per-archive
 // CrateDB table introduced by T17 (no more `data` blob, no more legacy single-tenant table).
-[Collection("Sequential")]
+[Collection(StreamDataCollection.Name)]
 public class StreamDataFixtureTests(StreamDataFixture fixture, ITestOutputHelper output)
-    : IClassFixture<StreamDataFixture>
 {
     [Fact]
     public async Task InsertAndRetrieve_ReturnsAllDataPoints()

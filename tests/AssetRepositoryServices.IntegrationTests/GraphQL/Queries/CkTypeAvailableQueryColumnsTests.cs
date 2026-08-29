@@ -2,6 +2,7 @@ using FluentAssertions;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Fixtures;
 using Newtonsoft.Json.Linq;
 using Xunit;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Collections;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.GraphQL.Queries;
 
@@ -10,8 +11,8 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Graph
 /// Tests the description field, attributeValueType filter, and searchTerm filter.
 /// Uses the System model which is always available via CkQueryTestFixture.
 /// </summary>
-[Collection("Sequential")]
-public class CkTypeAvailableQueryColumnsTests : IClassFixture<CkQueryTestFixture>
+[Collection(CkQueryCollection.Name)]
+public class CkTypeAvailableQueryColumnsTests
 {
     private readonly CkQueryTestFixture _fixture;
 

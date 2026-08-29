@@ -3,6 +3,7 @@ using Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Fixtures;
 using Newtonsoft.Json.Linq;
 using System.Text.Json;
 using Xunit;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Collections;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.GraphQL.Queries;
 
@@ -11,8 +12,8 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Graph
 /// Tests the GraphQL schema directly without HTTP.
 /// Uses only the System model which is always available.
 /// </summary>
-[Collection("Sequential")]
-public class CkRecordsQueryTests : IClassFixture<CkQueryTestFixture>
+[Collection(CkQueryCollection.Name)]
+public class CkRecordsQueryTests
 {
     private readonly CkQueryTestFixture _fixture;
 
