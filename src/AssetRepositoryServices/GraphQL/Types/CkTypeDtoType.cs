@@ -32,6 +32,25 @@ internal sealed class CkTypeDtoType : ObjectGraphType<CkTypeDto>
         Field(x => x.IsAbstract).Description(AssetTexts.Graphql_Type_IsAbstract_Description);
         Field(x => x.IsFinal).Description(AssetTexts.Graphql_Type_IsFinal_Description);
         Field(x => x.Description, true).Description(AssetTexts.Graphql_Type_Description_Description);
+        Field<StringGraphType>("ownerAttributePath")
+            .Description("Effective owner attribute path for owned-only data permissions (AB#4978), " +
+                         "e.g. 'AssigneeId' or 'Owner.UserId' - the nearest declared path along the " +
+                         "base-type chain, resolved from the runtime type graph. Null means ownership " +
+                         "is the server-stamped rtCreatedBy.")
+            .Resolve(ctx =>
+            {
+                // Resolve from the type graph so the value is always the effective (inherited) one,
+                // independent of whether the DTO was built from the graph or a raw model listing.
+                var ckCacheService = ctx.GetCkCacheService();
+                var graphQlContext = (GraphQlUserContext)ctx.UserContext;
+                if (ckCacheService.TryGetCkType(graphQlContext.TenantId, ctx.Source.CkTypeId, out var graph) &&
+                    graph != null)
+                {
+                    return graph.OwnerAttributePath;
+                }
+
+                return ctx.Source.OwnerAttributePath;
+            });
 
         Connection<CkTypeAttributeDtoType>("attributes")
             .Argument<StringGraphType>(Statics.AttributeNameContainsFilterArg,
@@ -236,7 +255,8 @@ internal sealed class CkTypeDtoType : ObjectGraphType<CkTypeDto>
             RtCkTypeId = ckTypeGraph.CkTypeId.ToRtCkId(),
             Description = ckTypeGraph.Description,
             IsFinal = ckTypeGraph.IsFinal,
-            IsAbstract = ckTypeGraph.IsAbstract
+            IsAbstract = ckTypeGraph.IsAbstract,
+            OwnerAttributePath = ckTypeGraph.OwnerAttributePath
         };
         return ckTypeDto;
     }
@@ -249,7 +269,8 @@ internal sealed class CkTypeDtoType : ObjectGraphType<CkTypeDto>
             RtCkTypeId = ckEntity.CkTypeId.ToRtCkId(),
             Description = ckEntity.Description,
             IsFinal = ckEntity.IsFinal,
-            IsAbstract = ckEntity.IsAbstract
+            IsAbstract = ckEntity.IsAbstract,
+            OwnerAttributePath = ckEntity.OwnerAttributePath
         };
         return ckTypeDto;
     }
