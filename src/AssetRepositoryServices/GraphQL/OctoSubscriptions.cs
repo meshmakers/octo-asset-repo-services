@@ -45,7 +45,7 @@ internal class OctoSubscriptions : ObjectGraphType<object>
                         new RtEntityUpdateItemDtoType(rtEntityDtoType)),
                 Resolver = new FuncFieldResolver<DynamicUpdateMessageDto<RtEntityUpdateItemDto>>(ResolveMessage),
                 StreamResolver = new SourceStreamResolver<DynamicUpdateMessageDto<RtEntityUpdateItemDto>>(Subscribe)
-            }).AddMetadata(Statics.CkId, rtEntityDtoType.CkTypeId);
+            }).AddMetadata(Statics.CkId, rtEntityDtoType.CkTypeId.ToRtCkId().SemanticVersionedFullName);
         }
     }
 

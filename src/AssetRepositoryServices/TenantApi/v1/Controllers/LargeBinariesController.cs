@@ -49,8 +49,7 @@ public class LargeBinariesController : ControllerBase
     /// <returns></returns>
     [HttpGet]
     // AB#4973: previously bearer-auth only — no scope requirement at all on a direct binary download.
-    // The read-only scope policy is the minimum; the per-entity check (does the caller see a
-    // referencing entity?) is concept point K1 and follows separately.
+    // The read-only scope policy is the minimum; the per-entity check is the AB#4985 gate below.
     [Authorize(AuthenticationSchemes = InfrastructureCommon.OidcAuthenticationScheme,
         Policy = AssetRepositoryServiceConstants.TenantAssetApiReadOnlyPolicy)]
     [ProducesResponseType(typeof(FileStreamResult), StatusCodes.Status200OK)]
@@ -107,6 +106,11 @@ public class LargeBinariesController : ControllerBase
                 streamHandler.ContentType);
 
             return new FileStreamResult(responseStream, contentType);
+        }
+        catch (Runtime.Contracts.MongoDb.EntityNotFoundException)
+        {
+            // A missing binary id used to fall into the generic 500 catch — a not-found is a 404.
+            return NotFound(new ErrorResponse { ErrorMessage = "Large binary not found" });
         }
         catch (ArgumentException ex)
         {
