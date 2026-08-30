@@ -46,7 +46,7 @@ internal static class DataPermissionStreamGuard
         if (level is RtDataAccessLevel.Denied or RtDataAccessLevel.OwnedOnly)
         {
             throw new ExecutionError(
-                $"Access denied: missing data permission 'Read' on '{ckTypeId.FullName}' for stream data.")
+                $"Access denied: missing data permission 'Read' on '{ckTypeId.SemanticVersionedFullName}' for stream data.")
             {
                 Code = Statics.GraphQlForbidden
             };

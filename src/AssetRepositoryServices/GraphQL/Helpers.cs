@@ -53,8 +53,11 @@ internal static class Helpers
         var subjectId = user.FindFirst("sub")?.Value
                         ?? user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
                         ?? user.FindFirst("client_id")?.Value;
+        // Role claims may arrive under the identity's RoleClaimType (JwtBearer default inbound
+        // mapping) or under the JWT short name "role" (handlers with MapInboundClaims = false) —
+        // read both, like "sub" above.
         var roles = user.Identities
-            .SelectMany(i => i.FindAll(i.RoleClaimType))
+            .SelectMany(i => i.FindAll(i.RoleClaimType).Concat(i.FindAll("role")))
             .Select(c => c.Value)
             .Distinct()
             .ToArray();
