@@ -171,9 +171,19 @@ public class LargeBinariesController : ControllerBase
                 var owner = await tenantRepository.GetRtEntityByRtIdAsync(session, ownerEntityId)
                     .ConfigureAwait(false);
                 // A dangling owner reference protects nothing — treat like an ownerless binary.
-                if (owner != null && owner.RtCreatedBy != securityContext.SubjectId)
+                if (owner != null)
                 {
-                    return NotFound(new ErrorResponse { ErrorMessage = "Large binary not found" });
+                    // AB#4978: a CK-model-declared owner attribute path replaces the stamped creator.
+                    var ownerAttributePath = Runtime.Contracts.DataPermissions.RtDataPermissionCkTypeHelper
+                        .GetEffectiveOwnerAttributePath(_ckCacheService, tenantId, ownerEntityId.CkTypeId);
+                    var ownerSubject = ownerAttributePath == null
+                        ? owner.RtCreatedBy
+                        : owner.GetAttributeValueByAccessPath(_ckCacheService, tenantId, ownerAttributePath)
+                            as string;
+                    if (ownerSubject != securityContext.SubjectId)
+                    {
+                        return NotFound(new ErrorResponse { ErrorMessage = "Large binary not found" });
+                    }
                 }
 
                 return null;
