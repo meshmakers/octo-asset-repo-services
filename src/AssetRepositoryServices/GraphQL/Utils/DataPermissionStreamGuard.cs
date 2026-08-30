@@ -16,8 +16,27 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Utils;
 /// </summary>
 internal static class DataPermissionStreamGuard
 {
-    internal static async Task EnsureStreamReadAllowedAsync(IResolveFieldContext ctx, GraphQlUserContext gql,
+    internal static Task EnsureStreamReadAllowedAsync(IResolveFieldContext ctx, GraphQlUserContext gql,
         RtCkId<CkTypeId> ckTypeId)
+    {
+        return EnsureFullReadAllowedAsync(ctx, gql, ckTypeId, "stream data");
+    }
+
+    /// <summary>
+    ///     Subscription gate (AB#4987, decision K3 v1): a WatchRtEntities subscription on a protected
+    ///     CK type is rejected at subscribe time unless the caller has a full-scope Read grant. Change
+    ///     events bypass the read filter, and an owned-only grant cannot be honored per event yet
+    ///     (per-event RtCreatedBy filtering is the planned fast-follow), so OwnedOnly rejects too.
+    ///     AuditOnly-only protection does not reject (log-first).
+    /// </summary>
+    internal static Task EnsureSubscriptionAllowedAsync(IResolveFieldContext ctx, GraphQlUserContext gql,
+        RtCkId<CkTypeId> ckTypeId)
+    {
+        return EnsureFullReadAllowedAsync(ctx, gql, ckTypeId, "entity subscriptions");
+    }
+
+    private static async Task EnsureFullReadAllowedAsync(IResolveFieldContext ctx, GraphQlUserContext gql,
+        RtCkId<CkTypeId> ckTypeId, string surface)
     {
         var securityContext = Helpers.GetSecurityContext(gql);
         if (securityContext.IsSystem)
@@ -46,7 +65,7 @@ internal static class DataPermissionStreamGuard
         if (level is RtDataAccessLevel.Denied or RtDataAccessLevel.OwnedOnly)
         {
             throw new ExecutionError(
-                $"Access denied: missing data permission 'Read' on '{ckTypeId.SemanticVersionedFullName}' for stream data.")
+                $"Access denied: missing data permission 'Read' on '{ckTypeId.SemanticVersionedFullName}' for {surface}.")
             {
                 Code = Statics.GraphQlForbidden
             };

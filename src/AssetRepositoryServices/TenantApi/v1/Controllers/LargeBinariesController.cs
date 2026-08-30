@@ -24,14 +24,22 @@ public class LargeBinariesController : ControllerBase
     private const int SniffBufferSize = 16;
 
     private readonly IOctoService _octoService;
+    private readonly Runtime.Contracts.DataPermissions.IDataPermissionResolver _dataPermissionResolver;
+    private readonly ConstructionKit.Contracts.Services.ICkCacheService _ckCacheService;
 
     /// <summary>
     ///     Constructor
     /// </summary>
     /// <param name="octoService">Octo service for tenant management</param>
-    public LargeBinariesController(IOctoService octoService)
+    /// <param name="dataPermissionResolver">Resolver of the tenant's data-policy table (AB#4985)</param>
+    /// <param name="ckCacheService">Construction kit cache</param>
+    public LargeBinariesController(IOctoService octoService,
+        Runtime.Contracts.DataPermissions.IDataPermissionResolver dataPermissionResolver,
+        ConstructionKit.Contracts.Services.ICkCacheService ckCacheService)
     {
         _octoService = octoService;
+        _dataPermissionResolver = dataPermissionResolver;
+        _ckCacheService = ckCacheService;
     }
 
     // GET {tenantId}/v1/largeBinaries
@@ -69,6 +77,18 @@ public class LargeBinariesController : ControllerBase
             using var session = await tenantRepository.GetSessionAsync().ConfigureAwait(false);
             session.StartTransaction();
 
+            // AB#4985 (K1): a binary download is gated by the data permissions of its owning entity —
+            // the entity id is stamped on the binary at upload time. Denied/foreign-owned answers 404
+            // (never 403) so the gate leaks no existence, mirroring the read filter. Binaries without
+            // an owner (temporary uploads, legacy data) and unprotected owner types stay open, and
+            // tenants without enforcing policies take the pre-permission fast path untouched.
+            var gateResult = await EnsureBinaryVisibleAsync(tenantRepository, session, tenantId,
+                OctoObjectId.Parse(largeBinaryId)).ConfigureAwait(false);
+            if (gateResult != null)
+            {
+                return gateResult;
+            }
+
             var streamHandler = await tenantRepository.DownloadLargeBinaryAsync(session, OctoObjectId.Parse(largeBinaryId));
             if (streamHandler.Stream == null)
             {
@@ -99,6 +119,62 @@ public class LargeBinariesController : ControllerBase
         catch (Exception ex)
         {
             return StatusCode(StatusCodes.Status500InternalServerError, new InternalServerErrorDto(ex.Message));
+        }
+    }
+
+    /// <summary>
+    ///     Data-permission gate for a binary download (AB#4985). Returns null when the download may
+    ///     proceed, or the action result (404) to answer instead. Classification mirrors the read
+    ///     filter: Open/Allowed owner type &#8594; allow; Denied &#8594; 404; OwnedOnly &#8594; the stored creator of
+    ///     the owning entity must be the caller (raw entity read — the filtered path would hide the
+    ///     foreign owner and make the check pass vacuously).
+    /// </summary>
+    private async Task<IActionResult?> EnsureBinaryVisibleAsync(
+        Runtime.Contracts.MongoDb.Repositories.ITenantRepository tenantRepository,
+        Runtime.Contracts.IOctoSession session, string tenantId, OctoObjectId largeBinaryId)
+    {
+        var securityContext = GraphQL.Helpers.GetSecurityContext(HttpContext.User);
+        if (securityContext.IsSystem)
+        {
+            return null;
+        }
+
+        var policyTable = await _dataPermissionResolver.GetPolicyTableAsync(tenantRepository).ConfigureAwait(false);
+        if (!policyTable.HasRules)
+        {
+            return null;
+        }
+
+        var binaryInfo = await tenantRepository.GetLargeBinaryInfoAsync(session, largeBinaryId).ConfigureAwait(false);
+        if (binaryInfo?.RtEntityId == null)
+        {
+            // Missing binary answers downstream; ownerless binaries (temporary/legacy) stay open.
+            return null;
+        }
+
+        var ownerEntityId = binaryInfo.RtEntityId.Value;
+        var selfAndBase = Runtime.Contracts.DataPermissions.RtDataPermissionCkTypeHelper.GetSelfAndBaseFullNames(
+            _ckCacheService, tenantId, ownerEntityId.CkTypeId);
+        var level = Runtime.Contracts.DataPermissions.RtDataAccessEvaluator.Classify(policyTable, selfAndBase,
+            Runtime.Contracts.DataPermissions.RtDataAction.Read, securityContext,
+            includeAuditOnlyPolicies: false);
+
+        switch (level)
+        {
+            case Runtime.Contracts.DataPermissions.RtDataAccessLevel.Denied:
+                return NotFound(new ErrorResponse { ErrorMessage = "Large binary not found" });
+            case Runtime.Contracts.DataPermissions.RtDataAccessLevel.OwnedOnly:
+                var owner = await tenantRepository.GetRtEntityByRtIdAsync(session, ownerEntityId)
+                    .ConfigureAwait(false);
+                // A dangling owner reference protects nothing — treat like an ownerless binary.
+                if (owner != null && owner.RtCreatedBy != securityContext.SubjectId)
+                {
+                    return NotFound(new ErrorResponse { ErrorMessage = "Large binary not found" });
+                }
+
+                return null;
+            default:
+                return null;
         }
     }
 

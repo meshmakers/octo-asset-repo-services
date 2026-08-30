@@ -42,7 +42,16 @@ internal static class Helpers
     /// </summary>
     internal static Runtime.Contracts.RtSecurityContext GetSecurityContext(IDictionary<string, object?> context)
     {
-        var user = (context as GraphQlUserContext)?.User;
+        return GetSecurityContext((context as GraphQlUserContext)?.User);
+    }
+
+    /// <summary>
+    ///     Builds the security context directly from a claims principal — used by REST surfaces
+    ///     (e.g. the large-binary download gate, AB#4985) that have no GraphQL user context.
+    /// </summary>
+    internal static Runtime.Contracts.RtSecurityContext GetSecurityContext(
+        System.Security.Claims.ClaimsPrincipal? user)
+    {
         if (user?.Identity?.IsAuthenticated != true)
         {
             return Runtime.Contracts.RtSecurityContext.ForUser(null, null);

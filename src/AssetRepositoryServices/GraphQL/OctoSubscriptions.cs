@@ -56,6 +56,16 @@ internal class OctoSubscriptions : ObjectGraphType<object>
         var ckId = context.FieldDefinition.GetMetadata<string>(Statics.CkId);
         var rtId = context.GetArgument<OctoObjectId?>(Statics.RtIdArg);
 
+        // AB#4987 (K3 v1): change events bypass the data-permission read filter, so subscriptions on
+        // protected types require a full-scope Read grant at subscribe time. Blocking here matches
+        // the established synchronous style of this resolver (see messages.Result below).
+        if (context.UserContext is GraphQlUserContext graphQlUserContext)
+        {
+            DataPermissionStreamGuard
+                .EnsureSubscriptionAllowedAsync(context, graphQlUserContext, new RtCkId<CkTypeId>(ckId))
+                .GetAwaiter().GetResult();
+        }
+
         ICollection<FieldFilter>? beforeFieldFilters = null;
         ICollection<FieldFilter>? fieldFilters = null;
         if (context.TryGetArgument(Statics.FieldBeforeFilterArg,
