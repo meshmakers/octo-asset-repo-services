@@ -394,6 +394,54 @@ The service supports dual authentication:
 - JWT Bearer tokens for API access
 - OIDC integration via `InfrastructureCommon.OidcAuthenticationScheme`
 
+#### The tenant gate only started working in AB#5054
+
+Everything in the next section describes a middleware that, until AB#5054, **never ran a single
+check in this service**. `TenantAuthorizationMiddleware` inspects only principals whose
+`Identity.AuthenticationType` reads `Bearer` — its guard against false 403s on the cookie principal
+this service issues for the GraphQL playground. That label is not the scheme name; it comes from
+`TokenValidationParameters.AuthenticationType`, which the JWT handler leaves at the framework default
+`AuthenticationTypes.Federation` unless the host sets it. This service did not, so the `Use…`/`Add…`
+pair gated nothing: no user token was ever checked, and the AB#5032 service-token audit log — the
+inventory an operator is supposed to read before flipping to `Enforce` — was empty because nothing
+wrote to it, not because nothing was wrong.
+
+Three pieces make it work now, and each fails silently on its own:
+
+| Where | What | Why it matters |
+|---|---|---|
+| `Configuration/ConfigureJwtBearerOptions.cs` | `TokenValidationParameters.AuthenticationType = "Bearer"` | 🔴 The silent-no-op trap above. Extracted from the former inline `AddJwtBearer(options => …)` delegate — which also removed a `builder.Services.BuildServiceProvider()` call — so the settings are unit-testable and match how identity, bot, communication-controller, MCP and AI services do it. |
+| `Configuration/DependencyInjection/RuntimeEngineBuilderExtensions.cs` | `ConfigureOptions<ConfigureJwtBearerOptions>()`, and `AddJwtBearer()` **without an argument** | 🔴 The options factory runs configurators in registration order. A delegate on `AddJwtBearer` runs last, and an assignment `options.TokenValidationParameters = new …` there discards the label again — compiling, and with the configurator's own unit test still green. octo-ai-services shipped a release in exactly that state (AB#5051 → AB#5056). |
+| `Program.cs` | `AddOctoTenantAuthorization(o => o.UserTokenEnforcement = LogOnly)` **before** `AddOctoTenantAuthorization(builder.Configuration)` | The user path is armed in stages, see below. Registered in that order so configuration still wins. |
+
+`tests/AssetRepositoryServices.UnitTests/Configuration/TenantAuthorizationWiringTests.cs` pins all
+three, including a source-level guard that no second configurator of the bearer scheme appears —
+because a test of the configurator class alone provably proves nothing here.
+
+#### Tenant enforcement for user tokens is staged (AB#5054)
+
+`TenantAuthorizationOptions.UserTokenEnforcement` (`Disabled` does not exist; `LogOnly` | `Enforce`,
+platform default `Enforce`) is set to **`LogOnly`** in this service's `Program.cs`, i.e. no request
+outcome changes and every access an enforcing run would refuse is logged with subject, client id and
+both tenants. Flip an environment with `OCTO_TENANTAUTHORIZATION__USERTOKENENFORCEMENT=Enforce` once
+that log is clean.
+
+🔴 **There is a known cross-tenant caller on this path, so do not arm it blind.** `meshmakers-app`
+queries this service's GraphQL endpoint with the **user's own** token against a *different* tenant's
+route in two places on its startup path: `available-tenants.service.ts` walks the root tenant and its
+children to discover the tenant topology, and `tenant-provisioning.service.ts` probes candidate
+tenants for the landing guard. Both anticipate a 403 and degrade — but the degradation is
+user-visible: when the *root* query is refused, `topologyKnown()` stays false and a bare `/` visit
+lands on `/no-tenant?reason=unresolved` for every user whose token tenant is not the root tenant.
+That app is in production, so `Enforce` here needs the app to re-mint per tenant (or use the RFC 8693
+exchange it already has for its tenant switch) first.
+
+Not affected: the Studio re-mints its token per tenant and blocks the mismatch client-side
+(`authorize.guard.ts` → `switchTenant`), and octo-cli/SDK derive the URL tenant and the `acr_values`
+from the same context value. Child-tenant admin operations on `TenantsController` pass the child in a
+**query parameter** on the caller's own route, so the gate never sees them — this service has no
+route where `{tenantId}` is a foreign subject.
+
 #### Tenant enforcement for service tokens (AB#5032 / AB#5047)
 
 The pipeline runs the shared `TenantAuthorizationMiddleware` (`UseOctoTenantAuthorization()` in

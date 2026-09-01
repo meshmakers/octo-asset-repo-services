@@ -4,6 +4,7 @@ using Meshmakers.Octo.Backend.AssetRepositoryServices.Services;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.StreamData;
 using Meshmakers.Octo.Runtime.Contracts.Blueprints;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb.Extensions;
+using Meshmakers.Octo.Services.Infrastructure.Configuration;
 using Meshmakers.Octo.Services.Infrastructure.Services;
 using Meshmakers.Octo.Services.Observability;
 using Meshmakers.Octo.Runtime.Engine.CrateDb.Extensions;
@@ -42,6 +43,29 @@ try
 
     builder.Services.AddTransient<IDefaultConfigurationCreatorService, DefaultConfigurationCreatorService>();
     builder.Services.AddCors();
+
+    // AB#5054: start the *user*-token half of the tenant gate in its migration mode. AB#5054 set
+    // TokenValidationParameters.AuthenticationType = "Bearer" (ConfigureJwtBearerOptions), which is
+    // what makes TenantAuthorizationMiddleware run at all here — before that it was a silent no-op
+    // on every bearer request. The service-token half has always been staged; the user half was
+    // not, so switching the label on would flip it from "never checked" to "always 403" in one
+    // step, on the platform's most-used API.
+    //
+    // There is a known, deliberate cross-tenant caller on that path: meshmakers-app queries this
+    // service's GraphQL endpoint for the tenant topology (`available-tenants.service.ts`) and for
+    // the landing capability probe (`tenant-provisioning.service.ts`) with the *user's own* token
+    // against the root/parent tenant's route. Its own code already anticipates a 403 and degrades,
+    // but the degradation is user-visible: a bare "/" visit lands on /no-tenant?reason=unresolved
+    // for every user whose token tenant is not the root tenant. That app is live in production, so
+    // this must not be armed blind.
+    //
+    // LogOnly therefore writes the inventory this rollout was always supposed to be decided on
+    // (warning per foreign-tenant access, naming subject, client id and both tenants) while
+    // changing no outcome. Flip an environment with
+    // OCTO_TENANTAUTHORIZATION__USERTOKENENFORCEMENT=Enforce once that log is clean; the code
+    // default below is deliberately registered BEFORE the section binding, so configuration wins.
+    builder.Services.AddOctoTenantAuthorization(o =>
+        o.UserTokenEnforcement = UserTokenTenantEnforcementMode.LogOnly);
 
     // AB#5032 (wired here with AB#5047): lets an operator narrow the client-credentials
     // exemption of UseOctoTenantAuthorization() per environment (OCTO_TENANTAUTHORIZATION__…).

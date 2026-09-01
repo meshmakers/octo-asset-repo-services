@@ -2,7 +2,6 @@
 using System.Text.Json;
 using AssetRepositoryServices.Resources;
 using GraphQL;
-using Meshmakers.Common.Shared;
 using GraphQL.Server.Transports.AspNetCore;
 using GraphQL.Types.Relay;
 using Meshmakers.Octo.Backend.AssetRepositoryServices;
@@ -51,6 +50,12 @@ public static class RuntimeEngineBuilderExtensions
         AddServices(builder);
 
         builder.Services.AddMemoryCache();
+
+        // AB#5054: settings of the "Bearer" scheme (authority, issuer, and the AuthenticationType
+        // label TenantAuthorizationMiddleware keys its tenant check off). Kept out of the
+        // AddJwtBearer(...) delegate below on purpose — see ConfigureJwtBearerOptions.
+        builder.Services.ConfigureOptions<ConfigureJwtBearerOptions>();
+
         builder.Services.AddAuthentication(authenticationOptions =>
             {
                 authenticationOptions.DefaultScheme = CookieAuthenticationDefaults.AuthenticationScheme;
@@ -131,24 +136,11 @@ public static class RuntimeEngineBuilderExtensions
                     }
                 };
             })
-            .AddJwtBearer(options =>
-            {
-                var octoOptions = builder.Services.BuildServiceProvider()
-                    .GetRequiredService<OctoAssetRepositoryServicesOptions>();
-                // base-address of your identity server.
-                // EnsureEndsWith("/") mirrors what identity / bot / communication-controller
-                // do — tokens from IdentityServer carry `iss` with a trailing slash, so
-                // ValidIssuer must match the slash-form exactly.
-                var authorityUrl = octoOptions.Authority.EnsureEndsWith("/");
-                options.Authority = authorityUrl;
-
-                options.TokenValidationParameters.ValidateAudience = false;
-
-                // Explicitly set the valid issuer so token validation does not depend on fetching
-                // the OIDC discovery document. This prevents IDX10204 errors when the identity
-                // service is temporarily unreachable (e.g. during rolling updates).
-                options.TokenValidationParameters.ValidIssuer = authorityUrl;
-            });
+            // AB#5054: the bearer scheme's settings live in ConfigureJwtBearerOptions (registered
+            // above) instead of an inline delegate. Do NOT add a delegate here — the options
+            // factory would run it last, and an assignment to TokenValidationParameters would
+            // silently discard the "Bearer" AuthenticationType the tenant gate depends on.
+            .AddJwtBearer();
 
 
         builder.Services.AddAuthorization(options =>
