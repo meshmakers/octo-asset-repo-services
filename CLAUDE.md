@@ -394,6 +394,26 @@ The service supports dual authentication:
 - JWT Bearer tokens for API access
 - OIDC integration via `InfrastructureCommon.OidcAuthenticationScheme`
 
+#### Tenant enforcement for service tokens (AB#5032 / AB#5047)
+
+The pipeline runs the shared `TenantAuthorizationMiddleware` (`UseOctoTenantAuthorization()` in
+`Configuration/OctoApplicationBuilderExtensions.cs`, after `UseAuthorization()`), which matches the
+route tenant against the caller's `tenant_id` claim. How it treats **client-credentials** tokens is
+operator-settable, and `Program.cs` binds that setting with
+`builder.Services.AddOctoTenantAuthorization(builder.Configuration)` — section `TenantAuthorization`,
+i.e. **`OCTO_TENANTAUTHORIZATION__SERVICETOKENENFORCEMENT`** = `Disabled` | `LogOnly` (default) |
+`Enforce`, plus `OCTO_TENANTAUTHORIZATION__CROSSTENANTSERVICECLIENTIDS__0…` for the allow-list.
+
+The `Add…` call is what makes the variable take effect; the `Use…` call alone runs on the built-in
+defaults (AB#5047 — asset-repo, bot-services and MCP were in exactly that state, so an estate-wide
+flip to `Enforce` would have left them on `LogOnly`). Every OctoMesh service that hosts the
+middleware — Identity, Communication Controller, Asset-Repo, Bot, MCP — binds the same section
+through the same helper, so one value set fleet-wide reaches all of them. Semantics and the
+`Enforce` rollout rules live in `octo-common-services/CLAUDE.md`.
+
+Note this service runs with `ValidateAudience = false`, which is why the tenant match is the only
+transport-level barrier between a client-credentials client of the authority and a foreign tenant.
+
 ### Configuration
 Use environment variable prefix `OCTO_` to override configuration values.
 User secrets are supported for local development (UserSecretsId: `173d8e91-b831-4e8a-a43f-672c57e6a4da`).
