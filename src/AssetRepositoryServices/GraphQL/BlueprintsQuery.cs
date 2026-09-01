@@ -92,7 +92,8 @@ internal sealed class BlueprintsQuery : ObjectGraphType
             var catalogManager = ctx.RequestServices!.GetRequiredService<IBlueprintCatalogManager>();
             var result = await catalogManager.ListAsync(skip, take, cancellationToken: ctx.CancellationToken);
 
-            return MapToListResponse(result.Items, result.TotalCount, skip, take);
+            return await MapToListResponseAsync(catalogManager, result.Items, result.TotalCount, skip, take,
+                ctx.CancellationToken);
         }
         catch (Exception e)
         {
@@ -112,7 +113,8 @@ internal sealed class BlueprintsQuery : ObjectGraphType
             var catalogManager = ctx.RequestServices!.GetRequiredService<IBlueprintCatalogManager>();
             var result = await catalogManager.SearchAsync(query, skip, take, cancellationToken: ctx.CancellationToken);
 
-            return MapToListResponse(result.Items, result.TotalCount, skip, take);
+            return await MapToListResponseAsync(catalogManager, result.Items, result.TotalCount, skip, take,
+                ctx.CancellationToken);
         }
         catch (Exception e)
         {
@@ -270,19 +272,36 @@ internal sealed class BlueprintsQuery : ObjectGraphType
         }
     }
 
-    private static BlueprintListResponseDto MapToListResponse(
-        IEnumerable<BlueprintCatalogResultItem> items, int totalCount, int skip, int take)
+    private static async Task<BlueprintListResponseDto> MapToListResponseAsync(
+        IBlueprintCatalogManager catalogManager,
+        IEnumerable<BlueprintCatalogResultItem> items, int totalCount, int skip, int take,
+        CancellationToken cancellationToken)
     {
-        return new BlueprintListResponseDto
+        // The catalog listing carries only id/description/catalog; the declared dependencies live in
+        // the full blueprint meta. Resolve it per (already-paged) item — TryGetAsync caches the parsed
+        // manifest per catalog, so this stays cheap for a page of results.
+        var dtos = new List<BlueprintDto>();
+        foreach (var item in items)
         {
-            Items = items.Select(item => new BlueprintDto
+            var meta = await catalogManager
+                .TryGetAsync(item.BlueprintId, new OperationResult(), cancellationToken: cancellationToken)
+                .ConfigureAwait(false);
+
+            dtos.Add(new BlueprintDto
             {
                 Id = item.BlueprintId.FullName,
                 Name = item.BlueprintId.Name,
                 Version = item.BlueprintId.Version.ToString(),
                 Description = item.Description,
-                CatalogName = item.CatalogName
-            }).ToList(),
+                CatalogName = item.CatalogName,
+                BlueprintDependencies = meta?.BlueprintDependencies?.Select(d => d.FullName).ToList() ?? [],
+                CkModelDependencies = meta?.CkModelDependencies?.Select(d => d.FullName).ToList() ?? []
+            });
+        }
+
+        return new BlueprintListResponseDto
+        {
+            Items = dtos,
             TotalCount = totalCount,
             Skip = skip,
             Take = take

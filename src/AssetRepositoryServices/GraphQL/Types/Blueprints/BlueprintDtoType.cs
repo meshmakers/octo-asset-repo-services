@@ -35,5 +35,18 @@ internal sealed class BlueprintDtoType : ObjectGraphType<BlueprintDto>
         Field<NonNullGraphType<StringGraphType>>("catalogName")
             .Description("Name of the catalog this entry was found in (e.g. \"PublicGitHubBlueprintCatalog\").")
             .Resolve(ctx => ctx.Source!.CatalogName);
+
+        Field<NonNullGraphType<ListGraphType<NonNullGraphType<StringGraphType>>>>("blueprintDependencies")
+            .Description(
+                "Blueprint dependency id strings as declared in the blueprint's blueprintDependencies "
+                + "(e.g. \"MeshmakersAccounting-[1.0.0,)\"). Empty when none — use it to filter the "
+                + "catalog to add-ons that depend on a given base blueprint.")
+            .Resolve(ctx => ctx.Source!.BlueprintDependencies);
+
+        Field<NonNullGraphType<ListGraphType<NonNullGraphType<StringGraphType>>>>("ckModelDependencies")
+            .Description(
+                "CK model dependency id strings as declared in the blueprint's ckModelDependencies "
+                + "(e.g. \"Meshmakers.Accounting-[1.24.0,2.0)\"). Empty when none.")
+            .Resolve(ctx => ctx.Source!.CkModelDependencies);
     }
 }

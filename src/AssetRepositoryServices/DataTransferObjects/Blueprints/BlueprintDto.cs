@@ -29,4 +29,17 @@ public class BlueprintDto
     ///     Name of the catalog containing this blueprint
     /// </summary>
     public string CatalogName { get; set; } = string.Empty;
+
+    /// <summary>
+    ///     Blueprint dependency id strings as declared in the blueprint's <c>blueprintDependencies</c>
+    ///     (e.g. "MeshmakersAccounting-[1.0.0,)"). Empty when the blueprint declares none. Lets a
+    ///     consumer filter the catalog to add-ons that depend on a given base blueprint.
+    /// </summary>
+    public List<string> BlueprintDependencies { get; set; } = [];
+
+    /// <summary>
+    ///     CK model dependency id strings as declared in the blueprint's <c>ckModelDependencies</c>
+    ///     (e.g. "Meshmakers.Accounting-[1.24.0,2.0)"). Empty when the blueprint declares none.
+    /// </summary>
+    public List<string> CkModelDependencies { get; set; } = [];
 }
