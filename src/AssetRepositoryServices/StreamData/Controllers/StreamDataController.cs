@@ -13,7 +13,6 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Options;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.StreamData.Controllers;
 
@@ -29,7 +28,6 @@ public class StreamDataController : ControllerBase
 {
     private readonly ILogger<StreamDataController> _logger;
     private readonly ISystemContext _systemContext;
-    private readonly IOptions<StreamDataInstanceConfiguration> _instanceConfiguration;
     private readonly IHostApplicationLifetime _appLifetime;
 
     /// <summary>
@@ -38,49 +36,15 @@ public class StreamDataController : ControllerBase
     public StreamDataController(
         ILogger<StreamDataController> logger,
         ISystemContext systemContext,
-        IOptions<StreamDataInstanceConfiguration> instanceConfiguration,
         IHostApplicationLifetime appLifetime)
     {
         _logger = logger;
         _systemContext = systemContext;
-        _instanceConfiguration = instanceConfiguration;
         _appLifetime = appLifetime;
     }
 
-    /// <summary>
-    /// Returns the StreamData feature availability flags for the current tenant. Exposed to the
-    /// Refinery Studio so it can decide whether to render the archives navigation at all
-    /// (instance-level) and whether tenants need to opt in (tenant-level). Concept §6.
-    /// </summary>
-    /// <param name="tenantId">Tenant whose flag is reported.</param>
-    [HttpGet("status")]
-    [Microsoft.AspNetCore.Authorization.Authorize(AssetRepositoryServiceConstants.TenantAssetApiReadOnlyPolicy)]
-    public async Task<ActionResult<StreamDataStatusDto>> Status([Required] string tenantId)
-    {
-        var instanceEnabled = _instanceConfiguration.Value.Enabled;
-
-        var tenantEnabled = false;
-        if (instanceEnabled)
-        {
-            try
-            {
-                var tenantContext = await _systemContext.FindTenantContextAsync(tenantId);
-                tenantEnabled = await tenantContext.IsStreamDataEnabledAsync();
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex,
-                    "StreamData status: failed to read tenant flag for '{TenantId}'; defaulting to false.",
-                    tenantId);
-            }
-        }
-
-        return Ok(new StreamDataStatusDto
-        {
-            InstanceEnabled = instanceEnabled,
-            TenantEnabled = tenantEnabled,
-        });
-    }
+    // The former GET status endpoint moved to FeaturesController (GET {tenantId}/v1/features/status,
+    // AB#4884), which reports all four tenant capabilities from the delete/detach guard's reader.
 
     /// <summary>
     /// Enables stream data for a given tenant

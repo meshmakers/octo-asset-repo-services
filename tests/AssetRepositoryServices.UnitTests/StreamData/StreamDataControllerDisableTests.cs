@@ -10,7 +10,6 @@ using Meshmakers.Octo.Services.Infrastructure;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 using Xunit;
 
 namespace AssetRepositoryServices.UnitTests.StreamData;
@@ -36,7 +35,6 @@ public class StreamDataControllerDisableTests
         _controller = new StreamDataController(
             A.Fake<ILogger<StreamDataController>>(),
             systemContext,
-            Options.Create(new StreamDataInstanceConfiguration { Enabled = true }),
             A.Fake<IHostApplicationLifetime>());
     }
 
