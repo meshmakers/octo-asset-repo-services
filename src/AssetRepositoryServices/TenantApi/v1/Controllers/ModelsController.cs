@@ -141,7 +141,12 @@ public class ModelsController : ControllerBase
 
             var args = new ExportRtByDeepGraphCommandRequest(tenantId,
                 exportModelRequestByDeepGraphDto.OriginRtIds,
-                exportModelRequestByDeepGraphDto.OriginCkTypeId);
+                exportModelRequestByDeepGraphDto.OriginCkTypeId)
+            {
+                FollowSpecs = exportModelRequestByDeepGraphDto.FollowSpecs?
+                    .Select(spec => new DeepGraphFollowSpecRequest(spec.RoleId, spec.Direction))
+                    .ToList()
+            };
             var r =
                 await _exportRtByDeepGraphCommandClient.GetResponse<JobCreatedResponse>(args);
             return Ok(new TransferModelResponseDto(r.JobId));
