@@ -244,6 +244,7 @@ Located in versioned API folders:
   keeps everything. `Clear` therefore drops the tables of Activated archives without refusing (no guard
   of its own, see above). With CrateDB unreachable the drop of a tenant with archives blocks for up to
   ~2 min in the CrateDB resilience pipeline before logging the error — the delete still succeeds.
+- `FeaturesController.cs` - `GET {tenantId}/v1/features/status` (AB#4884): aggregate enabled-state of the four capabilities the delete/detach guard evaluates, read through the same `ITenantCapabilityStateReader` — one state source for the Studio's Tenant Features panel and the guard, so they never disagree. Stream Data additionally carries the instance-level `StreamData:Enabled` flag. Whether Reporting/AI are installed at all is NOT answered here — that comes from the `_configuration` discovery document (empty URL = not installed). Read failures propagate as 500 (an unreadable state must never render as "disabled"). Replaces the former `GET streamdata/status`.
 - `ModelsController.cs` - Construction kit and runtime model import/export (includes `ImportFromCatalog` endpoint)
 - `LargeBinariesController.cs` - Binary file download. Falls back to magic-byte sniffing via `BinaryContentTypeDetector` when the stored `ContentType` is missing or `application/octet-stream` (legacy data uploaded before detection existed). For non-seekable source streams the head bytes are re-prepended via `PrependedReadStream`.
 - `DiagnosticsController.cs` - Per-tenant diagnostics.
@@ -256,8 +257,8 @@ Time-series data support (`StreamData/`):
   the whole controller moved from `api/v1/streamdata` to `{tenantId}/v1/streamdata` — the
   tenant now travels in the route (`{tenantId:tenantId}` constraint) instead of a `tenantId`
   query parameter on every action. Write actions (enable/disable, all archive/rollup/computed-
-  column lifecycle) use `TenantAssetApiReadWritePolicy`; read actions (`status`,
-  `.../rollups`, `.../recompute-jobs`) use `TenantAssetApiReadOnlyPolicy` — the same policy
+  column lifecycle) use `TenantAssetApiReadWritePolicy`; read actions (`.../rollups`,
+  `.../recompute-jobs`) use `TenantAssetApiReadOnlyPolicy` — the same policy
   constants as `TenantApi/v1/Controllers/BlueprintsController`. Both policies are scope-only
   (`octo_api.full_access` / `octo_api.read_only`), so CLI/MCP/client-credentials callers keep
   working. The `api/v1/streamdata` route no longer exists.
@@ -265,8 +266,9 @@ Time-series data support (`StreamData/`):
     `OperationFailedErrorDto` naming the archives while any is still `Activated` (guard in the
     engine's `TenantContext.DisableStreamDataAsync`); on success only the tenant flag is switched
     off — model, archive entities and the tables of Disabled/Failed archives stay until the tenant
-    is dropped. `GET status` (`{ instanceEnabled, tenantEnabled }`) is what the Studio's Tenant
-    Features toggle reflects — the CK model stays after a disable, so model presence would lie.
+    is dropped. The Studio's Tenant Features panel reflects the flag via
+    `GET {tenantId}/v1/features/status` (`FeaturesController`, AB#4884) — the CK model stays after
+    a disable, so model presence would lie. The former `GET streamdata/status` is removed.
 - **TenantManager** - Manages stream data tenant contexts
 - **StreamDataDatabaseManager** - Database operations for time-series data
 - **StreamDataTenantContext** - Per-tenant stream data context
