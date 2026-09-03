@@ -1,6 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 using Asp.Versioning;
-using IdentityModel;
+using Duende.IdentityModel;
 using Meshmakers.Common.Shared;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.Services;
 using Meshmakers.Octo.Common.DistributionEventHub.Services;

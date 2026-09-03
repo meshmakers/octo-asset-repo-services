@@ -1,7 +1,7 @@
 using System.ComponentModel.DataAnnotations;
 using Asp.Versioning;
 using GraphQL;
-using IdentityModel;
+using Duende.IdentityModel;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects.ApiErrors;
 using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb;

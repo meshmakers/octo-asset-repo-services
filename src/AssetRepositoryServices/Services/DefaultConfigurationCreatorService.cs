@@ -1,5 +1,5 @@
 using AssetRepositoryServices.Resources;
-using IdentityModel;
+using Duende.IdentityModel;
 using Meshmakers.Common.Shared;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.Configuration.DependencyInjection.Options;
 using Meshmakers.Octo.Common.DistributionEventHub.Services;

@@ -26,6 +26,9 @@
     </ItemGroup>
 
     <ItemGroup>
+        <!-- Direct reference: the released SDK still ships the legacy IdentityModel until the next libs train;
+             the local 999.0.0 Sdk.ServiceClient already moved to Duende.IdentityModel (same API, new namespace). -->
+        <PackageReference Include="Duende.IdentityModel" Version="8.1.0" />
         <PackageReference Include="GraphQL.DataLoader" Version="8.8.5" />
         <PackageReference Include="GraphQL.MicrosoftDI" Version="8.8.5" />
         <PackageReference Include="GraphQL.Server.Transports.AspNetCore" Version="8.3.3" />

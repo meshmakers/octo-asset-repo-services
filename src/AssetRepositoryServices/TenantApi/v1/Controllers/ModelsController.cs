@@ -1,6 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 using Asp.Versioning;
-using IdentityModel;
+using Duende.IdentityModel;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.DataTransferObjects.CkModelCatalog;
 using Meshmakers.Octo.Common.DistributionEventHub.Services;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
