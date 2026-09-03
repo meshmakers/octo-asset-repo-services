@@ -147,7 +147,9 @@ descriptor cannot downgrade the model on a tenant — the engine's downgrade gua
 higher than the local descriptor's target.
 
 #### 2. Multi-Tenant Request Pipeline
-- **TenantIdRouteConstraint** (`Routing/TenantIdRouteConstraint.cs`) - Routes include tenant ID
+- **TenantIdRouteConstraint** (octo-common-services, `Infrastructure/Routing/`) - Routes include
+  tenant ID; registered with `builder.Services.AddOctoTenantIdRouteConstraint()`. The local copy
+  was removed in AB#5060 — it also wrote an untyped `HttpContext.Items["d"]` that nothing read.
 - **TenantUserContextBuilder** (`GraphQL/RequestHandling/TenantUserContextBuilder.cs`) - Builds tenant context from HTTP request
 - **GraphQLUserContext** (`GraphQL/Utils/GraphQLUserContext.cs`) - Per-request context containing tenant info
 - **TenantDocumentExecutor** (`GraphQL/RequestHandling/TenantDocumentExecutor.cs`) - Executes GraphQL queries in tenant context

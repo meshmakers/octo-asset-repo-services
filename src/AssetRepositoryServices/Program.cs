@@ -1,5 +1,4 @@
 using Meshmakers.Octo.Backend.AssetRepositoryServices.Configuration;
-using Meshmakers.Octo.Backend.AssetRepositoryServices.Routing;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.Services;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.StreamData;
 using Meshmakers.Octo.Runtime.Contracts.Blueprints;
@@ -72,8 +71,7 @@ try
     // The defaults reproduce the previous behaviour and only add the audit log.
     builder.Services.AddOctoTenantAuthorization(builder.Configuration);
 
-    builder.Services.Configure<RouteOptions>(options =>
-        options.ConstraintMap.Add("tenantId", typeof(TenantIdRouteConstraint)));
+    builder.Services.AddOctoTenantIdRouteConstraint();
 
     // Bind blueprint variable context (octo.version/environment/systemTenantId) so the
     // default IBlueprintVariableProvider surfaces values from helm-injected
