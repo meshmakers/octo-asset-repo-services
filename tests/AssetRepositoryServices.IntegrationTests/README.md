@@ -11,8 +11,11 @@ tests/AssetRepositoryServices.IntegrationTests/
 │   └── IntegrationTestOptions.cs          # Configuration options
 ├── Fixtures/
 │   ├── ServiceCollectionFixture.cs        # Base fixture with DI
-│   ├── ConfigurationFixture.cs            # Loads configuration
-│   ├── DatabaseFixture.cs                 # MongoDB Testcontainer
+│   ├── ConfigurationFixture.cs            # Loads configuration, per-fixture database/tenant names
+│   ├── SharedMongoDbContainer.cs          # One MongoDB Testcontainer per test process
+│   ├── SharedCrateDbContainer.cs          # One CrateDB Testcontainer per test process
+│   ├── SharedContainerLifetime.cs         # Assembly fixture stopping both after the last collection
+│   ├── DatabaseFixture.cs                 # Binds a fixture to the shared MongoDB container
 │   └── AssetRepoFixture.cs                # System + Test Tenant setup
 ├── System/
 │   └── TenantContextTests.cs              # Tenant management tests
@@ -57,8 +60,9 @@ The test fixtures follow an inheritance hierarchy:
    - Provides configuration access
 
 3. **DatabaseFixture** (extends ConfigurationFixture)
-   - Starts MongoDB Testcontainer
-   - Configures connection to test container
+   - Acquires the process-wide MongoDB Testcontainer from `SharedMongoDbContainer`
+   - Configures the connection to it and points the fixture at its own GUID-suffixed system
+     database / system tenant
    - Uses replica set for transaction support
 
 4. **AssetRepoFixture** (extends DatabaseFixture)
@@ -124,10 +128,16 @@ Edit `appsettings.test.json` to configure test settings:
 
 ## Test Containers
 
-Tests use **Testcontainers** to run a real MongoDB instance in Docker:
-- Automatically starts before tests
-- Automatically stopped and cleaned up after tests
-- Uses replica set for transaction support
+Tests use **Testcontainers** to run a real MongoDB instance in Docker, plus a CrateDB instance for
+the stream-data collections:
+- Started lazily by the first fixture that needs them
+- **One MongoDB and one CrateDB container per test process** (AB#5118) - `SharedMongoDbContainer` /
+  `SharedCrateDbContainer` hand the same container to every fixture, and `SharedContainerLifetime`
+  (an assembly fixture) stops them after the last collection
+- Fixtures isolate themselves on those shared servers **by name**, not by server: each fixture
+  instance has its own GUID-suffixed `SystemDatabaseName`, `SystemTenantId` (which also becomes its
+  CrateDB schema) and `TestTenantId`
+- MongoDB uses a replica set for transaction support
 - Each test run uses a unique container
 
 ### Requirements
