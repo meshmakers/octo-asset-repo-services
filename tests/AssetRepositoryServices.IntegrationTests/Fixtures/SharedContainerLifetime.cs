@@ -25,7 +25,15 @@ public sealed class SharedContainerLifetime : IAsyncLifetime
 
     public async ValueTask DisposeAsync()
     {
-        await SharedCrateDbContainer.DisposeAsync();
-        await SharedMongoDbContainer.DisposeAsync();
+        // Both teardowns run even if the first one faults, so a failing CrateDB cleanup cannot
+        // strand the MongoDB container; the CrateDB failure still propagates.
+        try
+        {
+            await SharedCrateDbContainer.DisposeAsync();
+        }
+        finally
+        {
+            await SharedMongoDbContainer.DisposeAsync();
+        }
     }
 }

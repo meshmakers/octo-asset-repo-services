@@ -94,7 +94,8 @@ internal static class SharedMongoDbContainer
                 }
             }
 
-            return _container!;
+            return _container ?? throw new InvalidOperationException(
+                "The retry loop neither started a shared MongoDB container nor rethrew.");
         }
         finally
         {
@@ -142,9 +143,20 @@ internal static class SharedMongoDbContainer
                 return;
             }
 
-            await _container.StopAsync();
-            await _container.DisposeAsync();
+            var container = _container;
             _container = null;
+
+            try
+            {
+                await container.StopAsync();
+            }
+            finally
+            {
+                // DisposeAsync is the call that actually removes the container, so it has to run
+                // even when the stop faults - otherwise a failed stop strands the container on the
+                // agent for every later run.
+                await container.DisposeAsync();
+            }
         }
         finally
         {
