@@ -138,7 +138,8 @@ the stream-data collections:
   instance has its own GUID-suffixed `SystemDatabaseName`, `SystemTenantId` (which also becomes its
   CrateDB schema) and `TestTenantId`
 - MongoDB uses a replica set for transaction support
-- Each test run uses a unique container
+- Container names are GUID-suffixed per `dotnet test` run, so concurrent runs on the same Docker
+  host get their own pair of containers rather than colliding
 
 ### Requirements
 - Docker must be installed and running

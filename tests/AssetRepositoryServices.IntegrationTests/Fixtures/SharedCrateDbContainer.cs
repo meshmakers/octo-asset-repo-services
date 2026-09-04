@@ -53,7 +53,27 @@ internal static class SharedCrateDbContainer
                     .UntilMessageIsLogged("started"))
                 .Build();
 
-            await container.StartAsync();
+            try
+            {
+                await container.StartAsync();
+            }
+            catch
+            {
+                // Nothing else holds a reference to a container that never started, so without this
+                // it would linger for the rest of the run. Same best-effort disposal as the retry
+                // loop in SharedMongoDbContainer.
+                try
+                {
+                    await container.DisposeAsync();
+                }
+                catch (Exception disposeEx)
+                {
+                    Console.WriteLine(
+                        $@"  Disposal of the failed CrateDB container also threw: {disposeEx.Message}");
+                }
+
+                throw;
+            }
 
             _container = container;
             _connectionString =
