@@ -1,4 +1,6 @@
 using Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Configuration;
+using MongoDB.Bson;
+using MongoDB.Driver;
 using Testcontainers.MongoDb;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Fixtures;
@@ -63,6 +65,7 @@ internal static class SharedMongoDbContainer
                 try
                 {
                     await container.StartAsync(startCts.Token);
+                    await RaiseTransactionLifetimeLimitAsync(container);
                     _container = container;
                     Console.WriteLine(
                         $@"Using shared Testcontainer MongoDB at localhost:{container.GetMappedPublicPort()}");
@@ -96,6 +99,32 @@ internal static class SharedMongoDbContainer
         finally
         {
             Gate.Release();
+        }
+    }
+
+    /// <summary>
+    ///     Raises mongod's transaction lifetime limit above its 60 s default. Since AB#5118 all ten
+    ///     collection fixtures bootstrap in parallel against this one server, and each of them wraps
+    ///     its whole test-tenant creation - database, database user and the system CK model DDL - in
+    ///     a single transaction. On a loaded agent one of those can outlive 60 s, at which point
+    ///     mongod aborts it server-side and the fixture fails with "Transaction ... has been
+    ///     aborted" (observed once locally while a second integration suite saturated the Docker
+    ///     daemon). Best effort: a server that refuses the parameter is left as it is.
+    /// </summary>
+    private static async Task RaiseTransactionLifetimeLimitAsync(MongoDbContainer container)
+    {
+        try
+        {
+            var client = new MongoClient(container.GetConnectionString());
+            await client.GetDatabase("admin").RunCommandAsync<BsonDocument>(new BsonDocument
+            {
+                { "setParameter", 1 }, { "transactionLifetimeLimitSeconds", 900 }
+            });
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine(
+                $@"Could not raise transactionLifetimeLimitSeconds on the shared MongoDB: {ex.GetType().Name}: {ex.Message}");
         }
     }
 
