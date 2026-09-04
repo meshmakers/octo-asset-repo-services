@@ -1,6 +1,4 @@
 using System.Text.Json;
-using DotNet.Testcontainers.Builders;
-using DotNet.Testcontainers.Containers;
 using GraphQL;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Utils;
@@ -30,7 +28,6 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Fixtu
 /// </summary>
 public class StreamDataFixture : AssetRepoFixture
 {
-    private IContainer? _crateDbContainer;
     private IDocumentExecuter<OctoSchema>? _documentExecuter;
     private IGraphQLTextSerializer? _serializer;
 
@@ -82,21 +79,10 @@ public class StreamDataFixture : AssetRepoFixture
 
     protected override async Task InitializeServicesAsync()
     {
-        // Start CrateDB test container (single-node).
-        _crateDbContainer = new ContainerBuilder("crate:5.10.10")
-            .WithName($"cratedb-test-{Guid.NewGuid():N}")
-            .WithPortBinding(5432, true)
-            .WithPortBinding(4200, true)
-            .WithEnvironment("CRATE_HEAP_SIZE", "512m")
-            .WithCommand("-Cdiscovery.type=single-node")
-            .WithWaitStrategy(Wait.ForUnixContainer()
-                .UntilMessageIsLogged("started"))
-            .Build();
-
-        await _crateDbContainer.StartAsync();
-
-        var crateDbPort = _crateDbContainer.GetMappedPublicPort(5432);
-        CrateDbConnectionString = $"Host=localhost;Port={crateDbPort};Username=crate;SSL Mode=Prefer";
+        // One CrateDB cluster for the whole test process (AB#5118). Isolation between the
+        // stream-data collections comes from the schema — TenantSchema.SchemaName derives it from
+        // the fixture's GUID-suffixed system tenant id — not from a container of its own.
+        CrateDbConnectionString = await SharedCrateDbContainer.GetConnectionStringAsync();
 
         // Flip the instance-level kill switch BEFORE registering the stream data stack — the
         // tenant context refuses to enable stream data if `StreamData:Enabled` is false at
@@ -378,17 +364,6 @@ public class StreamDataFixture : AssetRepoFixture
             ?? throw new InvalidOperationException("stream-data not enabled");
         var result = await repo.ExecuteQueryAsync(ArchiveRtId, options);
         return result.Rows;
-    }
-
-    protected override async Task DisposeServicesAsync()
-    {
-        await base.DisposeServicesAsync();
-
-        if (_crateDbContainer != null)
-        {
-            await _crateDbContainer.StopAsync();
-            await _crateDbContainer.DisposeAsync();
-        }
     }
 
     internal record CrateDbTestConnectionString(string ConnectionString);

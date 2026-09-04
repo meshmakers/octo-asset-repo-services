@@ -8,7 +8,16 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Fixtu
 /// </summary>
 public class AssetRepoFixture : DatabaseFixture
 {
-    public string TestTenantId => _options.TenantId;
+    public AssetRepoFixture()
+    {
+        // GUID-suffixed per fixture instance (AB#5118): the tenant id doubles as the physical
+        // database name, and the engine's namespace gate checks database names cluster-wide - so on
+        // the shared MongoDB container the configured "test-tenant" would be claimed by whichever
+        // fixture got there first and every other fixture would fail to create its test tenant.
+        TestTenantId = $"{_options.TenantId}{Guid.NewGuid():N}";
+    }
+
+    public string TestTenantId { get; }
 
     protected override async Task InitializeServicesAsync()
     {

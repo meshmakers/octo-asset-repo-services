@@ -6,20 +6,17 @@ using Testcontainers.MongoDb;
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Fixtures;
 
 /// <summary>
-///     Starts a MongoDB Testcontainer with a replica set (required for transactions).
-///
-///     Container-bringup pattern matches octo-construction-kit-engine-mongodb /
-///     octo-ai-services. Testcontainers' rs.initiate() handshake and mongo's keyfile-init
-///     entrypoint race with port binding on CI agents under load (build 34386 hung 40+ min
-///     because the temp-mongo's listener hadn't released 27017 when the real mongod tried
-///     to bind, exit code 48; the .NET test then hung indefinitely waiting on a dead
-///     container). The retry loop with a *fresh* container per attempt + per-attempt hard
-///     timeout is the proven fix.
+///     Points the fixture at the process-wide MongoDB replica-set Testcontainer
+///     (<see cref="SharedMongoDbContainer" />, AB#5118) and isolates itself on it by name rather
+///     than by server: <see cref="ConfigurationFixture.SystemDatabaseName" /> and
+///     <see cref="ConfigurationFixture.SystemTenantId" /> are GUID-suffixed per fixture instance.
+///     Before AB#5118 every fixture started a MongoDB container of its own because all of them
+///     shared one hardcoded system database name.
 /// </summary>
 public class DatabaseFixture : ConfigurationFixture
 {
     protected readonly IntegrationTestOptions _options;
-    private MongoDbContainer? _mongoDbContainer;
+    private MongoDbContainer? _sharedMongoDbContainer;
 
     public DatabaseFixture()
     {
@@ -28,66 +25,14 @@ public class DatabaseFixture : ConfigurationFixture
 
     protected override async Task InitializeServicesAsync()
     {
-        await Console.Error.WriteLineAsync($"[DatabaseFixture] Starting MongoDB container with image: {_options.MongoDbImage}");
-        await Console.Error.FlushAsync();
+        _sharedMongoDbContainer = await SharedMongoDbContainer.GetContainerAsync(_options);
 
-        const int maxAttempts = 3;
-        var perAttemptTimeout = TimeSpan.FromMinutes(2);
-
-        for (var attempt = 1; attempt <= maxAttempts; attempt++)
-        {
-            await Console.Error.WriteLineAsync($"[DatabaseFixture] StartAsync attempt {attempt}/{maxAttempts}");
-            await Console.Error.FlushAsync();
-
-            // No WithCleanUp(true) — match ck-engine-mongodb / ai-services. WithCleanUp(true)
-            // hard-wires Ryuk reaper into the container lifecycle which doesn't get bypassed
-            // by TESTCONTAINERS_RYUK_DISABLED, and Ryuk's TCP handshake blocks silently on
-            // our self-hosted DinD agent. DisposeServicesAsync calls StopAsync + DisposeAsync
-            // explicitly so cleanup guarantee is preserved.
-            _mongoDbContainer = new MongoDbBuilder(_options.MongoDbImage)
-                .WithReplicaSet()
-                .WithName($"mongodb-assetrepo-test-{Guid.NewGuid():N}")
-                .WithUsername(_options.AdminUser)
-                .WithPassword(_options.AdminUserPassword)
-                .Build();
-
-            using var startCts = new CancellationTokenSource(perAttemptTimeout);
-            try
-            {
-                await _mongoDbContainer.StartAsync(startCts.Token);
-                break;
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine(
-                    $@"Testcontainer MongoDB start failed on attempt {attempt}/{maxAttempts}: {ex.GetType().Name}: {ex.Message}");
-
-                try
-                {
-                    await _mongoDbContainer.DisposeAsync();
-                }
-                catch (Exception disposeEx)
-                {
-                    Console.WriteLine($@"  Disposal of failed container also threw: {disposeEx.Message}");
-                }
-
-                _mongoDbContainer = null;
-
-                if (attempt == maxAttempts)
-                {
-                    throw;
-                }
-
-                await Task.Delay(TimeSpan.FromSeconds(2 * attempt));
-            }
-        }
-
-        var mappedPort = _mongoDbContainer!.GetMappedPublicPort();
-        var databaseHost = $"localhost:{mappedPort}";
-        Console.WriteLine($@"Using Testcontainer MongoDB at {databaseHost}");
+        var databaseHost = $"localhost:{_sharedMongoDbContainer.GetMappedPublicPort()}";
+        Console.WriteLine($@"Using Testcontainer MongoDB at {databaseHost} with system database {SystemDatabaseName}");
 
         Services.Configure<OctoSystemConfiguration>(t =>
         {
+            t.SystemTenantId = SystemTenantId;
             t.SystemDatabaseName = SystemDatabaseName;
             t.DatabaseHost = databaseHost;
             t.AdminUser = _options.AdminUser;
@@ -99,26 +44,23 @@ public class DatabaseFixture : ConfigurationFixture
         await base.InitializeServicesAsync();
     }
 
-    protected override async Task DisposeServicesAsync()
+    protected override Task DisposeServicesAsync()
     {
-        await Task.Yield();
-
-        if (_mongoDbContainer != null)
-        {
-            await _mongoDbContainer.StopAsync();
-            await _mongoDbContainer.DisposeAsync();
-        }
+        // The shared container outlives every individual fixture; SharedContainerLifetime stops it
+        // after the last collection. The databases this fixture created go with it, so there is
+        // nothing to drop here.
+        return Task.CompletedTask;
     }
 
     public string GetConnectionString()
     {
         EnsureInitialized();
 
-        if (_mongoDbContainer is null)
+        if (_sharedMongoDbContainer is null)
         {
             throw new InvalidOperationException("MongoDB container is not initialized. Call InitializeAsync first.");
         }
 
-        return _mongoDbContainer.GetConnectionString();
+        return _sharedMongoDbContainer.GetConnectionString();
     }
 }
