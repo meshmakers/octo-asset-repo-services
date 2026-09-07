@@ -109,7 +109,7 @@ public class StreamDataNeverActivatedArchiveTests(StreamDataFixture fixture, ITe
     }
 
     [Fact]
-    public async Task ImportRows_IntoASeededDisabledArchive_FailsWithRelationUnknown()
+    public async Task ImportRows_IntoASeededDisabledArchive_FailsWithMissingTableError()
     {
         // Documents why ImportArchiveDataJob has to probe the table before importing: the storage layer
         // itself surfaces CrateDB's RelationUnknown / SchemaUnknown deep in the insert path. Disabled
@@ -138,7 +138,7 @@ public class StreamDataNeverActivatedArchiveTests(StreamDataFixture fixture, ITe
                     TestContext.Current.CancellationToken));
 
             failure.Should().NotBeNull("there is no table to insert into");
-            IsRelationUnknown(failure!).Should().BeTrue($"expected CrateDB's RelationUnknown, got: {failure}");
+            IsMissingTableError(failure!).Should().BeTrue($"expected CrateDB's RelationUnknown or SchemaUnknown, got: {failure}");
         }
         finally
         {
@@ -229,7 +229,7 @@ public class StreamDataNeverActivatedArchiveTests(StreamDataFixture fixture, ITe
     /// but the table does not, <c>SchemaUnknown</c> (XX000, "Schema 'x' unknown") when no table of the
     /// tenant was ever provisioned, so the schema itself is missing.
     /// </summary>
-    private static bool IsRelationUnknown(Exception exception)
+    private static bool IsMissingTableError(Exception exception)
     {
         for (Exception? current = exception; current is not null; current = current.InnerException)
         {
