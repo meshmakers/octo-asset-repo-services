@@ -122,6 +122,78 @@ public class TenantsControllerTests
         list.Select(t => t.TenantId).Should().Equal("child-a", "child-b");
     }
 
+    // --- Installation-wide registry endpoint (AB#5151 / AB#5129) ---
+
+    private const string SystemTenantId = "octosystem";
+
+    /// <summary>
+    ///     Makes the fixture's caller the system tenant and stocks the platform-wide registry.
+    /// </summary>
+    private void SetupSystemTenantWithRegistry(long totalCount, params OctoTenant[] registry)
+    {
+        _controller.ControllerContext.HttpContext.Request.RouteValues["tenantId"] = SystemTenantId;
+        A.CallTo(() => _systemContext.TenantId).Returns(SystemTenantId);
+        A.CallTo(() => _systemContext.GetAdminSessionAsync()).Returns(A.Fake<IOctoAdminSession>());
+
+        var resultSet = A.Fake<IResultSet<OctoTenant>>();
+        A.CallTo(() => resultSet.Items).Returns(registry);
+        A.CallTo(() => resultSet.TotalCount).Returns(totalCount);
+        A.CallTo(() => _systemContext.GetAllTenantsAsync(A<IOctoAdminSession>._, A<int?>._, A<int?>._))
+            .Returns(resultSet);
+    }
+
+    [Fact]
+    public async Task GetAll_ReturnsTheFullRegistry_IncludingNestedAndReparentedTenants()
+    {
+        // The plain list returns direct children only (AB#5025); the workload roll-outs need the
+        // installation universe — sub-tenants and re-parented tenants included (AB#5151, AB#5129).
+        SetupSystemTenantWithRegistry(3,
+            new OctoTenant("direct-child", "direct-child-db"),
+            new OctoTenant("nested-under-direct-child", "nested-db"),
+            new OctoTenant("reparented", "reparented-db"));
+
+        var result = await _controller.GetAll(null);
+
+        var list = result.Should().BeOfType<OkObjectResult>().Subject
+            .Value.Should().BeAssignableTo<IEnumerable<TenantDto>>().Subject.ToList();
+        list.Select(t => t.TenantId).Should().Equal("direct-child", "nested-under-direct-child", "reparented");
+
+        // The registry read must come from the system context, not from the per-tenant child list.
+        A.CallTo(() => _tenantContext.GetChildTenantsAsync(A<IOctoAdminSession>._, A<int?>._, A<int?>._))
+            .MustNotHaveHappened();
+    }
+
+    [Fact]
+    public async Task GetAll_Returns403_OnAnyOtherTenant_WithoutTouchingTheRegistry()
+    {
+        // The registry names every tenant of the installation — on a non-system tenant that would be
+        // an existence oracle (AB#4763). The 403 carries guidance but no tenant data.
+        A.CallTo(() => _systemContext.TenantId).Returns(SystemTenantId);
+
+        var result = await _controller.GetAll(null);
+
+        var objectResult = result.Should().BeOfType<ObjectResult>().Subject;
+        objectResult.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
+        objectResult.Value.Should().BeOfType<OperationFailedErrorDto>().Subject
+            .Message.Should().Contain("system tenant");
+        A.CallTo(() => _systemContext.GetAllTenantsAsync(A<IOctoAdminSession>._, A<int?>._, A<int?>._))
+            .MustNotHaveHappened();
+    }
+
+    [Fact]
+    public async Task GetAll_PassesPagingThroughUnchanged()
+    {
+        SetupSystemTenantWithRegistry(20, new OctoTenant("direct-child", "direct-child-db"));
+
+        var result = await _controller.GetAll(new PagingParams { Skip = 5, Take = 10 });
+
+        result.Should().BeOfType<OkObjectResult>().Subject
+            .Value.Should().BeOfType<PagedResult<TenantDto>>().Subject
+            .TotalCount.Should().Be(20);
+        A.CallTo(() => _systemContext.GetAllTenantsAsync(A<IOctoAdminSession>._, 5, 10))
+            .MustHaveHappened();
+    }
+
     [Fact]
     public async Task GetSelf_ReturnsCurrentTenantWithItsDatabaseName()
     {

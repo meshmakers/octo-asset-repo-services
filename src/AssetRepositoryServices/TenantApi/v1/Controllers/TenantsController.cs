@@ -174,6 +174,73 @@ public class TenantsController : ControllerBase
         }
     }
 
+    // GET {tenantId}/v1/tenants/all
+    /// <summary>
+    ///     Returns every tenant registered on the installation, regardless of its logical parent.
+    ///     Only answered on the system tenant; any other tenant receives 403.
+    /// </summary>
+    /// <remarks>
+    ///     The plain tenants list returns DIRECT children only (AB#5025), so since the introduction of
+    ///     nested tenant hierarchies it no longer describes the installation. Roll-out tooling that
+    ///     enumerated child tenants of the system tenant silently skipped every sub-tenant and every
+    ///     re-parented tenant (AB#5151, AB#5129). The system tenant's database doubles as the
+    ///     platform-wide routing registry, so this endpoint can serve the full universe from there.
+    ///     Restricted to the system tenant because the registry names every tenant of the
+    ///     installation — on any other tenant that would be an existence oracle (AB#4763). The 403 is
+    ///     deliberate (not a reason-free 404): it reveals nothing about other tenants and tells the
+    ///     operator exactly what to do.
+    /// </remarks>
+    [HttpGet("all")]
+    [Authorize(AssetRepositoryServiceConstants.TenantAssetApiReadOnlyPolicy)]
+    [ProducesResponseType(typeof(IEnumerable<TenantDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(OperationFailedErrorDto), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(OperationFailedErrorDto), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(InternalServerErrorDto), StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> GetAll([FromQuery] PagingParams? pagingParams)
+    {
+        try
+        {
+            var tenantId = HttpContext.GetTenantId();
+            if (string.IsNullOrEmpty(tenantId))
+            {
+                return BadRequest(new OperationFailedErrorDto("TenantId is required"));
+            }
+
+            var systemContext = _octoService.SystemContext;
+            if (tenantId.NormalizeString() != systemContext.TenantId)
+            {
+                return StatusCode(StatusCodes.Status403Forbidden, new OperationFailedErrorDto(
+                    "The installation-wide tenant registry is only available on the system tenant. " +
+                    "Use a context of the system tenant, or query the direct children of this tenant instead."));
+            }
+
+            using var session = await systemContext.GetAdminSessionAsync();
+            session.StartTransaction();
+
+            var result = await systemContext.GetAllTenantsAsync(session, pagingParams?.Skip, pagingParams?.Take);
+
+            if (pagingParams != null)
+            {
+                var pagedResult = new PagedResult<TenantDto>(result.Items.Select(CreateTenantDto),
+                    pagingParams.Skip, pagingParams.Take, result.TotalCount);
+
+                Response.Headers.Append("X-Pagination", pagedResult.GetHeader().ToJson());
+
+                await session.CommitTransactionAsync();
+
+                return Ok(pagedResult);
+            }
+
+            await session.CommitTransactionAsync();
+
+            return Ok(result.Items.Select(CreateTenantDto));
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(StatusCodes.Status500InternalServerError, new InternalServerErrorDto(ex.Message));
+        }
+    }
+
     // GET {tenantId}/v1/tenants/self
     /// <summary>
     ///     Returns the current (own) tenant of the request, including its database name.
