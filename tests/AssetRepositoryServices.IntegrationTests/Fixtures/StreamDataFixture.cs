@@ -1,5 +1,7 @@
+using System.Security.Claims;
 using System.Text.Json;
 using GraphQL;
+using Meshmakers.Octo.Communication.Contracts;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Utils;
 using Meshmakers.Octo.ConstructionKit.Contracts;
@@ -88,6 +90,15 @@ public class StreamDataFixture : AssetRepoFixture
         // tenant context refuses to enable stream data if `StreamData:Enabled` is false at
         // process scope (concept §5 two-tier activation).
         Services.Configure<StreamDataInstanceConfiguration>(c => c.Enabled = true);
+
+        // AB#5157: the measured-coverage memo (ArchiveCoverageCache) defaults to a 60 s TTL, which
+        // is far longer than any test — a coverage query issued right after a write would read a
+        // stale answer (a null coverage, most of the time) for the rest of the run. Bind the same
+        // host option Program.cs binds ("StreamData:Coverage") down to one second, so a coverage
+        // assertion is deterministic once that second has elapsed and the TTL itself stays
+        // observable (StreamData:Coverage:CacheTtlSeconds is what production tunes).
+        Services.Configure<ArchiveCoverageOptions>(o => o.CacheTtlSeconds = 1);
+
         Services.AddSingleton(new CrateDbTestConnectionString(CrateDbConnectionString));
         Services.AddStreamDataDatabase<TestStreamDataConfiguration>();
 
@@ -138,9 +149,31 @@ public class StreamDataFixture : AssetRepoFixture
     }
 
     /// <summary>
+    /// A principal carrying the <see cref="CommonConstants.StreamDataAdminRole"/> role. The archive
+    /// and rollup mutations enforce that role per field (concept §5 / T22), so a test that drives
+    /// <c>createRollupArchive</c> and friends through <see cref="ExecuteGraphQlAsync"/> must pass it;
+    /// the default (null) user reproduces the FORBIDDEN path.
+    /// </summary>
+    public static ClaimsPrincipal StreamDataAdminPrincipal { get; } = new(
+        new ClaimsIdentity(
+            [
+                new Claim(ClaimTypes.Name, "streamdata-admin"),
+                new Claim(ClaimTypes.Role, CommonConstants.StreamDataAdminRole)
+            ],
+            "IntegrationTests"));
+
+    /// <summary>
     /// Executes a GraphQL query using the system tenant context.
     /// </summary>
-    public async Task<ExecutionResult> ExecuteGraphQlAsync(string query, string? variables = null)
+    /// <param name="query">The GraphQL document.</param>
+    /// <param name="variables">Optional JSON object with the query variables.</param>
+    /// <param name="user">
+    /// Optional principal put into the <c>GraphQlUserContext</c>. Null (the default) means
+    /// "unauthenticated", which the role-guarded mutations answer with FORBIDDEN — pass
+    /// <see cref="StreamDataAdminPrincipal"/> to exercise them.
+    /// </param>
+    public async Task<ExecutionResult> ExecuteGraphQlAsync(
+        string query, string? variables = null, ClaimsPrincipal? user = null)
     {
         if (_documentExecuter == null)
         {
@@ -160,7 +193,7 @@ public class StreamDataFixture : AssetRepoFixture
             options.Query = query;
             options.Variables = inputs != null ? new Inputs(inputs) : null;
             options.RequestServices = Provider;
-            options.UserContext = new GraphQlUserContext(null, GetSystemContext());
+            options.UserContext = new GraphQlUserContext(user, GetSystemContext());
         });
 
         return result;
@@ -186,7 +219,10 @@ public class StreamDataFixture : AssetRepoFixture
                 .Select(ConvertJsonElement)
                 .ToList(),
             JsonValueKind.String => element.GetString(),
-            JsonValueKind.Number => element.TryGetInt64(out var l) ? l : element.GetDouble(),
+            // The ternary must be boxed as object per branch — without the cast both branches
+            // unify to double and every integral variable arrives as a Double, which the Long
+            // scalar refuses ("Unable to convert '3600000' value of type 'Double'").
+            JsonValueKind.Number => element.TryGetInt64(out var l) ? l : (object)element.GetDouble(),
             JsonValueKind.True => true,
             JsonValueKind.False => false,
             JsonValueKind.Null => null,

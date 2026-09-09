@@ -17,4 +17,7 @@ internal sealed record ResolveSeriesQueryDto(
     CkRollupFunction ReducingFunction,
     SeriesResolutionSignal Signal,
     int? ActualPoints,
-    string? Diagnostic);
+    string? Diagnostic,
+    // Coverage-aware routing (AB#5157): when the signal is CoverageLimited, the earliest timestamp
+    // from which the finer rung that was excluded for lacking coverage would have been usable.
+    DateTime? FinerRungAvailableFrom);

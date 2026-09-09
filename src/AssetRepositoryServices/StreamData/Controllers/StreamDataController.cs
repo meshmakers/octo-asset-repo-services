@@ -418,8 +418,8 @@ public class StreamDataController : ControllerBase
     }
 
     /// <summary>
-    /// Returns every non-soft-deleted rollup archive attached to the given source archive.
-    /// Concept §9.
+    /// Returns every non-soft-deleted rollup archive that declares the given archive as one of its
+    /// sources (AB#5157: membership in <c>Sources</c>, any validity span). Concept §9.
     /// </summary>
     [HttpGet("archives/{archiveRtId}/rollups")]
     [Microsoft.AspNetCore.Authorization.Authorize(AssetRepositoryServiceConstants.TenantAssetApiReadOnlyPolicy)]
@@ -439,12 +439,12 @@ public class StreamDataController : ControllerBase
             var result = new List<RollupArchiveInfoRestDto>();
             await foreach (var rollup in rollupStore.EnumerateAsync())
             {
-                if (rollup.SourceArchiveRtId != sourceRtId) continue;
+                if (!rollup.HasSource(sourceRtId)) continue;
                 result.Add(new RollupArchiveInfoRestDto(
                     rollup.RtId.ToString(),
                     rollup.RtWellKnownName,
                     rollup.Status.ToString(),
-                    rollup.SourceArchiveRtId.ToString(),
+                    rollup.SingleUnboundedSourceRtId?.ToString(),
                     (long)rollup.BucketSize.TotalMilliseconds,
                     (long)rollup.WatermarkLag.TotalMilliseconds,
                     rollup.LastAggregatedBucketEnd,
@@ -456,9 +456,43 @@ public class StreamDataController : ControllerBase
                     rollup.LastRecomputeFailureAt,
                     rollup.LastRecomputeFailureReason,
                     rollup.DirtyWindowsPending,
-                    rollup.PendingRecomputeRanges));
+                    rollup.PendingRecomputeRanges,
+                    rollup.Sources
+                        .Select(src => new RollupSourceRestDto(src.SourceArchiveRtId.ToString(), src.ValidFrom, src.ValidTo))
+                        .ToList()));
             }
             return Ok(result);
+        }
+        catch (ConfigurationException e)
+        {
+            return BadRequest(e.Message);
+        }
+    }
+
+    /// <summary>
+    /// Returns the MEASURED data coverage of an archive family (AB#5157): the given archive first, then
+    /// every rollup that transitively depends on it (breadth-first, once each), each with its grain and
+    /// the earliest / latest timestamp that holds data. Returns an empty list when stream data is not
+    /// enabled for the tenant or the archive is unknown. Same projection as the <c>coverageFor</c>
+    /// GraphQL query.
+    /// </summary>
+    [HttpGet("archives/{archiveRtId}/coverage")]
+    [Microsoft.AspNetCore.Authorization.Authorize(AssetRepositoryServiceConstants.TenantAssetApiReadOnlyPolicy)]
+    public async Task<ActionResult<IReadOnlyList<ArchiveCoverageRestDto>>> GetArchiveCoverage(
+        [Required] string tenantId, [Required] string archiveRtId)
+    {
+        try
+        {
+            var tenantContext = await _systemContext.FindTenantContextAsync(tenantId);
+            var coverageService = tenantContext.GetArchiveFamilyCoverageService();
+            if (coverageService is null)
+            {
+                return Ok(Array.Empty<ArchiveCoverageRestDto>());
+            }
+
+            var rungs = await coverageService.GetFamilyCoverageAsync(
+                new OctoObjectId(archiveRtId), HttpContext.RequestAborted);
+            return Ok(rungs.Select(ArchiveCoverageRestDto.From).ToList());
         }
         catch (ConfigurationException e)
         {

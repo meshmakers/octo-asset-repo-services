@@ -146,6 +146,58 @@ public class StreamDataNeverActivatedArchiveTests(StreamDataFixture fixture, ITe
         }
     }
 
+    [Fact]
+    public async Task SeededDisabledArchive_ReportsNullCoverage_InsteadOfFailing()
+    {
+        // AB#5157: the coverage probe is a MIN/MAX over the archive table, so a seeded-Disabled
+        // archive would answer with CrateDB's RelationUnknown. The family walk must report the rung
+        // with null/null coverage — that is what lets the resolver skip a rung that holds no data
+        // instead of erroring the whole series query. The tenant here already owns one activated
+        // archive (the EnergyCommunity shape: nine archives, three of them never activated), so the
+        // CrateDB schema exists and the missing piece is exactly this archive's table.
+        fixture.OutputHelper = output;
+        const string childTenantId = "ab5157coverage";
+        await CreateChildAsync(childTenantId);
+
+        try
+        {
+            var child = await PrepareChildAsync(childTenantId);
+            var activatedRtId = await SeedDisabledRawArchiveAsync(child, "ActivatedNeighbourArchive");
+            await (child.GetArchiveLifecycleService()
+                   ?? throw new InvalidOperationException("ArchiveLifecycleService not registered."))
+                .ActivateAsync(activatedRtId);
+
+            var archiveRtId = await SeedDisabledRawArchiveAsync(child, "SeededCoverageArchive");
+
+            var coverageService = child.GetArchiveFamilyCoverageService();
+            coverageService.Should().NotBeNull("stream data is enabled on the child");
+
+            var rungs = await coverageService!.GetFamilyCoverageAsync(
+                archiveRtId, TestContext.Current.CancellationToken);
+
+            var rung = rungs.Should().ContainSingle("the archive has no dependents").Subject;
+            rung.ArchiveRtId.Should().Be(archiveRtId);
+            rung.RtWellKnownName.Should().Be("SeededCoverageArchive");
+            rung.IsBase.Should().BeTrue();
+            rung.Status.Should().Be(CkArchiveStatus.Disabled, "the rung reports the status, not the table");
+            rung.AvailableFrom.Should().BeNull("there is no backing table to measure");
+            rung.AvailableTo.Should().BeNull();
+
+            // An ACTIVATED but empty archive is the other half of the contract: still null/null,
+            // and no table is provisioned for the never-activated one by asking for its coverage.
+            var activatedRungs = await coverageService.GetFamilyCoverageAsync(
+                activatedRtId, TestContext.Current.CancellationToken);
+            activatedRungs.Should().ContainSingle().Which.AvailableFrom.Should().BeNull();
+
+            (await ListTablesAsync(childTenantId)).Should().Equal(new[] { $"archive_{activatedRtId}" },
+                "a coverage probe must not provision anything");
+        }
+        finally
+        {
+            await DropChildIfExistingAsync(childTenantId);
+        }
+    }
+
     // ── helpers ───────────────────────────────────────────────────────────────────────────────
 
     /// <summary>Enables stream data on the child and imports the test CK model — no archive yet.</summary>

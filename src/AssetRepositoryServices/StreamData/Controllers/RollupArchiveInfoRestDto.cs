@@ -10,7 +10,9 @@ public sealed record RollupArchiveInfoRestDto(
     string RtId,
     string? RtWellKnownName,
     string Status,
-    string SourceArchiveRtId,
+    // Deprecated single-source projection (AB#5157): set only when the rollup declares exactly one
+    // unbounded source; null for multi-source rollups. Consumers read Sources.
+    string? SourceArchiveRtId,
     long BucketSizeMs,
     long WatermarkLagMs,
     DateTime? LastAggregatedBucketEnd,
@@ -24,4 +26,13 @@ public sealed record RollupArchiveInfoRestDto(
     DateTime? LastRecomputeFailureAt,
     string? LastRecomputeFailureReason,
     int DirtyWindowsPending,
-    int PendingRecomputeRanges);
+    int PendingRecomputeRanges,
+    // Multi-source declaration (AB#5157): every source archive with its half-open validity span.
+    IReadOnlyList<RollupSourceRestDto> Sources);
+
+/// <summary>
+/// REST projection of one source declaration of a rollup (AB#5157): the source archive plus its
+/// validity span (<see cref="ValidFrom"/> inclusive, <see cref="ValidTo"/> exclusive; null = unbounded
+/// in that direction). Mirrors the SDK <c>RollupSourceReferenceDto</c> exactly.
+/// </summary>
+public sealed record RollupSourceRestDto(string SourceArchiveRtId, DateTime? ValidFrom, DateTime? ValidTo);

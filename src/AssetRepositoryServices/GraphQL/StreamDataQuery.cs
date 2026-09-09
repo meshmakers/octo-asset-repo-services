@@ -36,9 +36,14 @@ internal sealed class StreamDataQuery : ObjectGraphType
             .Resolve(_ => new { });
 
         Field<NonNullGraphType<ListGraphType<NonNullGraphType<RollupArchiveInfoDtoType>>>>("rollupsFor")
-            .Description("Returns every non-soft-deleted rollup archive attached to the given source archive — runtime id, status, schedule, watermark, freeze state. Rollup-archives concept §9.")
+            .Description("Returns every non-soft-deleted rollup archive that declares the given archive as one of its sources (AB#5157: membership in 'sources', any validity span) — runtime id, status, schedule, watermark, freeze state, sources. Rollup-archives concept §9.")
             .Argument<NonNullGraphType<OctoObjectIdType>>(Statics.RtIdArg, "Runtime id of the source CkArchive to enumerate rollups for.")
             .ResolveAsync(ResolveRollupsForAsync);
+
+        Field<NonNullGraphType<ListGraphType<NonNullGraphType<ArchiveCoverageDtoType>>>>("coverageFor")
+            .Description("Returns the MEASURED data coverage of an archive family (AB#5157): the given archive first, then every rollup that transitively depends on it (breadth-first, once each), each with its grain and the earliest/latest timestamp that holds data. Empty when StreamData is not enabled for the tenant or the rtId is unknown. This is the information the resolver's coverage filter uses to skip rungs without data (CoverageLimited).")
+            .Argument<NonNullGraphType<OctoObjectIdType>>(Statics.RtIdArg, "Runtime id of the archive (base or rollup) whose family coverage to report.")
+            .ResolveAsync(ResolveCoverageForAsync);
 
         Field<NonNullGraphType<ListGraphType<NonNullGraphType<RecomputeJobInfoDtoType>>>>("recomputeJobsFor")
             .Description("Returns the most recent recompute jobs for a rollup archive (newest first, capped at 50) — for debugging why a recompute failed. AB#4184.")
@@ -73,7 +78,12 @@ internal sealed class StreamDataQuery : ObjectGraphType
         }
 
         var archiveStore = gql.TenantContext.GetArchiveRuntimeStore();
-        var service = new SeriesResolutionService(archiveStore, new RollupDependencyGraph(rollupStore));
+        // AB#5157: pass the coverage provider so rungs without measured data for the requested window
+        // are skipped (CoverageLimited). A null provider would keep the coverage filter inert.
+        var service = new SeriesResolutionService(
+            archiveStore,
+            new RollupDependencyGraph(rollupStore),
+            gql.TenantContext.GetArchiveCoverageProvider());
 
         var request = new SeriesResolutionRequest(
             input.BaseArchiveRtId,
@@ -98,7 +108,23 @@ internal sealed class StreamDataQuery : ObjectGraphType
             result.ReducingFunction,
             result.Signal,
             result.ActualPoints,
-            result.Diagnostic);
+            result.Diagnostic,
+            result.FinerRungAvailableFrom);
+    }
+
+    private static async Task<object?> ResolveCoverageForAsync(IResolveFieldContext<object?> ctx)
+    {
+        var archiveRtId = ctx.GetArgument<OctoObjectId>(Statics.RtIdArg);
+        var gql = (GraphQlUserContext)ctx.UserContext;
+        var coverageService = gql.TenantContext.GetArchiveFamilyCoverageService();
+        if (coverageService is null)
+        {
+            // StreamData not enabled for this tenant — an empty family, not an error.
+            return Array.Empty<ArchiveCoverageDto>();
+        }
+
+        var rungs = await coverageService.GetFamilyCoverageAsync(archiveRtId, ctx.CancellationToken).ConfigureAwait(false);
+        return rungs.Select(ArchiveCoverageDto.From).ToList();
     }
 
     private static async Task<object?> ResolveRollupQueryMetadataAsync(IResolveFieldContext<object?> ctx)
@@ -174,12 +200,13 @@ internal sealed class StreamDataQuery : ObjectGraphType
         var result = new List<RollupArchiveInfoDto>();
         await foreach (var rollup in rollupStore.EnumerateAsync())
         {
-            if (rollup.SourceArchiveRtId != sourceRtId) continue;
+            // AB#5157: membership in the declared sources (any validity span), not scalar equality.
+            if (!rollup.HasSource(sourceRtId)) continue;
             result.Add(new RollupArchiveInfoDto(
                 rollup.RtId,
                 rollup.RtWellKnownName,
                 rollup.Status,
-                rollup.SourceArchiveRtId,
+                rollup.SingleUnboundedSourceRtId,
                 (long)rollup.BucketSize.TotalMilliseconds,
                 (long)rollup.WatermarkLag.TotalMilliseconds,
                 rollup.LastAggregatedBucketEnd,
@@ -196,6 +223,9 @@ internal sealed class StreamDataQuery : ObjectGraphType
                 rollup.ReferenceTimeZone,
                 rollup.Aggregations
                     .Select(a => new RollupAggregationInfoDto(a.SourcePath, a.Function.ToString()))
+                    .ToList(),
+                rollup.Sources
+                    .Select(src => new RollupSourceInfoDto(src.SourceArchiveRtId, src.ValidFrom, src.ValidTo))
                     .ToList()));
         }
         return result;
