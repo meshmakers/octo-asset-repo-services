@@ -25,10 +25,10 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Strea
 /// could never be "before the watermark" the way a real late value is.
 /// </para>
 /// <para>
-/// Every correction writes TWO late points at distinct timestamps. A correction consisting of a
-/// single timestamp is currently dropped before it reaches a dependent — see
-/// <see cref="ASingleTimestampCorrection_IsDroppedBeforeItReachesTheDependent"/>, which pins that
-/// defect.
+/// Most corrections here write TWO late points at distinct timestamps, which is the shape whose
+/// dirty window survives Mongo's millisecond resolution unchanged. The degenerate single-timestamp
+/// shape gets its own fact —
+/// <see cref="ASingleTimestampCorrection_SchedulesExactlyOneBucketRecomputeOnTheDependent"/>.
 /// </para>
 /// </summary>
 [Collection(StreamDataMutatingCollection.Name)]
@@ -274,23 +274,23 @@ public class RollupMultiSourceRecomputeTests(StreamDataFixture fixture, ITestOut
     }
 
     [Fact]
-    public async Task ASingleTimestampCorrection_IsDroppedBeforeItReachesTheDependent()
+    public async Task ASingleTimestampCorrection_SchedulesExactlyOneBucketRecomputeOnTheDependent()
     {
-        // DEFECT PIN (engine, octo-construction-kit-engine). The retroactive-write detector builds
-        // the dirty window as [earliest, latest + 1 tick) so a correction consisting of ONE timestamp
-        // still covers a non-empty interval. Mongo stores DateTime at millisecond resolution, so that
-        // single tick is lost and the persisted window is empty ([t, t)). Since AB#5157 the
-        // propagation clips the window to the writing source's validity span BEFORE aligning it to
-        // buckets, and RollupArchiveSnapshot.Clip requires from < to — so the empty window is
-        // discarded and the correction never becomes a pending recompute range. The bucket alignment
-        // that follows carries an explicit guard for exactly this case ("an empty or sub-bucket
-        // window still yields at least one bucket so the change is never silently dropped"), which
-        // the clip now pre-empts. A single-point correction — the most common shape of a corrected
-        // meter reading — is therefore silently lost.
+        // The retroactive-write detector builds the dirty window as [earliest, latest + 1 tick) so a
+        // correction consisting of ONE timestamp still covers a non-empty interval. Mongo stores
+        // DateTime at millisecond resolution, so that single tick is lost and the persisted window
+        // is degenerate ([t, t)). Since AB#5157 the propagation clips the window to the writing
+        // source's validity span BEFORE aligning it to buckets, and RollupSourceReference.Clip
+        // requires from < to — which would discard the correction outright. The orchestrator
+        // therefore widens a degenerate window back to one tick before clipping it, so a
+        // single-point correction (the most common shape of a corrected meter reading) still
+        // enqueues exactly the one bucket that contains it.
         fixture.OutputHelper = output;
         var ladder = await BuildLadderAsync("RecSingleTimestamp");
         var correctedBucket = ladder.Anchor.AddHours(1);
         var before = await BucketsAsync(ladder.Rollup, ladder.SeriesX);
+        before[correctedBucket].Should().BeApproximately(LegacyValue, Tolerance,
+            "the bucket carries the seeded legacy value before the correction");
 
         await _builder.InsertPointsAsync(ladder.Legacy, ladder.SeriesX,
             [(correctedBucket.AddMinutes(30), CorrectionValue)]);
@@ -300,13 +300,22 @@ public class RollupMultiSourceRecomputeTests(StreamDataFixture fixture, ITestOut
         windows[0].WindowEnd.Should().Be(windows[0].WindowStart,
             "the one-tick width the detector added does not survive Mongo's millisecond resolution");
 
+        await (await OrchestratorAsync()).PropagateDirtyWindowsAsync(ladder.Legacy, CancellationToken.None);
+
+        var range = (await PendingRangesAsync(ladder.Rollup)).Should().ContainSingle(
+            "the degenerate window is widened to one tick before it is clipped to the legacy span, "
+            + "so it still aligns to exactly one bucket").Subject;
+        range.RangeStart.Should().Be(correctedBucket);
+        range.RangeEnd.Should().Be(correctedBucket.AddHours(1),
+            "exactly the bucket that contains the corrected timestamp — no neighbour is dragged in");
+
         await DrainAsync();
 
-        (await CompletedJobsAsync(ladder.Rollup)).Should().BeEmpty(
-            "the empty window is clipped away before it can become a pending recompute range");
+        (await CompletedJobsAsync(ladder.Rollup)).Should().ContainSingle(
+            "the pending range was recomputed once");
         (await BucketsAsync(ladder.Rollup, ladder.SeriesX))[correctedBucket]
-            .Should().BeApproximately(before[correctedBucket], Tolerance,
-                "the rollup still shows the pre-correction value — the correction is lost");
+            .Should().BeApproximately(LegacyValue + CorrectionValue, Tolerance,
+                "the single-point correction reached the dependent");
     }
 
     // ── ladder + helpers ──────────────────────────────────────────────────────────────────────
@@ -368,8 +377,8 @@ public class RollupMultiSourceRecomputeTests(StreamDataFixture fixture, ITestOut
     /// <summary>
     /// Writes a correction into <paramref name="bucketStart"/>: two late points at distinct
     /// timestamps, so the dirty window the detector records still covers a non-empty interval after
-    /// Mongo's millisecond truncation (see
-    /// <see cref="ASingleTimestampCorrection_IsDroppedBeforeItReachesTheDependent"/>).
+    /// Mongo's millisecond truncation — the degenerate single-timestamp shape is covered separately
+    /// by <see cref="ASingleTimestampCorrection_SchedulesExactlyOneBucketRecomputeOnTheDependent"/>.
     /// </summary>
     private Task WriteLateValuesAsync(
         OctoObjectId archiveRtId, OctoObjectId seriesRtId, DateTime bucketStart, int offsetMinutes = 30) =>

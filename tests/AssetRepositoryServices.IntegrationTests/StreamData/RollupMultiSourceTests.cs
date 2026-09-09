@@ -274,21 +274,21 @@ public class RollupMultiSourceTests(StreamDataFixture fixture, ITestOutputHelper
 
     // ── The AC1 ladder ────────────────────────────────────────────────────────────────────────
     //
-    //   legacy base  ──> legacy daily rung LR ──[validTo 2025-10-01)──┐
-    //                                                                ├──> daily rung D ──> monthly ──> yearly
-    //   native base  ──> hourly rung H       ──[validFrom 2025-10-01)─┘
+    //   legacy daily TIME-RANGE archive ──[validTo 2025-10-01)──┐
+    //                                                           ├──> daily rung D ──> monthly ──> yearly
+    //   native base ──> hourly rung H   ──[validFrom 2025-10-01)┘
+    //
+    // AC1 verbatim: the legacy history is a BASE archive and the native history a ROLLUP, both
+    // sources of one rung declared with a single LOGICAL aggregation spec ("Voltage", Sum). Since
+    // AB#5157 the engine resolves that spec per source — the time-range archive declares the CK
+    // path itself and is read as SUM("voltage"), the hourly rung stores the same logical
+    // aggregation and is read as SUM("voltage_sum"), its own generated target column.
     //
     // Both halves deliberately also hold rows OUTSIDE the span they are authoritative for, so every
     // read of D doubles as the negative proof that a bucket never sees the wrong source. The control
     // ladder (one archive holding the concatenated data + a single-source rung) is built at the SAME
     // grain as D — the two sources differ in grain, so "the concatenated data" can only be expressed
     // at the rung's own resolution.
-    //
-    // AC1 names a legacy TIME-RANGE archive as the pre-cutover source. That exact shape — a base
-    // archive and a rollup as sources of one rung — cannot be activated by the engine today; see
-    // AMixedBaseAndRollupSourceLadder_IsRefusedToday_TheAc1AndSbegBlocker. The ladder therefore puts
-    // a pass-through rung in front of the legacy base; everything else about the scenario is
-    // unchanged (coarse legacy history before the cutover, fine native history after it).
 
     /// <summary>Cutover of the AC1 ladder: legacy is authoritative before, native from here on.</summary>
     private static readonly DateTime Ac1Cutover = new(2025, 10, 1, 0, 0, 0, DateTimeKind.Utc);
@@ -309,7 +309,7 @@ public class RollupMultiSourceTests(StreamDataFixture fixture, ITestOutputHelper
     /// <summary>Legacy daily totals for 2025-09-26 … 2025-09-30, then the two native days (24 × 1.0).</summary>
     private static readonly double[] Ac1DailyValues = [10d, 20d, 30d, 40d, 50d, 24d, 24d];
 
-    /// <summary>The legacy row deliberately written AFTER the legacy source's ValidTo.</summary>
+    /// <summary>The legacy window deliberately written AFTER the legacy source's ValidTo.</summary>
     private static readonly DateTime Ac1PoisonLegacyDay = new(2025, 10, 5, 0, 0, 0, DateTimeKind.Utc);
 
     /// <summary>The native hours deliberately written BEFORE the native source's ValidFrom.</summary>
@@ -325,8 +325,7 @@ public class RollupMultiSourceTests(StreamDataFixture fixture, ITestOutputHelper
 
     /// <summary>The archives of the AC1 ladder, built once for the whole class.</summary>
     private sealed record Ac1Ladder(
-        OctoObjectId LegacyBase,
-        OctoObjectId LegacyDaily,
+        OctoObjectId LegacyWindows,
         OctoObjectId NativeBase,
         OctoObjectId Hourly,
         OctoObjectId Daily,
@@ -384,8 +383,8 @@ public class RollupMultiSourceTests(StreamDataFixture fixture, ITestOutputHelper
         daily[Ac1Cutover]!.Value.Should().BeApproximately(24d, Tolerance,
             "[2025-10-01, 2025-10-02) starts at the cutover and is therefore the native source's");
 
-        // The legacy rung also holds a day well after its ValidTo, and the native rung holds hours
-        // well before its ValidFrom. Neither may reach the daily rung.
+        // The legacy archive also holds a window well after its ValidTo, and the native rung holds
+        // hours well before its ValidFrom. Neither may reach the daily rung.
         daily.Should().NotContainKey(Ac1PoisonLegacyDay,
             "a legacy row outside the legacy span belongs to no bucket — the native source owns that range");
         daily[Ac1PoisonNativeDay]!.Value.Should().BeApproximately(40d, Tolerance,
@@ -394,9 +393,9 @@ public class RollupMultiSourceTests(StreamDataFixture fixture, ITestOutputHelper
         // Both out-of-span rows really are in their source archives — the rung ignores them, it does
         // not merely fail to see missing data.
         (await _builder.ScalarLongAsync(
-                $"SELECT count(*) FROM {_builder.QualifiedTable(ladder.LegacyDaily)} " +
+                $"SELECT count(*) FROM {_builder.QualifiedTable(ladder.LegacyWindows)} " +
                 $"WHERE \"window_start\"::bigint = {ToEpochMs(Ac1PoisonLegacyDay)}"))
-            .Should().Be(1, "the out-of-span legacy day is materialised on the legacy rung");
+            .Should().Be(1, "the out-of-span legacy day is stored in the legacy time-range archive");
         (await _builder.ScalarLongAsync(
                 $"SELECT count(*) FROM {_builder.QualifiedTable(ladder.Hourly)} " +
                 $"WHERE \"window_start\"::bigint >= {ToEpochMs(Ac1PoisonNativeDay)} " +
@@ -483,28 +482,40 @@ public class RollupMultiSourceTests(StreamDataFixture fixture, ITestOutputHelper
     }
 
     [Fact]
-    public async Task TC_AGG_07_EverySourceMustCarryTheAggregatedColumn_AndActivationNamesTheOneThatDoesNot()
+    public async Task TC_AGG_07_OneLogicalSpec_ReadsTheDeclaredColumnOnOneSource_AndTheChildAggregationOnTheOther()
     {
         fixture.OutputHelper = output;
         var ladder = await Ac1Async();
 
-        // One logical aggregation, one physical column name — the engine resolves the aggregation
-        // spec's source column ONCE (RollupAggregationColumns.Resolve) and uses it against every
-        // source, so all sources of a rung must materialise that same name.
+        // The two sources of the daily rung capture the same logical quantity under DIFFERENT
+        // physical column names: the time-range archive declares the CK attribute path (stored as
+        // "voltage"), the hourly rung its own generated aggregate column ("voltage_sum"). One
+        // logical spec ("Voltage", Sum) is resolved against each of them separately.
         var archives = (await TenantAsync()).GetArchiveRuntimeStore();
-        foreach (var source in new[] { ladder.LegacyDaily, ladder.Hourly })
-        {
-            (await archives.GetAsync(source))!.Columns.Select(c => c.Path)
-                .Should().Contain(MultiSourceArchiveBuilder.RollupColumn,
-                    "every source of the daily rung materialises the aggregated column under one name");
-        }
+        var legacyPaths = (await archives.GetAsync(ladder.LegacyWindows))!.Columns.Select(c => c.Path).ToList();
+        legacyPaths.Should().Contain(MultiSourceArchiveBuilder.VoltagePath,
+            "a base archive declares the CK attribute path, read as its storage column 'voltage'");
+        legacyPaths.Should().NotContain(MultiSourceArchiveBuilder.RollupColumn,
+            "a base archive never carries a rollup's generated column name");
 
-        var daily = await _builder.ReadBucketsAsync(ladder.Daily);
-        daily.Should().OnlyContain(b => b.Value != null,
-            "both spans populate the same target column — neither side leaves it empty");
+        var hourlyPaths = (await archives.GetAsync(ladder.Hourly))!.Columns.Select(c => c.Path).ToList();
+        hourlyPaths.Should().Contain(MultiSourceArchiveBuilder.RollupColumn,
+            "a rollup source declares its generated physical columns");
+        hourlyPaths.Should().NotContain(MultiSourceArchiveBuilder.VoltagePath,
+            "…and never the CK path the spec names — which is why the verbatim rule cannot serve it");
 
-        // A source that does not carry the aggregated column is refused at activation, and the
-        // exception names exactly that source.
+        var daily = (await _builder.ReadBucketsAsync(ladder.Daily))
+            .ToDictionary(b => b.WindowStart, b => b.Value);
+
+        daily[Ac1FirstDay]!.Value.Should().BeApproximately(10d, Tolerance,
+            "the legacy day is the time-range archive's own window value, read from 'voltage'");
+        daily[Ac1Cutover]!.Value.Should().BeApproximately(24d, Tolerance,
+            "the native day is the sum of the hourly rung's 24 buckets, read from 'voltage_sum'");
+        daily.Values.Should().OnlyContain(v => v != null,
+            "both spans populate the SAME target column of the rung — neither side leaves it empty");
+
+        // A source that carries neither the declared path nor a matching child aggregation is
+        // refused at activation, and the exception names exactly that source.
         var withColumn = await CreateRawArchiveAsync("PathPresent");
         var withoutColumn = await CreateRawArchiveAsync("PathMissing", "Current");
         var mismatched = await CreateRollupAsync("PathMismatch",
@@ -520,43 +531,95 @@ public class RollupMultiSourceTests(StreamDataFixture fixture, ITestOutputHelper
     }
 
     [Fact]
-    public async Task AMixedBaseAndRollupSourceLadder_IsRefusedToday_TheAc1AndSbegBlocker()
+    public async Task AMixedBaseAndRollupSourceLadder_Activates_AndEqualsTheSingleSourceEquivalent()
     {
         // AB#5157 AC1 ("legacy daily time-range archive + hourly rollup") and the sbeg scenario
         // ("legacy quarterly time-range archive + monthly rollup") both declare ONE base archive and
         // ONE rollup as the sources of a rung. A base archive declares its columns by CK attribute
         // path (PascalCase, case-sensitively validated against the model at activation); a rollup
         // declares its columns by their PHYSICAL storage name, which the column generator always
-        // lower-cases. The activation validator compares the aggregation's SourcePath against those
-        // declared names ORDINALLY, so no single spec can satisfy both sources — even though both
-        // tables would carry a compatible physical column. This test pins the current behaviour; the
-        // fix belongs in the engine (compare resolved physical column names, not declared paths).
+        // lower-cases. Since AB#5157 the rung's aggregation spec stays LOGICAL and is resolved per
+        // source: verbatim against the base archive's declared path, and against the rollup through
+        // its own child aggregation with the same function and normalised path. Before that fix no
+        // single spec could satisfy both source kinds and this shape could not be activated at all.
         fixture.OutputHelper = output;
+        var series = OctoObjectId.GenerateNewId();
+        var day0 = new DateTime(2026, 2, 2, 0, 0, 0, DateTimeKind.Utc);
+        var cutover = day0.AddDays(2);
+        var end = day0.AddDays(4);
+
+        // Legacy half: a daily TIME-RANGE archive declaring the CK path, with one window past its
+        // ValidTo that the native source owns.
         var legacy = await _builder.CreateTimeRangeArchiveAsync("MixedLegacy", TimeSpan.FromDays(1));
+        await _builder.InsertWindowsAsync(legacy, series,
+        [
+            (day0, day0.AddDays(1), 10d),
+            (day0.AddDays(1), cutover, 20d),
+            (cutover, cutover.AddDays(1), 999d),
+        ]);
+
+        // Native half: a raw archive with an hourly rung over it — 24 buckets of 1.0 per day.
         var nativeBase = await CreateRawArchiveAsync("MixedNativeBase");
+        await _builder.InsertPointsAsync(nativeBase, series,
+            Enumerable.Range(0, 48).Select(i => (cutover.AddHours(i), 1d)));
         var hourly = await _builder.CreateRollupAsync("MixedHourly",
             [new RollupSourceReference(nativeBase)], OneHour);
         await ActivateAsync(hourly);
+        await _builder.RecomputeAsync(hourly, cutover, end);
 
         var mixed = await _builder.CreateRollupAsync("MixedDaily",
             [
-                new RollupSourceReference(legacy, ValidTo: Ac1Cutover),
-                new RollupSourceReference(hourly, ValidFrom: Ac1Cutover),
+                new RollupSourceReference(legacy, ValidTo: cutover),
+                new RollupSourceReference(hourly, ValidFrom: cutover),
             ],
-            TimeSpan.FromDays(1), bucketAlignment: BucketAlignment.CalendarDay);
+            TimeSpan.FromDays(1), MultiSourceArchiveBuilder.LogicalSum, BucketAlignment.CalendarDay);
 
-        var act = async () => await ActivateAsync(mixed);
-        var thrown = (await act.Should().ThrowAsync<RollupSourcePathMissingException>(
-            "the rollup source does not declare the base archive's CK path")).Which;
-        thrown.Message.Should().Contain(hourly.ToString());
-        thrown.Message.Should().Contain(MultiSourceArchiveBuilder.VoltagePath);
+        await ActivateAsync(mixed);
+        (await LoadRollupAsync(mixed)).Status.Should().Be(CkArchiveStatus.Activated,
+            "one logical spec resolves on the base archive verbatim and on the rollup through its "
+            + "own child aggregation — the AC1 and sbeg shape activates");
 
-        // The mirror image: aggregating the rollup's physical column instead makes the BASE archive
-        // the offender — the two source kinds cannot be satisfied at the same time.
+        await _builder.RecomputeAsync(mixed, day0, end);
+
+        // The single-source equivalent: ONE archive holding the concatenated daily totals, rolled
+        // up at the same grain.
+        var expected = new[] { 10d, 20d, 24d, 24d };
+        var controlBase = await CreateRawArchiveAsync("MixedControlBase");
+        await _builder.InsertPointsAsync(controlBase, series,
+            expected.Select((value, i) => (day0.AddDays(i).AddHours(12), value)));
+        var control = await _builder.CreateRollupAsync("MixedControlDaily",
+            [new RollupSourceReference(controlBase)], TimeSpan.FromDays(1),
+            bucketAlignment: BucketAlignment.CalendarDay);
+        await ActivateAsync(control);
+        await _builder.RecomputeAsync(control, day0, end);
+
+        var buckets = await _builder.ReadBucketsAsync(mixed);
+        buckets.Select(b => b.WindowStart).Should().Equal(
+            [day0, day0.AddDays(1), cutover, cutover.AddDays(1)],
+            "one continuous series across the cutover — neither a gap nor a duplicate");
+
+        var controlBuckets = await _builder.ReadBucketsAsync(control);
+        controlBuckets.Select(b => b.WindowStart).Should().Equal(buckets.Select(b => b.WindowStart));
+        for (var i = 0; i < expected.Length; i++)
+        {
+            buckets[i].Value!.Value.Should().BeApproximately(expected[i], Tolerance);
+            buckets[i].Value!.Value.Should().BeApproximately(controlBuckets[i].Value!.Value, Tolerance,
+                "a mixed base + rollup rung equals a single-source rung over the concatenated data");
+        }
+
+        buckets[1].Value!.Value.Should().BeApproximately(20d, Tolerance,
+            "the bucket that ENDS at the cutover reads ONLY the legacy archive — ValidTo is exclusive");
+        buckets[2].Value!.Value.Should().BeApproximately(24d, Tolerance,
+            "the bucket that STARTS at the cutover reads ONLY the native rollup — the legacy window "
+            + "written into that day (999) never reaches it");
+
+        // The mirror image: a PHYSICAL-name spec still resolves on a rollup source only. The base
+        // archive declares no such column and has no child aggregation to fall back on, so the
+        // chained style cannot serve a mixed rung — the exception names the base archive.
         var mirrored = await _builder.CreateRollupAsync("MixedDailyMirrored",
             [
-                new RollupSourceReference(legacy, ValidTo: Ac1Cutover),
-                new RollupSourceReference(hourly, ValidFrom: Ac1Cutover),
+                new RollupSourceReference(legacy, ValidTo: cutover),
+                new RollupSourceReference(hourly, ValidFrom: cutover),
             ],
             TimeSpan.FromDays(1), MultiSourceArchiveBuilder.CascadeSum, BucketAlignment.CalendarDay);
 
@@ -838,7 +901,8 @@ public class RollupMultiSourceTests(StreamDataFixture fixture, ITestOutputHelper
 
         // Legacy quarterly totals: a time-range archive whose declared Period is the NATURAL 92 d
         // nominal quarter — the value an operator reads off the existing sbeg archive. A calendar
-        // quarter accepts it because 92 d does not exceed the alignment's longest bucket.
+        // quarter accepts it because 92 d does not exceed the alignment's longest bucket. It is the
+        // pre-cutover source of the quarterly rung DIRECTLY — no rung in between.
         var legacyQuarterly = await _builder.CreateTimeRangeArchiveAsync(
             "SbegLegacyQuarterly", TimeSpan.FromDays(92));
         await _builder.InsertWindowsAsync(legacyQuarterly, series,
@@ -847,11 +911,6 @@ public class RollupMultiSourceTests(StreamDataFixture fixture, ITestOutputHelper
             (q2Start, q3Start, 200d),
             (q3Start, q4Start, 300d),
         ]);
-        var legacyQuarterRung = await _builder.CreateRollupAsync("SbegLegacyRung",
-            [new RollupSourceReference(legacyQuarterly)], TimeSpan.FromDays(92),
-            bucketAlignment: BucketAlignment.CalendarQuarter);
-        await ActivateAsync(legacyQuarterRung);
-        await _builder.RecomputeAsync(legacyQuarterRung, yearStart, q4Start);
 
         // Native side: a base archive with the NATURAL 28 d monthly rung on top. A calendar month
         // nests inside a calendar quarter, so no synthetic bucket size is needed there either.
@@ -869,13 +928,15 @@ public class RollupMultiSourceTests(StreamDataFixture fixture, ITestOutputHelper
         await _builder.RecomputeAsync(monthly, q4Start, yearEnd);
 
         // The quarterly rung activates with those natural values — 92 d legacy quarters and 28 d
-        // months both nest inside a calendar quarter.
+        // months both nest inside a calendar quarter — and with ONE logical aggregation spec that
+        // resolves verbatim on the legacy archive and through the child aggregation on the monthly
+        // rung.
         var quarterly = await _builder.CreateRollupAsync("SbegQuarterly",
             [
-                new RollupSourceReference(legacyQuarterRung, ValidTo: q4Start),
+                new RollupSourceReference(legacyQuarterly, ValidTo: q4Start),
                 new RollupSourceReference(monthly, ValidFrom: q4Start),
             ],
-            TimeSpan.FromDays(92), MultiSourceArchiveBuilder.CascadeSum, BucketAlignment.CalendarQuarter);
+            TimeSpan.FromDays(92), MultiSourceArchiveBuilder.LogicalSum, BucketAlignment.CalendarQuarter);
         await ActivateAsync(quarterly);
         (await LoadRollupAsync(quarterly)).Status.Should().Be(CkArchiveStatus.Activated,
             "the sbeg cutover shape activates with the sources' natural periods — nothing is re-declared");
@@ -887,7 +948,8 @@ public class RollupMultiSourceTests(StreamDataFixture fixture, ITestOutputHelper
             "Q1–Q3 come from the legacy quarterly history, Q4 from the three fully contained months");
 
         // TC-E2E-04: the yearly rung is re-sourced from the quarterly rung and therefore inherits
-        // the legacy history without knowing about it.
+        // the legacy history without knowing about it. Its single rollup source lets it keep the
+        // pre-AB#5157 chained style — the physical column name, resolved verbatim.
         var yearly = await _builder.CreateRollupAsync("SbegYearly",
             [new RollupSourceReference(quarterly)], TimeSpan.FromDays(365),
             MultiSourceArchiveBuilder.CascadeSum, BucketAlignment.CalendarYear);
@@ -926,18 +988,16 @@ public class RollupMultiSourceTests(StreamDataFixture fixture, ITestOutputHelper
     {
         var series = OctoObjectId.GenerateNewId();
 
-        // ── legacy: one daily total per day, plus one day past the legacy source's ValidTo ──
-        var legacyBase = await CreateRawArchiveAsync("Ac1LegacyBase");
-        var legacyPoints = Enumerable.Range(0, 5)
-            .Select(i => (Ac1FirstDay.AddDays(i).AddHours(12), Ac1DailyValues[i]))
-            .Append((Ac1PoisonLegacyDay.AddHours(12), 999d));
-        await _builder.InsertPointsAsync(legacyBase, series, legacyPoints);
-
-        var legacyDaily = await _builder.CreateRollupAsync("Ac1LegacyDaily",
-            [new RollupSourceReference(legacyBase)], TimeSpan.FromDays(1),
-            bucketAlignment: BucketAlignment.CalendarDay);
-        await ActivateAsync(legacyDaily);
-        await _builder.RecomputeAsync(legacyDaily, Ac1FirstDay, Ac1PoisonLegacyDay.AddDays(1));
+        // ── legacy: a daily TIME-RANGE archive — one window per day, plus one window past the
+        //    legacy source's ValidTo. It declares the CK path "Voltage" (a base archive never
+        //    carries a rollup's physical column names), which is exactly what makes this the AC1
+        //    shape: the rung's logical spec has to resolve differently on each source.
+        var legacyWindows = await _builder.CreateTimeRangeArchiveAsync(
+            "Ac1LegacyWindows", TimeSpan.FromDays(1));
+        var legacyWindowRows = Enumerable.Range(0, 5)
+            .Select(i => (Ac1FirstDay.AddDays(i), Ac1FirstDay.AddDays(i + 1), Ac1DailyValues[i]))
+            .Append((Ac1PoisonLegacyDay, Ac1PoisonLegacyDay.AddDays(1), 999d));
+        await _builder.InsertWindowsAsync(legacyWindows, series, legacyWindowRows);
 
         // ── native: hourly points for two days, plus two hours before the native ValidFrom ──
         var nativeBase = await CreateRawArchiveAsync("Ac1NativeBase");
@@ -951,12 +1011,14 @@ public class RollupMultiSourceTests(StreamDataFixture fixture, ITestOutputHelper
         await ActivateAsync(hourly);
         await _builder.RecomputeAsync(hourly, Ac1PoisonNativeDay, Ac1NativeEnd);
 
+        // ONE logical spec for both sources: verbatim on the time-range archive, through the child
+        // aggregation on the hourly rung.
         var daily = await _builder.CreateRollupAsync("Ac1Daily",
             [
-                new RollupSourceReference(legacyDaily, ValidTo: Ac1Cutover),
+                new RollupSourceReference(legacyWindows, ValidTo: Ac1Cutover),
                 new RollupSourceReference(hourly, ValidFrom: Ac1Cutover),
             ],
-            TimeSpan.FromDays(1), MultiSourceArchiveBuilder.CascadeSum, BucketAlignment.CalendarDay);
+            TimeSpan.FromDays(1), MultiSourceArchiveBuilder.LogicalSum, BucketAlignment.CalendarDay);
         await ActivateAsync(daily);
         await _builder.RecomputeAsync(daily, Ac1FirstDay, Ac1PoisonLegacyDay.AddDays(1));
 
@@ -986,7 +1048,7 @@ public class RollupMultiSourceTests(StreamDataFixture fixture, ITestOutputHelper
         await ActivateAsync(controlDaily);
         await _builder.RecomputeAsync(controlDaily, Ac1FirstDay, Ac1PoisonLegacyDay.AddDays(1));
 
-        return new Ac1Ladder(legacyBase, legacyDaily, nativeBase, hourly, daily, monthly, yearly,
+        return new Ac1Ladder(legacyWindows, nativeBase, hourly, daily, monthly, yearly,
             controlBase, controlDaily, series);
     }
 

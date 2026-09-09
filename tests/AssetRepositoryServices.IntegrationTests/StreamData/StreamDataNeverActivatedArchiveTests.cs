@@ -1,11 +1,17 @@
+using FakeItEasy;
 using FluentAssertions;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Collections;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Fixtures;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.StreamData.Controllers;
 using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.ConstructionKit.Models.StreamData.Generated.System.StreamData.v1;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb;
 using Meshmakers.Octo.Runtime.Contracts.RepositoryEntities;
 using Meshmakers.Octo.Runtime.Contracts.StreamData;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging.Abstractions;
 using Npgsql;
 using Xunit;
 
@@ -190,6 +196,68 @@ public class StreamDataNeverActivatedArchiveTests(StreamDataFixture fixture, ITe
             activatedRungs.Should().ContainSingle().Which.AvailableFrom.Should().BeNull();
 
             (await ListTablesAsync(childTenantId)).Should().Equal(new[] { $"archive_{activatedRtId}" },
+                "a coverage probe must not provision anything");
+        }
+        finally
+        {
+            await DropChildIfExistingAsync(childTenantId);
+        }
+    }
+
+    [Fact]
+    public async Task ATenantWithoutACrateDbSchema_ReportsNullCoverage_OverTheServiceAndTheRestEndpoint()
+    {
+        // AB#5157 E3, the other half of the fact above: coverage is a MIN/MAX probe over the
+        // archive table. On a tenant where NO archive was ever activated CrateDB has not even
+        // created the schema, so the probe raises "XX000: Schema <tenant> unknown" instead of the
+        // RelationUnknown (42P01) of a missing table inside an existing schema. Both probes must
+        // read that as "no table" too, otherwise a freshly seeded tenant — every greenfield
+        // EnergyCommunity install before its first activation — answers the coverage query with an
+        // error instead of null/null.
+        fixture.OutputHelper = output;
+        const string childTenantId = "ab5157noschema";
+        await CreateChildAsync(childTenantId);
+
+        try
+        {
+            var child = await PrepareChildAsync(childTenantId);
+            var archiveRtId = await SeedDisabledRawArchiveAsync(child, "SchemaLessCoverageArchive");
+
+            (await ListTablesAsync(childTenantId)).Should().BeEmpty(
+                "nothing of this tenant was ever activated — CrateDB holds no schema for it at all");
+
+            var coverageService = child.GetArchiveFamilyCoverageService();
+            coverageService.Should().NotBeNull("stream data is enabled on the child");
+
+            var rungs = await coverageService!.GetFamilyCoverageAsync(
+                archiveRtId, TestContext.Current.CancellationToken);
+
+            var rung = rungs.Should().ContainSingle("the archive has no dependents").Subject;
+            rung.ArchiveRtId.Should().Be(archiveRtId);
+            rung.RtWellKnownName.Should().Be("SchemaLessCoverageArchive");
+            rung.IsBase.Should().BeTrue();
+            rung.Status.Should().Be(CkArchiveStatus.Disabled, "the rung reports the status, not the table");
+            rung.AvailableFrom.Should().BeNull("an unknown schema reads as 'no table', not as an error");
+            rung.AvailableTo.Should().BeNull();
+
+            // The same answer over the REST endpoint the CLI and the studio call.
+            var controller = new StreamDataController(
+                NullLogger<StreamDataController>.Instance, fixture.GetSystemContext(),
+                A.Fake<IHostApplicationLifetime>())
+            {
+                ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() },
+            };
+
+            var response = await controller.GetArchiveCoverage(childTenantId, archiveRtId.ToString());
+            var ok = response.Result.Should().BeOfType<OkObjectResult>().Subject;
+            var dtos = ok.Value.Should().BeAssignableTo<IReadOnlyList<ArchiveCoverageRestDto>>().Subject;
+            var dto = dtos.Should().ContainSingle().Subject;
+            dto.ArchiveRtId.Should().Be(archiveRtId.ToString());
+            dto.AvailableFrom.Should().BeNull(
+                "the endpoint answers 200 with a null-coverage rung instead of surfacing XX000");
+            dto.AvailableTo.Should().BeNull();
+
+            (await ListTablesAsync(childTenantId)).Should().BeEmpty(
                 "a coverage probe must not provision anything");
         }
         finally

@@ -34,17 +34,29 @@ internal sealed class MultiSourceArchiveBuilder(StreamDataFixture fixture)
     public const string BaseColumn = "voltage";
 
     /// <summary>
-    /// The physical aggregate column every rung in these ladders materialises. A rollup source
-    /// carries its storage column names as its declared paths, so a rung ABOVE a rollup aggregates
-    /// this name, and a multi-source rung requires the SAME name on every one of its sources — see
-    /// <see cref="CascadeSum"/>.
+    /// The physical aggregate column every rung in these ladders materialises — the generated
+    /// target column of a SUM over <see cref="VoltagePath"/>. A rollup source carries its storage
+    /// column names as its declared paths, so this is also the name a rung ABOVE a rollup can
+    /// address verbatim (see <see cref="CascadeSum"/>).
     /// </summary>
     public const string RollupColumn = "voltage_sum";
 
     /// <summary>
-    /// The aggregation a rung uses when its sources are themselves rollups: it reads the rollups'
-    /// physical aggregate column and materialises it again under the same name, so the ladder keeps
-    /// one stable column all the way up.
+    /// The LOGICAL aggregation of these ladders: SUM over the CK path <see cref="VoltagePath"/>,
+    /// materialised as <see cref="RollupColumn"/>. Since AB#5157 the engine resolves such a spec
+    /// per source — a base archive (raw or time-range) declares <see cref="VoltagePath"/> verbatim
+    /// and is read as <c>SUM("voltage")</c>, while a rollup source storing the same logical
+    /// aggregation is read as <c>SUM("voltage_sum")</c>, its own target column. It is therefore the
+    /// spec a rung mixing a base archive and a rollup declares (AC1, the sbeg quarter ladder).
+    /// </summary>
+    public static IReadOnlyList<CkRollupAggregationSpec> LogicalSum { get; } =
+        [new CkRollupAggregationSpec(VoltagePath, CkRollupFunction.Sum, null)];
+
+    /// <summary>
+    /// The pre-AB#5157 chained style, still valid and still exercised: a rung whose sources are
+    /// themselves rollups may name the rollups' PHYSICAL aggregate column and materialise it again
+    /// under the same name. It only resolves on a rollup source — a base archive declares CK paths,
+    /// never storage names.
     /// </summary>
     public static IReadOnlyList<CkRollupAggregationSpec> CascadeSum { get; } =
         [new CkRollupAggregationSpec(RollupColumn, CkRollupFunction.Sum, RollupColumn)];

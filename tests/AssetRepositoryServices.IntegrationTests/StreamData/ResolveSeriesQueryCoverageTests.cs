@@ -7,6 +7,7 @@ using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.Runtime.Contracts.StreamData;
 using Newtonsoft.Json.Linq;
 using Xunit;
+using Formatting = Newtonsoft.Json.Formatting;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.StreamData;
 
@@ -177,34 +178,111 @@ public class ResolveSeriesQueryCoverageTests(StreamDataFixture fixture, ITestOut
         result["finerRungAvailableFrom"]!.Type.Should().Be(JTokenType.Null);
     }
 
-    // ── TC-E2E-08: coverage and resolution over the cutover ladder ───────────────────────────
+    // ── TC-E2E-08: coverage and resolution over the AC1 cutover ladder ───────────────────────
+    //
+    // legacy 6 h TIME-RANGE archive ──[validTo cutover)──┐
+    //                                                     ├──> 12 h rung D
+    // native base ──> hourly rung H  ──[validFrom cutover)┘
+    //
+    // AC1 verbatim: the legacy history is the TIME-RANGE archive itself and the native history a
+    // rollup, both sources of one rung under a single LOGICAL aggregation spec ("Voltage", Sum) —
+    // resolved per source since AB#5157 (the declared CK path here, the hourly rung's own
+    // 'voltage_sum' there). Coarse legacy history before the cutover, fine native after it.
 
     [Fact]
-    public async Task TC_E2E_08_OverTheCutoverLadder_CoverageAndResolutionAgree()
+    public async Task TC_E2E_08_OverTheCutoverLadder_EveryRungReportsItsOwnMeasuredCoverage()
     {
         fixture.OutputHelper = output;
+        var ladder = await CutoverLadderAsync();
 
-        // legacy base ──> legacy 6 h rung ──[validTo cutover)──┐
-        //                                                      ├──> 12 h rung D
-        // native base ──> hourly rung H    ──[validFrom cutover)┘
-        //
-        // AC1 names the legacy TIME-RANGE archive itself as the pre-cutover source; the engine
-        // cannot activate a rung mixing a base archive and a rollup today (see
-        // RollupMultiSourceTests.AMixedBaseAndRollupSourceLadder_IsRefusedToday_TheAc1AndSbegBlocker),
-        // so the ladder puts a pass-through rung in front of the legacy history. Nothing else about
-        // the scenario changes: coarse legacy history before the cutover, fine native history after.
+        var coverage = await ExecuteAsync(@"
+            query ($rtId: OctoObjectId!) {
+              streamData {
+                coverageFor(rtId: $rtId) {
+                  archiveRtId bucketSizeMs availableFrom availableTo
+                }
+              }
+            }", new { rtId = ladder.NativeBase.ToString() });
+
+        var rungs = (JArray)JObject.Parse(fixture.SerializeGraphQl(coverage))
+            .SelectToken("data.streamData.coverageFor")!;
+        rungs.Select(r => r["archiveRtId"]!.Value<string>()).Should().Equal(
+            new[] { ladder.NativeBase.ToString(), ladder.Hourly.ToString(), ladder.Daily.ToString() },
+            "the queried base first, then its transitive dependents breadth-first");
+
+        rungs[1]["availableFrom"]!.Value<DateTime>().Should().Be(ladder.Cutover,
+            "the hourly rung only exists from the cutover");
+        rungs[1]["availableTo"]!.Value<DateTime>().Should().Be(ladder.End);
+        rungs[2]["availableFrom"]!.Value<DateTime>().Should().Be(ladder.Anchor,
+            "the multi-source rung reaches back to the start of the legacy history — before its own "
+            + "base archive holds anything");
+        rungs[2]["availableTo"]!.Value<DateTime>().Should().Be(ladder.End);
+        rungs[2]["bucketSizeMs"]!.Value<long>().Should().Be(TwelveHoursMs);
+    }
+
+    [Fact]
+    public async Task TC_E2E_08_OverTheCutoverLadder_ResolutionPicksTheRungThatCoversTheRequestedStart()
+    {
+        fixture.OutputHelper = output;
+        var ladder = await CutoverLadderAsync();
+
+        // resolveSeriesQuery over a range starting in the legacy era: only the 12 h rung holds
+        // anything there, so it must be the answer even though it is coarser than requested.
+        var result = await ResolveAsync(ladder.NativeBase, ladder.Anchor, ladder.End, targetPoints: 24);
+        var resolved = result.ToString(Formatting.None);
+
+        result["archiveRtId"]!.Value<string>().Should().Be(ladder.Daily.ToString(),
+            "only the multi-source rung covers the requested start; resolveSeriesQuery answered {0}",
+            resolved);
+        result["signal"]!.Value<string>().Should().Be("COVERAGE_LIMITED");
+        result["effectiveBucketMs"]!.Value<long>().Should().Be(TwelveHoursMs);
+        result["actualPoints"]!.Value<int>().Should().Be(2,
+            "24 h of history at the 12 h grain of the covering rung");
+        result["finerRungAvailableFrom"]!.Value<DateTime>().Should().Be(ladder.Cutover);
+        result["diagnostic"]!.Value<string>().Should()
+            .Contain(ladder.Hourly.ToString(), "the excluded rung is the hourly one")
+            .And.Contain(ladder.Cutover.ToString("O"), "…named together with its available-from");
+    }
+
+    // ── helpers ──────────────────────────────────────────────────────────────────────────────
+
+    /// <summary>The archives of the AC1 cutover ladder, built once for the whole class.</summary>
+    private sealed record CutoverLadder(
+        OctoObjectId LegacyWindows,
+        OctoObjectId NativeBase,
+        OctoObjectId Hourly,
+        OctoObjectId Daily,
+        DateTime Anchor,
+        DateTime Cutover,
+        DateTime End);
+
+    private static readonly SemaphoreSlim CutoverGate = new(1, 1);
+    private static CutoverLadder? _cutoverLadder;
+
+    private async Task<CutoverLadder> CutoverLadderAsync()
+    {
+        await CutoverGate.WaitAsync();
+        try
+        {
+            return _cutoverLadder ??= await BuildCutoverLadderAsync();
+        }
+        finally
+        {
+            CutoverGate.Release();
+        }
+    }
+
+    private async Task<CutoverLadder> BuildCutoverLadderAsync()
+    {
         var anchor = new DateTime(2026, 8, 1, 0, 0, 0, DateTimeKind.Utc);
         var cutover = anchor.AddHours(12);
         var end = anchor.AddHours(24);
         var series = OctoObjectId.GenerateNewId();
 
-        var legacyBase = await _builder.CreateRawArchiveAsync("E2E08LegacyBase");
-        await _builder.InsertPointsAsync(legacyBase, series,
-            Enumerable.Range(0, 12).Select(i => (anchor.AddHours(i), 10d)));
-        var legacyRung = await _builder.CreateRollupAsync(
-            "E2E08LegacyRung", [new RollupSourceReference(legacyBase)], SixHours);
-        await _builder.ActivateAsync(legacyRung);
-        await _builder.RecomputeAsync(legacyRung, anchor, cutover);
+        var legacyWindows = await _builder.CreateTimeRangeArchiveAsync("E2E08LegacyWindows", SixHours);
+        await _builder.InsertWindowsAsync(legacyWindows, series,
+            Enumerable.Range(0, 2).Select(i =>
+                (anchor.Add(SixHours * i), anchor.Add(SixHours * (i + 1)), 60d)));
 
         var nativeBase = await _builder.CreateRawArchiveAsync("E2E08NativeBase");
         await _builder.InsertPointsAsync(nativeBase, series,
@@ -216,54 +294,15 @@ public class ResolveSeriesQueryCoverageTests(StreamDataFixture fixture, ITestOut
 
         var daily = await _builder.CreateRollupAsync("E2E08Daily",
             [
-                new RollupSourceReference(legacyRung, ValidTo: cutover),
+                new RollupSourceReference(legacyWindows, ValidTo: cutover),
                 new RollupSourceReference(hourly, ValidFrom: cutover),
             ],
-            TimeSpan.FromHours(12), MultiSourceArchiveBuilder.CascadeSum);
+            TimeSpan.FromHours(12), MultiSourceArchiveBuilder.LogicalSum);
         await _builder.ActivateAsync(daily);
         await _builder.RecomputeAsync(daily, anchor, end);
 
-        // ── 1. family coverage of the native base, over GraphQL ──
-        var coverage = await ExecuteAsync(@"
-            query ($rtId: OctoObjectId!) {
-              streamData {
-                coverageFor(rtId: $rtId) {
-                  archiveRtId bucketSizeMs availableFrom availableTo
-                }
-              }
-            }", new { rtId = nativeBase.ToString() });
-
-        var rungs = (JArray)JObject.Parse(fixture.SerializeGraphQl(coverage))
-            .SelectToken("data.streamData.coverageFor")!;
-        rungs.Select(r => r["archiveRtId"]!.Value<string>()).Should().Equal(
-            new[] { nativeBase.ToString(), hourly.ToString(), daily.ToString() },
-            "the queried base first, then its transitive dependents breadth-first");
-
-        rungs[1]["availableFrom"]!.Value<DateTime>().Should().Be(cutover,
-            "the hourly rung only exists from the cutover");
-        rungs[1]["availableTo"]!.Value<DateTime>().Should().Be(end);
-        rungs[2]["availableFrom"]!.Value<DateTime>().Should().Be(anchor,
-            "the multi-source rung reaches back to the start of the legacy history — before its own "
-            + "base archive holds anything");
-        rungs[2]["availableTo"]!.Value<DateTime>().Should().Be(end);
-        rungs[2]["bucketSizeMs"]!.Value<long>().Should().Be(TwelveHoursMs);
-
-        // ── 2. resolveSeriesQuery over a range starting in the legacy era ──
-        var result = await ResolveAsync(nativeBase, anchor, end, targetPoints: 24);
-
-        result["archiveRtId"]!.Value<string>().Should().Be(daily.ToString(),
-            "only the multi-source rung covers the requested start");
-        result["signal"]!.Value<string>().Should().Be("COVERAGE_LIMITED");
-        result["effectiveBucketMs"]!.Value<long>().Should().Be(TwelveHoursMs);
-        result["actualPoints"]!.Value<int>().Should().Be(2,
-            "24 h of history at the 12 h grain of the covering rung");
-        result["finerRungAvailableFrom"]!.Value<DateTime>().Should().Be(cutover);
-        result["diagnostic"]!.Value<string>().Should()
-            .Contain(hourly.ToString(), "the excluded rung is the hourly one")
-            .And.Contain(cutover.ToString("O"), "…named together with its available-from");
+        return new CutoverLadder(legacyWindows, nativeBase, hourly, daily, anchor, cutover, end);
     }
-
-    // ── helpers ──────────────────────────────────────────────────────────────────────────────
 
     /// <summary>
     /// Builds the coverage ladder once for the whole class: a raw base holding one hourly point per
