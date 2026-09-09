@@ -1,6 +1,6 @@
 using Asp.Versioning;
 
-using IdentityModel;
+using Duende.IdentityModel;
 
 using Meshmakers.Octo.Backend.AssetRepositoryServices.DataTransferObjects.Diagnostics;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects.ApiErrors;

@@ -1,6 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 using Asp.Versioning;
-using IdentityModel;
+using Duende.IdentityModel;
 using Meshmakers.Common.Shared;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.Services;
 using Meshmakers.Octo.Common.DistributionEventHub.Services;
@@ -167,6 +167,80 @@ public class TenantsController : ControllerBase
             await session.CommitTransactionAsync();
 
             return Ok(result.Items.Select(CreateTenantDto));
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(StatusCodes.Status500InternalServerError, new InternalServerErrorDto(ex.Message));
+        }
+    }
+
+    // GET {tenantId}/v1/tenants/descendants
+    /// <summary>
+    ///     Returns EVERY descendant tenant of the current tenant — children, grandchildren
+    ///     and so on — each entry carrying its <see cref="TenantDto.ParentTenantId" /> so the
+    ///     caller sees the tree (AB#5151). The tree is established by WALKING the child
+    ///     tenant contexts level by level rather than reading any single registry: the system
+    ///     tenant's database doubles as the global registry and holds deeper descendants
+    ///     too, so a flat registry read cannot distinguish children from grandchildren.
+    ///     Deliberately a separate route (not a query flag on the child listing), so a
+    ///     caller against an older service fails loudly with 404 instead of silently
+    ///     receiving only the direct children.
+    /// </summary>
+    [HttpGet("descendants")]
+    [Authorize(AssetRepositoryServiceConstants.TenantAssetApiReadOnlyPolicy)]
+    [ProducesResponseType(typeof(IEnumerable<TenantDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(OperationFailedErrorDto), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(InternalServerErrorDto), StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> GetDescendants()
+    {
+        try
+        {
+            var tenantId = HttpContext.GetTenantId();
+            var tenantContext = await GetTenantContextAsync();
+            if (tenantContext == null || string.IsNullOrEmpty(tenantId))
+            {
+                return BadRequest(new OperationFailedErrorDto("TenantId is required"));
+            }
+
+            var result = new List<TenantDto>();
+            // Guards against registry cycles (a corrupted registry must degrade to a
+            // partial listing, never to an endless walk) and against a tenant reachable
+            // through two paths being listed twice.
+            var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { tenantId };
+            var queue = new Queue<(ITenantContext Context, string TenantId)>();
+            queue.Enqueue((tenantContext, tenantId));
+
+            while (queue.Count > 0)
+            {
+                var (context, parentId) = queue.Dequeue();
+
+                using var session = await context.GetAdminSessionAsync();
+                session.StartTransaction();
+                var children = await context.GetDirectChildTenantsAsync(session);
+                await session.CommitTransactionAsync();
+
+                foreach (var child in children.Items)
+                {
+                    if (!visited.Add(child.TenantId))
+                    {
+                        continue;
+                    }
+
+                    var dto = CreateTenantDto(child);
+                    dto.ParentTenantId = parentId;
+                    result.Add(dto);
+
+                    // A child whose context cannot be resolved (e.g. mid-creation or
+                    // mid-delete) is listed but its subtree is not walked.
+                    var childContext = await context.TryGetChildTenantContextAsync(child.TenantId);
+                    if (childContext != null)
+                    {
+                        queue.Enqueue((childContext, child.TenantId));
+                    }
+                }
+            }
+
+            return Ok(result);
         }
         catch (Exception ex)
         {

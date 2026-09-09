@@ -5,6 +5,7 @@
         <RootNamespace>Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests</RootNamespace>
         <IsPackable>false</IsPackable>
         <IsTestProject>true</IsTestProject>
+        <OutputType>Exe</OutputType>
         <Configurations>Debug;Release;DebugL</Configurations>
         <Platforms>AnyCPU</Platforms>
     </PropertyGroup>
@@ -16,13 +17,8 @@
         <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="10.0.11" />
         <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.9.0" />
         <PackageReference Include="Testcontainers.MongoDb" Version="4.14.0" />
-        <!-- Testcontainers pulls SSH.NET 2025.1.0 transitively, which is flagged by
-             NuGet audit (GHSA-q939-rpr3-3284, high). Pin the patched 2026.0.0 here
-             until Testcontainers bumps its own dependency (merged upstream, ships
-             with 4.14.0); then this line can be removed. -->
-        <PackageReference Include="SSH.NET" Version="2026.0.0" />
         <PackageReference Include="FluentAssertions" Version="8.10.0" />
-        <PackageReference Include="xunit.runner.visualstudio" Version="3.1.5">
+        <PackageReference Include="xunit.runner.visualstudio" Version="4.0.0">
             <PrivateAssets>all</PrivateAssets>
             <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
         </PackageReference>
@@ -30,7 +26,7 @@
             <PrivateAssets>all</PrivateAssets>
             <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
         </PackageReference>
-        <PackageReference Include="xunit.v3" Version="3.2.2" />
+        <PackageReference Include="xunit.v3.mtp-off" Version="4.0.0" />
     </ItemGroup>
 
     <ItemGroup>

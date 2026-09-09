@@ -10,7 +10,21 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Fixtu
 public abstract class ConfigurationFixture : ServiceCollectionFixture
 {
     private readonly IntegrationTestConfiguration _configuration;
-    public string SystemDatabaseName => "AssetRepoIntegrationTests".ToLower();
+
+    /// <summary>
+    /// Unique per fixture instance so unrelated fixtures can share one MongoDB server
+    /// (<see cref="SharedMongoDbContainer" />) without colliding on the same database (AB#5118).
+    /// </summary>
+    public string SystemDatabaseName { get; } = $"assetrepointegrationtests{Guid.NewGuid():N}";
+
+    /// <summary>
+    /// Same idea for the CrateDB side (AB#5118): stream data is isolated by schema and
+    /// <c>TenantSchema.SchemaName</c> derives that schema from the tenant id, so a per-fixture
+    /// system tenant id gives every fixture its own schema on the one shared CrateDB container.
+    /// Must stay purely alphanumeric - the stream-data tests embed the tenant id verbatim as the
+    /// schema identifier of their <c>REFRESH TABLE</c> statements.
+    /// </summary>
+    public string SystemTenantId { get; } = $"octosystem{Guid.NewGuid():N}";
 
     protected ConfigurationFixture()
     {
