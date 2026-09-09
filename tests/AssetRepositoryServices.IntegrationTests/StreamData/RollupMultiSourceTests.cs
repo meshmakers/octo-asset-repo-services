@@ -963,6 +963,85 @@ public class RollupMultiSourceTests(StreamDataFixture fixture, ITestOutputHelper
             "2025 = Q1 + Q2 + Q3 (legacy) + Q4 (native)");
     }
 
+    // AB#5157 review: a calendar-aligned rung must be readable through the DOWNSAMPLING path (the
+    // line chart), not only the direct table read. Calendar quarters are 90/91/92 days, so a
+    // fixed-width DATE_BIN axis derived from the advisory 92 d bucket size drifts off the stored
+    // windows and the §7 fully-contained predicate drops every one — the chart reads empty. Binning
+    // on window_start keeps each calendar window as its own bin. UTC alignment keeps the expected
+    // boundaries on clean quarter dates while still exercising the unequal-width geometry.
+    [Fact]
+    public async Task TC_E2E_10_CalendarQuarterRung_DownsamplesOntoItsCalendarWindows_NotEmpty()
+    {
+        fixture.OutputHelper = output;
+        var yearStart = new DateTime(2025, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+        var q2 = new DateTime(2025, 4, 1, 0, 0, 0, DateTimeKind.Utc);
+        var q3 = new DateTime(2025, 7, 1, 0, 0, 0, DateTimeKind.Utc);
+        var q4 = new DateTime(2025, 10, 1, 0, 0, 0, DateTimeKind.Utc);
+        var yearEnd = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+        var series = OctoObjectId.GenerateNewId();
+
+        var baseArchive = await CreateRawArchiveAsync("CalQuarterBase");
+        await _builder.InsertPointsAsync(baseArchive, series,
+        [
+            (yearStart.AddDays(10), 100d),
+            (q2.AddDays(10), 200d),
+            (q3.AddDays(10), 300d),
+            (q4.AddDays(10), 400d),
+        ]);
+        var quarterly = await _builder.CreateRollupAsync("CalQuarterly",
+            [new RollupSourceReference(baseArchive)], TimeSpan.FromDays(92),
+            bucketAlignment: BucketAlignment.CalendarQuarter);
+        await ActivateAsync(quarterly);
+        await _builder.RecomputeAsync(quarterly, yearStart, yearEnd);
+
+        // Sanity: the stored table holds the four calendar-quarter windows.
+        var stored = await _builder.ReadBucketsAsync(quarterly, seriesRtId: series);
+        stored.Select(b => b.WindowStart).Should().Equal([yearStart, q2, q3, q4]);
+        stored.Select(b => b.Value!.Value).Should().Equal([100d, 200d, 300d, 400d]);
+
+        // The chart path: downsampling the whole year with a pixel-sized target must return the four
+        // quarter bins, not an empty result.
+        var binned = await _builder.DownsampleAsync(quarterly, yearStart, yearEnd, targetPoints: 600, seriesRtId: series);
+        var populated = binned.Where(b => b.Value is not null).ToList();
+        populated.Select(b => b.Timestamp).Should().Equal([yearStart, q2, q3, q4],
+            "each calendar quarter is its own bin, landing on the stored window_start");
+        populated.Select(b => b.Value!.Value).Should().Equal([100d, 200d, 300d, 400d]);
+    }
+
+    // The zoned path #5 depends on: a calendar rung whose reference zone is Europe/Vienna. The bin
+    // axis is computed in that zone, so it must agree with the stored (zone-derived) window_start
+    // instants across a DST change. October 2025 is CEST (+2), November CET (+1) — the two month
+    // starts sit at different UTC offsets. If the C#-side axis and the CrateDB rows disagreed by an
+    // hour the populated bins would fall off the axis and read empty.
+    [Fact]
+    public async Task TC_E2E_11_CalendarMonthRung_InAZone_DownsamplesAcrossDst()
+    {
+        fixture.OutputHelper = output;
+        const string vienna = "Europe/Vienna";
+        var oct = new DateTime(2025, 9, 30, 22, 0, 0, DateTimeKind.Utc);  // 2025-10-01 00:00 Vienna (CEST)
+        var nov = new DateTime(2025, 10, 31, 23, 0, 0, DateTimeKind.Utc); // 2025-11-01 00:00 Vienna (CET)
+        var dec = new DateTime(2025, 11, 30, 23, 0, 0, DateTimeKind.Utc); // 2025-12-01 00:00 Vienna (CET)
+        var series = OctoObjectId.GenerateNewId();
+
+        var baseArchive = await CreateRawArchiveAsync("CalMonthDstBase");
+        await _builder.InsertPointsAsync(baseArchive, series,
+        [
+            (oct.AddDays(5), 10d),
+            (nov.AddDays(5), 20d),
+        ]);
+        var monthly = await _builder.CreateRollupAsync("CalMonthDst",
+            [new RollupSourceReference(baseArchive)], TimeSpan.FromDays(28),
+            bucketAlignment: BucketAlignment.CalendarMonth, referenceTimeZone: vienna);
+        await ActivateAsync(monthly);
+        await _builder.RecomputeAsync(monthly, oct, dec);
+
+        var binned = await _builder.DownsampleAsync(monthly, oct, dec, targetPoints: 600, seriesRtId: series);
+        var populated = binned.Where(b => b.Value is not null).ToList();
+        populated.Select(b => b.Timestamp).Should().Equal([oct, nov],
+            "the October (CEST) and November (CET) Vienna months are their own bins across the DST change");
+        populated.Select(b => b.Value!.Value).Should().Equal([10d, 20d]);
+    }
+
     #endregion
 
     // ── aggregation helpers ───────────────────────────────────────────────────────────────────

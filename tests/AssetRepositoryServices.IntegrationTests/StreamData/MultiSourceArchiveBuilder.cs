@@ -1,8 +1,10 @@
 using System.Globalization;
+using System.Linq;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Fixtures;
 using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.ConstructionKit.Models.StreamData.Generated.System.StreamData.v1;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb;
+using Meshmakers.Octo.Runtime.Contracts.Repositories.Query;
 using Meshmakers.Octo.Runtime.Contracts.RepositoryEntities;
 using Meshmakers.Octo.Runtime.Contracts.StreamData;
 using Npgsql;
@@ -296,6 +298,41 @@ internal sealed class MultiSourceArchiveBuilder(StreamDataFixture fixture)
         }
 
         return buckets;
+    }
+
+    /// <summary>
+    /// Reads a rollup rung through the DOWNSAMPLING path (the line-chart path) targeting
+    /// <paramref name="targetPoints"/> bins over <c>[from, to)</c>, returning the bins ascending with
+    /// the aggregation value (null for an empty bin). Unlike <see cref="ReadBucketsAsync"/> — which
+    /// reads the stored table directly — this exercises <c>CrateDbStreamDataRepository</c>'s bin
+    /// geometry, so it is what proves a calendar-aligned rung downsamples onto its own calendar
+    /// windows instead of an empty chart (AB#5157 review).
+    /// </summary>
+    public async Task<IReadOnlyList<(DateTime Timestamp, double? Value)>> DownsampleAsync(
+        OctoObjectId rollupRtId, DateTime from, DateTime to, int targetPoints,
+        string sourcePath = VoltagePath, string column = RollupColumn, OctoObjectId? seriesRtId = null)
+    {
+        await RefreshAsync(rollupRtId);
+        var repo = (await TenantAsync()).GetStreamDataRepository()!;
+        var options = StreamDataDownsamplingQueryOptions.Create()
+            .WithCkTypeId(new RtCkId<CkTypeId>(fixture.TestCkTypeId))
+            .WithAggregationColumns([new AggregationColumn(sourcePath, AggregationFunction.Sum)])
+            .WithTimeRange(from, to)
+            .WithLimit(targetPoints);
+        if (seriesRtId is not null)
+        {
+            options = options.WithRtIds([seriesRtId.Value]);
+        }
+
+        var result = await repo.ExecuteDownsamplingQueryAsync(rollupRtId, options);
+        return result.Rows
+            .Select(r => (
+                r.Timestamp!.Value,
+                r.Values.TryGetValue(column, out var v) && v is not null
+                    ? Convert.ToDouble(v, CultureInfo.InvariantCulture)
+                    : (double?)null))
+            .OrderBy(r => r.Item1)
+            .ToList();
     }
 
     /// <summary>Executes one statement against CrateDB (DDL / DML / REFRESH).</summary>
