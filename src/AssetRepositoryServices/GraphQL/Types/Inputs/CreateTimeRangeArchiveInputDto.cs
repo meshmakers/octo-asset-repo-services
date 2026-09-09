@@ -13,7 +13,7 @@ internal sealed class CreateTimeRangeArchiveInputDto
     public string? RtWellKnownName { get; set; }
     public string TargetCkTypeId { get; set; } = string.Empty;
     public List<ArchiveColumnSpecInputDto> Columns { get; set; } = new();
-    public int? PeriodMs { get; set; }
+    public long? PeriodMs { get; set; }
 }
 
 /// <summary>
