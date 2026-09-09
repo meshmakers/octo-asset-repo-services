@@ -27,3 +27,6 @@ types:
   - id: ${this}/Current
     name: Current
     isOptional: true
+  - id: ${this}/IsEstimated
+    name: IsEstimated
+    isOptional: true

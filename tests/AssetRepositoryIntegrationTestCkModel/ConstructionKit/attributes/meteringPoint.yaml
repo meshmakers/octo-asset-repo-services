@@ -22,3 +22,6 @@ attributes:
     valueType: Double
   - id: Current
     valueType: Double
+  # Boolean stream data attribute (AB#5185 time-range REST insert typing test)
+  - id: IsEstimated
+    valueType: Boolean
