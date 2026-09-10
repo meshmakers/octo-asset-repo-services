@@ -455,13 +455,28 @@ public class StreamDataController : ControllerBase
         }
 
         var expected = snapshot.TargetCkTypeId;
+
+        // An archive whose target type is not populated gives nothing to judge the batch against,
+        // and RtCkId's own accessors throw on such a value rather than reporting it as empty. Skip
+        // the guard instead of failing the insert on its diagnostic — this only decides whether a
+        // batch is refused early, never whether the rows are written correctly.
+        string expectedName;
+        try
+        {
+            expectedName = expected.ToString();
+        }
+        catch (Exception e) when (e is NullReferenceException or ArgumentException)
+        {
+            return (null, Array.Empty<string>());
+        }
+
         var values = points
             .Select(p => p.CkTypeId)
             .Where(id => !MatchesTarget(id, expected))
             .Distinct(StringComparer.Ordinal)
             .ToList();
 
-        return (expected.ToString(), values);
+        return (expectedName, values);
     }
 
     /// <summary>
@@ -544,7 +559,7 @@ public class StreamDataController : ControllerBase
     [HttpGet("archives/{archiveRtId}/coverage")]
     [Microsoft.AspNetCore.Authorization.Authorize(AssetRepositoryServiceConstants.TenantAssetApiReadOnlyPolicy)]
     public async Task<ActionResult<IReadOnlyList<ArchiveCoverageRestDto>>> GetArchiveCoverage(
-        [Required] string tenantId, [Required] string archiveRtId)
+        [Required] string tenantId, [Required] string archiveRtId, CancellationToken cancellationToken = default)
     {
         try
         {
@@ -555,8 +570,11 @@ public class StreamDataController : ControllerBase
                 return Ok(Array.Empty<ArchiveCoverageRestDto>());
             }
 
+            // Bound by the framework to HttpContext.RequestAborted, which keeps the probe tied to the
+            // caller without dereferencing HttpContext — it is null whenever the action runs outside
+            // a request pipeline.
             var rungs = await coverageService.GetFamilyCoverageAsync(
-                new OctoObjectId(archiveRtId), HttpContext.RequestAborted);
+                new OctoObjectId(archiveRtId), cancellationToken);
             return Ok(rungs.Select(ArchiveCoverageRestDto.From).ToList());
         }
         catch (ConfigurationException e)

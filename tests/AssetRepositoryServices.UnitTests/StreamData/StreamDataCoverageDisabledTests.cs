@@ -44,7 +44,8 @@ public class StreamDataCoverageDisabledTests
             systemContext,
             A.Fake<IHostApplicationLifetime>());
 
-        var result = await controller.GetArchiveCoverage(TenantId, OctoObjectId.GenerateNewId().ToString());
+        var result = await controller.GetArchiveCoverage(
+            TenantId, OctoObjectId.GenerateNewId().ToString(), TestContext.Current.CancellationToken);
 
         result.Result.Should().BeOfType<OkObjectResult>()
             .Which.Value.Should().BeAssignableTo<IEnumerable<ArchiveCoverageRestDto>>()

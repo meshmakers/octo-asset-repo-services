@@ -428,13 +428,12 @@ internal sealed class StreamDataMutation : ObjectGraphType
         try
         {
             var input = ctx.GetArgument<CreateRollupArchiveInputDto>("input");
-            var sources = BuildRollupSources(input);
-            _logger.LogDebug(
-                "Rollup Create requested for {SourceCount} source(s) [{SourceRtIds}] ({AggregationCount} aggregations)",
-                sources.Count, string.Join(", ", sources.Select(s => s.SourceArchiveRtId)), input.Aggregations.Count);
 
             var gql = (GraphQlUserContext)ctx.UserContext;
-            // Same role guard as the other rollup mutations.
+            // Same role guard as the other rollup mutations, and like them it comes before any
+            // work on the input: normalising the sources validates them and reports precisely what
+            // is wrong, which a caller without the role has no business learning — and the debug
+            // line below would put their source ids in the log.
             if (gql.User?.IsInRole(CommonConstants.StreamDataAdminRole) != true)
             {
                 ctx.Errors.Add(new ExecutionError(
@@ -444,6 +443,11 @@ internal sealed class StreamDataMutation : ObjectGraphType
                 });
                 return null;
             }
+
+            var sources = BuildRollupSources(input);
+            _logger.LogDebug(
+                "Rollup Create requested for {SourceCount} source(s) [{SourceRtIds}] ({AggregationCount} aggregations)",
+                sources.Count, string.Join(", ", sources.Select(s => s.SourceArchiveRtId)), input.Aggregations.Count);
 
             var lifecycle = gql.TenantContext.GetRollupArchiveLifecycleService()
                 ?? throw AssetRepositoryException.StreamDataNotAvailable();

@@ -248,7 +248,8 @@ public class StreamDataNeverActivatedArchiveTests(StreamDataFixture fixture, ITe
                 ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() },
             };
 
-            var response = await controller.GetArchiveCoverage(childTenantId, archiveRtId.ToString());
+            var response = await controller.GetArchiveCoverage(
+                childTenantId, archiveRtId.ToString(), TestContext.Current.CancellationToken);
             var ok = response.Result.Should().BeOfType<OkObjectResult>().Subject;
             var dtos = ok.Value.Should().BeAssignableTo<IReadOnlyList<ArchiveCoverageRestDto>>().Subject;
             var dto = dtos.Should().ContainSingle().Subject;

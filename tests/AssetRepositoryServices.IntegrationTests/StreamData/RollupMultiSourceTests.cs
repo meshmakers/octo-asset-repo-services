@@ -149,7 +149,8 @@ public class RollupMultiSourceTests(StreamDataFixture fixture, ITestOutputHelper
         // ---- REST ----
         var controller = NewController();
         var rest = OkValue<IReadOnlyList<ArchiveCoverageRestDto>>(
-            await controller.GetArchiveCoverage(fixture.StreamDataTenantId, source.ToString()));
+            await controller.GetArchiveCoverage(
+                fixture.StreamDataTenantId, source.ToString(), TestContext.Current.CancellationToken));
 
         rest.Should().HaveCount(2, "the queried archive comes first, then its transitive dependents");
         var baseRung = rest[0];
@@ -202,7 +203,8 @@ public class RollupMultiSourceTests(StreamDataFixture fixture, ITestOutputHelper
 
         var rest = OkValue<IReadOnlyList<ArchiveCoverageRestDto>>(
             await controller.GetArchiveCoverage(
-                fixture.StreamDataTenantId, OctoObjectId.GenerateNewId().ToString()));
+                fixture.StreamDataTenantId, OctoObjectId.GenerateNewId().ToString(),
+                TestContext.Current.CancellationToken));
 
         rest.Should().BeEmpty("an unknown rtId is an empty family, not an error");
     }
