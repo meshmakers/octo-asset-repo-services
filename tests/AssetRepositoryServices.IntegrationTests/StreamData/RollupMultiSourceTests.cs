@@ -1042,6 +1042,48 @@ public class RollupMultiSourceTests(StreamDataFixture fixture, ITestOutputHelper
         populated.Select(b => b.Value!.Value).Should().Equal([10d, 20d]);
     }
 
+    // AB#5157 review, the other half of the same defect: the bin axis must be the ENGINE's business
+    // for a fixed-size rung too. The line chart used to pre-align the window itself, because the
+    // engine binned from whatever start it was handed and a window that does not sit on the grain
+    // makes every bin straddle two stored hourly windows, so §7 drops them all and the chart reads
+    // blank. A client cannot do that alignment correctly — neither the grain nor the rung's
+    // alignment is part of the query contract — so the engine now snaps its own axis origin down to
+    // the grain. A window starting mid-hour must therefore read exactly like the aligned one.
+    [Fact]
+    public async Task TC_E2E_12_FixedSizeRung_DownsampledFromAnUnalignedWindow_ReadsLikeTheAlignedOne()
+    {
+        fixture.OutputHelper = output;
+        var day = new DateTime(2026, 3, 4, 0, 0, 0, DateTimeKind.Utc);
+        var end = day.AddHours(6);
+        var series = OctoObjectId.GenerateNewId();
+
+        var baseArchive = await CreateRawArchiveAsync("UnalignedBase");
+        await _builder.InsertPointsAsync(baseArchive, series,
+            Enumerable.Range(0, 6).Select(h => (day.AddHours(h).AddMinutes(30), (double)(h + 1))));
+        var hourly = await _builder.CreateRollupAsync("UnalignedHourly",
+            [new RollupSourceReference(baseArchive)], TimeSpan.FromHours(1));
+        await ActivateAsync(hourly);
+        await _builder.RecomputeAsync(hourly, day, end);
+
+        var aligned = await _builder.DownsampleAsync(hourly, day, end, targetPoints: 600, seriesRtId: series);
+        var alignedPopulated = aligned.Where(b => b.Value is not null).ToList();
+        alignedPopulated.Select(b => b.Timestamp).Should()
+            .Equal(Enumerable.Range(0, 6).Select(h => day.AddHours(h)));
+        alignedPopulated.Select(b => b.Value!.Value).Should().Equal([1d, 2d, 3d, 4d, 5d, 6d]);
+
+        // The window a relative "last N hours" filter produces: an arbitrary sub-grain instant.
+        var unaligned = await _builder.DownsampleAsync(
+            hourly, day.AddMinutes(42).AddSeconds(54), end, targetPoints: 600, seriesRtId: series);
+        var unalignedPopulated = unaligned.Where(b => b.Value is not null).ToList();
+
+        unalignedPopulated.Select(b => b.Timestamp).Should()
+            .Equal(alignedPopulated.Select(b => b.Timestamp),
+                "the engine snaps the axis down to the grain, so the bins land on the stored windows");
+        unalignedPopulated.Select(b => b.Value!.Value).Should()
+            .Equal(alignedPopulated.Select(b => b.Value!.Value),
+                "and each bin still covers a whole source window, including the one the request starts inside");
+    }
+
     #endregion
 
     // ── aggregation helpers ───────────────────────────────────────────────────────────────────
