@@ -233,7 +233,7 @@ public class TimeWeightedAggregationTests(StreamDataFixture fixture, ITestOutput
 
         var dailyRtId = await rollupLifecycle.CreateAsync(
             $"TwaCascadeDaily{Guid.NewGuid():N}",
-            setup.RollupRtId,
+            [new RollupSourceReference(setup.RollupRtId)],
             TimeSpan.FromDays(1),
             TimeSpan.Zero,
             new[]
@@ -326,7 +326,7 @@ public class TimeWeightedAggregationTests(StreamDataFixture fixture, ITestOutput
         var rollupLifecycle = tenantContext.GetRollupArchiveLifecycleService()!;
         var rollupRtId = await rollupLifecycle.CreateAsync(
             $"{namePrefix}Rollup{Guid.NewGuid():N}",
-            archive.RtId,
+            [new RollupSourceReference(archive.RtId)],
             OneHour,
             TimeSpan.Zero,
             new[]

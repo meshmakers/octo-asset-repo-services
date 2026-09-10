@@ -106,6 +106,12 @@ try
     builder.Services.Configure<Meshmakers.Octo.Runtime.Engine.MongoDb.StreamData.RecomputeOrchestratorOptions>(
         builder.Configuration.GetSection("StreamData:Recompute"));
 
+    // Bind archive coverage options (AB#5157) so the StreamData:Coverage config section can override
+    // the measured-coverage cache TTL (CacheTtlSeconds, default 60) used by the resolver's coverage
+    // filter, the coverageFor GraphQL query and the REST coverage endpoint.
+    builder.Services.Configure<Meshmakers.Octo.Runtime.Engine.CrateDb.Configuration.ArchiveCoverageOptions>(
+        builder.Configuration.GetSection("StreamData:Coverage"));
+
     // Asset-repo is a multi-tenant pod: the default ConfigBasedRollupTenantSource only sees
     // tenants explicitly listed in StreamData:Rollup.TenantIds, which would force operators to
     // hand-maintain that list every time a tenant is provisioned. Replace it with the dynamic

@@ -12,14 +12,29 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Inputs;
 internal sealed class CreateRollupArchiveInputDto
 {
     public string? RtWellKnownName { get; set; }
-    public OctoObjectId SourceArchiveRtId { get; set; }
+
+    /// <summary>
+    /// Deprecated single-source form (AB#5157). When set, it is translated into exactly one
+    /// unbounded <see cref="RollupSourceReference"/>. Mutually exclusive with <see cref="Sources"/>:
+    /// the resolver rejects the payload when both or neither are supplied.
+    /// </summary>
+    public OctoObjectId? SourceArchiveRtId { get; set; }
+
+    /// <summary>
+    /// Multi-source declaration (AB#5157): one or more source archives, each with an optional
+    /// validity span (<c>ValidFrom</c> inclusive, <c>ValidTo</c> exclusive). The lifecycle service
+    /// validates the span rules, the target-type / path compatibility and the transitive cycle
+    /// check before inserting.
+    /// </summary>
+    public List<CreateRollupSourceInputDto>? Sources { get; set; }
+
     public long BucketSizeMs { get; set; }
     public long WatermarkLagMs { get; set; }
 
     /// <summary>
     /// Bucket-boundary alignment (AB#4300). Defaults to <see cref="BucketAlignment.FixedSize"/> so
     /// existing callers that omit it keep the legacy fixed-window behaviour. Calendar variants make
-    /// day / week / month / year rollups expressible and are the only ones for which
+    /// day / week / month / quarter / year rollups expressible and are the only ones for which
     /// <see cref="ReferenceTimeZone"/> has any effect.
     /// </summary>
     public BucketAlignment BucketAlignment { get; set; } = BucketAlignment.FixedSize;
@@ -40,6 +55,21 @@ internal sealed class CreateRollupArchiveInputDto
     public long? CarryLookbackMs { get; set; }
 
     public List<RollupAggregationInputDto> Aggregations { get; set; } = new();
+}
+
+/// <summary>
+/// One source declaration of a multi-source rollup (AB#5157). Mirrors
+/// <see cref="RollupSourceReference"/>: the source archive plus an optional half-open validity span.
+/// </summary>
+internal sealed class CreateRollupSourceInputDto
+{
+    public OctoObjectId SourceArchiveRtId { get; set; }
+
+    /// <summary>Inclusive start of the validity span; null = unbounded towards the past.</summary>
+    public DateTime? ValidFrom { get; set; }
+
+    /// <summary>Exclusive end of the validity span; null = unbounded towards the future.</summary>
+    public DateTime? ValidTo { get; set; }
 }
 
 internal sealed class RollupAggregationInputDto

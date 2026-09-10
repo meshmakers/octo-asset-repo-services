@@ -28,9 +28,14 @@ internal sealed class RollupArchiveInfoDtoType : ObjectGraphType<RollupArchiveIn
             .Description("Current lifecycle status: Created / Activated / Disabled / Failed.")
             .Resolve(ctx => ctx.Source!.Status.ToString());
 
-        Field<NonNullGraphType<OctoObjectIdType>>("sourceArchiveRtId")
-            .Description("Runtime id of the source archive this rollup aggregates from.")
+        Field<OctoObjectIdType>("sourceArchiveRtId")
+            .Description("DEPRECATED: runtime id of the single source archive. Non-null only when the rollup declares exactly one unbounded source; null for multi-source rollups and for a single source carrying a validity span. Read 'sources' instead.")
+            .DeprecationReason("Use 'sources' (AB#5157): a rollup can aggregate from several source archives with validity spans.")
             .Resolve(ctx => ctx.Source!.SourceArchiveRtId);
+
+        Field<NonNullGraphType<ListGraphType<NonNullGraphType<RollupSourceInfoDtoType>>>>("sources")
+            .Description("Source archives of this rollup (AB#5157), each with its half-open validity span [validFrom, validTo). The authoritative source declaration.")
+            .Resolve(ctx => ctx.Source!.Sources);
 
         Field<NonNullGraphType<LongGraphType>>("bucketSizeMs")
             .Description("Bucket width in milliseconds.")
@@ -83,7 +88,7 @@ internal sealed class RollupArchiveInfoDtoType : ObjectGraphType<RollupArchiveIn
 
         // ---------- Resolution-aware series routing metadata (AB#4290) ----------
         Field<NonNullGraphType<StringGraphType>>("bucketAlignment")
-            .Description("Bucket-boundary alignment: FixedSize / CalendarDay / Iso8601Week / CalendarMonth / CalendarYear.")
+            .Description("Bucket-boundary alignment: FixedSize / CalendarDay / Iso8601Week / CalendarMonth / CalendarQuarter / CalendarYear.")
             .Resolve(ctx => ctx.Source!.BucketAlignment);
 
         Field<StringGraphType>("referenceTimeZone")
@@ -115,5 +120,31 @@ internal sealed class RollupAggregationInfoDtoType : ObjectGraphType<RollupAggre
         Field<NonNullGraphType<StringGraphType>>("function")
             .Description("Stored aggregation function (Avg / Min / Max / Sum / Count).")
             .Resolve(ctx => ctx.Source!.Function);
+    }
+}
+
+/// <summary>
+/// GraphQL projection of <see cref="RollupSourceInfoDto"/> — one source archive of a rollup with its
+/// validity span (AB#5157), surfaced in <c>rollupsFor</c>.
+/// </summary>
+// ReSharper disable once ClassNeverInstantiated.Global
+internal sealed class RollupSourceInfoDtoType : ObjectGraphType<RollupSourceInfoDto>
+{
+    public RollupSourceInfoDtoType()
+    {
+        Name = "RollupSourceInfo";
+        Description = "One source archive of a rollup plus its half-open validity span. validFrom inclusive, validTo exclusive; null = unbounded in that direction.";
+
+        Field<NonNullGraphType<OctoObjectIdType>>("sourceArchiveRtId")
+            .Description("Runtime id of the source archive (raw CkArchive, TimeRangeArchive or another CkRollupArchive).")
+            .Resolve(ctx => ctx.Source!.SourceArchiveRtId);
+
+        Field<UtcDateTimeGraphType>("validFrom")
+            .Description("Inclusive start of the validity span. Null = the source is authoritative for all buckets before validTo.")
+            .Resolve(ctx => ctx.Source!.ValidFrom);
+
+        Field<UtcDateTimeGraphType>("validTo")
+            .Description("Exclusive end of the validity span. Null = the source is authoritative for all buckets from validFrom onwards.")
+            .Resolve(ctx => ctx.Source!.ValidTo);
     }
 }
