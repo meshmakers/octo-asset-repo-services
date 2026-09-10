@@ -13,10 +13,11 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Strea
 /// AB#5189 item B — against a REAL CrateDB: a recompute must not claim a bucket the forward
 /// aggregation is still refreshing, because the recompute's generation pointer outranks the forward
 /// pass's generation-0 write on the read path. The forward pass keeps re-writing a bucket until
-/// <c>bucketEnd &lt;= now - WatermarkLag</c> (AB#4306); the recompute stops at the start of the
-/// bucket containing <c>now</c>, ignoring the lag. Every bucket in between belongs to both, and the
-/// recompute's value wins permanently — so the late data the watermark lag exists to absorb never
-/// reaches the series.
+/// <c>bucketEnd &lt;= now - WatermarkLag</c> (AB#4306). Before the fix the recompute stopped at the
+/// start of the bucket containing <c>now</c>, ignoring the lag: every bucket in between belonged to
+/// both, the recompute's value won permanently, and the late data the watermark lag exists to
+/// absorb never reached the series. The recompute now caps at <c>now - WatermarkLag</c>; this test
+/// is the CrateDB-level proof that the late point lands.
 /// </summary>
 [Collection(StreamDataCollection.Name)]
 public class RollupRecomputeOpenBucketOwnershipTests(StreamDataFixture fixture, ITestOutputHelper output)
