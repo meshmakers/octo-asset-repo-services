@@ -91,6 +91,54 @@ public class StreamDataInsertTimeRangeRestTests(StreamDataFixture fixture, ITest
         }
     }
 
+    /// <summary>
+    /// AB#5157 validation finding 4: a batch whose <c>ckTypeId</c> is not the archive's target used
+    /// to answer 204 with nothing written — the repository drops those rows by design and said so
+    /// only at DEBUG level. The usual trigger is the VERSIONED id, which parses fine and simply
+    /// never matches. The endpoint now refuses the batch and names both ids.
+    /// </summary>
+    [Fact]
+    public async Task InsertTimeRange_VersionedCkTypeId_IsRefusedInsteadOfSilentlyDroppingEveryPoint()
+    {
+        fixture.OutputHelper = output;
+        const string childTenantId = "ab5157restckid";
+        await CreateChildAsync(childTenantId);
+
+        try
+        {
+            var child = await PrepareChildAsync(childTenantId);
+            var archiveRtId = await CreateAndActivateTimeRangeArchiveAsync(child);
+
+            var parts = fixture.TestCkTypeId.Split('/');
+            var versioned = $"{parts[0]}-1.0.0/{parts[1]}-1";
+            var body = $$"""
+                [{
+                  "rtId": "{{OctoObjectId.GenerateNewId()}}",
+                  "ckTypeId": "{{versioned}}",
+                  "from": "{{WindowStart:O}}",
+                  "to": "{{WindowEnd:O}}",
+                  "attributes": { "MeterReading": 4711 }
+                }]
+                """;
+            var points = JsonSerializer.Deserialize<IReadOnlyList<InsertTimeRangePointRestDto>>(body, MvcBodyOptions)
+                ?? throw new InvalidOperationException("The body deserialized to null.");
+            var controller = new StreamDataController(
+                A.Fake<ILogger<StreamDataController>>(), fixture.GetSystemContext(), A.Fake<IHostApplicationLifetime>());
+
+            var result = await controller.InsertTimeRange(childTenantId, archiveRtId.ToString(), points);
+
+            var message = result.Should().BeOfType<BadRequestObjectResult>().Which.Value.Should().BeOfType<string>().Subject;
+            message.Should().Contain(versioned, "the caller must see what it sent");
+            message.Should().Contain(fixture.TestCkTypeId, "…next to what the archive actually captures");
+
+            (await CountRowsAsync(childTenantId, archiveRtId)).Should().Be(0, "the batch was refused, not partially applied");
+        }
+        finally
+        {
+            await DropChildIfExistingAsync(childTenantId);
+        }
+    }
+
     // ── helpers ───────────────────────────────────────────────────────────────────────────────
 
     /// <summary>Enables stream data on the child and imports the test CK model.</summary>
@@ -159,6 +207,21 @@ public class StreamDataInsertTimeRangeRestTests(StreamDataFixture fixture, ITest
 
         (await reader.ReadAsync()).Should().BeFalse("exactly one window was posted");
         return row;
+    }
+
+    /// <summary>Row count of the archive table after a refresh — 0 when a batch was refused.</summary>
+    private async Task<long> CountRowsAsync(string schema, OctoObjectId archiveRtId)
+    {
+        var table = $"\"{schema}\".\"archive_{archiveRtId}\"";
+        await using var connection = new NpgsqlConnection(fixture.CrateDbConnectionString);
+        await connection.OpenAsync();
+        await using (var refresh = new NpgsqlCommand($"REFRESH TABLE {table}", connection))
+        {
+            await refresh.ExecuteNonQueryAsync();
+        }
+
+        await using var count = new NpgsqlCommand($"SELECT COUNT(*) FROM {table}", connection);
+        return Convert.ToInt64(await count.ExecuteScalarAsync());
     }
 
     private static async Task<List<IReadOnlyDictionary<string, object?>>> ExportAllAsync(

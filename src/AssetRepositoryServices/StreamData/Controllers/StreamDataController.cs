@@ -385,6 +385,22 @@ public class StreamDataController : ControllerBase
                 ?? throw new StreamDataException(
                     $"StreamData is not enabled for tenant '{tenantId}'. Call POST /streamdata/enable first.");
 
+            // A per-archive table holds exactly one CkType, so the repository drops every row whose
+            // CkTypeId is not the archive's target. That is the right behaviour for the pipeline's
+            // multi-archive batches, but on this single-archive endpoint every such row is a caller
+            // mistake — and the drop is silent, so the call answered 204 with nothing written. The
+            // usual cause is sending the VERSIONED id ('Model-1.0.0/Type-1') where an RtCkId is
+            // expected ('Model/Type'): it parses, it just never matches. Refuse the batch here and
+            // name both sides (AB#5157 validation finding 4).
+            var mismatched = await FindMismatchedCkTypeIdsAsync(tenantContext, archiveRtId, points);
+            if (mismatched is { Expected: { } expected, Values.Count: > 0 })
+            {
+                return BadRequest(
+                    $"Archive '{archiveRtId}' captures '{expected}'. The batch carries " +
+                    $"{string.Join(", ", mismatched.Values.Select(v => $"'{v}'"))}, whose rows would all be " +
+                    "discarded. Send the ckTypeId in its unversioned form, e.g. 'Model/Type'.");
+            }
+
             var domainPoints = points.Select(p => new TimeRangeStreamDataPoint
             {
                 RtId = new OctoObjectId(p.RtId),
@@ -414,6 +430,55 @@ public class StreamDataController : ControllerBase
             // Covers the To <= From validation and the non-time-range archive guard in
             // CrateDbStreamDataRepository.InsertTimeRangeAsync.
             return BadRequest(e.Message);
+        }
+    }
+
+    /// <summary>
+    /// The distinct <c>ckTypeId</c> values in an insert batch that are not the archive's target,
+    /// together with the target itself. <c>Expected</c> is <c>null</c> when the archive cannot be
+    /// read here — the repository then reports the real problem (unknown archive, not activated,
+    /// stream data disabled) with its own message.
+    /// </summary>
+    private static async Task<(string? Expected, IReadOnlyList<string> Values)> FindMismatchedCkTypeIdsAsync(
+        ITenantContext tenantContext, string archiveRtId, IReadOnlyList<InsertTimeRangePointRestDto> points)
+    {
+        var store = tenantContext.GetArchiveRuntimeStore();
+        if (store is null)
+        {
+            return (null, Array.Empty<string>());
+        }
+
+        var snapshot = await store.GetAsync(new OctoObjectId(archiveRtId));
+        if (snapshot is null)
+        {
+            return (null, Array.Empty<string>());
+        }
+
+        var expected = snapshot.TargetCkTypeId;
+        var values = points
+            .Select(p => p.CkTypeId)
+            .Where(id => !MatchesTarget(id, expected))
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+
+        return (expected.ToString(), values);
+    }
+
+    /// <summary>
+    /// Whether a wire <c>ckTypeId</c> denotes <paramref name="expected"/>, decided by exactly the
+    /// <see cref="RtCkId{T}"/> equality the repository filters on — a string comparison here could
+    /// reject a value the repository would have accepted. A malformed id counts as a mismatch so it
+    /// is reported alongside the others instead of surfacing as a bare parse error.
+    /// </summary>
+    private static bool MatchesTarget(string ckTypeId, RtCkId<CkTypeId> expected)
+    {
+        try
+        {
+            return new RtCkId<CkTypeId>(ckTypeId).Equals(expected);
+        }
+        catch (ArgumentException)
+        {
+            return false;
         }
     }
 
