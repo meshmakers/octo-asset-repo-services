@@ -43,7 +43,7 @@ public class RollupColumnsSelfHealTests(StreamDataFixture fixture, ITestOutputHe
         // update to produce the exact AB#4771 seed-defect shape.
         var rollupRtId = await rollupLifecycle.CreateAsync(
             rtWellKnownName: "SelfHealSeededRollup",
-            sourceArchiveRtId: fixture.ArchiveRtId,
+            sources: [new RollupSourceReference(fixture.ArchiveRtId)],
             bucketSize: TimeSpan.FromMinutes(5),
             watermarkLag: TimeSpan.Zero,
             aggregations: new[]
@@ -116,7 +116,7 @@ public class RollupColumnsSelfHealTests(StreamDataFixture fixture, ITestOutputHe
         // Properly created rollup (columns persisted by the API path)…
         var rollupRtId = await rollupLifecycle.CreateAsync(
             rtWellKnownName: "SelfHealComputedRollup",
-            sourceArchiveRtId: fixture.ArchiveRtId,
+            sources: [new RollupSourceReference(fixture.ArchiveRtId)],
             bucketSize: TimeSpan.FromMinutes(5),
             watermarkLag: TimeSpan.Zero,
             aggregations: new[] { new CkRollupAggregationSpec("Voltage", CkRollupFunction.Sum, null) });

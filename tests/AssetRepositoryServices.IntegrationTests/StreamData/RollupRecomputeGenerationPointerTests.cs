@@ -54,7 +54,7 @@ public class RollupRecomputeGenerationPointerTests(StreamDataFixture fixture, IT
         // ── Create + activate a rollup on the fixture's raw archive (SUM(Voltage), 15-min buckets) ──
         var rollupRtId = await rollupLifecycle.CreateAsync(
             rtWellKnownName: "P6GenPointerRollup",
-            sourceArchiveRtId: fixture.ArchiveRtId,
+            sources: [new RollupSourceReference(fixture.ArchiveRtId)],
             bucketSize: BucketSize,
             watermarkLag: TimeSpan.Zero,
             aggregations: new[] { new CkRollupAggregationSpec("Voltage", CkRollupFunction.Sum, null) });
@@ -171,7 +171,7 @@ public class RollupRecomputeGenerationPointerTests(StreamDataFixture fixture, IT
         // Four aggregations over two different source attributes, including First/Last (AB#4188).
         var rollupRtId = await rollupLifecycle.CreateAsync(
             rtWellKnownName: "MultiAttrFirstLastRollup",
-            sourceArchiveRtId: fixture.ArchiveRtId,
+            sources: [new RollupSourceReference(fixture.ArchiveRtId)],
             bucketSize: BucketSize,
             watermarkLag: TimeSpan.Zero,
             aggregations: new[]
@@ -238,6 +238,86 @@ public class RollupRecomputeGenerationPointerTests(StreamDataFixture fixture, IT
             "AND \"voltage_first\" IS NOT NULL AND \"current_last\" IS NOT NULL"))
             .Should().Be(totalRows, "the atomic swap moved all four aggregate columns to generation 2 together");
     }
+
+    /// <summary>
+    /// AB#5157 — a recompute of a range that spans the cutover of a multi-source rollup is split
+    /// into one segment per source, and each segment commits on its OWN generation pointer: the
+    /// generation map ends up with one entry per segment, each segment's rows carry the generation
+    /// its entry points at, and the post-flip sweep of one segment never removes the other's rows
+    /// (the sweep is bounded by its own range). The result is one continuous series across the
+    /// cutover, produced from two source archives in a single job.
+    /// </summary>
+    [Fact]
+    public async Task Recompute_AcrossTheCutover_CommitsOneGenerationPointerPerSourceSegment_WithoutSweepingTheOther()
+    {
+        fixture.OutputHelper = output;
+
+        var builder = new MultiSourceArchiveBuilder(fixture);
+        var anchor = new DateTime(2026, 3, 1, 0, 0, 0, DateTimeKind.Utc);
+        var cutover = anchor.AddHours(3);
+        var rangeEnd = anchor.AddHours(6);
+        var series = OctoObjectId.GenerateNewId();
+
+        var legacy = await builder.CreateRawArchiveAsync("GenPointerLegacy");
+        var native = await builder.CreateRawArchiveAsync("GenPointerNative");
+        await builder.InsertPointsAsync(legacy, series,
+            Enumerable.Range(0, 3).Select(i => (anchor.AddHours(i), 1d)));
+        await builder.InsertPointsAsync(native, series,
+            Enumerable.Range(0, 3).Select(i => (cutover.AddHours(i), 3d)));
+
+        var rollupRtId = await builder.CreateRollupAsync("GenPointerMultiSource",
+            [
+                new RollupSourceReference(legacy, ValidTo: cutover),
+                new RollupSourceReference(native, ValidFrom: cutover),
+            ],
+            TimeSpan.FromHours(1));
+        await builder.ActivateAsync(rollupRtId);
+
+        var job = await builder.RecomputeAsync(rollupRtId, anchor, rangeEnd);
+        job.State.Should().Be(RecomputeJobState.Completed);
+        job.WindowsProcessed.Should().Be(6, "three buckets per source, none aggregated twice");
+
+        // One generation-map entry per source segment, meeting exactly at the cutover.
+        var pointers = await builder.RowsAsync(
+            $"SELECT \"range_start\", \"range_end\", \"generation\" FROM {builder.GenMapTable(rollupRtId)} " +
+            "ORDER BY \"range_start\"");
+        pointers.Should().HaveCount(2, "the recompute committed one segment per source");
+        AsLong(pointers[0]["range_start"]).Should().Be(ToEpochMs(anchor));
+        AsLong(pointers[0]["range_end"]).Should().Be(ToEpochMs(cutover));
+        AsLong(pointers[1]["range_start"]).Should().Be(ToEpochMs(cutover));
+        AsLong(pointers[1]["range_end"]).Should().Be(ToEpochMs(rangeEnd));
+
+        // Each segment's rows carry the generation its own pointer names …
+        var legacyGenerations = await DistinctGenerationsInRangeAsync(builder, rollupRtId, anchor, cutover);
+        var nativeGenerations = await DistinctGenerationsInRangeAsync(builder, rollupRtId, cutover, rangeEnd);
+        legacyGenerations.Should().Equal(AsLong(pointers[0]["generation"]));
+        nativeGenerations.Should().Equal(AsLong(pointers[1]["generation"]));
+
+        // … and the second segment's sweep left the first segment's rows alone: every bucket of both
+        // spans is present exactly once, with the value of the source that serves it.
+        var buckets = await builder.ReadBucketsAsync(rollupRtId);
+        buckets.Select(b => b.WindowStart).Should().Equal(
+            Enumerable.Range(0, 6).Select(i => anchor.AddHours(i)),
+            "no bucket was swept away by the neighbouring segment and none was written twice");
+        buckets.Select(b => b.Value!.Value).Should().Equal([1d, 1d, 1d, 3d, 3d, 3d]);
+    }
+
+    private static long ToEpochMs(DateTime value) =>
+        new DateTimeOffset(value, TimeSpan.Zero).ToUnixTimeMilliseconds();
+
+    private static long AsLong(object? value) =>
+        Convert.ToInt64(value, global::System.Globalization.CultureInfo.InvariantCulture);
+
+    private static async Task<IReadOnlyList<long>> DistinctGenerationsInRangeAsync(
+        MultiSourceArchiveBuilder builder, OctoObjectId rollupRtId, DateTime from, DateTime to)
+    {
+        var rows = await builder.RowsAsync(
+            $"SELECT DISTINCT \"generation\" FROM {builder.QualifiedTable(rollupRtId)} " +
+            $"WHERE \"window_start\"::bigint >= {ToEpochMs(from)} " +
+            $"AND \"window_start\"::bigint < {ToEpochMs(to)} ORDER BY \"generation\"");
+        return rows.Select(r => AsLong(r["generation"])).ToList();
+    }
+
 
     // ── CrateDB helpers (direct npgsql, mirrors StreamDataFixture.RefreshArchiveTableAsync) ──
 

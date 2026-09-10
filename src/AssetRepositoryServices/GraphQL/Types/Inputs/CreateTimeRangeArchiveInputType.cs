@@ -25,7 +25,12 @@ internal sealed class CreateTimeRangeArchiveInputType : InputObjectGraphType<Cre
         Field<NonNullGraphType<ListGraphType<NonNullGraphType<ArchiveColumnSpecInputType>>>>("columns")
             .Description("Attribute paths to materialise as CrateDB columns. At least one required.");
 
-        Field<IntGraphType>("periodMs")
+        // Long, not Int: a window period is a millisecond count, and anything from ~25 days upwards
+        // overflows Int32 — the Studio's own "1 month" preset (2 592 000 000 ms) was rejected as
+        // "Unable to convert '2592000000' to 'Int'" and a 92-day legacy archive could only be
+        // created via ImportRt (AB#5157 review). Matches the rollup input, where every millisecond
+        // field is already Long, and the SDK's ArchiveSchemaDto.PeriodMs.
+        Field<LongGraphType>("periodMs")
             .Description("Advisory window length in milliseconds (e.g. 900000 = 15 min). Optional; descriptive only.");
     }
 }

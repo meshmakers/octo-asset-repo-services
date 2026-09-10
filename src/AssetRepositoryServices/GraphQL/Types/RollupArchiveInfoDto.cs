@@ -13,7 +13,10 @@ internal sealed record RollupArchiveInfoDto(
     OctoObjectId RtId,
     string? RtWellKnownName,
     CkArchiveStatus Status,
-    OctoObjectId SourceArchiveRtId,
+    // Deprecated single-source projection (AB#5157): the one source archive when the rollup declares
+    // exactly one unbounded source (RollupArchiveSnapshot.SingleUnboundedSourceRtId); null for every
+    // genuinely multi-source rollup or a single source carrying a validity span. Clients read Sources.
+    OctoObjectId? SourceArchiveRtId,
     long BucketSizeMs,
     long WatermarkLagMs,
     DateTime? LastAggregatedBucketEnd,
@@ -37,7 +40,17 @@ internal sealed record RollupArchiveInfoDto(
     // BucketAlignment variants; ignored for FixedSize. Surfaced so the studio can show operators
     // whether a rollup is DST-correct instead of leaving it invisible on the entity.
     string? ReferenceTimeZone,
-    IReadOnlyList<RollupAggregationInfoDto> Aggregations);
+    IReadOnlyList<RollupAggregationInfoDto> Aggregations,
+    // Multi-source declaration (AB#5157): every source archive with its half-open validity span.
+    // The authoritative form; the deprecated SourceArchiveRtId is derived from it.
+    IReadOnlyList<RollupSourceInfoDto> Sources);
+
+/// <summary>
+/// One source declaration of a rollup (AB#5157), projected for <c>rollupsFor</c>: the source archive
+/// plus its validity span (<see cref="ValidFrom"/> inclusive, <see cref="ValidTo"/> exclusive; null =
+/// unbounded in that direction). Mirrors <see cref="RollupSourceReference"/>.
+/// </summary>
+internal sealed record RollupSourceInfoDto(OctoObjectId SourceArchiveRtId, DateTime? ValidFrom, DateTime? ValidTo);
 
 /// <summary>
 /// One aggregation spec of a rollup, projected for the <c>rollupsFor</c> family metadata (AB#4290):

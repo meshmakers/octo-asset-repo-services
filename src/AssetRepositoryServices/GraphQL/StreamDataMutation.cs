@@ -67,7 +67,7 @@ internal sealed class StreamDataMutation : ObjectGraphType
         // ---- Rollup-only mutations (rollup-archives concept §9) ----
 
         Field<NonNullGraphType<OctoObjectIdType>>("createRollupArchive")
-            .Description("Creates a new CkRollupArchive in Created status. The inherited CkArchive attributes (TargetCkTypeId, Columns) are resolved server-side from the source archive and the supplied aggregations (RollupColumnGenerator). Returns the generated rtId.")
+            .Description("Creates a new CkRollupArchive in Created status. The inherited CkArchive attributes (TargetCkTypeId, Columns) are resolved server-side from the source archive(s) and the supplied aggregations (RollupColumnGenerator). Sources are declared via input.sources (AB#5157, validity spans) or the deprecated input.sourceArchiveRtId — exactly one of the two. Source-rule violations (duplicate / overlapping / inverted spans, target-type mismatch, missing path, cycle) surface as STREAM_DATA errors carrying the engine message. Returns the generated rtId.")
             .Argument<NonNullGraphType<CreateRollupArchiveInputType>>("input", "Rollup-specific create payload.")
             .ResolveAsync(ResolveCreateRollupAsync);
 
@@ -428,12 +428,12 @@ internal sealed class StreamDataMutation : ObjectGraphType
         try
         {
             var input = ctx.GetArgument<CreateRollupArchiveInputDto>("input");
-            _logger.LogDebug(
-                "Rollup Create requested for source {SourceRtId} ({AggregationCount} aggregations)",
-                input.SourceArchiveRtId, input.Aggregations.Count);
 
             var gql = (GraphQlUserContext)ctx.UserContext;
-            // Same role guard as the other rollup mutations.
+            // Same role guard as the other rollup mutations, and like them it comes before any
+            // work on the input: normalising the sources validates them and reports precisely what
+            // is wrong, which a caller without the role has no business learning — and the debug
+            // line below would put their source ids in the log.
             if (gql.User?.IsInRole(CommonConstants.StreamDataAdminRole) != true)
             {
                 ctx.Errors.Add(new ExecutionError(
@@ -444,6 +444,11 @@ internal sealed class StreamDataMutation : ObjectGraphType
                 return null;
             }
 
+            var sources = BuildRollupSources(input);
+            _logger.LogDebug(
+                "Rollup Create requested for {SourceCount} source(s) [{SourceRtIds}] ({AggregationCount} aggregations)",
+                sources.Count, string.Join(", ", sources.Select(s => s.SourceArchiveRtId)), input.Aggregations.Count);
+
             var lifecycle = gql.TenantContext.GetRollupArchiveLifecycleService()
                 ?? throw AssetRepositoryException.StreamDataNotAvailable();
 
@@ -453,7 +458,7 @@ internal sealed class StreamDataMutation : ObjectGraphType
 
             var rtId = await lifecycle.CreateAsync(
                 input.RtWellKnownName,
-                input.SourceArchiveRtId,
+                sources,
                 TimeSpan.FromMilliseconds(input.BucketSizeMs),
                 TimeSpan.FromMilliseconds(input.WatermarkLagMs),
                 aggregations,
@@ -467,6 +472,48 @@ internal sealed class StreamDataMutation : ObjectGraphType
         {
             return ctx.HandleException(e);
         }
+    }
+
+    /// <summary>
+    /// Normalises the two accepted source forms of <c>createRollupArchive</c> (AB#5157) into the
+    /// engine's <see cref="RollupSourceReference"/> list: the deprecated <c>sourceArchiveRtId</c>
+    /// scalar becomes one unbounded reference; <c>sources</c> is passed through as declared. Supplying
+    /// both or neither is a client input error surfaced verbatim as a GraphQL error — the engine's
+    /// span / type / cycle rules run afterwards inside <see cref="IRollupArchiveLifecycleService.CreateAsync"/>.
+    /// An explicitly empty <c>sources: []</c> is an error of its own rather than an absent list, so a
+    /// client that sends it together with the deprecated scalar is not silently served as scalar-only.
+    /// </summary>
+    private static IReadOnlyList<RollupSourceReference> BuildRollupSources(CreateRollupArchiveInputDto input)
+    {
+        var hasScalar = input.SourceArchiveRtId.HasValue;
+        var hasList = input.Sources is { Count: > 0 };
+
+        if (input.Sources is { Count: 0 })
+        {
+            throw new OctoGraphQLException(
+                "createRollupArchive: sources must contain at least one entry; omit it to use the deprecated sourceArchiveRtId.");
+        }
+
+        if (hasScalar && hasList)
+        {
+            throw new OctoGraphQLException(
+                "createRollupArchive: supply either 'sources' or the deprecated 'sourceArchiveRtId', not both.");
+        }
+
+        if (!hasScalar && !hasList)
+        {
+            throw new OctoGraphQLException(
+                "createRollupArchive: at least one source archive is required — supply 'sources' (or the deprecated 'sourceArchiveRtId').");
+        }
+
+        if (hasScalar)
+        {
+            return [new RollupSourceReference(input.SourceArchiveRtId!.Value)];
+        }
+
+        return input.Sources!
+            .Select(s => new RollupSourceReference(s.SourceArchiveRtId, s.ValidFrom, s.ValidTo))
+            .ToList();
     }
 
     private async Task<object?> ResolveRollupAsync(

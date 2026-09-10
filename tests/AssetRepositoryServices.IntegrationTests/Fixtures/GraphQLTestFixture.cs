@@ -70,7 +70,7 @@ public class GraphQlTestFixture : SampleDataFixture
                 .Select(ConvertJsonElement)
                 .ToList(),
             JsonValueKind.String => element.GetString(),
-            JsonValueKind.Number => element.TryGetInt64(out var l) ? l : element.GetDouble(),
+            JsonValueKind.Number => element.TryGetInt64(out var l) ? l : (object)element.GetDouble(),
             JsonValueKind.True => true,
             JsonValueKind.False => false,
             JsonValueKind.Null => null,

@@ -385,6 +385,22 @@ public class StreamDataController : ControllerBase
                 ?? throw new StreamDataException(
                     $"StreamData is not enabled for tenant '{tenantId}'. Call POST /streamdata/enable first.");
 
+            // A per-archive table holds exactly one CkType, so the repository drops every row whose
+            // CkTypeId is not the archive's target. That is the right behaviour for the pipeline's
+            // multi-archive batches, but on this single-archive endpoint every such row is a caller
+            // mistake — and the drop is silent, so the call answered 204 with nothing written. The
+            // usual cause is sending the VERSIONED id ('Model-1.0.0/Type-1') where an RtCkId is
+            // expected ('Model/Type'): it parses, it just never matches. Refuse the batch here and
+            // name both sides (AB#5157 validation finding 4).
+            var mismatched = await FindMismatchedCkTypeIdsAsync(tenantContext, archiveRtId, points);
+            if (mismatched is { Expected: { } expected, Values.Count: > 0 })
+            {
+                return BadRequest(
+                    $"Archive '{archiveRtId}' captures '{expected}'. The batch carries " +
+                    $"{string.Join(", ", mismatched.Values.Select(v => $"'{v}'"))}, whose rows would all be " +
+                    "discarded. Send the ckTypeId in its unversioned form, e.g. 'Model/Type'.");
+            }
+
             var domainPoints = points.Select(p => new TimeRangeStreamDataPoint
             {
                 RtId = new OctoObjectId(p.RtId),
@@ -418,8 +434,72 @@ public class StreamDataController : ControllerBase
     }
 
     /// <summary>
-    /// Returns every non-soft-deleted rollup archive attached to the given source archive.
-    /// Concept §9.
+    /// The distinct <c>ckTypeId</c> values in an insert batch that are not the archive's target,
+    /// together with the target itself. <c>Expected</c> is <c>null</c> when the archive cannot be
+    /// read here — the repository then reports the real problem (unknown archive, not activated,
+    /// stream data disabled) with its own message.
+    /// </summary>
+    private static async Task<(string? Expected, IReadOnlyList<string> Values)> FindMismatchedCkTypeIdsAsync(
+        ITenantContext tenantContext, string archiveRtId, IReadOnlyList<InsertTimeRangePointRestDto> points)
+    {
+        var store = tenantContext.GetArchiveRuntimeStore();
+        if (store is null)
+        {
+            return (null, Array.Empty<string>());
+        }
+
+        var snapshot = await store.GetAsync(new OctoObjectId(archiveRtId));
+        if (snapshot is null)
+        {
+            return (null, Array.Empty<string>());
+        }
+
+        var expected = snapshot.TargetCkTypeId;
+
+        // An archive whose target type is not populated gives nothing to judge the batch against,
+        // and RtCkId's own accessors throw on such a value rather than reporting it as empty. Skip
+        // the guard instead of failing the insert on its diagnostic — this only decides whether a
+        // batch is refused early, never whether the rows are written correctly.
+        string expectedName;
+        try
+        {
+            expectedName = expected.ToString();
+        }
+        catch (Exception e) when (e is NullReferenceException or ArgumentException)
+        {
+            return (null, Array.Empty<string>());
+        }
+
+        var values = points
+            .Select(p => p.CkTypeId)
+            .Where(id => !MatchesTarget(id, expected))
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+
+        return (expectedName, values);
+    }
+
+    /// <summary>
+    /// Whether a wire <c>ckTypeId</c> denotes <paramref name="expected"/>, decided by exactly the
+    /// <see cref="RtCkId{T}"/> equality the repository filters on — a string comparison here could
+    /// reject a value the repository would have accepted. A malformed id counts as a mismatch so it
+    /// is reported alongside the others instead of surfacing as a bare parse error.
+    /// </summary>
+    private static bool MatchesTarget(string ckTypeId, RtCkId<CkTypeId> expected)
+    {
+        try
+        {
+            return new RtCkId<CkTypeId>(ckTypeId).Equals(expected);
+        }
+        catch (ArgumentException)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Returns every non-soft-deleted rollup archive that declares the given archive as one of its
+    /// sources (AB#5157: membership in <c>Sources</c>, any validity span). Concept §9.
     /// </summary>
     [HttpGet("archives/{archiveRtId}/rollups")]
     [Microsoft.AspNetCore.Authorization.Authorize(AssetRepositoryServiceConstants.TenantAssetApiReadOnlyPolicy)]
@@ -439,12 +519,12 @@ public class StreamDataController : ControllerBase
             var result = new List<RollupArchiveInfoRestDto>();
             await foreach (var rollup in rollupStore.EnumerateAsync())
             {
-                if (rollup.SourceArchiveRtId != sourceRtId) continue;
+                if (!rollup.HasSource(sourceRtId)) continue;
                 result.Add(new RollupArchiveInfoRestDto(
                     rollup.RtId.ToString(),
                     rollup.RtWellKnownName,
                     rollup.Status.ToString(),
-                    rollup.SourceArchiveRtId.ToString(),
+                    rollup.SingleUnboundedSourceRtId?.ToString(),
                     (long)rollup.BucketSize.TotalMilliseconds,
                     (long)rollup.WatermarkLag.TotalMilliseconds,
                     rollup.LastAggregatedBucketEnd,
@@ -456,9 +536,46 @@ public class StreamDataController : ControllerBase
                     rollup.LastRecomputeFailureAt,
                     rollup.LastRecomputeFailureReason,
                     rollup.DirtyWindowsPending,
-                    rollup.PendingRecomputeRanges));
+                    rollup.PendingRecomputeRanges,
+                    rollup.Sources
+                        .Select(src => new RollupSourceRestDto(src.SourceArchiveRtId.ToString(), src.ValidFrom, src.ValidTo))
+                        .ToList()));
             }
             return Ok(result);
+        }
+        catch (ConfigurationException e)
+        {
+            return BadRequest(e.Message);
+        }
+    }
+
+    /// <summary>
+    /// Returns the MEASURED data coverage of an archive family (AB#5157): the given archive first, then
+    /// every rollup that transitively depends on it (breadth-first, once each), each with its grain and
+    /// the earliest / latest timestamp that holds data. Returns an empty list when stream data is not
+    /// enabled for the tenant or the archive is unknown. Same projection as the <c>coverageFor</c>
+    /// GraphQL query.
+    /// </summary>
+    [HttpGet("archives/{archiveRtId}/coverage")]
+    [Microsoft.AspNetCore.Authorization.Authorize(AssetRepositoryServiceConstants.TenantAssetApiReadOnlyPolicy)]
+    public async Task<ActionResult<IReadOnlyList<ArchiveCoverageRestDto>>> GetArchiveCoverage(
+        [Required] string tenantId, [Required] string archiveRtId, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var tenantContext = await _systemContext.FindTenantContextAsync(tenantId);
+            var coverageService = tenantContext.GetArchiveFamilyCoverageService();
+            if (coverageService is null)
+            {
+                return Ok(Array.Empty<ArchiveCoverageRestDto>());
+            }
+
+            // Bound by the framework to HttpContext.RequestAborted, which keeps the probe tied to the
+            // caller without dereferencing HttpContext — it is null whenever the action runs outside
+            // a request pipeline.
+            var rungs = await coverageService.GetFamilyCoverageAsync(
+                new OctoObjectId(archiveRtId), cancellationToken);
+            return Ok(rungs.Select(ArchiveCoverageRestDto.From).ToList());
         }
         catch (ConfigurationException e)
         {
