@@ -19,7 +19,7 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Strea
 /// absorb never reached the series. The recompute now caps at <c>now - WatermarkLag</c>; this test
 /// is the CrateDB-level proof that the late point lands.
 /// </summary>
-[Collection(StreamDataCollection.Name)]
+[Collection(StreamDataMutatingCollection.Name)]
 public class RollupRecomputeOpenBucketOwnershipTests(StreamDataFixture fixture, ITestOutputHelper output)
 {
     private static readonly TimeSpan BucketSize = TimeSpan.FromMinutes(15);

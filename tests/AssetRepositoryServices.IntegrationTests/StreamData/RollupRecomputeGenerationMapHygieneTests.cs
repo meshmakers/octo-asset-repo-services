@@ -16,7 +16,7 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Strea
 /// (observed live at three entries, one of them pointing at a swept-empty generation). The flip now
 /// drops the entries its own range fully contains.
 /// </summary>
-[Collection(StreamDataCollection.Name)]
+[Collection(StreamDataMutatingCollection.Name)]
 public class RollupRecomputeGenerationMapHygieneTests(StreamDataFixture fixture, ITestOutputHelper output)
 {
     private static readonly TimeSpan BucketSize = TimeSpan.FromMinutes(15);
@@ -51,19 +51,21 @@ public class RollupRecomputeGenerationMapHygieneTests(StreamDataFixture fixture,
             "Ab5189GenMapRollup", [new RollupSourceReference(sourceRtId)], BucketSize);
         await builder.ActivateAsync(rollupRtId);
 
-        var sourceSnapshot = await archiveStore.GetAsync(sourceRtId)!;
-        var rollupSnapshot = await rollupStore.GetAsync(rollupRtId)!;
+        var sourceSnapshot = await archiveStore.GetAsync(sourceRtId)
+            ?? throw new InvalidOperationException("Source archive snapshot missing.");
+        var rollupSnapshot = await rollupStore.GetAsync(rollupRtId)
+            ?? throw new InvalidOperationException("Rollup archive snapshot missing.");
         var genMapTable = $"\"{fixture.StreamDataTenantId}\".\"archive_{rollupRtId}__genmap\"";
 
         // A narrow recompute first — this is the entry that later becomes redundant.
         await executor.ExecuteAsync(
-            sourceSnapshot!, rollupSnapshot!, InnerStart, InnerEnd, null, CancellationToken.None);
+            sourceSnapshot, rollupSnapshot, InnerStart, InnerEnd, null, CancellationToken.None);
         await RefreshAsync(genMapTable);
         (await CountPointersAsync(genMapTable)).Should().Be(1, "the narrow range flipped its own pointer");
 
         // Then a wider recompute that fully contains it.
         await executor.ExecuteAsync(
-            sourceSnapshot!, rollupSnapshot!, WideStart, WideEnd, null, CancellationToken.None);
+            sourceSnapshot, rollupSnapshot, WideStart, WideEnd, null, CancellationToken.None);
         await RefreshAsync(genMapTable);
 
         var pointers = await ReadPointersAsync(genMapTable);
@@ -99,17 +101,19 @@ public class RollupRecomputeGenerationMapHygieneTests(StreamDataFixture fixture,
             "Ab5189GenMapKeepRollup", [new RollupSourceReference(sourceRtId)], BucketSize);
         await builder.ActivateAsync(rollupRtId);
 
-        var sourceSnapshot = await archiveStore.GetAsync(sourceRtId)!;
-        var rollupSnapshot = await rollupStore.GetAsync(rollupRtId)!;
+        var sourceSnapshot = await archiveStore.GetAsync(sourceRtId)
+            ?? throw new InvalidOperationException("Source archive snapshot missing.");
+        var rollupSnapshot = await rollupStore.GetAsync(rollupRtId)
+            ?? throw new InvalidOperationException("Rollup archive snapshot missing.");
         var genMapTable = $"\"{fixture.StreamDataTenantId}\".\"archive_{rollupRtId}__genmap\"";
 
         // Wide first, then narrow: the wide entry still governs the part outside the narrow range,
         // so dropping it would silently send that part back to generation 0.
         await executor.ExecuteAsync(
-            sourceSnapshot!, rollupSnapshot!, WideStart, WideEnd, null, CancellationToken.None);
+            sourceSnapshot, rollupSnapshot, WideStart, WideEnd, null, CancellationToken.None);
         await RefreshAsync(genMapTable);
         await executor.ExecuteAsync(
-            sourceSnapshot!, rollupSnapshot!, InnerStart, InnerEnd, null, CancellationToken.None);
+            sourceSnapshot, rollupSnapshot, InnerStart, InnerEnd, null, CancellationToken.None);
         await RefreshAsync(genMapTable);
 
         (await ReadPointersAsync(genMapTable)).Should().HaveCount(2,
