@@ -531,6 +531,42 @@ public class RollupMultiSourceTests(StreamDataFixture fixture, ITestOutputHelper
     }
 
     [Fact]
+    public async Task TC_AGG_15_ARollupSourceAggregatingAnotherAttributeUnderTheSameColumnName_IsRefusedAtActivation()
+    {
+        // AB#5157 AC2, the shape the feature exists for. The legacy half carries an attribute the
+        // native rung never aggregated, and both the rung and that native rung store into the same
+        // column name — a pinned TargetColumnName is a storage decision and says nothing about the
+        // attribute behind it. Resolving on the stored name let this activate and backfill, so the
+        // buckets before the cutover held one quantity and the ones after held another, in a single
+        // column, with no warning anywhere. It must be refused, naming the source at fault.
+        fixture.OutputHelper = output;
+
+        // Legacy half: a base archive that declares Current and nothing else.
+        var legacy = await CreateRawArchiveAsync("MeaningLegacy", "Current");
+
+        // Native half: an hourly rung that only ever aggregated Voltage, stored as "voltage_sum".
+        var nativeBase = await CreateRawArchiveAsync("MeaningNativeBase");
+        var hourly = await CreateRollupAsync("MeaningNativeHourly", [new RollupSourceReference(nativeBase)]);
+        await ActivateAsync(hourly);
+
+        // The daily rung aggregates Current — and happens to pin the very column name the hourly
+        // rung writes. Its cutover sits on a day boundary, as a daily rung's spans must.
+        var dailyCutover = new DateTime(2026, 4, 2, 0, 0, 0, DateTimeKind.Utc);
+        var daily = await _builder.CreateRollupAsync("MeaningDaily",
+            [
+                new RollupSourceReference(legacy, ValidTo: dailyCutover),
+                new RollupSourceReference(hourly, ValidFrom: dailyCutover),
+            ],
+            TimeSpan.FromDays(1),
+            [new CkRollupAggregationSpec("Current", CkRollupFunction.Sum, MultiSourceArchiveBuilder.RollupColumn)]);
+
+        var act = async () => await ActivateAsync(daily);
+        (await act.Should().ThrowAsync<RollupSourcePathMissingException>())
+            .Which.Message.Should().Contain(hourly.ToString(),
+                "the rollup source cannot serve Current, whatever column name the two happen to share");
+    }
+
+    [Fact]
     public async Task AMixedBaseAndRollupSourceLadder_Activates_AndEqualsTheSingleSourceEquivalent()
     {
         // AB#5157 AC1 ("legacy daily time-range archive + hourly rollup") and the sbeg scenario
