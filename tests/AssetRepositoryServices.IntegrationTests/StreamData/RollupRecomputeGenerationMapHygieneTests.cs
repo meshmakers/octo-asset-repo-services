@@ -116,8 +116,13 @@ public class RollupRecomputeGenerationMapHygieneTests(StreamDataFixture fixture,
             sourceSnapshot, rollupSnapshot, InnerStart, InnerEnd, null, CancellationToken.None);
         await RefreshAsync(genMapTable);
 
-        (await ReadPointersAsync(genMapTable)).Should().HaveCount(2,
-            "an entry reaching beyond the flipped range must survive it");
+        var pointers = await ReadPointersAsync(genMapTable);
+        pointers.Should().HaveCount(2, "an entry reaching beyond the flipped range must survive it");
+        pointers.Select(p => (p.RangeStartMs, p.RangeEndMs)).Should().BeEquivalentTo(
+        [
+            (new DateTimeOffset(WideStart).ToUnixTimeMilliseconds(), new DateTimeOffset(WideEnd).ToUnixTimeMilliseconds()),
+            (new DateTimeOffset(InnerStart).ToUnixTimeMilliseconds(), new DateTimeOffset(InnerEnd).ToUnixTimeMilliseconds()),
+        ], "the wide entry still governs the part outside the narrow range, the narrow one its own range");
     }
 
     private async Task<long> CountPointersAsync(string genMapTable) =>
