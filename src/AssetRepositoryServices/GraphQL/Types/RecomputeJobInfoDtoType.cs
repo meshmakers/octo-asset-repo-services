@@ -47,5 +47,12 @@ internal sealed class RecomputeJobInfoDtoType : ObjectGraphType<RecomputeJobInfo
         Field<StringGraphType>("errorReason")
             .Description("Failure reason when state is Failed; null otherwise.")
             .Resolve(ctx => ctx.Source!.ErrorReason);
+
+        Field<UtcDateTimeGraphType>("lastProgressAt")
+            .Description(
+                "Heartbeat of a non-terminal job: stamped when it is created or starts computing and after every " +
+                "committed chunk. A Running job whose heartbeat stops advancing is no longer alive; after the " +
+                "stale-job timeout the drain fails it as 'Presumed dead'. Null on jobs written before the field existed.")
+            .Resolve(ctx => ctx.Source!.LastProgressAt);
     }
 }

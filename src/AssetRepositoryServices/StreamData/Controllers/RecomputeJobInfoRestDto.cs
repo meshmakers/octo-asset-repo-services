@@ -14,7 +14,8 @@ public sealed record RecomputeJobInfoRestDto(
     DateTime? StartedAt,
     DateTime? FinishedAt,
     int? DurationMs,
-    string? ErrorReason)
+    string? ErrorReason,
+    DateTime? LastProgressAt)
 {
     /// <summary>Maps an engine snapshot to the REST projection.</summary>
     public static RecomputeJobInfoRestDto From(RecomputeJobSnapshot job) => new(
@@ -25,5 +26,6 @@ public sealed record RecomputeJobInfoRestDto(
         job.StartedAt,
         job.FinishedAt,
         job.DurationMs,
-        job.ErrorReason);
+        job.ErrorReason,
+        job.LastProgressAt);
 }
