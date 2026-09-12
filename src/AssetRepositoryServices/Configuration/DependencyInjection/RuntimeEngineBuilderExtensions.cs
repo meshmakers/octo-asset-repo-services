@@ -401,6 +401,32 @@ public static class RuntimeEngineBuilderExtensions
                 config.GetSection("PrivateOctoGitHub"));
             builder.Services.Configure<PublicGitHubCatalogOptions>(
                 config.GetSection("PublicOctoGitHub"));
+
+            // AB#5139: unlike the CK catalogs above, the blueprint catalogs had no configuration
+            // binding in any service, so the blueprint repository stayed hard-wired to the
+            // compiled-in defaults (meshmakers/blueprint-libraries-build @ main resp.
+            // meshmakers.github.io). An instance could therefore not be pointed at its own
+            // catalog repository, which is what forced the manual ImportCk/ImportRt workaround
+            // on the 0.2-dev instance instead of installing from a lane-private catalog
+            // (meshmakers/octo-catalog-dev).
+            // Deliberately NOT the CK sections "PrivateOctoGitHub"/"PublicOctoGitHub": CK models
+            // and blueprints may live in DIFFERENT repositories, so each gets its own section.
+            // octo-helm-core already emits the matching env vars for this service only:
+            // OCTO_PrivateOctoGitHubBlueprints__GitHubRepositoryOwner / __GitHubRepositoryName /
+            // __GitHubRepositoryBranch / __GitHubPagesUri (plus __GitHubApiToken for write
+            // access); same shape for OCTO_PublicOctoGitHubBlueprints__*.
+            // Safe by default: GetSection on an absent section yields an empty section and Bind
+            // then writes nothing, so installations that configure neither keep the compiled-in
+            // defaults. Note there is no __IsEnabled counterpart to the CK side: neither
+            // GitHubBlueprintCatalogOptions nor its base declares IsEnabled (only
+            // LocalFileSystemBlueprintCatalogOptions does) and GitHubBlueprintCatalog hard-codes
+            // its enabled flags, so a GitHub blueprint catalog cannot be switched off by
+            // configuration at all — only its repository coordinates are configurable, and the
+            // chart deliberately emits no such variable.
+            builder.Services.Configure<PrivateGitHubBlueprintCatalogOptions>(
+                config.GetSection("PrivateOctoGitHubBlueprints"));
+            builder.Services.Configure<PublicGitHubBlueprintCatalogOptions>(
+                config.GetSection("PublicOctoGitHubBlueprints"));
         }
         builder.Services.AddSingleton<IOctoService, OctoService>();
     }

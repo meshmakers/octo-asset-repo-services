@@ -4,10 +4,13 @@ using GraphQL.Types;
 using Meshmakers.Common.Shared;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Scalars;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Utils;
-using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
 using Meshmakers.Octo.ConstructionKit.Contracts;
+using Meshmakers.Octo.ConstructionKit.Contracts.DataTransferObjects;
 using Meshmakers.Octo.ConstructionKit.Contracts.DependencyGraph;
+using Meshmakers.Octo.ConstructionKit.Contracts.Services;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb.Repositories.Entities;
+using CkRecordDto = Meshmakers.Octo.Communication.Contracts.DataTransferObjects.CkRecordDto;
+using CkTypeAttributeDto = Meshmakers.Octo.Communication.Contracts.DataTransferObjects.CkTypeAttributeDto;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
 
@@ -86,7 +89,24 @@ internal sealed class CkRecordDtoType : ObjectGraphType<CkRecordDto>
                     filterAttributeNames.Contains(a.AttributeName.ToCamelCase()));
         }
 
-        return ConnectionUtils.ToOctoConnection(resultList.Select(CreateCkTypeAttributeDto), ctx);
+        // AB#5191: the compiled graph keeps only the RESOLVED ownership per assignment, so the declared
+        // per-assignment overrides are read back from the declaring scopes - this record first, then its base
+        // records, because the connection returns inherited assignments too.
+        var declaringScopes = new List<CkTypeWithAttributesGraph> { ckRecordGraph };
+        foreach (var baseRecord in ckRecordGraph.BaseRecords.OrderBy(b => b.BaseTypeDepthIndex))
+        {
+            if (ckCacheService.TryGetCkRecord(graphQlContext.TenantId, baseRecord.BaseCkRecordId,
+                    out var baseRecordGraph))
+            {
+                declaringScopes.Add(baseRecordGraph);
+            }
+        }
+
+        var declaredOwnershipOverrides = CkOwnershipUtils.CollectDeclaredOwnershipOverrides(declaringScopes);
+
+        return ConnectionUtils.ToOctoConnection(
+            resultList.Select(a => CreateCkTypeAttributeDto(a, declaredOwnershipOverrides, ckCacheService,
+                graphQlContext.TenantId)), ctx);
     }
 
     internal static CkRecordDto CreateCkRecordDto(CkRecordGraph ckRecord)
@@ -115,16 +135,29 @@ internal sealed class CkRecordDtoType : ObjectGraphType<CkRecordDto>
         return ckRecordDto;
     }
 
-    private CkTypeAttributeDto CreateCkTypeAttributeDto(CkTypeAttributeGraph ckTypeAttributeGraph)
+    private static CkTypeAttributeDto CreateCkTypeAttributeDto(CkTypeAttributeGraph ckTypeAttributeGraph,
+        IReadOnlyDictionary<CkId<CkAttributeId>, AttributeOwnershipDto> declaredOwnershipOverrides,
+        ICkCacheService ckCacheService, string tenantId)
     {
-        var ckEntityAttributeDto = new CkTypeAttributeDto
+        var ownershipOverride = CkOwnershipUtils.GetDeclaredOwnershipOverride(declaredOwnershipOverrides,
+            ckTypeAttributeGraph.CkAttributeId);
+
+        // Without an override the assignment's effective ownership IS the definition's, so the definition
+        // only has to be looked up in the rare overridden case.
+        var definitionOwnership = ownershipOverride == null
+            ? ckTypeAttributeGraph.Ownership
+            : ckCacheService.GetCkAttribute(tenantId, ckTypeAttributeGraph.CkAttributeId).Ownership;
+
+        var ckEntityAttributeDto = new OwnershipAwareCkTypeAttributeDto
         {
+            Ownership = ckTypeAttributeGraph.Ownership,
+            OwnershipOverride = ownershipOverride,
             CkAttributeId = ckTypeAttributeGraph.CkAttributeId,
             AttributeName = ckTypeAttributeGraph.AttributeName.ToCamelCase(),
             AttributeValueType = ckTypeAttributeGraph.ValueType,
             AutoIncrementReference = ckTypeAttributeGraph.AutoIncrementReference,
             AutoCompleteValues = ckTypeAttributeGraph.AutoCompleteValues,
-            Attribute = CkAttributeDtoType.CreateCkAttributeDto(ckTypeAttributeGraph)
+            Attribute = CkAttributeDtoType.CreateCkAttributeDto(ckTypeAttributeGraph, definitionOwnership)
         };
         return ckEntityAttributeDto;
     }
