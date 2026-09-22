@@ -122,11 +122,10 @@ internal static class BlueprintUpdatePreviewMapper
             case bool b:
                 writer.WriteBooleanValue(b);
                 break;
-            case int i:
-                writer.WriteNumberValue(i);
-                break;
-            case long l:
-                writer.WriteNumberValue(l);
+            case byte or sbyte or short or ushort or int or uint or long or ulong:
+                // Every integral CLR width the engine may hand over stays a JSON number; decimal
+                // holds all of them exactly (ulong.MaxValue < decimal.MaxValue).
+                writer.WriteNumberValue(Convert.ToDecimal(value, CultureInfo.InvariantCulture));
                 break;
             case double d:
                 writer.WriteNumberValue(d);

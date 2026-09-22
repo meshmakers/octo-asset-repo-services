@@ -113,6 +113,21 @@ public class BlueprintUpdatePreviewMapperTests
     }
 
     [Fact]
+    public void FormatValue_KeepsEveryIntegralWidthANumberInsideStructures()
+    {
+        var record = Record(("Tiny", (byte)5), ("Short", (short)-7), ("UInt", 42u), ("ULong", ulong.MaxValue), ("Int", 3));
+
+        var text = BlueprintUpdatePreviewMapper.FormatValue(record);
+
+        using var doc = JsonDocument.Parse(text!);
+        doc.RootElement.GetProperty($"{Model}/Tiny").GetInt32().Should().Be(5);
+        doc.RootElement.GetProperty($"{Model}/Short").GetInt32().Should().Be(-7);
+        doc.RootElement.GetProperty($"{Model}/UInt").GetUInt32().Should().Be(42u);
+        doc.RootElement.GetProperty($"{Model}/ULong").GetUInt64().Should().Be(ulong.MaxValue);
+        doc.RootElement.GetProperty($"{Model}/Int").ValueKind.Should().Be(JsonValueKind.Number);
+    }
+
+    [Fact]
     public void FormatValue_RendersListsOfScalarsAndRecordsAsJsonArrays()
     {
         var scalars = BlueprintUpdatePreviewMapper.FormatValue(new List<object?> { "a", 1L, null });
