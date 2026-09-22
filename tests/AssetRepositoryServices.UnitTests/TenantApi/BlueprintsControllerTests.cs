@@ -181,6 +181,53 @@ public class BlueprintsControllerTests
 
     #endregion
 
+    #region POST updates/preview
+
+    [Fact]
+    public async Task PreviewUpdate_ReturnsTheAttributeLevelChangeList()
+    {
+        // AB#5297 / AB#5308: the counts alone told the operator nothing; the controller must
+        // hand the engine's per-entity diff through, values rendered as text.
+        A.CallTo(() => _blueprintService.PreviewUpdateAsync(
+                TenantId, A<BlueprintId>.That.Matches(b => b.ToString() == $"{BlueprintName}-2.2.1"),
+                BlueprintUpdateMode.Merge, A<CancellationToken>._))
+            .Returns(new BlueprintUpdatePreview
+            {
+                EntitiesToUpdate = 1,
+                EntitiesUnchanged = 41,
+                Changes =
+                [
+                    new BlueprintEntityChange
+                    {
+                        EntityId = "67d4a2f0b2e4d8c3a1f00131",
+                        EntityDisplayName = "Notify ToDo Pipeline",
+                        EntityCkTypeId = "System.Communication/Pipeline",
+                        Attributes =
+                        [
+                            new BlueprintAttributeChange { AttributeName = "Enabled", OldValue = true, NewValue = false }
+                        ]
+                    }
+                ]
+            });
+
+        var result = await _controller.PreviewUpdate(
+            new BlueprintUpdateRequestDto { TargetVersion = $"{BlueprintName}-2.2.1", UpdateMode = "merge" }, Ct);
+
+        var dto = result.Should().BeOfType<OkObjectResult>().Subject
+            .Value.Should().BeOfType<BlueprintUpdatePreviewDto>().Subject;
+        dto.TargetVersion.Should().Be($"{BlueprintName}-2.2.1");
+        dto.EntitiesToUpdate.Should().Be(1);
+        dto.EntitiesUnchanged.Should().Be(41);
+        var change = dto.Changes.Should().ContainSingle().Subject;
+        change.EntityDisplayName.Should().Be("Notify ToDo Pipeline");
+        var attribute = change.Attributes.Should().ContainSingle().Subject;
+        attribute.AttributeName.Should().Be("Enabled");
+        attribute.OldValue.Should().Be("true");
+        attribute.NewValue.Should().Be("false");
+    }
+
+    #endregion
+
     [Fact]
     public async Task GetCurrent_ReturnsBadRequest_WhenRouteCarriesNoTenant()
     {
