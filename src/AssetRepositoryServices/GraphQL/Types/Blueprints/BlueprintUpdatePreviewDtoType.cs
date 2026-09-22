@@ -5,8 +5,9 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Blueprin
 
 /// <summary>
 /// GraphQL projection of <see cref="BlueprintUpdatePreviewDto"/>. The "what would change"
-/// summary returned by <c>previewUpdate</c> — adds/updates/deletes counts, warnings, and
-/// the per-entity conflict list the studio uses to drive its resolution UI.
+/// summary returned by <c>previewUpdate</c> — adds/updates/unchanged/deletes counts, warnings,
+/// the per-entity conflict list the studio uses to drive its resolution UI, and the attribute-level
+/// change list (AB#5297).
 /// </summary>
 // ReSharper disable once ClassNeverInstantiated.Global
 internal sealed class BlueprintUpdatePreviewDtoType : ObjectGraphType<BlueprintUpdatePreviewDto>
@@ -39,5 +40,13 @@ internal sealed class BlueprintUpdatePreviewDtoType : ObjectGraphType<BlueprintU
         Field<NonNullGraphType<ListGraphType<NonNullGraphType<StringGraphType>>>>("warnings")
             .Description("Non-blocking warnings reported by the diff (e.g. mode-specific notices).")
             .Resolve(ctx => ctx.Source!.Warnings);
+
+        Field<NonNullGraphType<IntGraphType>>("entitiesUnchanged")
+            .Description("Number of blueprint-managed entities the update would re-apply without changing an attribute.")
+            .Resolve(ctx => ctx.Source!.EntitiesUnchanged);
+
+        Field<NonNullGraphType<ListGraphType<NonNullGraphType<BlueprintEntityChangeDtoType>>>>("changes")
+            .Description("Attribute-level diff per entity counted in entitiesToUpdate - what the operator reads before applying.")
+            .Resolve(ctx => ctx.Source!.Changes);
     }
 }

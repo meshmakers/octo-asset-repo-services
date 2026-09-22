@@ -334,22 +334,7 @@ public class BlueprintsController : ControllerBase
                 updateMode,
                 cancellationToken);
 
-            var response = new BlueprintUpdatePreviewDto
-            {
-                TargetVersion = request.TargetVersion,
-                EntitiesToAdd = preview.EntitiesToAdd,
-                EntitiesToUpdate = preview.EntitiesToUpdate,
-                EntitiesToDelete = preview.EntitiesToDelete,
-                Conflicts = preview.Conflicts.Select(c => new BlueprintConflictDto
-                {
-                    EntityId = c.EntityId,
-                    Description = c.Description,
-                    SuggestedResolution = c.SuggestedResolution.ToString()
-                }).ToList(),
-                Warnings = preview.Warnings.ToList()
-            };
-
-            return Ok(response);
+            return Ok(BlueprintUpdatePreviewMapper.ToDto(preview, request.TargetVersion));
         }
         catch (ArgumentException e)
         {
