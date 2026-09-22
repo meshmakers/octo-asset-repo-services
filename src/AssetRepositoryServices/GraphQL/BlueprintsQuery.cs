@@ -250,20 +250,7 @@ internal sealed class BlueprintsQuery : ObjectGraphType
             var preview = await blueprintService.PreviewUpdateAsync(
                 gql.TenantId, targetBlueprintId, input.UpdateMode, ctx.CancellationToken);
 
-            return new BlueprintUpdatePreviewDto
-            {
-                TargetVersion = input.TargetVersion,
-                EntitiesToAdd = preview.EntitiesToAdd,
-                EntitiesToUpdate = preview.EntitiesToUpdate,
-                EntitiesToDelete = preview.EntitiesToDelete,
-                Conflicts = preview.Conflicts.Select(c => new BlueprintConflictDto
-                {
-                    EntityId = c.EntityId,
-                    Description = c.Description,
-                    SuggestedResolution = c.SuggestedResolution.ToString()
-                }).ToList(),
-                Warnings = preview.Warnings.ToList()
-            };
+            return BlueprintUpdatePreviewMapper.ToDto(preview, input.TargetVersion);
         }
         catch (Exception e)
         {
