@@ -62,9 +62,11 @@ internal static class BlueprintUpdatePreviewMapper
 
     /// <summary>
     ///     Renders a transport-shaped attribute value for display. Scalars come back verbatim
-    ///     (invariant culture, ISO-8601 for dates), records and lists as compact JSON, anything
-    ///     unknown as its <c>ToString()</c>. Never throws: a value that cannot be rendered is not a
-    ///     reason to lose the whole preview.
+    ///     (invariant culture, ISO-8601 for dates, base64 for binaries), records and lists as
+    ///     compact JSON, anything unknown as its <c>ToString()</c>. A <see cref="JsonElement" />
+    ///     follows the same split: a string token is a scalar and comes back unquoted like any other
+    ///     string, every other token kind is emitted as its raw JSON. Never throws: a value that
+    ///     cannot be rendered is not a reason to lose the whole preview.
     /// </summary>
     internal static string? FormatValue(object? value)
     {
@@ -80,6 +82,8 @@ internal static class BlueprintUpdatePreviewMapper
                 return dt.ToString("o", CultureInfo.InvariantCulture);
             case DateTimeOffset dto:
                 return dto.ToString("o", CultureInfo.InvariantCulture);
+            case byte[] bytes:
+                return Convert.ToBase64String(bytes);
             case JsonElement je:
                 return je.ValueKind == JsonValueKind.String ? je.GetString() : je.GetRawText();
             case IFormattable f:
@@ -135,6 +139,11 @@ internal static class BlueprintUpdatePreviewMapper
                 break;
             case JsonElement je:
                 je.WriteTo(writer);
+                break;
+            case byte[] bytes:
+                // Binary CK attributes travel as byte[]; without this case IEnumerable would spell
+                // them out byte by byte. Base64 is how JSON carries binaries anyway.
+                writer.WriteBase64StringValue(bytes);
                 break;
             case RtRecordTcDto record:
                 writer.WriteStartObject();

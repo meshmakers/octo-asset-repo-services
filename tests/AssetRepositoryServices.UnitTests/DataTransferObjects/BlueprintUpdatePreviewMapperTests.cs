@@ -129,12 +129,27 @@ public class BlueprintUpdatePreviewMapperTests
     }
 
     [Fact]
-    public void FormatValue_RendersJsonElementsRaw()
+    public void FormatValue_RendersJsonStructuresRawAndJsonStringsAsScalars()
     {
-        using var doc = JsonDocument.Parse("{\"widgets\":[1,2]}");
+        using var doc = JsonDocument.Parse("{\"widgets\":[1,2],\"title\":\"Finance Cockpit\"}");
 
-        BlueprintUpdatePreviewMapper.FormatValue(doc.RootElement).Should().Be("{\"widgets\":[1,2]}");
+        BlueprintUpdatePreviewMapper.FormatValue(doc.RootElement)
+            .Should().Be("{\"widgets\":[1,2],\"title\":\"Finance Cockpit\"}");
         BlueprintUpdatePreviewMapper.FormatValue(doc.RootElement.GetProperty("widgets")).Should().Be("[1,2]");
+        // A string token is a scalar like any other string: unquoted, same as FormatValue("...").
+        BlueprintUpdatePreviewMapper.FormatValue(doc.RootElement.GetProperty("title")).Should().Be("Finance Cockpit");
+    }
+
+    [Fact]
+    public void FormatValue_RendersBinariesAsBase64_AloneAndInsideARecord()
+    {
+        byte[] png = [0x89, 0x50, 0x4E, 0x47];
+
+        BlueprintUpdatePreviewMapper.FormatValue(png).Should().Be("iVBORw==");
+
+        var text = BlueprintUpdatePreviewMapper.FormatValue(Record(("Logo", png)));
+        using var doc = JsonDocument.Parse(text!);
+        doc.RootElement.GetProperty($"{Model}/Logo").GetString().Should().Be("iVBORw==");
     }
 
     private static RtRecordTcDto Record(params (string Name, object? Value)[] attributes)
