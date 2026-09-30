@@ -1,4 +1,5 @@
-using Meshmakers.Octo.Backend.AssetRepositoryServices.Configuration;
+﻿using Meshmakers.Octo.Backend.AssetRepositoryServices.Configuration;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.Observability;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.Services;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.StreamData;
 using Meshmakers.Octo.Runtime.Contracts.Blueprints;
@@ -7,6 +8,7 @@ using Meshmakers.Octo.Services.Infrastructure.Configuration;
 using Meshmakers.Octo.Services.Infrastructure.Services;
 using Meshmakers.Octo.Services.Observability;
 using Meshmakers.Octo.Runtime.Engine.CrateDb.Extensions;
+using OpenTelemetry.Metrics;
 using NLog;
 using NLog.Web;
 using LogLevel = Microsoft.Extensions.Logging.LogLevel;
@@ -42,6 +44,26 @@ try
 
     builder.Services.AddTransient<IDefaultConfigurationCreatorService, DefaultConfigurationCreatorService>();
     builder.Services.AddCors();
+
+    // AB#5432: CK model health sweep. Bound from configuration, so a cluster tunes it with
+    // OCTO_OBSERVABILITY__CKMODEL__* without a rebuild; the defaults are the intended behaviour.
+    builder.Services.Configure<CkModelObservabilityOptions>(
+        builder.Configuration.GetSection(CkModelObservabilityOptions.SectionName));
+
+    // Register the asset-repository meter on THIS service's meter provider, in addition to the
+    // registration in octo-common-services' ObservabilityBuilder.
+    //
+    // Both, on purpose. The builder registration is where a meter belongs long-term — it is how
+    // Meshmakers.Octo.Communication and Meshmakers.Octo.MongoDb are wired, and registering a meter
+    // for every service is harmless because a service that emits nothing on it exports nothing. But
+    // it only takes effect once this service consumes a Meshmakers.Octo.Services.Observability build
+    // that contains it, and an unregistered meter does not fail, warn or log: the instruments are
+    // created, the measurements are taken, and the exporter drops every one of them. That is exactly
+    // the AB#5430 failure mode — metrics produced correctly and then dropped on the floor for
+    // months. The local registration makes this service's own metrics independent of that package
+    // rollout, which is the difference between "works on deploy" and "works two trains later".
+    builder.Services.ConfigureOpenTelemetryMeterProvider(metrics =>
+        metrics.AddMeter(CkModelObservabilityMetrics.MeterName));
 
     // AB#5054: start the *user*-token half of the tenant gate in its migration mode. AB#5054 set
     // TokenValidationParameters.AuthenticationType = "Bearer" (ConfigureJwtBearerOptions), which is

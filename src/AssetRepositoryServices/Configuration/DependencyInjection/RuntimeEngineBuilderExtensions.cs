@@ -11,6 +11,7 @@ using Meshmakers.Octo.Backend.AssetRepositoryServices.Consumers;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Caches;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.RequestHandling;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.Observability;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.Services;
 using Meshmakers.Octo.Communication.Contracts;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
@@ -429,5 +430,14 @@ public static class RuntimeEngineBuilderExtensions
                 config.GetSection("PublicOctoGitHubBlueprints"));
         }
         builder.Services.AddSingleton<IOctoService, OctoService>();
+
+        // AB#5432: CK model health as a platform function instead of a blueprint pipeline.
+        //
+        // The status service is the piece the REST endpoint and the sweep share — transient because
+        // ICatalogService is, and a scope-per-sweep keeps the sweep off the request pipeline's
+        // lifetimes entirely.
+        builder.Services.AddTransient<ICkModelLibraryStatusService, CkModelLibraryStatusService>();
+        builder.Services.AddTransient<ITenantObservabilityOptIn, TenantObservabilityOptIn>();
+        builder.Services.AddHostedService<CkModelObservabilitySweepService>();
     }
 }

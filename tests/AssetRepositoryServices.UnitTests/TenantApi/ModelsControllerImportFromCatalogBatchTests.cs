@@ -1,6 +1,7 @@
-using FakeItEasy;
+﻿using FakeItEasy;
 using FluentAssertions;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.DataTransferObjects.CkModelCatalog;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.Services;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.TenantApi.v1.Controllers;
 using Meshmakers.Octo.Common.DistributionEventHub.Services;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
@@ -26,6 +27,7 @@ public class ModelsControllerImportFromCatalogBatchTests
     private readonly ICommandClient<ImportCkBatchCommandRequest> _importCkBatchCommandClient;
     private readonly ISystemContext _systemContext;
     private readonly ITenantContext _tenantContext;
+    private readonly ICkModelLibraryStatusService _libraryStatusService;
     private readonly ModelsController _controller;
 
     public ModelsControllerImportFromCatalogBatchTests()
@@ -40,6 +42,18 @@ public class ModelsControllerImportFromCatalogBatchTests
         A.CallTo(() => _systemContext.FindTenantContextAsync("test-tenant"))
             .Returns(_tenantContext);
 
+        // AB#5432: the compatibility pre-checks moved out of the controller into
+        // ICkModelLibraryStatusService. Default the fake to "compatible, nothing installed" so
+        // these tests keep exercising the behaviour they were written for; a bare fake would
+        // return default((bool, string?)) == (false, null) and turn every import into a 400.
+        _libraryStatusService = A.Fake<ICkModelLibraryStatusService>();
+        A.CallTo(() => _libraryStatusService.GetInstalledSystemVersionsAsync(A<ITenantContext>._))
+            .Returns(new Dictionary<string, CkVersion>());
+        A.CallTo(() => _libraryStatusService.CheckSystemCompatibilityAsync(
+                A<CkModelId>._, A<Dictionary<string, CkVersion>>._, A<HashSet<string>>._,
+                A<List<string>>._, A<CancellationToken>._))
+            .Returns((true, (string?)null));
+
         _controller = new ModelsController(
             _distributedCache,
             A.Fake<ICommandClient<ExportRtByQueryCommandRequest>>(),
@@ -51,7 +65,8 @@ public class ModelsControllerImportFromCatalogBatchTests
             _ckJsonSerializer,
             _systemContext,
             A.Fake<ICkModelUpgradeService>(),
-            A.Fake<ICkModelMigrationService>());
+            A.Fake<ICkModelMigrationService>(),
+            _libraryStatusService);
 
         var httpContext = new DefaultHttpContext();
         httpContext.Request.RouteValues["tenantId"] = "test-tenant";

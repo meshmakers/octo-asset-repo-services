@@ -1,6 +1,7 @@
-using FakeItEasy;
+﻿using FakeItEasy;
 using FluentAssertions;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.DataTransferObjects.CkModelCatalog;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.Services;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.TenantApi.v1.Controllers;
 using Meshmakers.Octo.Common.DistributionEventHub.Services;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects.ApiErrors;
@@ -21,6 +22,7 @@ public class ModelsControllerResolveDependenciesTests
     private readonly ICatalogService _catalogService;
     private readonly ISystemContext _systemContext;
     private readonly ITenantContext _tenantContext;
+    private readonly ICkModelLibraryStatusService _libraryStatusService;
     private readonly ModelsController _controller;
 
     public ModelsControllerResolveDependenciesTests()
@@ -31,6 +33,18 @@ public class ModelsControllerResolveDependenciesTests
 
         A.CallTo(() => _systemContext.FindTenantContextAsync("test-tenant"))
             .Returns(_tenantContext);
+
+        // AB#5432: the compatibility pre-checks moved out of the controller into
+        // ICkModelLibraryStatusService. Default the fake to "compatible, nothing installed" so
+        // these tests keep exercising the behaviour they were written for; a bare fake would
+        // return default((bool, string?)) == (false, null) and turn every import into a 400.
+        _libraryStatusService = A.Fake<ICkModelLibraryStatusService>();
+        A.CallTo(() => _libraryStatusService.GetInstalledSystemVersionsAsync(A<ITenantContext>._))
+            .Returns(new Dictionary<string, CkVersion>());
+        A.CallTo(() => _libraryStatusService.CheckSystemCompatibilityAsync(
+                A<CkModelId>._, A<Dictionary<string, CkVersion>>._, A<HashSet<string>>._,
+                A<List<string>>._, A<CancellationToken>._))
+            .Returns((true, (string?)null));
 
         _controller = new ModelsController(
             A.Fake<IDistributedCacheService>(),
@@ -43,7 +57,8 @@ public class ModelsControllerResolveDependenciesTests
             A.Fake<ICkJsonSerializer>(),
             _systemContext,
             A.Fake<Meshmakers.Octo.Runtime.Contracts.CkModelMigrations.ICkModelUpgradeService>(),
-            A.Fake<Meshmakers.Octo.Runtime.Contracts.CkModelMigrations.ICkModelMigrationService>());
+            A.Fake<Meshmakers.Octo.Runtime.Contracts.CkModelMigrations.ICkModelMigrationService>(),
+            _libraryStatusService);
 
         var httpContext = new DefaultHttpContext();
         httpContext.Request.RouteValues["tenantId"] = "test-tenant";
