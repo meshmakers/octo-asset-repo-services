@@ -294,6 +294,46 @@ public class SecretsAdminGraphQlTests
         byKey.Sum(k => k["count"]!.Value<int>()).Should().Be(summary["encV2"]!.Value<int>());
     }
 
+    /// <summary>
+    ///     AB#5544 / AB#5532: deleting an entity archives it (the document and its ciphertext are retained), but
+    ///     the inventory, the re-entry list and the summary must not list it - like typed queries and
+    ///     <c>runtimeEntities</c>.
+    /// </summary>
+    [Fact]
+    public async Task DeletedEntity_IsNotInInventoryOrSummary()
+    {
+        var rtId = await CreateAsync(new { name = "deleted", password = FakeSecret("pw"), apiKey = FakeSecret("api") });
+        await MoveToUnknownKeyAsync(rtId, "password");
+
+        var (_, before) = await InventoryAsync($"search: \"{rtId}\", first: 50");
+        before["totalCount"]!.Value<int>().Should().Be(2);
+        var summaryBefore = await SummaryKeyMissingAsync();
+
+        var delete = await _fixture.ExecuteGraphQlAsync(@"
+            mutation ($entities: [RtEntityId!]!) { runtime { runtimeEntities { delete(entities: $entities) } } }",
+            JsonSerializer.Serialize(new { entities = new[] { new { rtId, ckTypeId = CkTypeId } } }));
+        delete.Errors.Should().BeNullOrEmpty(Serialize(delete));
+
+        // Soft delete: the stored (unreadable) ciphertext is still there.
+        (await _fixture.ReadRawAttributeValueFromMongoDb(rtId, "password", CollectionSuffix)).IsBsonDocument
+            .Should().BeTrue();
+
+        var (_, after) = await InventoryAsync($"search: \"{rtId}\", first: 50");
+        after["totalCount"]!.Value<int>().Should().Be(0);
+        var (_, reEntry) = await InventoryAsync($"search: \"{rtId}\", needsReEntry: true, first: 50");
+        reEntry["totalCount"]!.Value<int>().Should().Be(0);
+        (await SummaryKeyMissingAsync()).Should().Be(summaryBefore - 1);
+    }
+
+    private async Task<int> SummaryKeyMissingAsync()
+    {
+        var result = await _fixture.ExecuteGraphQlAsync("query { secrets { summary { keyMissing } } }",
+            user: GraphQlTestFixture.AdminPanelPrincipal);
+        var json = Serialize(result);
+        result.Errors.Should().BeNullOrEmpty(json);
+        return JObject.Parse(json).SelectToken("data.secrets.summary.keyMissing")!.Value<int>();
+    }
+
     #endregion
 
     #region Usages (AB#5544, Q5)
