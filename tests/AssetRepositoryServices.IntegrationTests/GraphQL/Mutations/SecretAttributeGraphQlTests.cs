@@ -361,7 +361,7 @@ public class SecretAttributeGraphQlTests
                 } } }
             }";
 
-        // What a client read (value null + secretIsSet) sent back unchanged.
+        // What a client read (value null + secretIsSet/secretKeyMissing/secretSetAt) sent back unchanged.
         var echoVariables = JsonSerializer.Serialize(new
         {
             entities = new[]
@@ -375,8 +375,16 @@ public class SecretAttributeGraphQlTests
                         attributes = new object[]
                         {
                             new { attributeName = "name", value = "generic-update-2", secretIsSet = (bool?)null },
-                            new { attributeName = "password", value = (string?)null, secretIsSet = (bool?)true },
-                            new { attributeName = "apiKey", value = (string?)null, secretIsSet = (bool?)true }
+                            new
+                            {
+                                attributeName = "password", value = (string?)null, secretIsSet = (bool?)true,
+                                secretKeyMissing = (bool?)false, secretSetAt = (string?)"2026-10-06T08:00:00Z"
+                            },
+                            new
+                            {
+                                attributeName = "apiKey", value = (string?)null, secretIsSet = (bool?)false,
+                                secretKeyMissing = (bool?)true, secretSetAt = (string?)null
+                            }
                         }
                     }
                 }

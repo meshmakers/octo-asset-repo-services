@@ -61,6 +61,15 @@ public class SecretAttributeSchemaTests
     }
 
     [Fact]
+    public void RtEntityAttributeInput_AcceptsSecretKeyMissingAndSecretSetAt()
+    {
+        var type = new RtEntityAttributeDtoInputType();
+
+        FindField(type, "secretKeyMissing")!.Type.Should().Be<BooleanGraphType>();
+        FindField(type, "secretSetAt")!.Type.Should().Be<UtcDateTimeGraphType>();
+    }
+
+    [Fact]
     public void GenericUpdateInput_HasClearSecretAttributes()
     {
         var type = new RtEntityDtoGenericUpdateType();

@@ -18,5 +18,9 @@ internal sealed class RtEntityAttributeDtoInputType : InputObjectGraphType<RtEnt
         Field(x => x.SecretIsSet, typeof(BooleanGraphType))
             .Description("Accepted and ignored, so a client can send back what it read. Clearing a secret " +
                          "is only possible with 'clearSecretAttributes'.");
+        Field(x => x.SecretKeyMissing, typeof(BooleanGraphType))
+            .Description("Accepted and ignored, so a client can send back what it read.");
+        Field(x => x.SecretSetAt, typeof(UtcDateTimeGraphType))
+            .Description("Accepted and ignored, so a client can send back what it read.");
     }
 }
