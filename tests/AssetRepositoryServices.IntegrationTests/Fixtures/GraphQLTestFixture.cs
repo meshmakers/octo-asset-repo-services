@@ -125,6 +125,33 @@ public class GraphQlTestFixture : SampleDataFixture
     }
 
     /// <summary>
+    /// Overwrites the raw stored value of an attribute directly in MongoDB, bypassing the engine write path.
+    /// Used to simulate legacy data, e.g. a clear-text string in a Secret slot (AB#5528).
+    /// </summary>
+    /// <param name="rtId">The RtId of the entity</param>
+    /// <param name="attributePath">Path below the "attributes" subdocument (camelCase, dotted for nested values)</param>
+    /// <param name="value">The raw BSON value to store</param>
+    /// <param name="collectionSuffix">The collection suffix (the base type)</param>
+    public async Task SetRawAttributeValueInMongoDb(string rtId, string attributePath, BsonValue value,
+        string collectionSuffix)
+    {
+        if (_mongoClient == null)
+        {
+            throw new InvalidOperationException("MongoDB client not initialized");
+        }
+
+        var database = _mongoClient.GetDatabase(SystemDatabaseName);
+        var collection = database.GetCollection<BsonDocument>($"RtEntity_{collectionSuffix}");
+        var filter = Builders<BsonDocument>.Filter.Eq("_id", ObjectId.Parse(rtId));
+        var result = await collection.UpdateOneAsync(filter,
+            Builders<BsonDocument>.Update.Set($"attributes.{attributePath}", value));
+        if (result.MatchedCount == 0)
+        {
+            throw new InvalidOperationException($"Document with rtId '{rtId}' not found in 'RtEntity_{collectionSuffix}'.");
+        }
+    }
+
+    /// <summary>
     /// Removes an attribute from a MongoDB document to simulate legacy data
     /// that was created before the attribute was added to the schema.
     /// </summary>

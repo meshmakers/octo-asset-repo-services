@@ -211,6 +211,62 @@ public class SecretAttributeGraphQlTests
         }
     }
 
+    [Fact]
+    public async Task LegacyPlaintextInStorage_IsNeverProjected()
+    {
+        // A clear-text string in a Secret slot (data written before the String -> Secret migration) is
+        // read as legacy plaintext: every read path projects "is set" only (concept §3.3, §4.1/§4.2).
+        var (rtId, _) = await CreateTypedAsync(new
+        {
+            name = "legacy",
+            password = FakeSecret("pw"),
+            endpoints = new object[] { new { key = "a", token = FakeSecret("tok") } }
+        });
+        var legacyPassword = FakeSecret("legacy-pw");
+        var legacyToken = FakeSecret("legacy-tok");
+        await _fixture.SetRawAttributeValueInMongoDb(rtId, "password", new BsonString(legacyPassword),
+            CollectionSuffix);
+        var rawEndpoints = await _fixture.ReadRawAttributeValueFromMongoDb(rtId, "endpoints", CollectionSuffix);
+        var tokenPath = rawEndpoints.AsBsonArray[0].AsBsonDocument.Contains("attributes")
+            ? "endpoints.0.attributes.token"
+            : "endpoints.0.token";
+        await _fixture.SetRawAttributeValueInMongoDb(rtId, tokenPath, new BsonString(legacyToken), CollectionSuffix);
+
+        var typedJson = await QueryTypedAsync(rtId);
+        typedJson.Should().NotContain(legacyPassword).And.NotContain(legacyToken);
+        var typed = JObject.Parse(typedJson)
+            .SelectToken("data.runtime.assetRepositoryIntegrationTestServiceCredential.items[0]")!;
+        typed.SelectToken("password.isSet")!.Value<bool>().Should().BeTrue();
+        typed.SelectToken("endpoints[0].token.isSet")!.Value<bool>().Should().BeTrue();
+
+        var genericQuery = $@"
+            query {{
+                runtime {{
+                    runtimeEntities(ckId: ""{CkTypeId}"", rtId: ""{rtId}"") {{
+                        items {{ attributes {{ items {{ attributeName value secretIsSet }} }} }}
+                    }}
+                }}
+            }}";
+        var genericResult = await _fixture.ExecuteGraphQlAsync(genericQuery);
+        var genericJson = Serialize(genericResult);
+        genericResult.Errors.Should().BeNullOrEmpty();
+        genericJson.Should().NotContain(legacyPassword).And.NotContain(legacyToken);
+
+        var queryRowsQuery = $@"
+            query {{
+                runtime {{
+                    transientQuery {{
+                        simple(ckId: ""{CkTypeId}"", columnPaths: [""name"", ""endpoints[0].key""],
+                            fieldFilter: [{{ attributePath: ""name"", operator: EQUALS, comparisonValue: ""legacy"" }}]) {{
+                            items {{ rows {{ items {{ cells {{ items {{ attributePath value }} }} }} }} }}
+                        }}
+                    }}
+                }}
+            }}";
+        var rowsJson = Serialize(await _fixture.ExecuteGraphQlAsync(queryRowsQuery));
+        rowsJson.Should().NotContain(legacyPassword).And.NotContain(legacyToken);
+    }
+
     #endregion
 
     #region Update and clear
@@ -475,6 +531,40 @@ public class SecretAttributeGraphQlTests
             }}";
 
         AssertNotQueryable(await _fixture.ExecuteGraphQlAsync(query), "password");
+    }
+
+    [Theory]
+    [InlineData("password")]
+    [InlineData("endpoints[0].token")]
+    public async Task QueryRowMutation_SecretCell_IsRefused_WithoutEchoingTheValue(string secretPath)
+    {
+        // Secrets are not query columns (concept §4.4), so a persistent-query row cannot write them either;
+        // the refusal happens before the mapping errors, which echo cell values.
+        var createQuery = $@"
+            mutation {{
+                runtime {{ systemSimpleRtQuerys {{
+                    create(entities: [{{ name: ""secret-rows"", queryCkTypeId: ""{CkTypeId}"", columns: [""name""] }}]) {{ rtId }}
+                }} }}
+            }}";
+        var createResult = await _fixture.ExecuteGraphQlAsync(createQuery);
+        createResult.Errors.Should().BeNullOrEmpty();
+        var queryRtId = JObject.Parse(Serialize(createResult))
+            .SelectToken("data.runtime.systemSimpleRtQuerys.create[0].rtId")!.Value<string>();
+        var secret = FakeSecret("row");
+
+        var insert = $@"
+            mutation {{
+                runtime {{ runtimeQuery(rtId: ""{queryRtId}"") {{
+                    create(entities: [{{ ckTypeId: ""{CkTypeId}"", cells: [
+                        {{ attributePath: ""name"", value: ""secret-row"" }},
+                        {{ attributePath: ""{secretPath}"", value: ""{secret}"" }}
+                    ] }}]) {{ ckTypeId }}
+                }} }}
+            }}";
+        var result = await _fixture.ExecuteGraphQlAsync(insert);
+
+        Serialize(result).Should().NotContain(secret);
+        AssertNotQueryable(result, secretPath);
     }
 
     #endregion

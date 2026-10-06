@@ -26,7 +26,12 @@ public class SecretDecryptionArchitectureTests
     [
         ("ISecretAttributeProtector", "Unprotect"),
         ("SecretAttributeProtector", "Unprotect"),
-        ("SecretAttributeExtensions", "GetSecretPlaintext")
+        ("SecretAttributeExtensions", "GetSecretPlaintext"),
+        // The SDK crypto decrypts enc:v1 and, with a protector, enc:v2 as well.
+        ("IInstanceSecretCrypto", "Decrypt"),
+        ("InstanceSecretCrypto", "Decrypt"),
+        // Not a decryption, but the stored ciphertext must not be projected either (concept §4.1).
+        ("RtSecretValue", "get_Envelope")
     ];
 
     [Fact]
