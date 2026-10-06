@@ -7,6 +7,7 @@ using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
 using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.ConstructionKit.Contracts.DataTransferObjects;
 using Meshmakers.Octo.ConstructionKit.Contracts.DependencyGraph;
+using Meshmakers.Octo.ConstructionKit.Contracts.Services;
 using Meshmakers.Octo.Runtime.Contracts.RepositoryEntities;
 using Meshmakers.Octo.Runtime.Contracts.Secrets;
 
@@ -38,31 +39,50 @@ public sealed class RtAssociationDtoType : ObjectGraphType<RtAssociationDto>
 
     private object ResolveAttributes(IResolveConnectionContext<RtAssociationDto> context)
     {
-        var ckCacheService = context.GetCkCacheService();
         var graphQlContext = (GraphQlUserContext)context.UserContext;
+        var attributeDtos = CreateAttributeDtos(context.GetCkCacheService(), context.GetProtector(),
+            context.RequestServices?.GetService<ILogger<RtAssociationDtoType>>(), graphQlContext.TenantId,
+            (RtAssociation)context.Source.UserContext!, context.Source.CkAssociationRoleId,
+            RtEntityGenericDtoType.GetAttributeNamesFilter(context));
+        return ConnectionUtils.ToOctoConnection(attributeDtos, context);
+    }
 
-
-        var ckAssociationRole =
-            ckCacheService.GetRtCkAssociationRole(graphQlContext.TenantId, context.Source.CkAssociationRoleId);
-
-        IEnumerable<CkTypeAttributeGraph> resultList;
-        if (context.HasArgument(Statics.AttributeNamesFilterArg))
+    /// <summary>
+    ///     The generic attribute projection of an association (AB#5535): an empty filter returns nothing without
+    ///     touching the CK cache; an association whose role is not in the (loaded) CK cache is projected from its
+    ///     stored attributes by <see cref="UnknownCkTypeAttributeProjection" /> instead of failing the whole list.
+    /// </summary>
+    internal static List<RtEntityAttributeDto> CreateAttributeDtos(ICkCacheService ckCacheService,
+        ISecretAttributeProtector? protector, ILogger? logger, string tenantId, RtAssociation rtAssociation,
+        RtCkId<CkAssociationRoleId> ckAssociationRoleId, IReadOnlyCollection<string>? filterAttributeNames)
+    {
+        if (filterAttributeNames is { Count: 0 })
         {
-            var filterAttributeNames = context.GetArgument<IEnumerable<string>>(Statics.AttributeNamesFilterArg);
-
-            resultList =
-                ckAssociationRole.AllAttributes.Values.Where(a =>
-                    filterAttributeNames.Contains(a.AttributeName.ToCamelCase()));
+            return [];
         }
-        else
+
+        CkAssociationRoleGraph ckAssociationRole;
+        try
         {
-            resultList = ckAssociationRole.AllAttributes.Values;
+            ckAssociationRole = ckCacheService.GetRtCkAssociationRole(tenantId, ckAssociationRoleId);
+        }
+        catch (CkCacheException) when (ckCacheService.IsTenantLoaded(tenantId))
+        {
+            // Loaded cache without this role: outdated/removed model element (no TryGet exists for roles).
+            UnknownCkTypeAttributeProjection.WarnOnce(logger, tenantId, "CK association role",
+                ckAssociationRoleId.ToString());
+            return UnknownCkTypeAttributeProjection.Project(rtAssociation, filterAttributeNames,
+                rtRecord => RtRecordDtoType.CreateRtRecordDtoWithAttributes(ckCacheService, protector, tenantId,
+                    rtRecord, false, null, logger),
+                protector);
         }
 
-        return ConnectionUtils.ToOctoConnection(
-            resultList.Select(item => CreateRtEntityAttributeDto((RtAssociation)context.Source.UserContext!, item,
-                context.GetProtector())),
-            context);
+        var resultList = filterAttributeNames != null
+            ? ckAssociationRole.AllAttributes.Values.Where(a =>
+                filterAttributeNames.Contains(a.AttributeName.ToCamelCase()))
+            : ckAssociationRole.AllAttributes.Values;
+
+        return resultList.Select(item => CreateRtEntityAttributeDto(rtAssociation, item, protector)).ToList();
     }
 
     private static RtEntityAttributeDto CreateRtEntityAttributeDto(RtAssociation rtAssociationDto,
