@@ -1,7 +1,10 @@
+using System.Security.Claims;
 using System.Text.Json;
 using GraphQL;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Utils;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.Secrets;
+using Meshmakers.Octo.Communication.Contracts;
 using Microsoft.Extensions.DependencyInjection;
 using MongoDB.Bson;
 using MongoDB.Driver;
@@ -19,6 +22,29 @@ public class GraphQlTestFixture : SampleDataFixture
     private IGraphQLTextSerializer? _serializer;
     private IMongoClient? _mongoClient;
 
+    public GraphQlTestFixture()
+    {
+        // AB#5544: pipelines with RevealSecret@1 nodes for the secret usage tests (see TestPipelineDefinitionSource).
+        Services.AddSingleton<TestPipelineDefinitionSource>();
+        Services.AddSingleton<IPipelineDefinitionSource>(sp => sp.GetRequiredService<TestPipelineDefinitionSource>());
+    }
+
+    /// <summary>
+    ///     A principal with the <see cref="CommonConstants.AdminPanelManagementRole" /> role (secrets overview, AB#5544).
+    /// </summary>
+    public static ClaimsPrincipal AdminPanelPrincipal { get; } = new(
+        new ClaimsIdentity(
+            [
+                new Claim(ClaimTypes.Name, "admin-panel"),
+                new Claim(ClaimTypes.Role, CommonConstants.AdminPanelManagementRole)
+            ],
+            "IntegrationTests"));
+
+    /// <summary>
+    ///     The pipeline source of the secret usage scan; tests add pipeline definitions to it.
+    /// </summary>
+    internal TestPipelineDefinitionSource PipelineSource => GetService<TestPipelineDefinitionSource>();
+
     protected override async Task InitializeServicesAsync()
     {
         await base.InitializeServicesAsync();
@@ -31,7 +57,11 @@ public class GraphQlTestFixture : SampleDataFixture
     /// <summary>
     /// Executes a GraphQL query directly against the schema.
     /// </summary>
-    public async Task<ExecutionResult> ExecuteGraphQlAsync(string query, string? variables = null)
+    /// <param name="query">The GraphQL document</param>
+    /// <param name="variables">Optional JSON object with the variables</param>
+    /// <param name="user">Optional principal; null = unauthenticated</param>
+    public async Task<ExecutionResult> ExecuteGraphQlAsync(string query, string? variables = null,
+        ClaimsPrincipal? user = null)
     {
         if (_documentExecuter == null)
         {
@@ -51,7 +81,7 @@ public class GraphQlTestFixture : SampleDataFixture
             options.Query = query;
             options.Variables = inputs != null ? new Inputs(inputs) : null;
             options.RequestServices = Provider;
-            options.UserContext = new GraphQlUserContext(null, GetSystemContext());
+            options.UserContext = new GraphQlUserContext(user, GetSystemContext());
         });
 
         return result;

@@ -46,6 +46,28 @@ are never returned by this service - neither the plaintext, legacy clear text no
   `SecretEncryptionNotConfiguredException` maps to `SecretEncryptionNotConfigured`.
 - `availableArchivePaths` omits secrets; archives cannot contain secret columns.
 
+## Secrets overview (AB#5544, handover §7)
+
+`query { secrets { inventory summary usages } }` on the tenant endpoint (`SecretsQuery`).
+
+- The root field `secrets` checks `CommonConstants.AdminPanelManagementRole`; without it the field is null with
+  GraphQL error code `Forbidden` (spelled as in the contract; the older role gates use `FORBIDDEN`).
+- `inventory(first = 50, after, ckTypeId, forms, needsReEntry, search)` and `summary` map the engine's
+  `ISecretInventoryService` (full scan per call, values never read). Cursors are offset based like the other
+  connections (`ConnectionUtils.OffsetToCursor`); `first` is capped at 1000.
+- `usedBy` (per item) and `usages(ckTypeId, rtId, attributePath)` come from a per-request `SecretUsageIndex`
+  (`SecretsRequestContext`, at most one scan per request and only when selected): `SecretUsageScanner` reads every
+  `System.Communication/Pipeline` (attribute `PipelineDefinition`, parent `System.Communication/DataFlow` via
+  `System/ParentChild`) through `IPipelineDefinitionSource` and finds `RevealSecret@1` nodes anywhere in the YAML/JSON
+  tree (`RevealSecretNodeParser`; invalid definitions are skipped with a debug log). `nodePath` is the node's position,
+  e.g. `transformations[2].transformations[0]`.
+- Matching: same CK type (version suffix tolerated) and attribute (`attributeName` case-insensitive against the
+  inventory `attributePath`, so `Password` matches `password` and `primaryEndpoint.token` a single-record member).
+  A fixed `rtId` gives `EXACT` for that entity only; `rtIdPath` without `rtId` gives `BY_TYPE`; a node with only
+  `ckTypeIdPath` cannot be attributed and is skipped.
+- Integration tests add pipeline definitions through `TestPipelineDefinitionSource` (the test tenant has no
+  System.Communication model).
+
 ## No decryption
 
 `SecretDecryptionArchitectureTests` (unit tests) fails on any call to `ISecretAttributeProtector.Unprotect`,

@@ -13,6 +13,7 @@ using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Caches;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.RequestHandling;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Utils;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.Observability;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.Secrets;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.Services;
 using Meshmakers.Octo.Communication.Contracts;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
@@ -360,6 +361,10 @@ public static class RuntimeEngineBuilderExtensions
 
         // GraphQL custom services
         builder.Services.AddSingleton<ISchemaContext, SchemaContext>();
+
+        // AB#5544: secrets overview - RevealSecret@1 usage scan over the tenant's pipeline definitions.
+        builder.Services.AddSingleton<IPipelineDefinitionSource, TenantPipelineDefinitionSource>();
+        builder.Services.AddSingleton<SecretUsageScanner>();
 
 
         builder.Services.AddOctoServiceInfrastructure("AssetRepositoryService", c =>

@@ -32,6 +32,13 @@ internal sealed class OctoQuery : ObjectGraphType
         Field("Blueprints", new BlueprintsQuery(loggerFactory.CreateLogger<BlueprintsQuery>()))
             .Resolve(_ => new object());
 
+        // AB#5544 (handover §7): secrets overview. The role check (AdminPanelManagement, else error code
+        // Forbidden) sits on this root field, so it covers inventory, summary and usages alike.
+        Field("Secrets", new SecretsQuery(loggerFactory.CreateLogger<SecretsQuery>()))
+            .Description("Secrets overview of the tenant: inventory, summary and pipeline usages of secret " +
+                         "attributes. Requires the AdminPanelManagement role. Never returns values.")
+            .Resolve(SecretsQuery.Resolve);
+
         Field<NonNullGraphType<ListGraphType<NonNullGraphType<ArchivePathInfoDtoType>>>>("availableArchivePaths")
             .Description("Returns the attribute paths reachable from the given CK type that may be used as columns in a CkArchive (concept §16). Bounded by maxDepth so deep records terminate predictably.")
             .Argument<NonNullGraphType<StringGraphType>>("ckTypeId", "The CK type id to introspect, e.g. \"Energy/Sensor\".")

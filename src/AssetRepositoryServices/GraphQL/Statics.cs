@@ -100,6 +100,12 @@ internal static class Statics
     /// <summary>Stable code for "caller is not in a required role" — gates the archive lifecycle mutations on StreamDataAdmin.</summary>
     public const string GraphQlForbidden = "FORBIDDEN";
 
+    /// <summary>
+    ///     AB#5544 (handover §12): <c>secrets { … }</c> without the AdminPanelManagement role. Spelled as the
+    ///     secrets admin API contract defines it.
+    /// </summary>
+    public const string GraphQlSecretsForbidden = "Forbidden";
+
     public static string GetGraphQlPascalCaseName<TKey>(this RtCkId<TKey> ckKey) where TKey : IComparable<TKey>, ICkElementId
     {
         return ckKey.SemanticVersionedFullName
