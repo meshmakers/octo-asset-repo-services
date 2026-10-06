@@ -82,6 +82,8 @@ internal sealed class RtQueryDtoType : ObjectGraphType<RtQueryDto>
 
             var offset = context.GetOffset();
             var queryOptions = context.GetQueryOptions();
+            SecretQueryGuard.EnsureQueryable(ckCacheService, tenantRepository.TenantId,
+                rtQueryDto.AssociatedCkTypeId, queryOptions);
 
             var columnPaths = rtQueryDto.Columns.Select(column => column.AttributePath);
             var fieldFilterPaths = queryOptions.FieldFilters?.Select(ff => ff.AttributePath) ?? [];
@@ -144,6 +146,8 @@ internal sealed class RtQueryDtoType : ObjectGraphType<RtQueryDto>
             var offset = context.GetOffset();
             // Use query options from the persistent query definition, then enhance with runtime options
             var queryOptions = context.GetQueryOptions(queryUserContext.QueryOptions);
+            SecretQueryGuard.EnsureQueryable(ckCacheService, tenantRepository.TenantId,
+                rtQueryDto.AssociatedCkTypeId, queryOptions);
 
             // Apply navigation filter mode if specified
             var navigationFilterMode = context.GetArgument<NavigationFilterMode?>("navigationFilterMode");

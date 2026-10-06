@@ -63,6 +63,8 @@ internal sealed class RtTransientQueryDtoType : ObjectGraphType<RtTransientQuery
 
             var offset = context.GetOffset();
             var queryOptions = context.GetQueryOptions(queryUserContext.QueryOptions);
+            SecretQueryGuard.EnsureQueryable(ckCacheService, tenantRepository.TenantId,
+                rtTransientQueryDto.AssociatedCkTypeId, queryOptions);
 
             var columnPaths = rtTransientQueryDto.Columns.Select(column => column.AttributePath);
             var fieldFilterPaths = queryOptions.FieldFilters?.Select(ff => ff.AttributePath) ?? [];

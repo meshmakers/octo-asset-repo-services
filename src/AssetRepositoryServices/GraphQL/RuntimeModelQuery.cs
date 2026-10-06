@@ -129,6 +129,8 @@ internal sealed class RuntimeModelQuery : ObjectGraphType
             .Where(cp => typeQueryColumnPaths.All(ckTypeQueryColumn => ckTypeQueryColumn.Path != cp)).ToList();
         if (invalidGroupingColumns.Any())
         {
+            SecretQueryGuard.EnsureNoSecretColumns(ckCacheService, graphQlUserContext.TenantId, rtGroupingAggregationRtQuery.QueryCkTypeId,
+                invalidGroupingColumns);
             throw AssetRepositoryException.InvalidColumnPaths(invalidGroupingColumns);
         }
 
@@ -137,6 +139,8 @@ internal sealed class RuntimeModelQuery : ObjectGraphType
             .Where(cp => typeQueryColumnPaths.All(ckTypeQueryColumn => ckTypeQueryColumn.Path != cp.AttributePath)).ToList();
         if (invalidColumnPaths.Any())
         {
+            SecretQueryGuard.EnsureNoSecretColumns(ckCacheService, graphQlUserContext.TenantId, rtGroupingAggregationRtQuery.QueryCkTypeId,
+                invalidColumnPaths.Select(p => p.AttributePath).ToList());
             throw AssetRepositoryException.InvalidColumnPaths(invalidColumnPaths.Select(p => p.AttributePath).ToList());
         }
 
@@ -170,6 +174,8 @@ internal sealed class RuntimeModelQuery : ObjectGraphType
         var invalidColumnPaths = rtAggregationRtQuery.Columns.Where(cp => typeQueryColumnPaths.All(ckTypeQueryColumn => ckTypeQueryColumn.Path != cp.AttributePath)).ToList();
         if (invalidColumnPaths.Any())
         {
+            SecretQueryGuard.EnsureNoSecretColumns(ckCacheService, graphQlUserContext.TenantId, rtAggregationRtQuery.QueryCkTypeId,
+                invalidColumnPaths.Select(p=> p.AttributePath).ToList());
             throw AssetRepositoryException.InvalidColumnPaths(invalidColumnPaths.Select(p=> p.AttributePath).ToList());
         }
 
@@ -201,6 +207,8 @@ internal sealed class RuntimeModelQuery : ObjectGraphType
         var invalidColumnPaths = resolvedColumns.Where(rc => rc.Column == null).Select(rc => rc.Path).ToList();
         if (invalidColumnPaths.Any())
         {
+            SecretQueryGuard.EnsureNoSecretColumns(ckCacheService, graphQlUserContext.TenantId, rtSimpleRtQuery.QueryCkTypeId,
+                invalidColumnPaths);
             throw AssetRepositoryException.InvalidColumnPaths(invalidColumnPaths);
         }
 
@@ -227,6 +235,8 @@ internal sealed class RuntimeModelQuery : ObjectGraphType
 
             var offset = arg.GetOffset();
             var queryOptions = arg.GetQueryOptions();
+            SecretQueryGuard.EnsureQueryable(arg.GetCkCacheService(), graphQlUserContext.TenantId, ckTypeId,
+                queryOptions);
 
             var keysList = new List<OctoObjectId>();
             if (arg.TryGetArgument(Statics.RtIdArg, out OctoObjectId? rtId))
@@ -287,6 +297,8 @@ internal sealed class RuntimeModelQuery : ObjectGraphType
 
             var offset = arg.GetOffset();
             var rtEntityQueryOptions = arg.GetQueryOptions();
+            SecretQueryGuard.EnsureQueryable(arg.GetCkCacheService(), graphQlUserContext.TenantId, ckTypeId,
+                rtEntityQueryOptions);
 
             var keysList = new List<OctoObjectId>();
             if (arg.TryGetArgument(Statics.RtIdArg, out OctoObjectId? rtId))

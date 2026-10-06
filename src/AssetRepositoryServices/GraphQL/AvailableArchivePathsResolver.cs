@@ -45,6 +45,12 @@ internal static class AvailableArchivePathsResolver
         HashSet<CkId<CkRecordId>> visitedRecords,
         List<ArchivePathInfoDto> sink)
     {
+        // AB#5528 (concept §4.4): Secret attributes are never archived - no CrateDB column, no archive path.
+        if (attribute.ValueType == AttributeValueTypesDto.Secret)
+        {
+            return;
+        }
+
         var isArray = isInsideArray
             || attribute.ValueType is AttributeValueTypesDto.RecordArray
             or AttributeValueTypesDto.StringArray

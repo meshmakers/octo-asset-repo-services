@@ -8,6 +8,7 @@ using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Caches;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Inputs;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Scalars;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Utils;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
 using Meshmakers.Octo.ConstructionKit.Contracts.DataTransferObjects;
 using Meshmakers.Octo.ConstructionKit.Contracts.DependencyGraph;
@@ -97,6 +98,10 @@ internal class OctoBuilder<TSourceType>(
                 return (null, binaryLinkedType);
             case AttributeValueTypesDto.Binary:
                 return (null, typeof(ListGraphType<ByteGraphType>));
+            case AttributeValueTypesDto.Secret:
+                // AB#5528 (concept §4.1/§4.3): a secret is written as a plain string (omitted, null or ""
+                // = unchanged; clearing only via clearSecretAttributes) and read as { isSet } only.
+                return (null, isInputType ? typeof(StringGraphType) : typeof(OctoSecretStateDtoType));
 
             case AttributeValueTypesDto.Enum:
                 if (typeAttributeGraph.ValueCkEnumId == null)
@@ -151,6 +156,22 @@ internal class OctoBuilder<TSourceType>(
         var typeAttributeGraph = context.FieldDefinition.GetMetadata<CkTypeAttributeGraph>(Statics.AttributeGraphType);
 
         var r = rtTypeWithAttributes?.GetAttributeValueOrDefault(typeAttributeGraph.AttributeName);
+
+        // AB#5528: decided by the CK attribute type, never by the runtime value - change-stream documents
+        // carry legacy plain strings that are not normalised to RtSecretValue. The value itself (plaintext,
+        // legacy clear text or envelope) never leaves this resolver.
+        if (typeAttributeGraph.ValueType == AttributeValueTypesDto.Secret)
+        {
+            return SecretAttributeProjection.ToSecretState(r);
+        }
+
+        if (r is RtSecretValue)
+        {
+            // A secret in a slot the (stale) CK cache does not know as Secret: the field is not typed
+            // OctoSecretState, so nothing can be said about it without leaking - project "no value".
+            return null;
+        }
+
         switch (typeAttributeGraph.ValueType)
         {
             case AttributeValueTypesDto.BinaryLinked:

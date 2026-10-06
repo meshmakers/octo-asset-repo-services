@@ -5,6 +5,7 @@ using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Scalars;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Utils;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
 using Meshmakers.Octo.ConstructionKit.Contracts;
+using Meshmakers.Octo.ConstructionKit.Contracts.DataTransferObjects;
 using Meshmakers.Octo.ConstructionKit.Contracts.DependencyGraph;
 using Meshmakers.Octo.Runtime.Contracts.RepositoryEntities;
 
@@ -65,10 +66,24 @@ public sealed class RtAssociationDtoType : ObjectGraphType<RtAssociationDto>
     private RtEntityAttributeDto CreateRtEntityAttributeDto(RtAssociation rtAssociationDto,
         CkTypeAttributeGraph ckTypeAttributeGraph)
     {
+        var value = rtAssociationDto.GetAttributeValueOrDefault(ckTypeAttributeGraph.AttributeName);
+
+        // AB#5528: association roles cannot declare Secret attributes (compiler rule); a secret found anyway
+        // is projected like on entities - never its value.
+        if (ckTypeAttributeGraph.ValueType == AttributeValueTypesDto.Secret || value is RtSecretValue)
+        {
+            return new RtEntityAttributeDto
+            {
+                AttributeName = ckTypeAttributeGraph.AttributeName.ToCamelCase(),
+                Value = null,
+                SecretIsSet = SecretAttributeProjection.IsSet(value)
+            };
+        }
+
         var attributeDto = new RtEntityAttributeDto
         {
             AttributeName = ckTypeAttributeGraph.AttributeName.ToCamelCase(),
-            Value = rtAssociationDto.GetAttributeValueOrDefault(ckTypeAttributeGraph.AttributeName)
+            Value = value
         };
         return attributeDto;
     }

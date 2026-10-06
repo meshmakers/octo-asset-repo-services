@@ -1,9 +1,11 @@
+using System.Security.Cryptography;
 using MartinCostello.Logging.XUnit;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.Configuration.DependencyInjection.Options;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb.Configuration;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb.Services;
 using Meshmakers.Octo.Runtime.Engine.MongoDb.Services.Defaults;
+using Meshmakers.Octo.Runtime.Engine.Secrets;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Xunit;
@@ -28,6 +30,13 @@ public abstract class ServiceCollectionFixture : ITestOutputHelperAccessor, IAsy
                 _ => new OctoSystemConfiguration(),
                 _ => new OctoAssetRepositoryServicesOptions());
 
+        // AB#5528: Secret attributes need a key ring. Tests use a key generated per fixture - never a real key.
+        Services.Configure<SecretEncryptionOptions>(options =>
+        {
+            options.Keys[TestSecretKeyId] = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32));
+            options.ActiveKeyId = TestSecretKeyId;
+        });
+
         // Reset tenant notification to default implementation without using rabbitmq
         Services.AddSingleton<ITenantNotifications, DefaultTenantNotifications>();
 
@@ -43,6 +52,11 @@ public abstract class ServiceCollectionFixture : ITestOutputHelperAccessor, IAsy
             loggingBuilder.AddXUnit(this);
         });
     }
+
+    /// <summary>
+    ///     Key id of the generated test key ring (AB#5528).
+    /// </summary>
+    public const string TestSecretKeyId = "test1";
 
     public ServiceCollection Services { get; }
 

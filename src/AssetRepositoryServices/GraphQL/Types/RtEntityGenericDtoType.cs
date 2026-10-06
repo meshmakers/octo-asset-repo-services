@@ -87,6 +87,19 @@ internal sealed class RtEntityGenericDtoType : ObjectGraphType<RtEntityDto>
     {
         var value = rtEntity.GetAttributeValueOrDefault(ckTypeAttributeGraph.AttributeName);
 
+        // AB#5528 (concept §4.2): a Secret attribute is projected as value = null plus secretIsSet. Decided by
+        // the CK attribute type (change-stream documents carry legacy plain strings that are not normalised);
+        // an RtSecretValue under a stale CK cache is covered as well.
+        if (ckTypeAttributeGraph.ValueType == AttributeValueTypesDto.Secret || value is RtSecretValue)
+        {
+            return new RtEntityAttributeDto
+            {
+                AttributeName = ckTypeAttributeGraph.AttributeName.ToCamelCase(),
+                Value = null,
+                SecretIsSet = SecretAttributeProjection.IsSet(value)
+            };
+        }
+
         if (value is RtRecord rtRecord)
         {
             value = RtRecordDtoType.CreateRtRecordDtoWithAttributes(ckCacheService, tenantId, rtRecord,
@@ -103,7 +116,7 @@ internal sealed class RtEntityGenericDtoType : ObjectGraphType<RtEntityDto>
                         resolveEnumValuesToNames, filterAttributeNames?.ToArray());
                 }
 
-                return listValue;
+                return listValue is RtSecretValue ? null : listValue;
             });
         }
 

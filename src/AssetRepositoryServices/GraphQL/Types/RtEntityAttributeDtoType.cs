@@ -12,6 +12,10 @@ internal sealed class RtEntityAttributeDtoType : ObjectGraphType<RtEntityAttribu
         Description = "Attribute of a runtime entity";
 
         Field(x => x.AttributeName, typeof(StringGraphType)).Description("Attribute name within the entity.");
-        Field<SimpleScalarType, object>(nameof(RtEntityAttributeDto.Value)).Description("Value of a scalar attribute.");
+        Field<SimpleScalarType, object>(nameof(RtEntityAttributeDto.Value))
+            .Description("Value of a scalar attribute. Always null for a Secret attribute, see 'secretIsSet'.");
+        Field(x => x.SecretIsSet, typeof(BooleanGraphType))
+            .Description("For a Secret attribute: true when the secret holds a value (the value itself is never " +
+                         "returned). Null for every other attribute.");
     }
 }
