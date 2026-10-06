@@ -116,6 +116,42 @@ public class UnknownCkTypeAttributeProjectionTests
     }
 
     [Fact]
+    public void UnknownAssociationRole_ProjectsStoredAttributes_AndMasksRecognisableSecrets()
+    {
+        var cache = CreateLoadedCacheWithoutTypes();
+        var roleId = new RtCkId<CkAssociationRoleId>("Outdated.Model/RemovedRole");
+        A.CallTo(() => cache.GetRtCkAssociationRole(TenantId, roleId))
+            .Throws(new CkCacheException("role not found"));
+        var association = new RtAssociation(roleId, OctoObjectId.GenerateNewId(),
+            new Dictionary<string, object?>
+            {
+                ["Weight"] = 2,
+                ["Token"] = RtSecretValue.Pending(FakePlaintext)
+            });
+
+        var result = RtAssociationDtoType.CreateAttributeDtos(cache, null, null, TenantId, association, roleId,
+            null);
+
+        Single(result, "weight").Value.Should().Be(2);
+        Single(result, "token").Value.Should().BeNull();
+        Single(result, "token").SecretIsSet.Should().BeTrue();
+    }
+
+    [Fact]
+    public void UnknownAssociationRole_UnloadedCkCache_StillFailsLoudly()
+    {
+        var cache = A.Fake<ICkCacheService>();
+        var roleId = new RtCkId<CkAssociationRoleId>("Outdated.Model/RemovedRole");
+        A.CallTo(() => cache.IsTenantLoaded(TenantId)).Returns(false);
+        A.CallTo(() => cache.GetRtCkAssociationRole(TenantId, roleId)).Throws(new CkCacheException("unloaded"));
+
+        var act = () => RtAssociationDtoType.CreateAttributeDtos(cache, null, null, TenantId, new RtAssociation(),
+            roleId, null);
+
+        act.Should().Throw<CkCacheException>();
+    }
+
+    [Fact]
     public void UnloadedCkCache_StillFailsLoudly()
     {
         var cache = A.Fake<ICkCacheService>();
