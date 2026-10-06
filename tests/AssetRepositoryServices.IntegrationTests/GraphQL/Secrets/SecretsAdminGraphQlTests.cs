@@ -157,14 +157,14 @@ public class SecretsAdminGraphQlTests
         var (json, connection) = await InventoryAsync($"ckTypeId: \"{CkTypeId}\", search: \"{rtId}\", first: 50");
         json.Should().NotContain(password).And.NotContain(token).And.NotContain("enc:v");
 
-        // primaryEndpoint is not set: an absent record has no member slots.
-        connection["totalCount"]!.Value<int>().Should().Be(4, "password, apiKey and two endpoint tokens");
+        // primaryEndpoint is not set: an absent record has no member slots. endpoints[key=test].token is an
+        // optional record member that is not set: omitted (AB#5532). The top-level optional apiKey stays listed.
+        connection["totalCount"]!.Value<int>().Should().Be(3, "password, apiKey and the set endpoint token");
         var items = (JArray)connection["items"]!;
         var byPath = items.ToDictionary(i => i["attributePath"]!.Value<string>()!);
-        byPath.Keys.Should().BeEquivalentTo("password", "apiKey", "endpoints[key=prod].token",
-            "endpoints[key=test].token");
-        byPath["endpoints[key=test].token"]["form"]!.Value<string>().Should().Be("NOT_SET");
-        byPath["endpoints[key=test].token"]["needsReEntry"]!.Value<bool>().Should().BeFalse();
+        byPath.Keys.Should().BeEquivalentTo("password", "apiKey", "endpoints[key=prod].token");
+        // No stored display name: falls back to the Name attribute.
+        items.Should().OnlyContain(i => i["displayName"]!.Value<string>() == "inventory");
 
         var pw = byPath["password"];
         pw["ckTypeId"]!.Value<string>().Should().Be(CkTypeId);
@@ -199,7 +199,7 @@ public class SecretsAdminGraphQlTests
             name = "inventory-filter",
             password = FakeSecret("pw"),
             apiKey = FakeSecret("api"),
-            endpoints = new object[] { new { key = "a", label = "no token" } }
+            endpoints = new object[] { new { key = "a", label = "no token" }, new { key = "c", token = FakeSecret("tok") } }
         });
         await MoveToUnknownKeyAsync(rtId, "password");
 
@@ -208,12 +208,20 @@ public class SecretsAdminGraphQlTests
         ((JArray)reEntry["items"]!).Select(i => i["attributePath"]!.Value<string>()).Should().Equal("password");
 
         var (_, encV2) = await InventoryAsync($"search: \"{rtId}\", forms: [ENC_V2]");
-        ((JArray)encV2["items"]!).Select(i => i["attributePath"]!.Value<string>()).Should().Equal("apiKey");
+        ((JArray)encV2["items"]!).Select(i => i["attributePath"]!.Value<string>())
+            .Should().BeEquivalentTo("apiKey", "endpoints[key=c].token");
 
         var (_, missing) = await InventoryAsync($"search: \"{rtId}\", forms: [KEY_MISSING, CORRUPT]");
         missing["totalCount"]!.Value<int>().Should().Be(1);
 
-        // Paging with offset cursors (password, apiKey, endpoints[key=a].token).
+        // Search also matches the CK type id: full id and the short type name, case-insensitive.
+        var (_, byType) = await InventoryAsync($"search: \"{CkTypeId.ToUpperInvariant()}\", first: 0");
+        byType["totalCount"]!.Value<int>().Should().BeGreaterThanOrEqualTo(3);
+        var (_, byShortType) = await InventoryAsync("search: \"servicecredential\", first: 0");
+        byShortType["totalCount"]!.Value<int>().Should().Be(byType["totalCount"]!.Value<int>());
+
+        // Paging with offset cursors (password, apiKey, endpoints[key=c].token; endpoints[key=a].token is an
+        // optional record member that is not set and therefore omitted).
         var (_, page1) = await InventoryAsync($"search: \"{rtId}\", first: 2");
         page1["totalCount"]!.Value<int>().Should().Be(3);
         ((JArray)page1["items"]!).Should().HaveCount(2);
