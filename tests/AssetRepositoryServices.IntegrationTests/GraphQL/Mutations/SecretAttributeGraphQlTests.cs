@@ -621,7 +621,8 @@ public class SecretAttributeGraphQlTests
         var token = Field("record", "fields", "token")["type"]!;
         token["name"]!.Value<string>().Should().Be("OctoSecretState");
 
-        data["state"]!["fields"]!.Select(f => f["name"]!.Value<string>()).Should().BeEquivalentTo("isSet");
+        data["state"]!["fields"]!.Select(f => f["name"]!.Value<string>()).Should()
+            .BeEquivalentTo("isSet", "keyMissing", "setAt");
     }
 
     [Fact]

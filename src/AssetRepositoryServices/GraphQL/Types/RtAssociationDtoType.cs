@@ -8,6 +8,7 @@ using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.ConstructionKit.Contracts.DataTransferObjects;
 using Meshmakers.Octo.ConstructionKit.Contracts.DependencyGraph;
 using Meshmakers.Octo.Runtime.Contracts.RepositoryEntities;
+using Meshmakers.Octo.Runtime.Contracts.Secrets;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
 
@@ -59,12 +60,13 @@ public sealed class RtAssociationDtoType : ObjectGraphType<RtAssociationDto>
         }
 
         return ConnectionUtils.ToOctoConnection(
-            resultList.Select(item => CreateRtEntityAttributeDto((RtAssociation)context.Source.UserContext!, item)),
+            resultList.Select(item => CreateRtEntityAttributeDto((RtAssociation)context.Source.UserContext!, item,
+                context.GetProtector())),
             context);
     }
 
-    private RtEntityAttributeDto CreateRtEntityAttributeDto(RtAssociation rtAssociationDto,
-        CkTypeAttributeGraph ckTypeAttributeGraph)
+    private static RtEntityAttributeDto CreateRtEntityAttributeDto(RtAssociation rtAssociationDto,
+        CkTypeAttributeGraph ckTypeAttributeGraph, ISecretAttributeProtector? protector)
     {
         var value = rtAssociationDto.GetAttributeValueOrDefault(ckTypeAttributeGraph.AttributeName);
 
@@ -72,12 +74,8 @@ public sealed class RtAssociationDtoType : ObjectGraphType<RtAssociationDto>
         // is projected like on entities - never its value.
         if (ckTypeAttributeGraph.ValueType == AttributeValueTypesDto.Secret || value is RtSecretValue)
         {
-            return new RtEntityAttributeDto
-            {
-                AttributeName = ckTypeAttributeGraph.AttributeName.ToCamelCase(),
-                Value = null,
-                SecretIsSet = SecretAttributeProjection.IsSet(value)
-            };
+            return SecretAttributeProjection.ToAttributeDto(ckTypeAttributeGraph.AttributeName.ToCamelCase(), value,
+                protector);
         }
 
         var attributeDto = new RtEntityAttributeDto

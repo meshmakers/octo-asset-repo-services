@@ -162,7 +162,7 @@ internal class OctoBuilder<TSourceType>(
         // legacy clear text or envelope) never leaves this resolver.
         if (typeAttributeGraph.ValueType == AttributeValueTypesDto.Secret)
         {
-            return SecretAttributeProjection.ToSecretState(r);
+            return SecretAttributeProjection.ToSecretState(r, context.GetProtector());
         }
 
         if (r is RtSecretValue)

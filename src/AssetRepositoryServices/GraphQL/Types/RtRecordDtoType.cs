@@ -7,6 +7,7 @@ using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.ConstructionKit.Contracts.DependencyGraph;
 using Meshmakers.Octo.ConstructionKit.Contracts.Services;
 using Meshmakers.Octo.Runtime.Contracts.RepositoryEntities;
+using Meshmakers.Octo.Runtime.Contracts.Secrets;
 using Microsoft.Extensions.Options;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
@@ -76,8 +77,8 @@ internal sealed class RtRecordDtoType : ObjectGraphType<RtRecordDto>
         return rtRecordDto;
     }
 
-    internal static RtRecordDto CreateRtRecordDtoWithAttributes(ICkCacheService ckCacheService, string tenantId,
-        RtRecord rtRecord, bool resolveEnumValuesToNames, ICollection<string>? filterAttributeNames = null)
+    internal static RtRecordDto CreateRtRecordDtoWithAttributes(ICkCacheService ckCacheService,
+        ISecretAttributeProtector? protector, string tenantId, RtRecord rtRecord, bool resolveEnumValuesToNames, ICollection<string>? filterAttributeNames = null)
     {
         var rtRecordDto = new RtRecordDto
         {
@@ -101,7 +102,7 @@ internal sealed class RtRecordDtoType : ObjectGraphType<RtRecordDto>
 
         var attributeDtos =
             resultList.Select(item =>
-                RtEntityGenericDtoType.CreateRtEntityAttributeDto(ckCacheService, tenantId, rtRecord, item,
+                RtEntityGenericDtoType.CreateRtEntityAttributeDto(ckCacheService, protector, tenantId, rtRecord, item,
                     resolveEnumValuesToNames, filterAttributeNames));
         rtRecordDto.Attributes = attributeDtos.ToList();
         return rtRecordDto;

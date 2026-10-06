@@ -5,11 +5,16 @@ are never returned by this service - neither the plaintext, legacy clear text no
 
 ## Read
 
-- Typed fields are `OctoSecretState { isSet: Boolean! }` (`OctoSecretStateDtoType`; non-null when the attribute is
-  required, the resolver always returns an object). A client that still selects such a field as a scalar fails
-  validation instead of reading a credential.
-- The generic projection returns `value: null` plus `RtEntityAttribute.secretIsSet` (null for non-secret
-  attributes); records follow the same rules per member.
+- Typed fields are `OctoSecretState { isSet: Boolean!, keyMissing: Boolean!, setAt: DateTime }`
+  (`OctoSecretStateDtoType`; non-null when the attribute is required, the resolver always returns an object). A
+  client that still selects such a field as a scalar fails validation instead of reading a credential.
+- The generic projection returns `value: null` plus `RtEntityAttribute.secretIsSet`, `secretKeyMissing` and
+  `secretSetAt` (all null for non-secret attributes); records follow the same rules per member.
+- The state comes from `ISecretAttributeProtector.DescribeSecret` (never decrypts): a protected value whose key id
+  is not in the key ring reads `isSet: false, keyMissing: true` (the ciphertext stays stored, decision 2026-10-06);
+  a corrupt stored value (an `enc:v2` envelope found as a plain string) and a legacy placeholder string still
+  waiting for the migration read as not set. `setAt` is the stored "set at" of a protected value (null for legacy
+  values and while the MongoDB repository does not store it).
 - All output paths go through `SecretAttributeProjection` and decide by the **CK attribute type**, never by
   `value is RtSecretValue` - change-stream documents carry legacy strings that are not normalised.
 - `SimpleScalarType.Serialize` redacts any `RtSecretValue` to null, and the GraphQL STJ serializer has the SDK's
@@ -17,6 +22,8 @@ are never returned by this service - neither the plaintext, legacy clear text no
 
 ## Write
 
+- Placeholders (`<…>`, `TODO_SET_*`) have no meaning on input: they are ordinary values and are encrypted like any
+  other (decision 2026-10-06).
 - `RtMutationBase.TryHandleAttributeAsync`: only a non-empty string sets a secret (passed to the engine as
   `RtSecretValue.Pending`; the engine encrypts). `null`, `""` and the read marker (`{ isSet }` / echoed
   `secretIsSet`) are left out of the write = unchanged; inside records the engine carries omitted members over by

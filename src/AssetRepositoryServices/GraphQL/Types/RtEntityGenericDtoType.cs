@@ -9,6 +9,7 @@ using Meshmakers.Octo.ConstructionKit.Contracts.DataTransferObjects;
 using Meshmakers.Octo.ConstructionKit.Contracts.DependencyGraph;
 using Meshmakers.Octo.ConstructionKit.Contracts.Services;
 using Meshmakers.Octo.Runtime.Contracts.RepositoryEntities;
+using Meshmakers.Octo.Runtime.Contracts.Secrets;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
 
@@ -75,34 +76,31 @@ internal sealed class RtEntityGenericDtoType : ObjectGraphType<RtEntityDto>
         context.TryGetArgument(Statics.ResolveEnumValuesToNames, out bool resolveEnumValuesToNames);
 
         return ConnectionUtils.ToOctoConnection(
-            resultList.Select(item => CreateRtEntityAttributeDto(ckCacheService, graphQlContext.TenantId,
-                (RtEntity)context.Source.UserContext!, item, resolveEnumValuesToNames, filterAttributeNames)),
+            resultList.Select(item => CreateRtEntityAttributeDto(ckCacheService, context.GetProtector(),
+                graphQlContext.TenantId, (RtEntity)context.Source.UserContext!, item, resolveEnumValuesToNames,
+                filterAttributeNames)),
             context);
     }
 
-    internal static RtEntityAttributeDto CreateRtEntityAttributeDto(ICkCacheService ckCacheService, string tenantId,
-        RtTypeWithAttributes rtEntity,
+    internal static RtEntityAttributeDto CreateRtEntityAttributeDto(ICkCacheService ckCacheService,
+        ISecretAttributeProtector? protector, string tenantId, RtTypeWithAttributes rtEntity,
         CkTypeAttributeGraph ckTypeAttributeGraph, bool resolveEnumValuesToNames,
         IEnumerable<string>? filterAttributeNames = null)
     {
         var value = rtEntity.GetAttributeValueOrDefault(ckTypeAttributeGraph.AttributeName);
 
-        // AB#5528 (concept §4.2): a Secret attribute is projected as value = null plus secretIsSet. Decided by
-        // the CK attribute type (change-stream documents carry legacy plain strings that are not normalised);
-        // an RtSecretValue under a stale CK cache is covered as well.
+        // AB#5528 (concept §4.2, handover §2): a Secret attribute is projected as value = null plus secretIsSet,
+        // secretKeyMissing and secretSetAt. Decided by the CK attribute type (change-stream documents carry legacy
+        // plain strings that are not normalised); an RtSecretValue under a stale CK cache is covered as well.
         if (ckTypeAttributeGraph.ValueType == AttributeValueTypesDto.Secret || value is RtSecretValue)
         {
-            return new RtEntityAttributeDto
-            {
-                AttributeName = ckTypeAttributeGraph.AttributeName.ToCamelCase(),
-                Value = null,
-                SecretIsSet = SecretAttributeProjection.IsSet(value)
-            };
+            return SecretAttributeProjection.ToAttributeDto(ckTypeAttributeGraph.AttributeName.ToCamelCase(), value,
+                protector);
         }
 
         if (value is RtRecord rtRecord)
         {
-            value = RtRecordDtoType.CreateRtRecordDtoWithAttributes(ckCacheService, tenantId, rtRecord,
+            value = RtRecordDtoType.CreateRtRecordDtoWithAttributes(ckCacheService, protector, tenantId, rtRecord,
                 resolveEnumValuesToNames,
                 filterAttributeNames?.ToArray());
         }
@@ -112,7 +110,8 @@ internal sealed class RtEntityGenericDtoType : ObjectGraphType<RtEntityDto>
             {
                 if (listValue is RtRecord rtRecord2)
                 {
-                    return RtRecordDtoType.CreateRtRecordDtoWithAttributes(ckCacheService, tenantId, rtRecord2,
+                    return RtRecordDtoType.CreateRtRecordDtoWithAttributes(ckCacheService, protector, tenantId,
+                        rtRecord2,
                         resolveEnumValuesToNames, filterAttributeNames?.ToArray());
                 }
 
