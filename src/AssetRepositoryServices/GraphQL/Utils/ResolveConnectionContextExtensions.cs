@@ -73,6 +73,10 @@ internal static class ResolveConnectionContextExtensions
             // Before the PersistenceException branch: the exception derives from it but has its own code.
             context.Errors.Add(secretError);
         }
+        else if (TryCreateAttributeAccessError(exception, out var accessError))
+        {
+            context.Errors.Add(accessError);
+        }
         else if (exception is SecretEncryptionNotConfiguredException secretEncryptionNotConfigured)
         {
             // The message names the missing configuration only; it never carries a value.
@@ -181,6 +185,37 @@ internal static class ResolveConnectionContextExtensions
     ///     repository, possibly wrapped) to the stable error code <c>SecretAttributeNotQueryable</c> with the
     ///     attribute path and the refused operation as extensions. The message names the path, never a value.
     /// </summary>
+    /// <summary>
+    ///     CK v2 (AB#5668): maps <see cref="HiddenAttributeAccessException" /> (possibly wrapped) to
+    ///     <c>ATTRIBUTE_NOT_WRITABLE</c> / <c>ATTRIBUTE_NOT_QUERYABLE</c>. The message names the attribute only.
+    /// </summary>
+    internal static bool TryCreateAttributeAccessError(Exception? exception,
+        [NotNullWhen(true)] out ExecutionError? error)
+    {
+        var current = exception;
+        while (current != null && current is not HiddenAttributeAccessException)
+        {
+            current = current.InnerException;
+        }
+
+        if (current is not HiddenAttributeAccessException accessException)
+        {
+            error = null;
+            return false;
+        }
+
+        error = new ExecutionError(accessException.Message, accessException)
+        {
+            Code = accessException.Code,
+            Extensions = new Dictionary<string, object?>
+            {
+                ["attributePath"] = accessException.AttributePath,
+                ["operation"] = accessException.Operation
+            }
+        };
+        return true;
+    }
+
     internal static bool TryCreateSecretNotQueryableError(Exception? exception,
         [NotNullWhen(true)] out ExecutionError? error)
     {

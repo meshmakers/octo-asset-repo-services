@@ -77,10 +77,11 @@ public sealed class RtAssociationDtoType : ObjectGraphType<RtAssociationDto>
                 protector);
         }
 
+        // CK v2 (AB#5668): hidden association attributes are not projected.
+        var visibleAttributes = ckAssociationRole.AllAttributes.Values.Where(a => !AccessQueryGuard.IsHidden(a));
         var resultList = filterAttributeNames != null
-            ? ckAssociationRole.AllAttributes.Values.Where(a =>
-                filterAttributeNames.Contains(a.AttributeName.ToCamelCase()))
-            : ckAssociationRole.AllAttributes.Values;
+            ? visibleAttributes.Where(a => filterAttributeNames.Contains(a.AttributeName.ToCamelCase()))
+            : visibleAttributes;
 
         return resultList.Select(item => CreateRtEntityAttributeDto(rtAssociation, item, protector)).ToList();
     }

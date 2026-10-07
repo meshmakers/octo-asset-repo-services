@@ -1,0 +1,10 @@
+$schema: https://schemas.meshmakers.cloud/construction-kit-elements.schema.json
+attributes:
+  - id: AccessTestPasswordHash
+    valueType: String
+    description: "CK v2 (AB#5668): assigned with access Hidden - never exposed by GraphQL"
+  - id: AccessTestApprovalState
+    valueType: String
+    description: "CK v2 (AB#5668): assigned with access MethodOnly - readable, not generically writable"
+  - id: AccessTestLabel
+    valueType: String

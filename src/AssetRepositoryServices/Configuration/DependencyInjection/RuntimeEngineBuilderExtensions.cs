@@ -276,6 +276,14 @@ public static class RuntimeEngineBuilderExtensions
                         return Task.CompletedTask;
                     }
 
+                    // CK v2 (AB#5668): hidden / MethodOnly attribute refused by a resolver that does not catch.
+                    if (ResolveConnectionContextExtensions.TryCreateAttributeAccessError(ctx.OriginalException,
+                            out var accessError))
+                    {
+                        ctx.Exception = accessError;
+                        return Task.CompletedTask;
+                    }
+
                     logger?.LogError(ctx.OriginalException, "{Error} occurred", ctx.OriginalException.Message);
                     return Task.CompletedTask;
                 };

@@ -235,6 +235,10 @@ internal class QueryMapper(
                 // the cell value, which would carry the secret back to the caller.
                 SecretQueryGuard.EnsureNoSecretColumns(ckCacheService, tenantId, ckTypeId, [cellDto.AttributePath]);
 
+                // CK v2 (AB#5668): a hidden attribute is never writable through a query row either.
+                AccessQueryGuard.EnsureNoHiddenColumns(ckCacheService, tenantId, ckTypeId, [cellDto.AttributePath],
+                    AccessQueryGuard.QueryRowWriteOperation, isWrite: true);
+
                 try
                 {
                     RtPathEvaluator.SetValue(ckCacheService, tenantId, rtEntity, cellDto.AttributePath, cellDto.Value);

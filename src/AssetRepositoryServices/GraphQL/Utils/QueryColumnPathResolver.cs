@@ -49,8 +49,11 @@ internal static partial class QueryColumnPathResolver
             ? 0
             : normalizedPaths.Max(RequiredNavigationDepth);
 
-        var columns = ckCacheService.GetCkTypeQueryColumnPathsByRtCkId(tenantId, queryCkTypeId,
-            new CkTypeQueryColumnOptions { MaxDepth = requiredDepth });
+        // CK v2 (AB#5668): hidden attributes are never query columns; a request for one is answered by
+        // SecretQueryGuard.EnsureNoSecretColumns -> AccessQueryGuard with ATTRIBUTE_NOT_QUERYABLE.
+        var columns = AccessQueryGuard.WithoutHiddenColumns(ckCacheService, tenantId, queryCkTypeId,
+            ckCacheService.GetCkTypeQueryColumnPathsByRtCkId(tenantId, queryCkTypeId,
+                new CkTypeQueryColumnOptions { MaxDepth = requiredDepth }));
 
         var hasUncoveredNavigationPath = normalizedPaths.Any(p =>
             p.Contains("->") && columns.All(c => c.Path != p));
@@ -59,12 +62,13 @@ internal static partial class QueryColumnPathResolver
             return columns;
         }
 
-        return ckCacheService.GetCkTypeQueryColumnPathsByRtCkId(tenantId, queryCkTypeId,
-            new CkTypeQueryColumnOptions
-            {
-                IncludeManyNavigations = true,
-                MaxDepth = Math.Max(1, requiredDepth)
-            });
+        return AccessQueryGuard.WithoutHiddenColumns(ckCacheService, tenantId, queryCkTypeId,
+            ckCacheService.GetCkTypeQueryColumnPathsByRtCkId(tenantId, queryCkTypeId,
+                new CkTypeQueryColumnOptions
+                {
+                    IncludeManyNavigations = true,
+                    MaxDepth = Math.Max(1, requiredDepth)
+                }));
     }
 
     /// <summary>

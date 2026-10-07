@@ -185,8 +185,11 @@ internal sealed class CkTypeDtoType : ObjectGraphType<CkTypeDto>
             IncludeManyNavigations = includeManyNavigations ?? false
         };
 
+        // CK v2 (AB#5668): hidden attributes are never offered as query columns.
         var resultList =
-            ckCacheService.GetCkTypeQueryColumnPaths(graphQlContext.TenantId, arg.Source.CkTypeId, options)
+            AccessQueryGuard.WithoutHiddenColumns(ckCacheService, graphQlContext.TenantId,
+                    arg.Source.CkTypeId.ToRtCkId(),
+                    ckCacheService.GetCkTypeQueryColumnPaths(graphQlContext.TenantId, arg.Source.CkTypeId, options))
                 .Select(CreateCkTypeQueryColumnDto).ToList();
 
         if (filterAttributePaths != null)
@@ -309,6 +312,7 @@ internal sealed class CkTypeDtoType : ObjectGraphType<CkTypeDto>
         {
             Ownership = ckTypeAttributeGraph.Ownership,
             OwnershipOverride = ownershipOverride,
+            Access = ckTypeAttributeGraph.Access,
             CkAttributeId = ckTypeAttributeGraph.CkAttributeId,
             AttributeName = ckTypeAttributeGraph.AttributeName.ToCamelCase(),
             AttributeValueType = ckTypeAttributeGraph.ValueType,

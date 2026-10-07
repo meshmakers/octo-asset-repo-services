@@ -152,6 +152,7 @@ internal sealed class CkRecordDtoType : ObjectGraphType<CkRecordDto>
         {
             Ownership = ckTypeAttributeGraph.Ownership,
             OwnershipOverride = ownershipOverride,
+            Access = ckTypeAttributeGraph.Access,
             CkAttributeId = ckTypeAttributeGraph.CkAttributeId,
             AttributeName = ckTypeAttributeGraph.AttributeName.ToCamelCase(),
             AttributeValueType = ckTypeAttributeGraph.ValueType,

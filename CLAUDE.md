@@ -411,6 +411,58 @@ CK language 2 (`ckLanguage: 2`) adds attribute `access`, CK interfaces, `visibil
 Baseline for the integration test CK model (`SchemaBuildTimingTests`): ~100–250 ms cold, of which ~75–200 ms is
 schema initialization.
 
+**Attribute `access` (AB#5668 / F1.5-S1 AB#5920):**
+- `OctoBuilder.Attribute` is the single chokepoint: `Hidden` attributes get no field on entity, abstract-type
+  interface, CK interface, input, `…InputUpdate` and record types; `MethodOnly` attributes are readable but not
+  part of the input types. `ReadOnly` is parsed but not enforced yet.
+- Generic projections skip `Hidden`: the `attributes` connection of entities (`RtEntityGenericDtoType`), records
+  (`RtRecordDtoType`) and associations (`RtAssociationDtoType`). When the CK type / record / role is unknown to the
+  CK cache, the stored attributes are projected without CK knowledge (`UnknownCkTypeAttributeProjection`) — every
+  name that is Hidden anywhere in the tenant is dropped there (fail closed, review L11).
+- Writes: `RtMutationBase.TryHandleAttributeAsync` rejects `Hidden` / `MethodOnly` attributes of the generic
+  `runtimeEntities.create/update` path with `ATTRIBUTE_NOT_WRITABLE` ("Attribute '…' of '…' is not writable via
+  generic mutations (access: …)."); query-row creates/updates (`QueryMapper` → `AccessQueryGuard.EnsureWritablePath`)
+  apply the same rule to `Hidden` **and** `MethodOnly` cells (review M7).
+- Queries: the engine's query column collector and the repository do not know `access`, so the asset-repo guards
+  every entry point (`AccessQueryGuard`):
+  - `WithoutHiddenColumns` filters `availableQueryColumns` and `QueryColumnPathResolver.GetColumnsForPaths` (all
+    transient/persisted runtime queries); a requested hidden column fails with `ATTRIBUTE_NOT_QUERYABLE`.
+  - Root queries: filters (all operators, also `IS_NULL`), sort, attribute search, aggregations and group-by are
+    checked inside `SecretQueryGuard.EnsureQueryable`.
+  - **Association / navigation connections (review H1)**: typed navigation fields (`RtEntityDtoType.ResolveAssociationQuery`),
+    the typed generic `associations(...)` connection (`ResolveGenericRtAssociationsQuery`, direct and indirect),
+    generic `associations { targets(...) }` (`RtEntityGenericAssociationType`) and the (currently unused)
+    `RtEntityAssociationType` call `EnsureQueryOptionsAllowed(targetType, queryOptions)` before the options reach
+    `GetRtAssociationTargetsAsync` / `GetIndirectRtAssociationTargetsAsync`. Paths are checked against the target
+    type and every type derived from it (a polymorphic `System/Entity` target is rejected when a derived type hides
+    the attribute); an unknown target is checked by name. **Any new resolver that passes `RtEntityQueryOptions` to
+    the repository must call `EnsureQueryOptionsAllowed` (or `SecretQueryGuard.EnsureQueryable`) first.**
+  - Entity selectors (`members.someType[passwordHash='X']->name`, review L10 / re-review N1) are an equality
+    oracle: the selector is stripped for column matching but evaluated during cell building. Every **requested or
+    stored** column path is therefore validated raw, before matching, by `AccessQueryGuard.EnsureColumnPathsAllowed`
+    (called from `QueryColumnPathResolver.GetColumnsForPaths`, `QueryMapperEngine` before stored selectors become
+    navigation filters, and `RtMutationBase.GetRtQueryRowResultSet`): hidden paths and hidden selector keys →
+    `ATTRIBUTE_NOT_QUERYABLE`, Secret selector keys → `SecretAttributeNotQueryable`. Navigation lookups in
+    query-row writes (`QueryMapperEngine.EvaluateNavigationFilters`) reject hidden keys as well.
+  - Every segment of a record path counts: a Hidden (or, for writes, MethodOnly) record-valued attribute also
+    protects `record.field` (re-review M7 gap).
+  - Paths across a navigation (`->`), selector keys and paths against an unknown type are matched by attribute name
+    against every hidden assignment of the tenant (conservative, fail closed). A tenant whose CK cache is not loaded
+    makes the guard throw instead of reporting "nothing hidden".
+  - The hidden-name set is computed once per loaded CK model graph (cached against the cache's type collection
+    instance, which is replaced on every cache reload; review M8).
+- Both codes come from `HiddenAttributeAccessException`, mapped by `HandleException` and the GraphQL
+  `UnhandledExceptionDelegate` (`TryCreateAttributeAccessError`).
+- CK meta: `CkTypeAttribute.access: String!` (`ReadWrite` / `ReadOnly` / `MethodOnly` / `Hidden`).
+- **Known limitations** (platform-owner decision 2026-10-08, fixed with System.Identity v2 in CK v2 Phase 4): `ImportRt` writes and RT export emit Hidden /
+  MethodOnly values (review H2/H3), user tokens (H4). Stream-data queries (GraphQL/REST, `StreamDataQueryColumnValidator`)
+  have no Hidden handling yet (review M12) — no Hidden attribute is on an archived type today; before one is, apply
+  `AccessQueryGuard` to the stream-data paths or forbid Hidden on archived attributes in the compiler.
+- Tests: `CkAttributeAccessSchemaTests`, `AccessQueryGuardTests` (unit); `GraphQL/CkV2/HiddenAttributeTests` and
+  `HiddenAttributeNavigationTests` (integration, test types `AccessTestAccount` --`AccessTestMembership`-->
+  `AccessTestGroup`; the test model is `ckLanguage: 2`).
+
+
 ### Authentication
 The service supports dual authentication:
 - Cookie-based authentication for GraphQL Playground

@@ -45,6 +45,13 @@ internal sealed class CkTypeAttributeDtoType : ObjectGraphType<CkTypeAttributeDt
                          "record deliberately answers the ownership question differently from the shared " +
                          "attribute definition. Use ownership, not this field, to decide what a re-apply does.")
             .Resolve(ctx => (ctx.Source as OwnershipAwareCkTypeAttributeDto)?.OwnershipOverride);
+        Field<NonNullGraphType<StringGraphType>>("access")
+            .Description("CK v2 access of this attribute assignment: ReadWrite (default), ReadOnly, MethodOnly or " +
+                         "Hidden. Hidden attributes never appear in runtime GraphQL types, inputs, generic " +
+                         "attribute lists or query columns; Hidden and MethodOnly attributes are rejected by the " +
+                         "generic mutations with ATTRIBUTE_NOT_WRITABLE.")
+            .Resolve(ctx => ((ctx.Source as OwnershipAwareCkTypeAttributeDto)?.Access ?? CkAttributeAccessDto.ReadWrite)
+                .ToString());
         // Deliberately NO isRuntimeState field — see the note in CkAttributeDtoType (AB#5191).
     }
 

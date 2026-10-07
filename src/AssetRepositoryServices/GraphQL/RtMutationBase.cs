@@ -122,6 +122,14 @@ internal abstract class RtMutationBase : ObjectGraphType
     {
         if (ckTypeWithAttributesGraph.AllAttributesByName.TryGetValue(attributeName, out var ckTypeAttributeGraph))
         {
+            // CK v2 (AB#5668): Hidden and MethodOnly attributes are not writable through the generic mutations.
+            // Checked before any value handling, and before an unknown name would fall through to associations.
+            if (!AttributeAccess.IsExposedInGenericInput(ckTypeAttributeGraph.Access))
+            {
+                throw HiddenAttributeAccessException.NotWritable(attributeName,
+                    GetElementName(ckTypeWithAttributesGraph), ckTypeAttributeGraph.Access);
+            }
+
             switch (ckTypeAttributeGraph.ValueType)
             {
                 case AttributeValueTypesDto.Record:
@@ -622,5 +630,15 @@ internal abstract class RtMutationBase : ObjectGraphType
         throw new InvalidCastException(
             $"Unable to convert value of type '{value.GetType().FullName}' to RtAssociationInputDto. " +
             $"Expected either RtAssociationInputDto or Dictionary<string, object>.");
+    }
+
+    private static string GetElementName(CkTypeWithAttributesGraph graph)
+    {
+        return graph switch
+        {
+            CkTypeGraph type => type.CkTypeId.ToString(),
+            CkRecordGraph record => record.CkRecordId.ToString(),
+            _ => graph.ToString() ?? string.Empty
+        };
     }
 }

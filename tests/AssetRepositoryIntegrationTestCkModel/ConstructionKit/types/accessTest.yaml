@@ -1,0 +1,19 @@
+$schema: https://schemas.meshmakers.cloud/construction-kit-elements.schema.json
+types:
+- typeId: AccessTestAccount
+  derivedFromCkTypeId: ${System}/Entity
+  description: "CK v2 Phase 0 test type: attribute access (AB#5668)"
+  attributes:
+    - id: ${System}/Name
+      name: Name
+    - id: ${this}/AccessTestLabel
+      name: Label
+      isOptional: true
+    - id: ${this}/AccessTestPasswordHash
+      name: PasswordHash
+      isOptional: true
+      access: Hidden
+    - id: ${this}/AccessTestApprovalState
+      name: ApprovalState
+      isOptional: true
+      access: MethodOnly

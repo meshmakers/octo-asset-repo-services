@@ -90,11 +90,16 @@ internal static partial class SecretQueryGuard
             return;
         }
 
-        foreach (var path in columnPaths)
+        var paths = columnPaths.ToList();
+        foreach (var path in paths)
         {
             EnsureNotSecret(ckCacheService, tenantId, ckTypeGraph, ckTypeId.ToString(),
                 QueryColumnPathResolver.NormalizePath(path), QueryColumnOperation);
         }
+
+        // CK v2 (AB#5668): hidden attributes are removed from the column set as well, so they arrive here.
+        AccessQueryGuard.EnsureNoHiddenColumns(ckCacheService, tenantId, ckTypeId, paths,
+            AccessQueryGuard.QueryColumnOperation);
     }
 
     /// <summary>
@@ -181,6 +186,10 @@ internal static partial class SecretQueryGuard
     private static void EnsureFilterOperator(ICkCacheService ckCacheService, string tenantId,
         CkTypeWithAttributesGraph ckTypeGraph, string entityName, FieldFilter fieldFilter)
     {
+        // CK v2 (AB#5668): a hidden attribute must not be usable as a filter oracle - no operator at all.
+        AccessQueryGuard.EnsureNotHidden(ckCacheService, tenantId, ckTypeGraph, entityName, fieldFilter.AttributePath,
+            $"filter operator '{fieldFilter.Operator}'");
+
         if (fieldFilter.Operator is FieldFilterOperator.IsNull or FieldFilterOperator.IsNotNull)
         {
             return;
@@ -210,6 +219,8 @@ internal static partial class SecretQueryGuard
     private static void EnsureNotSecret(ICkCacheService ckCacheService, string tenantId,
         CkTypeWithAttributesGraph ckTypeGraph, string entityName, string attributePath, string operation)
     {
+        AccessQueryGuard.EnsureNotHidden(ckCacheService, tenantId, ckTypeGraph, entityName, attributePath, operation);
+
         if (IsSecretPath(ckCacheService, tenantId, ckTypeGraph, attributePath))
         {
             throw new SecretAttributeNotQueryableException(attributePath, operation, entityName);

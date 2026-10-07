@@ -83,6 +83,18 @@ internal static class Statics
     public const string GraphQlSecretAttributeNotQueryable = "SecretAttributeNotQueryable";
 
     /// <summary>
+    ///     CK v2 (AB#5668): a generic mutation or a query-row update tried to write an attribute whose access is
+    ///     <c>Hidden</c> or <c>MethodOnly</c>.
+    /// </summary>
+    public const string GraphQlAttributeNotWritable = "ATTRIBUTE_NOT_WRITABLE";
+
+    /// <summary>
+    ///     CK v2 (AB#5668): a query used a <c>Hidden</c> attribute as column, filter, sort, search, aggregation or
+    ///     group-by path.
+    /// </summary>
+    public const string GraphQlAttributeNotQueryable = "ATTRIBUTE_NOT_QUERYABLE";
+
+    /// <summary>
     ///     AB#5528: a secret was written while the service has no key ring (SecretEncryption) configured.
     /// </summary>
     public const string GraphQlSecretEncryptionNotConfigured = "SecretEncryptionNotConfigured";

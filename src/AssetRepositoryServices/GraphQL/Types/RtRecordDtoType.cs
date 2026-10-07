@@ -112,16 +112,18 @@ internal sealed class RtRecordDtoType : ObjectGraphType<RtRecordDto>
             ckRecordGraph = foundCkRecordGraph;
         }
 
+        // CK v2 (AB#5668): hidden record attributes are not projected.
+        var visibleAttributes = ckRecordGraph.AllAttributes.Values.Where(a => !AccessQueryGuard.IsHidden(a));
         IEnumerable<CkTypeAttributeGraph> resultList;
         if (filterAttributeNames != null && filterAttributeNames.Any())
         {
             resultList =
-                ckRecordGraph.AllAttributes.Values.Where(a =>
+                visibleAttributes.Where(a =>
                     filterAttributeNames.Contains(a.AttributeName.ToCamelCase()));
         }
         else
         {
-            resultList = ckRecordGraph.AllAttributes.Values;
+            resultList = visibleAttributes;
         }
 
         var attributeDtos =

@@ -32,6 +32,15 @@ internal class OctoBuilder<TSourceType>(
     internal OctoBuilder<TSourceType> Attribute(IGraphTypesCache graphTypesCache,
         CkTypeAttributeGraph typeAttributeGraph, bool isInputType, bool isInterface = false)
     {
+        // CK v2 (AB#5668): the single chokepoint for attribute fields of entity, interface, input, update and
+        // record types. Hidden attributes never appear in GraphQL; MethodOnly attributes are readable but not part
+        // of the generic input types.
+        if (!AttributeAccess.IsExposedInOutput(typeAttributeGraph.Access) ||
+            (isInputType && !AttributeAccess.IsExposedInGenericInput(typeAttributeGraph.Access)))
+        {
+            return this;
+        }
+
         var attributeName = typeAttributeGraph.AttributeName;
 
         FieldBuilder<TSourceType, object>? builder;

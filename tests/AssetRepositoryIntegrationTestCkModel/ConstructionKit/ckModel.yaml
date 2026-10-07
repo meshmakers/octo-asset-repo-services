@@ -2,3 +2,5 @@ $schema: https://schemas.meshmakers.cloud/construction-kit-meta.schema.json
 dependencies:
   - System-[2.5,3.0)
 modelId: AssetRepositoryIntegrationTest
+# CK v2 (Epic AB#5584): enables interfaces, attribute access and methods for the access/interface/method tests.
+ckLanguage: 2

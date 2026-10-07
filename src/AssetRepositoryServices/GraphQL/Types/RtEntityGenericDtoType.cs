@@ -119,9 +119,11 @@ internal sealed class RtEntityGenericDtoType : ObjectGraphType<RtEntityDto>
             ckTypeGraph = foundCkTypeGraph;
         }
 
+        // CK v2 (AB#5668): hidden attributes never leave the API, not even through the generic projection.
+        var visibleAttributes = ckTypeGraph.AllAttributes.Values.Where(a => !AccessQueryGuard.IsHidden(a));
         var resultList = filterAttributeNames != null
-            ? ckTypeGraph.AllAttributes.Values.Where(a => filterAttributeNames.Contains(a.AttributeName.ToCamelCase()))
-            : ckTypeGraph.AllAttributes.Values;
+            ? visibleAttributes.Where(a => filterAttributeNames.Contains(a.AttributeName.ToCamelCase()))
+            : visibleAttributes;
 
         return resultList.Select(item => CreateRtEntityAttributeDto(ckCacheService, protector, tenantId, rtEntity,
             item, resolveEnumValuesToNames, filterAttributeNames, logger)).ToList();

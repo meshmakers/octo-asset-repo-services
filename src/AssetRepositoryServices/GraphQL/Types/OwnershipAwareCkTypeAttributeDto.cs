@@ -28,4 +28,9 @@ internal sealed class OwnershipAwareCkTypeAttributeDto : CkTypeAttributeDto
     ///     assignment authored before AB#5187 does.
     /// </summary>
     public AttributeOwnershipDto? OwnershipOverride { get; init; }
+
+    /// <summary>
+    ///     CK v2 (AB#5668): effective access of this assignment (omitted in the model = ReadWrite).
+    /// </summary>
+    public CkAttributeAccessDto Access { get; init; } = CkAttributeAccessDto.ReadWrite;
 }
