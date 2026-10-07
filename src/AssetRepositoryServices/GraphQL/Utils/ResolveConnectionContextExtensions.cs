@@ -181,11 +181,6 @@ internal static class ResolveConnectionContextExtensions
     }
 
     /// <summary>
-    ///     AB#5528: maps <see cref="SecretAttributeNotQueryableException" /> (thrown by the GraphQL guard or the
-    ///     repository, possibly wrapped) to the stable error code <c>SecretAttributeNotQueryable</c> with the
-    ///     attribute path and the refused operation as extensions. The message names the path, never a value.
-    /// </summary>
-    /// <summary>
     ///     CK v2 (AB#5668): maps <see cref="HiddenAttributeAccessException" /> (possibly wrapped) to
     ///     <c>ATTRIBUTE_NOT_WRITABLE</c> / <c>ATTRIBUTE_NOT_QUERYABLE</c>. The message names the attribute only.
     /// </summary>
@@ -216,6 +211,11 @@ internal static class ResolveConnectionContextExtensions
         return true;
     }
 
+    /// <summary>
+    ///     AB#5528: maps <see cref="SecretAttributeNotQueryableException" /> (thrown by the GraphQL guard or the
+    ///     repository, possibly wrapped) to the stable error code <c>SecretAttributeNotQueryable</c> with the
+    ///     attribute path and the refused operation as extensions. The message names the path, never a value.
+    /// </summary>
     internal static bool TryCreateSecretNotQueryableError(Exception? exception,
         [NotNullWhen(true)] out ExecutionError? error)
     {

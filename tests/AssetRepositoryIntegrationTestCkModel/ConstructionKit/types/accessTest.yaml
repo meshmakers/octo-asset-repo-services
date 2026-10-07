@@ -19,6 +19,9 @@ types:
       name: ApprovalState
       isOptional: true
       access: MethodOnly
+  associations:
+    - id: ${this}/AccessTestMembership
+      targetCkTypeId: ${this}/AccessTestGroup
   # CK v2: method definitions only (the method runtime is Phase 3); used by the CK meta introspection tests.
   methods:
     - methodId: ResetPassword-1

@@ -55,15 +55,23 @@ internal static class UnknownCkTypeAttributeProjection
     /// <param name="filterAttributeNames">camelCase attribute names to return; <c>null</c> = all</param>
     /// <param name="createRecordDto">Projection of a record value (resolves the record's CK record itself)</param>
     /// <param name="protector">The key ring of this process; <c>null</c> = unknown</param>
+    /// <param name="isHiddenName">CK v2: stored names to drop because they are Hidden somewhere in the tenant</param>
     internal static List<RtEntityAttributeDto> Project(RtTypeWithAttributes rtObject,
         IReadOnlyCollection<string>? filterAttributeNames, Func<RtRecord, object?> createRecordDto,
-        ISecretAttributeProtector? protector)
+        ISecretAttributeProtector? protector, Func<string, bool>? isHiddenName = null)
     {
         var result = new List<RtEntityAttributeDto>();
         foreach (var (storedName, value) in rtObject.Attributes)
         {
             var attributeName = storedName.ToCamelCase();
             if (filterAttributeNames != null && !filterAttributeNames.Contains(attributeName))
+            {
+                continue;
+            }
+
+            // CK v2 (review L11): without a CK type the access of a stored attribute is unknown - fail closed for
+            // every name that is Hidden anywhere in the tenant.
+            if (isHiddenName?.Invoke(storedName) == true)
             {
                 continue;
             }

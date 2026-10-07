@@ -118,6 +118,10 @@ public sealed class RtEntityGenericAssociationType : ObjectGraphType<RtEntityGen
         var direction = ctx.GetArgument<GraphDirections>(Statics.DirectionArg);
         var targetCkId = ctx.GetArgument<RtCkId<CkTypeId>>(Statics.CkId);
 
+        // CK v2 (review H1): the repository does not know Hidden - guard before the options reach it.
+        AccessQueryGuard.EnsureQueryOptionsAllowed(ctx.GetCkCacheService(), graphQlUserContext.TenantId, targetCkId,
+            queryOptions);
+
         var tenantRepository = graphQlUserContext.TenantContext.GetTenantRepository();
 
         if (indirectAssociations.Value)

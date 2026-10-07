@@ -74,7 +74,7 @@ public sealed class RtAssociationDtoType : ObjectGraphType<RtAssociationDto>
             return UnknownCkTypeAttributeProjection.Project(rtAssociation, filterAttributeNames,
                 rtRecord => RtRecordDtoType.CreateRtRecordDtoWithAttributes(ckCacheService, protector, tenantId,
                     rtRecord, false, null, logger),
-                protector);
+                protector, name => AccessQueryGuard.IsHiddenName(ckCacheService, tenantId, name));
         }
 
         // CK v2 (AB#5668): hidden association attributes are not projected.

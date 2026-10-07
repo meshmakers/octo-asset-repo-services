@@ -104,7 +104,7 @@ internal sealed class RtRecordDtoType : ObjectGraphType<RtRecordDto>
             rtRecordDto.Attributes = UnknownCkTypeAttributeProjection.Project(rtRecord, recordFilter,
                 nested => CreateRtRecordDtoWithAttributes(ckCacheService, protector, tenantId, nested, false,
                     filterAttributeNames, logger),
-                protector);
+                protector, name => AccessQueryGuard.IsHiddenName(ckCacheService, tenantId, name));
             return rtRecordDto;
         }
         else

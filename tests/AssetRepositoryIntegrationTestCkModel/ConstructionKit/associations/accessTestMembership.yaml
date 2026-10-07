@@ -1,0 +1,8 @@
+$schema: https://schemas.meshmakers.cloud/construction-kit-elements.schema.json
+associationRoles:
+- id: AccessTestMembership
+  description: "CK v2 (review H1): navigation from AccessTestGroup to its AccessTestAccount members"
+  inboundName: Members
+  inboundMultiplicity: N
+  outboundName: MemberOf
+  outboundMultiplicity: N

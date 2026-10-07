@@ -205,6 +205,82 @@ public class HiddenAttributeTests
         AssertRejected(result, "ATTRIBUTE_NOT_QUERYABLE");
     }
 
+    [Theory]
+    [InlineData("passwordHash", "Hidden")]
+    [InlineData("approvalState", "MethodOnly")]
+    public async Task QueryRowCreate_WithHiddenOrMethodOnlyCell_IsNotWritable(string cell, string access)
+    {
+        // Review M7: the query-row write path applies the same rule as the generic mutations.
+        var queryRtId = await CreatePersistentQueryAsync();
+
+        var result = await _fixture.ExecuteGraphQlAsync($$"""
+            mutation {
+              runtime { runtimeQuery(rtId: "{{queryRtId}}") {
+                create(entities: [{ ckTypeId: "{{CkTypeId}}", cells: [
+                  { attributePath: "name", value: "row-{{cell}}" },
+                  { attributePath: "{{cell}}", value: "x" }
+                ] }]) { ckTypeId }
+              } }
+            }
+            """);
+
+        result.Errors.Should().NotBeNull();
+        var error = result.Errors!.Should().ContainSingle(e => e.Code == "ATTRIBUTE_NOT_WRITABLE").Subject;
+        error.Message.Should().Contain($"access: {access}");
+    }
+
+    [Fact]
+    public async Task QueryRowCreate_WithVisibleCells_StillWorks()
+    {
+        var queryRtId = await CreatePersistentQueryAsync();
+
+        var result = await _fixture.ExecuteGraphQlAsync($$"""
+            mutation {
+              runtime { runtimeQuery(rtId: "{{queryRtId}}") {
+                create(entities: [{ ckTypeId: "{{CkTypeId}}", cells: [
+                  { attributePath: "name", value: "row-visible" }, { attributePath: "label", value: "l" }
+                ] }]) { ckTypeId }
+              } }
+            }
+            """);
+
+        result.Errors.Should().BeNullOrEmpty(_fixture.SerializeGraphQl(result));
+    }
+
+    [Fact]
+    public async Task EntitySelectorOnHiddenAttribute_IsRejected()
+    {
+        // Review L10: an entity selector is an equality lookup on its key.
+        var result = await _fixture.ExecuteGraphQlAsync("""
+            query {
+              runtime {
+                transientQuery {
+                  simple(ckId: "AssetRepositoryIntegrationTest/AccessTestGroup",
+                         columnPaths: ["name", "members.AssetRepositoryIntegrationTest/AccessTestAccount[passwordHash=AQ]->name"]) {
+                    items { rows { items { ... on RtSimpleQueryRow { cells { items { attributePath value } } } } } }
+                  }
+                }
+              }
+            }
+            """);
+
+        AssertRejected(result, "ATTRIBUTE_NOT_QUERYABLE");
+    }
+
+    private async Task<string> CreatePersistentQueryAsync()
+    {
+        var result = await _fixture.ExecuteGraphQlAsync($$"""
+            mutation {
+              runtime { systemSimpleRtQuerys {
+                create(entities: [{ name: "access-rows", queryCkTypeId: "{{CkTypeId}}", columns: ["name"] }]) { rtId }
+              } }
+            }
+            """);
+        result.Errors.Should().BeNullOrEmpty(_fixture.SerializeGraphQl(result));
+        return JObject.Parse(_fixture.SerializeGraphQl(result))
+            .SelectToken("data.runtime.systemSimpleRtQuerys.create[0].rtId")!.Value<string>()!;
+    }
+
     private static void AssertRejected(ExecutionResult result, string code)
     {
         result.Errors.Should().NotBeNull();

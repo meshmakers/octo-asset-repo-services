@@ -59,6 +59,9 @@ internal class RtEntityAssociationType : ObjectGraphType
         var targetCkId = ctx.GetMetadataValue<RtCkId<CkTypeId>>(Statics.CkId);
         var offset = ctx.GetOffset();
         var queryOptions = ctx.GetQueryOptions();
+        // CK v2 (review H1): the repository does not know Hidden - guard before the options reach it.
+        AccessQueryGuard.EnsureQueryOptionsAllowed(ctx.GetCkCacheService(), ((GraphQlUserContext)ctx.UserContext).TenantId,
+            targetCkId, queryOptions);
 
         ctx.TryGetArgument(Statics.RtIdArg, out OctoObjectId? key);
         ctx.TryGetArgument(Statics.RtIdsArg, null, out IEnumerable<OctoObjectId>? keys);

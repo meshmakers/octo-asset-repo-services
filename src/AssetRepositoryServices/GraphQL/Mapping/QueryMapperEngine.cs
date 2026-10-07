@@ -96,6 +96,14 @@ internal class QueryMapperEngine
                 targetCkTypeGraph.AllAttributesByName.TryGetValue(subAttributePath.ToPascalCase(),
                     out var attributeGraph);
                 var attributeValueType = attributeGraph?.ValueType;
+                if (AccessQueryGuard.IsHidden(attributeGraph))
+                {
+                    // CK v2 (AB#5668, review L10): a hidden attribute cannot identify a navigation target either
+                    // (equality oracle).
+                    throw HiddenAttributeAccessException.NotQueryable(subAttributePath, navigationPair.TargetCkTypeId.ToString(),
+                        "navigation lookup");
+                }
+
                 if (attributeValueType == AttributeValueTypesDto.Secret)
                 {
                     // AB#5528: a secret cannot identify a navigation target (that would be an equality

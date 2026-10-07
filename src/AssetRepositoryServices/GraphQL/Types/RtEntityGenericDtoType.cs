@@ -112,7 +112,7 @@ internal sealed class RtEntityGenericDtoType : ObjectGraphType<RtEntityDto>
             return UnknownCkTypeAttributeProjection.Project(rtEntity, filterAttributeNames,
                 rtRecord => RtRecordDtoType.CreateRtRecordDtoWithAttributes(ckCacheService, protector, tenantId,
                     rtRecord, false, filterAttributeNames?.ToArray(), logger),
-                protector);
+                protector, name => AccessQueryGuard.IsHiddenName(ckCacheService, tenantId, name));
         }
         else
         {

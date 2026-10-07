@@ -400,6 +400,10 @@ internal sealed class RtEntityDtoType : ObjectGraphType<RtEntityDto>
             // Car and Truck are included when querying via the abstract Vehicle type.
             var queryTargetCkId = targetCkId ?? queryBaseType;
 
+            // CK v2 (review H1): the repository does not know Hidden - guard before the options reach it.
+            AccessQueryGuard.EnsureQueryOptionsAllowed(ckCacheService, graphQlUserContext.TenantId, queryTargetCkId,
+                queryOptions);
+
             // Get DataLoader context
             var dataLoaderAccessor = ctx.RequestServices?.GetRequiredService<IDataLoaderContextAccessor>();
             if (dataLoaderAccessor?.Context == null)
@@ -484,6 +488,10 @@ internal sealed class RtEntityDtoType : ObjectGraphType<RtEntityDto>
             var roleId = arg.GetArgument<RtCkId<CkAssociationRoleId>>(Statics.RoleIdArg);
             var direction = arg.GetArgument<GraphDirections>(Statics.DirectionArg);
             var targetCkId = arg.GetArgument<RtCkId<CkTypeId>>(Statics.CkId);
+
+            // CK v2 (review H1): the repository does not know Hidden - guard before the options reach it.
+            AccessQueryGuard.EnsureQueryOptionsAllowed(arg.GetCkCacheService(), graphQlUserContext.TenantId,
+                targetCkId, queryOptions);
 
             var tenantRepository = graphQlUserContext.TenantContext.GetTenantRepository();
 
