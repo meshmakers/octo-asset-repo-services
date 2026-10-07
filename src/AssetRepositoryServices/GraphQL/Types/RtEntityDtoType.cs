@@ -2,6 +2,7 @@
 using GraphQL;
 using GraphQL.Builders;
 using GraphQL.DataLoader;
+using GraphQL.Resolvers;
 using GraphQL.Types;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.Configuration.DependencyInjection.Options;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Caches;
@@ -172,10 +173,19 @@ internal sealed class RtEntityDtoType : ObjectGraphType<RtEntityDto>
 
         foreach (var interfaceType in implementedInterfaces)
         {
+            // CK v2 (AB#5667): an optional CK interface member that this type does not assign is still a field of
+            // the GraphQL interface, and GraphQL requires every interface field on the implementing object. Add it
+            // as a nullable field that always resolves to null (the type never stores that attribute).
+            if (interfaceType is CkInterfaceGraphType)
+            {
+                AddUnassignedOptionalMembers(interfaceType);
+            }
+
             // Check if we can implement this interface:
             // 1. We must have all required fields
             // 2. Field types must be compatible (same type or we can adopt the interface's type)
             var canImplementInterface = true;
+            string? mismatch = null;
             var fieldsToUpdate = new List<(FieldType ourField, IGraphType interfaceType)>();
 
             foreach (var interfaceField in interfaceType.Fields)
@@ -185,6 +195,7 @@ internal sealed class RtEntityDtoType : ObjectGraphType<RtEntityDto>
                 {
                     // We're missing this field, can't implement the interface
                     canImplementInterface = false;
+                    mismatch = $"field '{interfaceField.Name}' is missing";
                     break;
                 }
 
@@ -201,6 +212,8 @@ internal sealed class RtEntityDtoType : ObjectGraphType<RtEntityDto>
                         // at a lower level in the hierarchy. We cannot implement this interface
                         // because our field type is incompatible.
                         canImplementInterface = false;
+                        mismatch = $"field '{interfaceField.Name}' has type '{ourTypeName}', the interface " +
+                                   $"declares '{interfaceTypeName}'";
                         break;
                     }
                 }
@@ -215,6 +228,8 @@ internal sealed class RtEntityDtoType : ObjectGraphType<RtEntityDto>
 
             if (!canImplementInterface)
             {
+                // CK v2 (AB#5667): never skip silently - a CK interface mismatch is logged as a warning.
+                graphTypesCache.ReportInterfaceNotImplemented(Name, interfaceType, mismatch ?? "fields do not align");
                 continue;
             }
 
@@ -225,6 +240,28 @@ internal sealed class RtEntityDtoType : ObjectGraphType<RtEntityDto>
             }
 
             AddResolvedInterface(interfaceType);
+        }
+    }
+
+    private void AddUnassignedOptionalMembers(IInterfaceGraphType interfaceType)
+    {
+        foreach (var interfaceField in interfaceType.Fields.ToList())
+        {
+            if (Fields.Any(f => f.Name == interfaceField.Name) ||
+                interfaceField.GetMetadata<CkTypeAttributeGraph?>(Statics.AttributeGraphType) is not
+                    { IsOptional: true })
+            {
+                continue;
+            }
+
+            AddField(new FieldType
+            {
+                Name = interfaceField.Name,
+                Description = interfaceField.Description,
+                Type = interfaceField.Type,
+                ResolvedType = interfaceField.ResolvedType,
+                Resolver = new FuncFieldResolver<object?>(_ => null)
+            });
         }
     }
 

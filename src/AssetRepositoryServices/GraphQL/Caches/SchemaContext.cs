@@ -65,7 +65,8 @@ internal class SchemaContext(
                 // must not make the per-tenant schema build noticeably slower.
                 var stopwatch = Stopwatch.StartNew();
 
-                var graphTypesCache = new GraphTypesCache(ckCacheService, octoService, options, tenantId);
+                var graphTypesCache = new GraphTypesCache(ckCacheService, octoService, options, tenantId,
+                    loggerFactory.CreateLogger<GraphTypesCache>());
                 await graphTypesCache.PopulateAsync();
                 var populateMs = stopwatch.ElapsedMilliseconds;
 

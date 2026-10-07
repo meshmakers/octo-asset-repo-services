@@ -35,7 +35,14 @@ internal interface IGraphTypesCache
     /// </summary>
     /// <param name="ckTypeId">The construction kit type id</param>
     /// <returns>List of interface types the type implements</returns>
-    IReadOnlyList<RtEntityInterfaceType> GetImplementedInterfaces(RtCkId<CkTypeId> ckTypeId);
+    IReadOnlyList<IInterfaceGraphType> GetImplementedInterfaces(RtCkId<CkTypeId> ckTypeId);
+
+    /// <summary>
+    ///     Called when an object type cannot implement one of its interfaces because the fields do not align.
+    ///     A CK v2 interface mismatch is logged as a warning (compiler rules I-1..I-4 should prevent it); an
+    ///     abstract-type interface mismatch is expected for overridden associations and only logged at debug level.
+    /// </summary>
+    void ReportInterfaceNotImplemented(string objectTypeName, IInterfaceGraphType interfaceType, string reason);
 
     /// <summary>
     ///     Returns the construction kit type input graph type for the given construction kit type id

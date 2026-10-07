@@ -463,6 +463,24 @@ schema initialization.
   `AccessTestGroup`; the test model is `ckLanguage: 2`).
 
 
+**CK interfaces (AB#5667 / F1.5-S2 AB#5921):**
+- Each CK interface of the tenant (`ICkCacheService.GetRtCkInterfaces`) becomes a GraphQL interface
+  `CkInterfaceGraphType` named without suffix (`System.Identity/Named-1` → `SystemIdentityNamed`; abstract-type
+  interfaces keep `<Type>Interface`). Fields: the system fields of `RtEntityInterfaceType` plus one field per member
+  (optional members nullable). Built in `GraphTypesCache.PopulateAsync` after enums/records and before the types,
+  registered in `GetKnownGraphTypes` (introspection, fragments; no Phase 0 field returns the interface —
+  `runtime.byInterface` is a later phase).
+- `GraphTypesCache.GetImplementedInterfaces` also returns the CK interfaces in `CkTypeGraph.AllImplementedInterfaces`
+  (own and inherited). An **optional member the type does not assign** is added to the object type as a nullable
+  field that always resolves to `null` — GraphQL requires every interface field on the implementing object, and
+  rules I-1..I-4 only cover required members (e.g. `Named-1.Description` on `Role`).
+- When the field alignment in `RtEntityDtoType` still fails, `ReportInterfaceNotImplemented` logs a **Warning** for CK
+  interfaces (Debug for abstract-type interfaces, where it is expected for overridden associations) instead of
+  skipping silently.
+- Tests: `CkInterfaceSchemaTests` (unit), `GraphQL/CkV2/CkInterfaceIntrospectionTests` (integration, test interface
+  `AssetRepositoryIntegrationTest/Labeled-1` implemented by `AccessTestAccount` and `AccessTestGroup`).
+
+
 ### Authentication
 The service supports dual authentication:
 - Cookie-based authentication for GraphQL Playground

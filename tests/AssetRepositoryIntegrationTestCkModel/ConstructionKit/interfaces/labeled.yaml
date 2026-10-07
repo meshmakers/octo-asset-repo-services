@@ -1,0 +1,10 @@
+$schema: https://schemas.meshmakers.cloud/construction-kit-elements.schema.json
+interfaces:
+  - interfaceId: Labeled-1
+    description: "CK v2 Phase 0 test interface (AB#5667): anything with a name and an optional label."
+    attributes:
+      - id: ${System}/Name
+        name: Name
+      - id: ${this}/AccessTestLabel
+        name: Label
+        isOptional: true

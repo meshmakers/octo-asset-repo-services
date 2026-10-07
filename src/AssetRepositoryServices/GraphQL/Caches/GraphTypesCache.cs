@@ -8,6 +8,7 @@ using Meshmakers.Octo.Backend.AssetRepositoryServices.Services;
 using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.ConstructionKit.Contracts.Services;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Caches;
@@ -24,6 +25,8 @@ internal class GraphTypesCache : IGraphTypesCache
     private readonly ConcurrentDictionary<RtCkId<CkRecordId>, RtRecordDtoInputType> _inputRecordTypes;
     private readonly ConcurrentDictionary<RtCkId<CkTypeId>, RtEntityDtoInputType> _inputTypes;
     private readonly ConcurrentDictionary<RtCkId<CkTypeId>, RtEntityInterfaceType> _interfaceTypes;
+    private readonly ConcurrentDictionary<RtCkId<CkInterfaceId>, CkInterfaceGraphType> _ckInterfaceTypes;
+    private readonly ILogger _logger;
     private readonly IOctoService _octoService;
     private readonly IOptions<OctoAssetRepositoryServicesOptions> _options;
 
@@ -40,9 +43,12 @@ internal class GraphTypesCache : IGraphTypesCache
     /// <param name="options"></param>
     /// <param name="tenantId"></param>
     /// <param name="ckCacheService"></param>
+    /// <param name="logger">Logger for schema-build diagnostics; <c>null</c> = none</param>
     public GraphTypesCache(ICkCacheService ckCacheService, IOctoService octoService,
-        IOptions<OctoAssetRepositoryServicesOptions> options, string tenantId)
+        IOptions<OctoAssetRepositoryServicesOptions> options, string tenantId, ILogger? logger = null)
     {
+        _logger = logger ?? NullLogger.Instance;
+        _ckInterfaceTypes = new ConcurrentDictionary<RtCkId<CkInterfaceId>, CkInterfaceGraphType>();
         _ckCacheService = ckCacheService;
         _octoService = octoService;
         _options = options;
@@ -91,9 +97,9 @@ internal class GraphTypesCache : IGraphTypesCache
     }
 
     /// <inheritdoc />
-    public IReadOnlyList<RtEntityInterfaceType> GetImplementedInterfaces(RtCkId<CkTypeId> ckTypeId)
+    public IReadOnlyList<IInterfaceGraphType> GetImplementedInterfaces(RtCkId<CkTypeId> ckTypeId)
     {
-        var interfaces = new List<RtEntityInterfaceType>();
+        var interfaces = new List<IInterfaceGraphType>();
         var ckTypeGraph = _ckCacheService.GetRtCkType(_tenantId, ckTypeId);
 
         // Walk through all base types and collect abstract ones as interfaces
@@ -110,7 +116,33 @@ internal class GraphTypesCache : IGraphTypesCache
             }
         }
 
+        // CK v2 (AB#5667): CK interfaces implemented directly or through a base type.
+        foreach (var ckInterfaceId in ckTypeGraph.AllImplementedInterfaces)
+        {
+            if (_ckInterfaceTypes.TryGetValue(ckInterfaceId.ToRtCkId(), out var ckInterfaceType))
+            {
+                interfaces.Add(ckInterfaceType);
+            }
+        }
+
         return interfaces;
+    }
+
+    /// <inheritdoc />
+    public void ReportInterfaceNotImplemented(string objectTypeName, IInterfaceGraphType interfaceType, string reason)
+    {
+        if (interfaceType is CkInterfaceGraphType)
+        {
+            _logger.LogWarning(
+                "GraphQL type {TypeName} of tenant {TenantId} does not implement CK interface {InterfaceName}: {Reason}",
+                objectTypeName, _tenantId, interfaceType.Name, reason);
+        }
+        else
+        {
+            _logger.LogDebug(
+                "GraphQL type {TypeName} of tenant {TenantId} does not implement {InterfaceName}: {Reason}",
+                objectTypeName, _tenantId, interfaceType.Name, reason);
+        }
     }
 
     public RtEntityDtoInputType GetInputType(RtCkId<CkTypeId> ckTypeId)
@@ -191,6 +223,8 @@ internal class GraphTypesCache : IGraphTypesCache
         inputTypes.AddRange(_types.Values);
         inputTypes.AddRange(_inputTypes.Values);
         inputTypes.AddRange(_interfaceTypes.Values);
+        // CK v2 (AB#5667): registered even though no Phase 0 field returns them (introspection, fragments).
+        inputTypes.AddRange(_ckInterfaceTypes.Values);
         inputTypes.AddRange(_enumTypes.Values);
         inputTypes.AddRange(_recordTypes.Values);
         inputTypes.AddRange(_inputRecordTypes.Values);
@@ -208,7 +242,7 @@ internal class GraphTypesCache : IGraphTypesCache
     /// </summary>
     public GraphTypesCacheStatistics GetStatistics()
     {
-        return new GraphTypesCacheStatistics(_types.Count, CkInterfaceCount: 0);
+        return new GraphTypesCacheStatistics(_types.Count, CkInterfaceCount: _ckInterfaceTypes.Count);
     }
 
     public async Task PopulateAsync()
@@ -254,6 +288,15 @@ internal class GraphTypesCache : IGraphTypesCache
         {
             var ckRecordGraph = _ckCacheService.GetRtCkRecord(_tenantId, rtRecordDtoInputType.CkRecordId);
             rtRecordDtoInputType.Populate(_options, this, ckRecordGraph);
+        }
+
+        // CK v2 (AB#5667): CK interfaces after enums and records (members may use them), before the types
+        // (object types add them as implemented interfaces while they are populated).
+        foreach (var ckInterfaceGraph in _ckCacheService.GetRtCkInterfaces(_tenantId))
+        {
+            var ckInterfaceType = _ckInterfaceTypes.GetOrAdd(ckInterfaceGraph.CkInterfaceId.ToRtCkId(),
+                _ => new CkInterfaceGraphType(ckInterfaceGraph));
+            ckInterfaceType.Populate(_options, this, ckInterfaceGraph);
         }
 
         foreach (var ckTypeGraph in _ckCacheService.GetCkTypes(_tenantId))
