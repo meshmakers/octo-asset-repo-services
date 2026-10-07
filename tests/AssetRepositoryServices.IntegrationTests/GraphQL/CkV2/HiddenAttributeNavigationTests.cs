@@ -96,6 +96,64 @@ public class HiddenAttributeNavigationTests
         (await TotalCountAsync(GenericTargetsQuery(groupRtId, AccountCkTypeId, VisibleFilter, false))).Should().Be(1);
     }
 
+    // Re-review N1: the collector form of a selector column (lower-camel type name, quoted value). The selector
+    // is stripped for matching, so these paths resolve to the visible column "...->name".
+    private const string VisibleSelectorColumn =
+        "members.assetRepositoryIntegrationTestAccessTestAccount[name='nav-member']->name";
+
+    private const string HiddenSelectorColumn =
+        "members.assetRepositoryIntegrationTestAccessTestAccount[passwordHash='" + StoredHash + "']->name";
+
+    [Fact]
+    public async Task SelectorColumn_VisibleKey_ResolvesTheMember()
+    {
+        // Positive control: proves the path form is a real, resolvable column.
+        await CreateGroupWithMemberAsync();
+
+        var result = await _fixture.ExecuteGraphQlAsync(TransientSelectorQuery(VisibleSelectorColumn));
+
+        var json = _fixture.SerializeGraphQl(result);
+        result.Errors.Should().BeNullOrEmpty(json);
+        JObject.Parse(json).SelectTokens("$..cells.items[*].value").Select(v => v.ToString())
+            .Should().Contain("nav-member");
+    }
+
+    [Fact]
+    public async Task SelectorColumn_HiddenKey_IsRejected_Transient()
+    {
+        // Without the guard the cell is filled exactly when the stored hash equals the guess (equality oracle).
+        await CreateGroupWithMemberAsync();
+
+        await AssertRejectedAsync(TransientSelectorQuery(HiddenSelectorColumn), queryContainsGuess: true);
+    }
+
+    [Fact]
+    public async Task SelectorColumn_HiddenKey_IsRejected_StoredQuery()
+    {
+        await CreateGroupWithMemberAsync();
+        var queryRtId = await CreateAsync(new
+        {
+            ckTypeId = "System/SimpleRtQuery",
+            attributes = new object[]
+            {
+                new { attributeName = "name", value = "hidden-selector" },
+                new { attributeName = "queryCkTypeId", value = GroupCkTypeId },
+                new { attributeName = "columns", value = new[] { "name", HiddenSelectorColumn } }
+            }
+        });
+
+        await AssertRejectedAsync($$"""
+            query { runtime { runtimeQuery(rtId: "{{queryRtId}}") {
+              items { rows { items { ... on RtSimpleQueryRow { cells { items { attributePath value } } } } } } } } }
+            """, queryContainsGuess: true);
+    }
+
+    private static string TransientSelectorQuery(string column) => $$"""
+        query { runtime { transientQuery {
+          simple(ckId: "{{GroupCkTypeId}}", columnPaths: ["name", "{{column}}"]) {
+            items { rows { items { ... on RtSimpleQueryRow { cells { items { attributePath value } } } } } } } } } }
+        """;
+
     private static string TypedNavigationQuery(string groupRtId, string arguments) => $$"""
         query { runtime { assetRepositoryIntegrationTestAccessTestGroup(rtIds: ["{{groupRtId}}"]) {
           items { members(ckTypeIds: ["{{AccountCkTypeId}}"], {{arguments}}) { totalCount } } } } }
@@ -113,14 +171,20 @@ public class HiddenAttributeNavigationTests
                                          includeIndirect: {{(indirect ? "true" : "false")}}, {{arguments}}) { totalCount } } } } } }
         """;
 
-    private async Task AssertRejectedAsync(string query)
+    private async Task AssertRejectedAsync(string query, bool queryContainsGuess = false)
     {
         var result = await _fixture.ExecuteGraphQlAsync(query);
         var json = _fixture.SerializeGraphQl(result);
 
         result.Errors.Should().NotBeNull(json);
         result.Errors!.Select(e => e.Code).Should().Contain("ATTRIBUTE_NOT_QUERYABLE", json);
-        json.Should().NotContain(StoredHash);
+        result.Data.Should().NotBeNull();
+        json.Should().NotContain("nav-member", "no cell may be filled");
+        if (!queryContainsGuess)
+        {
+            // The error may echo the caller's own path (incl. a guessed value), never stored data.
+            json.Should().NotContain(StoredHash);
+        }
     }
 
     private async Task<int> TotalCountAsync(string query)

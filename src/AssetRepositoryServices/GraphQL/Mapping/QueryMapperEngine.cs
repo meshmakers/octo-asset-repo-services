@@ -33,6 +33,10 @@ internal class QueryMapperEngine
         RtSimpleRtQuery rtQuery, ITenantRepository tenantRepository, List<RtSimpleQueryRowDto> inputObjects,
         IOctoSessionAccessor sessionAccessor)
     {
+        // Re-review N1: stored columns (incl. selector keys) are validated before their selectors become filters.
+        AccessQueryGuard.EnsureColumnPathsAllowed(ckCacheService, graphQlUserContext.TenantId,
+            rtQuery.QueryCkTypeId, rtQuery.Columns.ToList());
+
         var navigationPairs = RtPathEvaluator.TokenizeAndGetNavigationPairsByRtCkId(ckCacheService, graphQlUserContext.TenantId,
             rtQuery.QueryCkTypeId,
             rtQuery.Columns);

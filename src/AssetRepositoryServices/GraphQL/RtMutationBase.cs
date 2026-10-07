@@ -81,6 +81,10 @@ internal abstract class RtMutationBase : ObjectGraphType
         var resultSetComplete = new List<RtEntityGraphItem>();
         foreach (var grouping in entityUpdateInfos.GroupBy(x => x.CkTypeId))
         {
+            // Re-review N1: stored columns (incl. selector keys) are validated before their selectors run.
+            AccessQueryGuard.EnsureColumnPathsAllowed(ckCacheService, repository.TenantId, rtQuery.QueryCkTypeId,
+                rtQuery.Columns.ToList());
+
             var roleIdDirectionPairs = RtPathEvaluator.TokenizeAndGetNavigationPairsByRtCkId(ckCacheService,
                 repository.TenantId, rtQuery.QueryCkTypeId,
                 rtQuery.Columns.Select(column => column));

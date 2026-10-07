@@ -247,26 +247,6 @@ public class HiddenAttributeTests
         result.Errors.Should().BeNullOrEmpty(_fixture.SerializeGraphQl(result));
     }
 
-    [Fact]
-    public async Task EntitySelectorOnHiddenAttribute_IsRejected()
-    {
-        // Review L10: an entity selector is an equality lookup on its key.
-        var result = await _fixture.ExecuteGraphQlAsync("""
-            query {
-              runtime {
-                transientQuery {
-                  simple(ckId: "AssetRepositoryIntegrationTest/AccessTestGroup",
-                         columnPaths: ["name", "members.AssetRepositoryIntegrationTest/AccessTestAccount[passwordHash=AQ]->name"]) {
-                    items { rows { items { ... on RtSimpleQueryRow { cells { items { attributePath value } } } } } }
-                  }
-                }
-              }
-            }
-            """);
-
-        AssertRejected(result, "ATTRIBUTE_NOT_QUERYABLE");
-    }
-
     private async Task<string> CreatePersistentQueryAsync()
     {
         var result = await _fixture.ExecuteGraphQlAsync($$"""

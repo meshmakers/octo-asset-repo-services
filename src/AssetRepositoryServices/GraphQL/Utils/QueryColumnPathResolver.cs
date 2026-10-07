@@ -44,6 +44,10 @@ internal static partial class QueryColumnPathResolver
         ICkCacheService ckCacheService, string tenantId, RtCkId<CkTypeId> queryCkTypeId,
         IReadOnlyCollection<string> requestedPaths)
     {
+        // Re-review N1: validate the RAW paths (with selectors) before they are normalized and matched - a selector
+        // on a hidden or Secret key would otherwise ride on a visible column.
+        AccessQueryGuard.EnsureColumnPathsAllowed(ckCacheService, tenantId, queryCkTypeId, requestedPaths);
+
         var normalizedPaths = requestedPaths.Select(NormalizePath).ToList();
         var requiredDepth = normalizedPaths.Count == 0
             ? 0

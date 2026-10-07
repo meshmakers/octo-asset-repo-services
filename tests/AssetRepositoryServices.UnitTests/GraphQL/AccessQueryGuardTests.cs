@@ -96,17 +96,88 @@ public class AccessQueryGuardTests
         AccessQueryGuard.IsHiddenName(_ckCacheService, TenantId, "name").Should().BeFalse();
     }
 
+    [Theory]
+    [InlineData("credentials.token", true)]
+    [InlineData("credentials", true)]
+    [InlineData("label", false)]
+    public void HiddenRecordValuedAttribute_HidesItsFields(string path, bool hidden)
+    {
+        // Re-review M7 gap: every segment is checked, not only the last one.
+        var (outer, inner) = RecordWithHiddenRecordAttribute();
+        CkRecordGraph? found = inner;
+        A.CallTo(() => _ckCacheService.TryGetCkRecord(TenantId, inner.CkRecordId, out found)).Returns(true)
+            .AssignsOutAndRefParameters(inner);
+
+        AccessQueryGuard.IsHiddenPath(_ckCacheService, TenantId, outer, path).Should().Be(hidden);
+    }
+
+    [Fact]
+    public void SecretSelectorKey_IsRejected()
+    {
+        var act = () => AccessQueryGuard.EnsureColumnPathsAllowed(_ckCacheService, TenantId,
+            new RtCkId<CkTypeId>("Unknown/Type"), ["nav.testCredential[apiKey='x']->name"]);
+
+        act.Should().Throw<Meshmakers.Octo.Runtime.Contracts.Secrets.SecretAttributeNotQueryableException>();
+    }
+
+    [Fact]
+    public void HiddenSelectorKey_InColumnPath_IsRejected()
+    {
+        var act = () => AccessQueryGuard.EnsureColumnPathsAllowed(_ckCacheService, TenantId,
+            new RtCkId<CkTypeId>("Unknown/Type"), ["name", "nav.testAccount[passwordHash='x']->name"]);
+
+        act.Should().Throw<HiddenAttributeAccessException>().Which.Code.Should().Be("ATTRIBUTE_NOT_QUERYABLE");
+    }
+
+    [Fact]
+    public void VisibleSelectorKey_InColumnPath_IsAllowed()
+    {
+        var act = () => AccessQueryGuard.EnsureColumnPathsAllowed(_ckCacheService, TenantId,
+            new RtCkId<CkTypeId>("Unknown/Type"), ["name", "nav.testAccount[name='x']->name"]);
+
+        act.Should().NotThrow();
+    }
+
+    private static (CkRecordGraph Outer, CkRecordGraph Inner) RecordWithHiddenRecordAttribute()
+    {
+        var token = Attribute("Token", AttributeValueTypesDto.String);
+        var inner = new CkRecordGraph(new CkId<CkRecordId>("Test/Inner"), false, false, [], null, [], [],
+            new Dictionary<CkId<CkAttributeId>, CkTypeAttributeGraph> { [token.CkAttributeId] = token }, "inner");
+        var credentials = new CkTypeAttributeGraph(new CkId<CkAttributeId>("Test/Credentials"), "Credentials", null,
+            AttributeValueTypesDto.Record, inner.CkRecordId, null, null, null, null, true, null)
+        {
+            Access = CkAttributeAccessDto.Hidden
+        };
+        var label = Attribute("Label", AttributeValueTypesDto.String);
+        var outer = new CkRecordGraph(new CkId<CkRecordId>("Test/Outer"), false, false, [], null, [], [],
+            new Dictionary<CkId<CkAttributeId>, CkTypeAttributeGraph>
+            {
+                [credentials.CkAttributeId] = credentials,
+                [label.CkAttributeId] = label
+            }, "outer");
+        return (outer, inner);
+    }
+
+    private static CkTypeAttributeGraph Attribute(string name, AttributeValueTypesDto valueType)
+    {
+        return new CkTypeAttributeGraph(new CkId<CkAttributeId>("Test/" + name), name, null, valueType, null, null,
+            null, null, null, true, null);
+    }
+
     private static CkRecordGraph HiddenRecord()
     {
         var hidden = new CkTypeAttributeGraph(new CkId<CkAttributeId>("Test/PasswordHash"), "PasswordHash", null,
             AttributeValueTypesDto.String, null, null, null, null, null, true, null) { Access = CkAttributeAccessDto.Hidden };
         var visible = new CkTypeAttributeGraph(new CkId<CkAttributeId>("Test/Name"), "Name", null,
             AttributeValueTypesDto.String, null, null, null, null, null, false, null);
+        var secret = new CkTypeAttributeGraph(new CkId<CkAttributeId>("Test/ApiKey"), "ApiKey", null,
+            AttributeValueTypesDto.Secret, null, null, null, null, null, true, null);
         return new CkRecordGraph(new CkId<CkRecordId>("Test/Credentials"), false, false, [], null, [], [],
             new Dictionary<CkId<CkAttributeId>, CkTypeAttributeGraph>
             {
                 [hidden.CkAttributeId] = hidden,
-                [visible.CkAttributeId] = visible
+                [visible.CkAttributeId] = visible,
+                [secret.CkAttributeId] = secret
             }, "test");
     }
 }

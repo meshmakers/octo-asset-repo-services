@@ -6,6 +6,7 @@ using Meshmakers.Octo.ConstructionKit.Contracts.DataTransferObjects;
 using Meshmakers.Octo.ConstructionKit.Contracts.DependencyGraph;
 using Meshmakers.Octo.ConstructionKit.Contracts.Services;
 using Meshmakers.Octo.Runtime.Contracts.Repositories.Query;
+using Meshmakers.Octo.Runtime.Contracts.Secrets;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Utils;
 
@@ -79,10 +80,12 @@ internal static partial class AccessQueryGuard
         var normalized = QueryColumnPathResolver.NormalizePath(attributePath);
         if (!normalized.Contains("->") && root != null)
         {
-            return IsHidden(SecretQueryGuard.TryResolveAttribute(ckCacheService, tenantId, root, normalized));
+            // Every segment counts: a Hidden record-valued attribute also hides record.field (review M7 gap).
+            return ResolveSegments(ckCacheService, tenantId, root, normalized).Any(IsHidden);
         }
 
-        // Navigation paths and unknown roots: by name (fail closed).
+        // Navigation paths and unknown roots: by name (fail closed), every attribute segment after the last
+        // navigation.
         var lastSegment = normalized.Contains("->")
             ? normalized[(normalized.LastIndexOf("->", StringComparison.Ordinal) + 2)..]
             : normalized;
@@ -91,7 +94,7 @@ internal static partial class AccessQueryGuard
             return false; // association meta column (totalCount / exists)
         }
 
-        return hiddenNames.Contains(LastName(lastSegment));
+        return SegmentNames(lastSegment).Any(hiddenNames.Contains);
     }
 
     /// <summary>
@@ -133,6 +136,37 @@ internal static partial class AccessQueryGuard
     }
 
     /// <summary>
+    ///     Re-review N1: validates every requested or stored query column path BEFORE it is matched against the
+    ///     collector columns. A selector path (<c>nav.type[passwordHash='X']-&gt;name</c>) matches a visible column once
+    ///     the selector is stripped, and the selector is then evaluated during cell building - an equality oracle.
+    ///     Rejects hidden paths and hidden selector keys (<see cref="HiddenAttributeAccessException" />) and Secret
+    ///     selector keys (<see cref="SecretAttributeNotQueryableException" />).
+    /// </summary>
+    internal static void EnsureColumnPathsAllowed(ICkCacheService ckCacheService, string tenantId,
+        RtCkId<CkTypeId> ckTypeId, IReadOnlyCollection<string> paths)
+    {
+        EnsureNoHiddenColumns(ckCacheService, tenantId, ckTypeId, paths, QueryColumnOperation);
+
+        var secretNames = GetNameSets(ckCacheService, tenantId).Secret;
+        if (secretNames.Count == 0)
+        {
+            return;
+        }
+
+        foreach (var path in paths)
+        {
+            foreach (Match match in EntitySelectorKeyRegex().Matches(path))
+            {
+                if (secretNames.Contains(LastName(match.Groups[1].Value)))
+                {
+                    throw new SecretAttributeNotQueryableException(match.Groups[1].Value, "entity selector",
+                        ckTypeId.ToString());
+                }
+            }
+        }
+    }
+
+    /// <summary>
     ///     M7: a query-row write must not set a <c>Hidden</c> or <c>MethodOnly</c> attribute (same rule as the generic
     ///     mutations). Throws <see cref="HiddenAttributeAccessException" /> (<c>ATTRIBUTE_NOT_WRITABLE</c>).
     /// </summary>
@@ -143,10 +177,12 @@ internal static partial class AccessQueryGuard
         var normalized = QueryColumnPathResolver.NormalizePath(attributePath);
         if (root != null && !normalized.Contains("->"))
         {
-            var attribute = SecretQueryGuard.TryResolveAttribute(ckCacheService, tenantId, root, normalized);
-            if (IsNotGenericallyWritable(attribute))
+            // Every segment counts: a MethodOnly / Hidden record-valued attribute also protects record.field.
+            var attribute = ResolveSegments(ckCacheService, tenantId, root, normalized)
+                .FirstOrDefault(IsNotGenericallyWritable);
+            if (attribute != null)
             {
-                throw HiddenAttributeAccessException.NotWritable(attributePath, ckTypeId.ToString(), attribute!.Access);
+                throw HiddenAttributeAccessException.NotWritable(attributePath, ckTypeId.ToString(), attribute.Access);
             }
         }
 
@@ -231,16 +267,63 @@ internal static partial class AccessQueryGuard
     /// </summary>
     internal static IReadOnlySet<string> GetHiddenAttributeNames(ICkCacheService ckCacheService, string tenantId)
     {
-        var types = ckCacheService.GetCkTypes(tenantId); // throws CkCacheException when the tenant is not loaded
-        return HiddenNameCache.GetValue(types, _ => new HiddenNameSet(Compute(ckCacheService, tenantId, types))).Names;
+        return GetNameSets(ckCacheService, tenantId).Hidden;
     }
 
-    private static IReadOnlySet<string> Compute(ICkCacheService ckCacheService, string tenantId,
+    private static HiddenNameSet GetNameSets(ICkCacheService ckCacheService, string tenantId)
+    {
+        var types = ckCacheService.GetCkTypes(tenantId); // throws CkCacheException when the tenant is not loaded
+        return HiddenNameCache.GetValue(types, _ => Compute(ckCacheService, tenantId, types));
+    }
+
+    private static HiddenNameSet Compute(ICkCacheService ckCacheService, string tenantId,
         IEnumerable<CkTypeGraph> types)
     {
         var attributes = types.SelectMany(t => t.AllAttributes.Values)
-            .Concat(ckCacheService.GetCkRecords(tenantId).SelectMany(r => r.AllAttributes.Values));
-        return attributes.Where(IsHidden).Select(a => a.AttributeName).ToHashSet(StringComparer.Ordinal);
+            .Concat(ckCacheService.GetCkRecords(tenantId).SelectMany(r => r.AllAttributes.Values)).ToList();
+        return new HiddenNameSet(
+            attributes.Where(IsHidden).Select(a => a.AttributeName).ToHashSet(StringComparer.Ordinal),
+            attributes.Where(a => a.ValueType == AttributeValueTypesDto.Secret).Select(a => a.AttributeName)
+                .ToHashSet(StringComparer.Ordinal));
+    }
+
+    /// <summary>
+    ///     The attributes along a plain (record-dotted) path, from the root to the last resolvable segment.
+    /// </summary>
+    private static IEnumerable<CkTypeAttributeGraph> ResolveSegments(ICkCacheService ckCacheService, string tenantId,
+        CkTypeWithAttributesGraph root, string path)
+    {
+        if (path.Contains("::"))
+        {
+            yield break;
+        }
+
+        CkTypeWithAttributesGraph current = root;
+        foreach (var segment in SegmentNames(path))
+        {
+            if (!current.AllAttributesByName.TryGetValue(segment, out var attribute))
+            {
+                yield break;
+            }
+
+            yield return attribute;
+
+            if (attribute.ValueType is not (AttributeValueTypesDto.Record or AttributeValueTypesDto.RecordArray) ||
+                attribute.ValueCkRecordId == null ||
+                !ckCacheService.TryGetCkRecord(tenantId, attribute.ValueCkRecordId, out var recordGraph))
+            {
+                yield break;
+            }
+
+            current = recordGraph;
+        }
+    }
+
+    private static IEnumerable<string> SegmentNames(string path)
+    {
+        return path.Split('.', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(segment => segment.Split('[')[0].ToPascalCase())
+            .Where(segment => segment.Length > 0);
     }
 
     private static IEnumerable<(string Path, string Operation)> CollectPaths(RtEntityQueryOptions queryOptions)
@@ -319,8 +402,9 @@ internal static partial class AccessQueryGuard
         return name.Split('[')[0].ToPascalCase();
     }
 
-    private sealed class HiddenNameSet(IReadOnlySet<string> names)
+    private sealed class HiddenNameSet(IReadOnlySet<string> hidden, IReadOnlySet<string> secret)
     {
-        public IReadOnlySet<string> Names { get; } = names;
+        public IReadOnlySet<string> Hidden { get; } = hidden;
+        public IReadOnlySet<string> Secret { get; } = secret;
     }
 }
