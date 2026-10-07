@@ -11,6 +11,7 @@ using Meshmakers.Octo.Runtime.Contracts.MongoDb.Repositories;
 using Meshmakers.Octo.Runtime.Contracts.Repositories;
 using Meshmakers.Octo.Runtime.Contracts.Repositories.Query;
 using Meshmakers.Octo.Runtime.Contracts.RepositoryEntities;
+using Meshmakers.Octo.Runtime.Contracts.Secrets;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Mapping;
 
@@ -95,6 +96,14 @@ internal class QueryMapperEngine
                 targetCkTypeGraph.AllAttributesByName.TryGetValue(subAttributePath.ToPascalCase(),
                     out var attributeGraph);
                 var attributeValueType = attributeGraph?.ValueType;
+                if (attributeValueType == AttributeValueTypesDto.Secret)
+                {
+                    // AB#5528: a secret cannot identify a navigation target (that would be an equality
+                    // lookup on the credential).
+                    throw new SecretAttributeNotQueryableException(subAttributePath, "navigation lookup",
+                        navigationPair.TargetCkTypeId.ToString());
+                }
+
                 if (attributeValueType == null)
                 {
                     switch (subAttributePath.ToPascalCase())

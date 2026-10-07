@@ -56,6 +56,10 @@ Configuration is environment-variable driven with the `OCTO_` prefix; see the co
 
 The complete OctoMesh documentation is available at https://docs.meshmakers.cloud.
 
+Service-specific notes:
+
+- [Secret attributes](docs/secret-attributes.md) - how attributes of value type `Secret` are read, written, cleared and refused in queries.
+
 ## License
 
 Released under the MIT License.

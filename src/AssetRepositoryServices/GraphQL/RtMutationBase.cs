@@ -101,6 +101,8 @@ internal abstract class RtMutationBase : ObjectGraphType
         var invalidColumnPaths = resolvedColumns.Where(rc => rc.Column == null).Select(rc => rc.Path).ToList();
         if (invalidColumnPaths.Any())
         {
+            SecretQueryGuard.EnsureNoSecretColumns(ckCacheService, repository.TenantId, rtQuery.QueryCkTypeId,
+                invalidColumnPaths);
             throw OctoGraphQLException.InvalidColumnPaths(invalidColumnPaths);
         }
 
@@ -217,6 +219,19 @@ internal abstract class RtMutationBase : ObjectGraphType
                     rtTypeWithAttributes.SetAttributeValue(ckTypeAttributeGraph.AttributeName,
                         ckTypeAttributeGraph.ValueType, binaryData);
                     return true;
+                case AttributeValueTypesDto.Secret:
+                    // AB#5528 (concept §4.3): only a non-empty string sets a secret. null, "" and the read
+                    // marker sent back ({ isSet }) mean "unchanged" and are left out of the write, so an
+                    // echoed read never clears a secret - clearing is explicit via clearSecretAttributes.
+                    // Inside records an omitted sub-value is carried over by the engine (record key).
+                    var secretInput = GetSecretInput(ckTypeAttributeGraph.AttributeName.ToCamelCase(), value);
+                    if (secretInput != null)
+                    {
+                        rtTypeWithAttributes.SetAttributeValue(ckTypeAttributeGraph.AttributeName,
+                            ckTypeAttributeGraph.ValueType, RtSecretValue.Pending(secretInput));
+                    }
+
+                    return true;
                 case AttributeValueTypesDto.Enum:
                     if (value == null)
                     {
@@ -241,6 +256,82 @@ internal abstract class RtMutationBase : ObjectGraphType
         }
 
         return false;
+    }
+
+    /// <summary>
+    ///     Returns the plaintext of a Secret input value, or <c>null</c> when the input means "unchanged"
+    ///     (<c>null</c>, <c>""</c>, the read marker <c>{ isSet }</c> as an object). Any other input type is
+    ///     refused; the error names the type only, never the value (AB#5528).
+    /// </summary>
+    private static string? GetSecretInput(string attributeName, object? value)
+    {
+        return value switch
+        {
+            null => null,
+            string text => text.Length == 0 ? null : text,
+            RtSecretValue => null,
+            System.Collections.IDictionary => null,
+            IReadOnlyDictionary<string, object?> => null,
+            IDictionary<string, object?> => null,
+            _ => throw OctoGraphQLException.InvalidSecretValue(attributeName, value.GetType().Name)
+        };
+    }
+
+    /// <summary>
+    ///     Maps the GraphQL <c>clearSecretAttributes</c> names (camelCase, like the item's attribute fields)
+    ///     to the CK attribute names (PascalCase) of the type. Names that are not attributes of the type are
+    ///     passed on PascalCased; the engine rejects them (message 21) together with non-secret and required
+    ///     attributes (22) and secrets that are set and cleared in the same update (23).
+    /// </summary>
+    protected static IReadOnlyCollection<string>? MapClearSecretAttributes(ICkCacheService ckCacheService,
+        string tenantId, RtCkId<CkTypeId> ckTypeId, IEnumerable<string>? clearSecretAttributes)
+    {
+        if (clearSecretAttributes == null)
+        {
+            return null;
+        }
+
+        var names = clearSecretAttributes.Where(n => !string.IsNullOrWhiteSpace(n)).ToList();
+        if (names.Count == 0)
+        {
+            return null;
+        }
+
+        var ckTypeGraph = ckCacheService.GetRtCkType(tenantId, ckTypeId);
+        return names
+            .Select(name =>
+            {
+                var trimmed = name.Trim();
+                if (ckTypeGraph.AllAttributesByName.ContainsKey(trimmed))
+                {
+                    return trimmed;
+                }
+
+                var pascalCase = trimmed.ToPascalCase();
+                var match = ckTypeGraph.AllAttributesByName.Keys.FirstOrDefault(k =>
+                    string.Equals(k, pascalCase, StringComparison.OrdinalIgnoreCase));
+                return match ?? pascalCase;
+            })
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+    }
+
+    /// <summary>
+    ///     Creates the update info of one entity of an update mutation, or <c>null</c> when the mutation
+    ///     neither sets anything nor clears a secret.
+    /// </summary>
+    protected static EntityUpdateInfo<RtEntity>? CreateUpdateInfo(RtEntityId rtEntityId, RtEntity document,
+        IReadOnlyCollection<string>? clearSecretAttributes)
+    {
+        var hasClear = clearSecretAttributes is { Count: > 0 };
+        if (!document.Attributes.Any() && string.IsNullOrWhiteSpace(document.RtWellKnownName) && !hasClear)
+        {
+            return null;
+        }
+
+        return hasClear
+            ? EntityUpdateInfo<RtEntity>.CreateUpdate(rtEntityId, document, clearSecretAttributes)
+            : EntityUpdateInfo<RtEntity>.CreateUpdate(rtEntityId, document);
     }
 
     /// <summary>

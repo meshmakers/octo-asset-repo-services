@@ -1,7 +1,10 @@
+using System.Security.Claims;
 using System.Text.Json;
 using GraphQL;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Utils;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.Secrets;
+using Meshmakers.Octo.Communication.Contracts;
 using Microsoft.Extensions.DependencyInjection;
 using MongoDB.Bson;
 using MongoDB.Driver;
@@ -19,6 +22,29 @@ public class GraphQlTestFixture : SampleDataFixture
     private IGraphQLTextSerializer? _serializer;
     private IMongoClient? _mongoClient;
 
+    public GraphQlTestFixture()
+    {
+        // AB#5544: pipelines with RevealSecret@1 nodes for the secret usage tests (see TestPipelineDefinitionSource).
+        Services.AddSingleton<TestPipelineDefinitionSource>();
+        Services.AddSingleton<IPipelineDefinitionSource>(sp => sp.GetRequiredService<TestPipelineDefinitionSource>());
+    }
+
+    /// <summary>
+    ///     A principal with the <see cref="CommonConstants.AdminPanelManagementRole" /> role (secrets overview, AB#5544).
+    /// </summary>
+    public static ClaimsPrincipal AdminPanelPrincipal { get; } = new(
+        new ClaimsIdentity(
+            [
+                new Claim(ClaimTypes.Name, "admin-panel"),
+                new Claim(ClaimTypes.Role, CommonConstants.AdminPanelManagementRole)
+            ],
+            "IntegrationTests"));
+
+    /// <summary>
+    ///     The pipeline source of the secret usage scan; tests add pipeline definitions to it.
+    /// </summary>
+    internal TestPipelineDefinitionSource PipelineSource => GetService<TestPipelineDefinitionSource>();
+
     protected override async Task InitializeServicesAsync()
     {
         await base.InitializeServicesAsync();
@@ -31,7 +57,11 @@ public class GraphQlTestFixture : SampleDataFixture
     /// <summary>
     /// Executes a GraphQL query directly against the schema.
     /// </summary>
-    public async Task<ExecutionResult> ExecuteGraphQlAsync(string query, string? variables = null)
+    /// <param name="query">The GraphQL document</param>
+    /// <param name="variables">Optional JSON object with the variables</param>
+    /// <param name="user">Optional principal; null = unauthenticated</param>
+    public async Task<ExecutionResult> ExecuteGraphQlAsync(string query, string? variables = null,
+        ClaimsPrincipal? user = null)
     {
         if (_documentExecuter == null)
         {
@@ -51,7 +81,7 @@ public class GraphQlTestFixture : SampleDataFixture
             options.Query = query;
             options.Variables = inputs != null ? new Inputs(inputs) : null;
             options.RequestServices = Provider;
-            options.UserContext = new GraphQlUserContext(null, GetSystemContext());
+            options.UserContext = new GraphQlUserContext(user, GetSystemContext());
         });
 
         return result;
@@ -122,6 +152,33 @@ public class GraphQlTestFixture : SampleDataFixture
         }
 
         return BsonNull.Value;
+    }
+
+    /// <summary>
+    /// Overwrites the raw stored value of an attribute directly in MongoDB, bypassing the engine write path.
+    /// Used to simulate legacy data, e.g. a clear-text string in a Secret slot (AB#5528).
+    /// </summary>
+    /// <param name="rtId">The RtId of the entity</param>
+    /// <param name="attributePath">Path below the "attributes" subdocument (camelCase, dotted for nested values)</param>
+    /// <param name="value">The raw BSON value to store</param>
+    /// <param name="collectionSuffix">The collection suffix (the base type)</param>
+    public async Task SetRawAttributeValueInMongoDb(string rtId, string attributePath, BsonValue value,
+        string collectionSuffix)
+    {
+        if (_mongoClient == null)
+        {
+            throw new InvalidOperationException("MongoDB client not initialized");
+        }
+
+        var database = _mongoClient.GetDatabase(SystemDatabaseName);
+        var collection = database.GetCollection<BsonDocument>($"RtEntity_{collectionSuffix}");
+        var filter = Builders<BsonDocument>.Filter.Eq("_id", ObjectId.Parse(rtId));
+        var result = await collection.UpdateOneAsync(filter,
+            Builders<BsonDocument>.Update.Set($"attributes.{attributePath}", value));
+        if (result.MatchedCount == 0)
+        {
+            throw new InvalidOperationException($"Document with rtId '{rtId}' not found in 'RtEntity_{collectionSuffix}'.");
+        }
     }
 
     /// <summary>

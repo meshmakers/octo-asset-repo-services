@@ -22,7 +22,8 @@ public class StreamDataFixtureTests(StreamDataFixture fixture, ITestOutputHelper
         // uses direct lower-cased columns — the legacy `data['Voltage']` syntax is gone, and
         // CrateDB column names are lower-cased to sidestep case-preservation quirks.
         var count = await client.GetCountAsync(tenantId,
-            $"SELECT COUNT(*) FROM {qualifiedTable}");
+            $"SELECT COUNT(*) FROM {qualifiedTable}",
+            TestContext.Current.CancellationToken);
 
         Assert.Equal(fixture.TestDataPointCount, count);
 

@@ -1,6 +1,7 @@
 using System.Globalization;
 using GraphQL.Types;
 using GraphQLParser.AST;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Utils;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Scalars;
 
@@ -10,7 +11,15 @@ internal class SimpleScalarType : ScalarGraphType
     {
         // Instants must leave the GraphQL layer with an explicit UTC designator (AB#4821);
         // a DB read path may hand over Unspecified-kind values which would serialize naive.
-        return value is DateTime dateTime ? UtcDateTimeGraphType.EnsureUtc(dateTime) : value;
+        if (value is DateTime dateTime)
+        {
+            return UtcDateTimeGraphType.EnsureUtc(dateTime);
+        }
+
+        // AB#5528: last line of defence - a secret that reached an untyped scalar (generic attribute value,
+        // query cell) is never written, not even as its envelope. The resolvers already project secrets
+        // as secretIsSet / OctoSecretState; this only catches paths that do not know the CK type.
+        return SecretAttributeProjection.RedactUntyped(value);
     }
 
     public override object? ParseValue(object? value)

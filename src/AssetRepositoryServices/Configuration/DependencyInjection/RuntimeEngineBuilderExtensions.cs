@@ -11,9 +11,13 @@ using Meshmakers.Octo.Backend.AssetRepositoryServices.Consumers;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Caches;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.RequestHandling;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Utils;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.Observability;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.Secrets;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.Services;
 using Meshmakers.Octo.Communication.Contracts;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
+using Meshmakers.Octo.Communication.Contracts.Serialization;
 using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.ConstructionKit.Contracts.BlueprintCatalogs;
 using Meshmakers.Octo.ConstructionKit.Contracts.ModelCatalogs;
@@ -260,16 +264,21 @@ public static class RuntimeEngineBuilderExtensions
             .ConfigureExecutionOptions(options =>
             {
                 options.EnableMetrics = true;
-                if (options.RequestServices != null)
+                var logger = options.RequestServices?.GetService<ILogger<OctoAssetRepositoryServicesOptions>>();
+                options.UnhandledExceptionDelegate = ctx =>
                 {
-                    var logger =
-                        options.RequestServices.GetRequiredService<ILogger<OctoAssetRepositoryServicesOptions>>();
-                    options.UnhandledExceptionDelegate = ctx =>
+                    // AB#5528: a Secret attribute refused by a resolver that does not catch (e.g. a nested
+                    // connection) still surfaces with the stable code instead of a generic resolver error.
+                    if (ResolveConnectionContextExtensions.TryCreateSecretNotQueryableError(ctx.OriginalException,
+                            out var secretError))
                     {
-                        logger.LogError(ctx.OriginalException, "{Error} occurred", ctx.OriginalException.Message);
+                        ctx.Exception = secretError;
                         return Task.CompletedTask;
-                    };
-                }
+                    }
+
+                    logger?.LogError(ctx.OriginalException, "{Error} occurred", ctx.OriginalException.Message);
+                    return Task.CompletedTask;
+                };
             })
             // Add required services for GraphQL request/response de/serialization
             .AddSystemTextJson(c=>
@@ -286,6 +295,10 @@ public static class RuntimeEngineBuilderExtensions
                 c.Converters.Add(new RtCkIdTypeIdConverter());
                 c.Converters.Add(new RtCkIdRecordIdConverter());
                 c.Converters.Add(new RtCkIdEnumIdConverter());
+
+                // AB#5528: an RtSecretValue reaching the response serializer (e.g. a secret member of a
+                // record inside a query cell) is written as the marker {"isSet":...}, never as its content.
+                c.AddOctoSecretConverters();
 
                 c.PropertyNamingPolicy = JsonNamingPolicy.CamelCase;
             }) // For .NET Core 3+
@@ -348,6 +361,10 @@ public static class RuntimeEngineBuilderExtensions
 
         // GraphQL custom services
         builder.Services.AddSingleton<ISchemaContext, SchemaContext>();
+
+        // AB#5544: secrets overview - RevealSecret@1 usage scan over the tenant's pipeline definitions.
+        builder.Services.AddSingleton<IPipelineDefinitionSource, TenantPipelineDefinitionSource>();
+        builder.Services.AddSingleton<SecretUsageScanner>();
 
 
         builder.Services.AddOctoServiceInfrastructure("AssetRepositoryService", c =>
@@ -429,5 +446,14 @@ public static class RuntimeEngineBuilderExtensions
                 config.GetSection("PublicOctoGitHubBlueprints"));
         }
         builder.Services.AddSingleton<IOctoService, OctoService>();
+
+        // AB#5432: CK model health as a platform function instead of a blueprint pipeline.
+        //
+        // The status service is the piece the REST endpoint and the sweep share — transient because
+        // ICatalogService is, and a scope-per-sweep keeps the sweep off the request pipeline's
+        // lifetimes entirely.
+        builder.Services.AddTransient<ICkModelLibraryStatusService, CkModelLibraryStatusService>();
+        builder.Services.AddTransient<ITenantObservabilityOptIn, TenantObservabilityOptIn>();
+        builder.Services.AddHostedService<CkModelObservabilitySweepService>();
     }
 }

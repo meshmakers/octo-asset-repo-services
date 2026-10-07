@@ -129,9 +129,12 @@ internal class RtEntityMutation : RtMutationBase
 
                 await RtEntityFromInputObjectAsync(ckCacheService, graphQlUserContext.TenantId, document,
                     mutationDto.Item, associationUpdateInfoList);
-                if (document.Attributes.Any() || !string.IsNullOrWhiteSpace(document.RtWellKnownName))
+                var clearSecretAttributes = MapClearSecretAttributes(ckCacheService, graphQlUserContext.TenantId,
+                    ckTypeId, mutationDto.ClearSecretAttributes);
+                var entityUpdateInfo = CreateUpdateInfo(rtEntityId, document, clearSecretAttributes);
+                if (entityUpdateInfo != null)
                 {
-                    entityUpdateInfos.Add(EntityUpdateInfo<RtEntity>.CreateUpdate(rtEntityId, document));
+                    entityUpdateInfos.Add(entityUpdateInfo);
                 }
             }
 

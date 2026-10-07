@@ -1,5 +1,6 @@
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.RequestHandling;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Utils;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
 using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.ConstructionKit.Contracts.DataTransferObjects;
@@ -193,15 +194,22 @@ internal class QueryMapper(
 
         if (rtQueryRowDto.Cells != null)
         {
+            var ckTypeId = rtEntity.CkTypeId ?? throw OctoGraphQLException.CkTypeIdUndefined();
             foreach (var cellDto in rtQueryRowDto.Cells)
             {
                 // Ignore attribute paths that are navigation properties
                 var navigationPair = RtPathEvaluator.TokenizeAndGetNavigationPairByRtCkId(ckCacheService, tenantId,
-                    rtEntity.CkTypeId ?? throw OctoGraphQLException.CkTypeIdUndefined(), cellDto.AttributePath);
+                    ckTypeId, cellDto.AttributePath);
                 if (navigationPair != null)
                 {
                     continue;
                 }
+
+                // AB#5528 (concept §4.4): a Secret attribute is never a query column, so a query row cannot
+                // write it either - secrets are set through the entity mutations (string input, explicit
+                // clearSecretAttributes). Refused before the value is touched: the mapping errors below echo
+                // the cell value, which would carry the secret back to the caller.
+                SecretQueryGuard.EnsureNoSecretColumns(ckCacheService, tenantId, ckTypeId, [cellDto.AttributePath]);
 
                 try
                 {

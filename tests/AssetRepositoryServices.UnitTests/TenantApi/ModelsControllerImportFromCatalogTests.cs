@@ -1,6 +1,7 @@
-using FakeItEasy;
+﻿using FakeItEasy;
 using FluentAssertions;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.DataTransferObjects.CkModelCatalog;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.Services;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.TenantApi.v1.Controllers;
 using Meshmakers.Octo.Common.DistributionEventHub.Services;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
@@ -22,6 +23,7 @@ public class ModelsControllerImportFromCatalogTests
     private readonly ICkJsonSerializer _ckJsonSerializer;
     private readonly IDistributedCacheService _distributedCache;
     private readonly ICommandClient<ImportCkCommandRequest> _importCkCommandClient;
+    private readonly ICkModelLibraryStatusService _libraryStatusService;
     private readonly ModelsController _controller;
 
     public ModelsControllerImportFromCatalogTests()
@@ -30,6 +32,18 @@ public class ModelsControllerImportFromCatalogTests
         _ckJsonSerializer = A.Fake<ICkJsonSerializer>();
         _distributedCache = A.Fake<IDistributedCacheService>();
         _importCkCommandClient = A.Fake<ICommandClient<ImportCkCommandRequest>>();
+
+        // AB#5432: the compatibility pre-checks moved out of the controller into
+        // ICkModelLibraryStatusService. Default the fake to "compatible, nothing installed" so
+        // these tests keep exercising the behaviour they were written for; a bare fake would
+        // return default((bool, string?)) == (false, null) and turn every import into a 400.
+        _libraryStatusService = A.Fake<ICkModelLibraryStatusService>();
+        A.CallTo(() => _libraryStatusService.GetInstalledSystemVersionsAsync(A<Meshmakers.Octo.Runtime.Contracts.MongoDb.ITenantContext>._))
+            .Returns(new Dictionary<string, CkVersion>());
+        A.CallTo(() => _libraryStatusService.CheckSystemCompatibilityAsync(
+                A<CkModelId>._, A<Dictionary<string, CkVersion>>._, A<HashSet<string>>._,
+                A<List<string>>._, A<CancellationToken>._))
+            .Returns((true, (string?)null));
 
         _controller = new ModelsController(
             _distributedCache,
@@ -42,7 +56,8 @@ public class ModelsControllerImportFromCatalogTests
             _ckJsonSerializer,
             A.Fake<Meshmakers.Octo.Runtime.Contracts.MongoDb.ISystemContext>(),
             A.Fake<Meshmakers.Octo.Runtime.Contracts.CkModelMigrations.ICkModelUpgradeService>(),
-            A.Fake<Meshmakers.Octo.Runtime.Contracts.CkModelMigrations.ICkModelMigrationService>());
+            A.Fake<Meshmakers.Octo.Runtime.Contracts.CkModelMigrations.ICkModelMigrationService>(),
+            _libraryStatusService);
 
         // Set up HttpContext with tenant ID via request route values
         var httpContext = new DefaultHttpContext();

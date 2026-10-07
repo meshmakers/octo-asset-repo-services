@@ -76,6 +76,17 @@ internal static class Statics
     public const string GraphQlErrorCache = "ASSET1005";
     public const string GraphQlCkModelUpdateError = "ASSET1006";
 
+    /// <summary>
+    ///     AB#5528 (concept §4.4): a Secret attribute was used for something other than an IS_NULL / IS_NOT_NULL
+    ///     filter (other filter operators, sort, attribute search, aggregation, group-by, query columns).
+    /// </summary>
+    public const string GraphQlSecretAttributeNotQueryable = "SecretAttributeNotQueryable";
+
+    /// <summary>
+    ///     AB#5528: a secret was written while the service has no key ring (SecretEncryption) configured.
+    /// </summary>
+    public const string GraphQlSecretEncryptionNotConfigured = "SecretEncryptionNotConfigured";
+
     // StreamData / archive lifecycle error codes (concept §12). Stable so clients can pattern-
     // match on them rather than parsing free-form messages.
     public const string GraphQlErrorStreamDataArchiveNotFound = "STREAMDATA_ARCHIVE_NOT_FOUND";
@@ -88,6 +99,12 @@ internal static class Statics
 
     /// <summary>Stable code for "caller is not in a required role" — gates the archive lifecycle mutations on StreamDataAdmin.</summary>
     public const string GraphQlForbidden = "FORBIDDEN";
+
+    /// <summary>
+    ///     AB#5544 (handover §12): <c>secrets { … }</c> without the AdminPanelManagement role. Spelled as the
+    ///     secrets admin API contract defines it.
+    /// </summary>
+    public const string GraphQlSecretsForbidden = "Forbidden";
 
     public static string GetGraphQlPascalCaseName<TKey>(this RtCkId<TKey> ckKey) where TKey : IComparable<TKey>, ICkElementId
     {

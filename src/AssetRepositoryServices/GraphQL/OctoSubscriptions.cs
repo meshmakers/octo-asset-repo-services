@@ -91,6 +91,17 @@ internal class OctoSubscriptions : ObjectGraphType<object>
             }
         }
 
+        // AB#5528: change-stream filters on a Secret attribute only support IS_NULL / IS_NOT_NULL. The
+        // watch filter is evaluated outside the query path, so the GraphQL guard is the only check here.
+        if (context.UserContext is GraphQlUserContext secretGuardContext)
+        {
+            var ckCacheService = context.GetCkCacheService();
+            SecretQueryGuard.EnsureFilterable(ckCacheService, secretGuardContext.TenantId,
+                new RtCkId<CkTypeId>(ckId), beforeFieldFilters);
+            SecretQueryGuard.EnsureFilterable(ckCacheService, secretGuardContext.TenantId,
+                new RtCkId<CkTypeId>(ckId), fieldFilters);
+        }
+
         var updateTypeDtoList = context.GetArgument<ICollection<UpdateTypesDto>>(Statics.UpdateTypesArg);
         var updateType = UpdateTypes.Undefined;
         foreach (var updateTypeDto in updateTypeDtoList)

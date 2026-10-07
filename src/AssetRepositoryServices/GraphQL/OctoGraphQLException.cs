@@ -32,6 +32,17 @@ public class OctoGraphQLException : Exception
         return new OctoGraphQLException($"Attribute value type {valueType} is not supported.");
     }
 
+    /// <summary>
+    ///     AB#5528: a Secret attribute only accepts a string. The message names the attribute and the CLR
+    ///     type only - never the value.
+    /// </summary>
+    public static Exception InvalidSecretValue(string attributeName, string valueTypeName)
+    {
+        return new OctoGraphQLException(
+            $"Secret attribute '{attributeName}' expects a string value, got a value of type '{valueTypeName}'. " +
+            "Use 'clearSecretAttributes' to clear a secret.");
+    }
+
     public static Exception RecordAttributeHasNoCkRecordId(string attributeName)
     {
         return new OctoGraphQLException($"Record attribute {attributeName} has no CkRecordId.");

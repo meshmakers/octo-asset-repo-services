@@ -10,6 +10,7 @@ using Meshmakers.Octo.Runtime.Contracts;
 using Meshmakers.Octo.Runtime.Contracts.Geospatial.Geometry;
 using Meshmakers.Octo.Runtime.Contracts.Repositories;
 using Meshmakers.Octo.Runtime.Contracts.Repositories.Query;
+using Meshmakers.Octo.Runtime.Contracts.Secrets;
 using Meshmakers.Octo.Runtime.Contracts.StreamData;
 using Meshmakers.Octo.Runtime.Engine.CrateDb;
 
@@ -67,7 +68,18 @@ internal static class ResolveConnectionContextExtensions
 
     internal static object? HandleException(this IResolveFieldContext context, Exception exception)
     {
-        if (exception is CkCacheException ckCacheException)
+        if (TryCreateSecretNotQueryableError(exception, out var secretError))
+        {
+            // Before the PersistenceException branch: the exception derives from it but has its own code.
+            context.Errors.Add(secretError);
+        }
+        else if (exception is SecretEncryptionNotConfiguredException secretEncryptionNotConfigured)
+        {
+            // The message names the missing configuration only; it never carries a value.
+            context.Errors.Add(new ExecutionError(secretEncryptionNotConfigured.Message, secretEncryptionNotConfigured)
+                { Code = Statics.GraphQlSecretEncryptionNotConfigured });
+        }
+        else if (exception is CkCacheException ckCacheException)
         {
             context.Errors.Add(new ExecutionError(ckCacheException.Message, ckCacheException)
                 { Code = Statics.GraphQlErrorCache });
@@ -162,6 +174,38 @@ internal static class ResolveConnectionContextExtensions
         }
 
         return null;
+    }
+
+    /// <summary>
+    ///     AB#5528: maps <see cref="SecretAttributeNotQueryableException" /> (thrown by the GraphQL guard or the
+    ///     repository, possibly wrapped) to the stable error code <c>SecretAttributeNotQueryable</c> with the
+    ///     attribute path and the refused operation as extensions. The message names the path, never a value.
+    /// </summary>
+    internal static bool TryCreateSecretNotQueryableError(Exception? exception,
+        [NotNullWhen(true)] out ExecutionError? error)
+    {
+        var current = exception;
+        while (current != null && current is not SecretAttributeNotQueryableException)
+        {
+            current = current.InnerException;
+        }
+
+        if (current is not SecretAttributeNotQueryableException secretException)
+        {
+            error = null;
+            return false;
+        }
+
+        error = new ExecutionError(secretException.Message, secretException)
+        {
+            Code = Statics.GraphQlSecretAttributeNotQueryable,
+            Extensions = new Dictionary<string, object?>
+            {
+                ["attributePath"] = secretException.AttributePath,
+                ["operation"] = secretException.Operation
+            }
+        };
+        return true;
     }
 
     private static void HandleStreamDataException(

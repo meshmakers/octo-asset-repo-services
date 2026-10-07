@@ -78,6 +78,8 @@ public sealed class RtTransientQuery: ObjectGraphType
         var invalidColumnPaths = resolvedColumns.Where(rc => rc.Column == null).Select(rc => rc.Path).ToList();
         if (invalidColumnPaths.Any())
         {
+            SecretQueryGuard.EnsureNoSecretColumns(ckCacheService, graphQlUserContext.TenantId, queryCkTypeId,
+                invalidColumnPaths);
             throw AssetRepositoryException.InvalidColumnPaths(invalidColumnPaths);
         }
 
@@ -86,6 +88,7 @@ public sealed class RtTransientQuery: ObjectGraphType
             .ToList();
 
         var queryOptions = arg.GetQueryOptions();
+        SecretQueryGuard.EnsureQueryable(ckCacheService, graphQlUserContext.TenantId, queryCkTypeId, queryOptions);
 
         _logger.LogDebug("GraphQL query handling returning data");
         return ConnectionUtils.ToOctoConnection(
@@ -112,6 +115,8 @@ public sealed class RtTransientQuery: ObjectGraphType
         var invalidColumnPaths = columnPathList.Where(cp => typeQueryColumnPaths.All(ckTypeQueryColumn => ckTypeQueryColumn.Path != cp.AttributePath)).ToList();
         if (invalidColumnPaths.Any())
         {
+            SecretQueryGuard.EnsureNoSecretColumns(ckCacheService, graphQlUserContext.TenantId, queryCkTypeId,
+                invalidColumnPaths.Select(p=> p.AttributePath).ToList());
             throw AssetRepositoryException.InvalidColumnPaths(invalidColumnPaths.Select(p=> p.AttributePath).ToList());
         }
 
@@ -123,6 +128,7 @@ public sealed class RtTransientQuery: ObjectGraphType
             .ToList();
 
         var queryOptions = arg.GetQueryOptions();
+        SecretQueryGuard.EnsureQueryable(ckCacheService, graphQlUserContext.TenantId, queryCkTypeId, queryOptions);
 
         _logger.LogDebug("GraphQL query handling returning data");
         return ConnectionUtils.ToOctoConnection(
@@ -156,6 +162,8 @@ public sealed class RtTransientQuery: ObjectGraphType
             .Where(cp => typeQueryColumnPaths.All(ckTypeQueryColumn => ckTypeQueryColumn.Path != cp)).ToList();
         if (invalidGroupByColumnPaths.Any())
         {
+            SecretQueryGuard.EnsureNoSecretColumns(ckCacheService, graphQlUserContext.TenantId, queryCkTypeId,
+                invalidGroupByColumnPaths);
             throw AssetRepositoryException.InvalidColumnPaths(invalidGroupByColumnPaths);
         }
 
@@ -164,6 +172,8 @@ public sealed class RtTransientQuery: ObjectGraphType
             .Where(cp => typeQueryColumnPaths.All(ckTypeQueryColumn => ckTypeQueryColumn.Path != cp.AttributePath)).ToList();
         if (invalidColumnPaths.Any())
         {
+            SecretQueryGuard.EnsureNoSecretColumns(ckCacheService, graphQlUserContext.TenantId, queryCkTypeId,
+                invalidColumnPaths.Select(p => p.AttributePath).ToList());
             throw AssetRepositoryException.InvalidColumnPaths(invalidColumnPaths.Select(p => p.AttributePath).ToList());
         }
 
@@ -181,6 +191,7 @@ public sealed class RtTransientQuery: ObjectGraphType
             .ToList();
 
         var queryOptions = arg.GetQueryOptions();
+        SecretQueryGuard.EnsureQueryable(ckCacheService, graphQlUserContext.TenantId, queryCkTypeId, queryOptions);
 
         _logger.LogDebug("GraphQL query handling returning data");
         return ConnectionUtils.ToOctoConnection(

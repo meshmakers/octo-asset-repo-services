@@ -9,6 +9,7 @@ using Meshmakers.Octo.ConstructionKit.Contracts.DataTransferObjects;
 using Meshmakers.Octo.ConstructionKit.Contracts.DependencyGraph;
 using Meshmakers.Octo.ConstructionKit.Contracts.Services;
 using Meshmakers.Octo.Runtime.Contracts.RepositoryEntities;
+using Meshmakers.Octo.Runtime.Contracts.Secrets;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
 
@@ -51,47 +52,102 @@ internal sealed class RtEntityGenericDtoType : ObjectGraphType<RtEntityDto>
 
     private object ResolveAttributes(IResolveConnectionContext<RtEntityDto> context)
     {
-        var ckCacheService = context.GetCkCacheService();
         var graphQlContext = (GraphQlUserContext)context.UserContext;
+        context.TryGetArgument(Statics.ResolveEnumValuesToNames, out bool resolveEnumValuesToNames);
 
+        var attributeDtos = CreateAttributeDtos(context.GetCkCacheService(), context.GetProtector(),
+            context.RequestServices?.GetService<ILogger<RtEntityGenericDtoType>>(), graphQlContext.TenantId,
+            (RtEntity)context.Source.UserContext!, context.Source.CkTypeId, GetAttributeNamesFilter(context),
+            resolveEnumValuesToNames);
 
-        var ckTypeGraph = ckCacheService.GetRtCkType(graphQlContext.TenantId, context.Source.CkTypeId);
+        return ConnectionUtils.ToOctoConnection(attributeDtos, context);
+    }
 
-        IEnumerable<CkTypeAttributeGraph> resultList;
-        IEnumerable<string>? filterAttributeNames = null;
-        if (context.HasArgument(Statics.AttributeNamesFilterArg))
+    /// <summary>
+    ///     The <c>attributeNames</c> argument: <c>null</c> when omitted or explicitly null (= all attributes), otherwise
+    ///     the requested camelCase names (an empty list requests no attribute).
+    /// </summary>
+    internal static IReadOnlyCollection<string>? GetAttributeNamesFilter(IResolveFieldContext context)
+    {
+        if (!context.HasArgument(Statics.AttributeNamesFilterArg))
         {
-            filterAttributeNames = context.GetArgument<IEnumerable<string>>(Statics.AttributeNamesFilterArg);
+            return null;
+        }
 
-            resultList =
-                ckTypeGraph.AllAttributes.Values.Where(a =>
-                    filterAttributeNames.Contains(a.AttributeName.ToCamelCase()));
+        return context.GetArgument<IEnumerable<string>?>(Statics.AttributeNamesFilterArg)?.ToArray();
+    }
+
+    /// <summary>
+    ///     The generic attribute projection of an entity (AB#5535): an empty filter returns nothing without touching
+    ///     the CK cache; an entity whose CK type is not in the (loaded) CK cache is projected from its stored
+    ///     attributes by <see cref="UnknownCkTypeAttributeProjection" /> instead of failing the whole list.
+    /// </summary>
+    /// <param name="ckCacheService">The CK cache</param>
+    /// <param name="protector">The key ring of this process; <c>null</c> = unknown</param>
+    /// <param name="logger">Logger for the unknown-type warning; <c>null</c> = no warning</param>
+    /// <param name="tenantId">The tenant</param>
+    /// <param name="rtEntity">The entity</param>
+    /// <param name="ckTypeId">The CK type id of the entity</param>
+    /// <param name="filterAttributeNames">camelCase attribute names to return; <c>null</c> = all</param>
+    /// <param name="resolveEnumValuesToNames">When true enum values are resolved to names</param>
+    internal static List<RtEntityAttributeDto> CreateAttributeDtos(ICkCacheService ckCacheService,
+        ISecretAttributeProtector? protector, ILogger? logger, string tenantId, RtTypeWithAttributes rtEntity,
+        RtCkId<CkTypeId> ckTypeId, IReadOnlyCollection<string>? filterAttributeNames, bool resolveEnumValuesToNames)
+    {
+        // No attribute requested: nothing to project, and no reason to look up the CK type.
+        if (filterAttributeNames is { Count: 0 })
+        {
+            return [];
+        }
+
+        CkTypeGraph ckTypeGraph;
+        if (!ckCacheService.IsTenantLoaded(tenantId))
+        {
+            // Not loaded at all: fail loudly (degrading would treat every type as unknown).
+            ckTypeGraph = ckCacheService.GetRtCkType(tenantId, ckTypeId);
+        }
+        else if (!ckCacheService.TryGetRtCkType(tenantId, ckTypeId, out var foundCkTypeGraph))
+        {
+            UnknownCkTypeAttributeProjection.WarnOnce(logger, tenantId, "CK type", ckTypeId.ToString());
+            return UnknownCkTypeAttributeProjection.Project(rtEntity, filterAttributeNames,
+                rtRecord => RtRecordDtoType.CreateRtRecordDtoWithAttributes(ckCacheService, protector, tenantId,
+                    rtRecord, false, filterAttributeNames?.ToArray(), logger),
+                protector);
         }
         else
         {
-            resultList = ckTypeGraph.AllAttributes.Values;
+            ckTypeGraph = foundCkTypeGraph;
         }
 
-        context.TryGetArgument(Statics.ResolveEnumValuesToNames, out bool resolveEnumValuesToNames);
+        var resultList = filterAttributeNames != null
+            ? ckTypeGraph.AllAttributes.Values.Where(a => filterAttributeNames.Contains(a.AttributeName.ToCamelCase()))
+            : ckTypeGraph.AllAttributes.Values;
 
-        return ConnectionUtils.ToOctoConnection(
-            resultList.Select(item => CreateRtEntityAttributeDto(ckCacheService, graphQlContext.TenantId,
-                (RtEntity)context.Source.UserContext!, item, resolveEnumValuesToNames, filterAttributeNames)),
-            context);
+        return resultList.Select(item => CreateRtEntityAttributeDto(ckCacheService, protector, tenantId, rtEntity,
+            item, resolveEnumValuesToNames, filterAttributeNames, logger)).ToList();
     }
 
-    internal static RtEntityAttributeDto CreateRtEntityAttributeDto(ICkCacheService ckCacheService, string tenantId,
-        RtTypeWithAttributes rtEntity,
+    internal static RtEntityAttributeDto CreateRtEntityAttributeDto(ICkCacheService ckCacheService,
+        ISecretAttributeProtector? protector, string tenantId, RtTypeWithAttributes rtEntity,
         CkTypeAttributeGraph ckTypeAttributeGraph, bool resolveEnumValuesToNames,
-        IEnumerable<string>? filterAttributeNames = null)
+        IEnumerable<string>? filterAttributeNames = null, ILogger? logger = null)
     {
         var value = rtEntity.GetAttributeValueOrDefault(ckTypeAttributeGraph.AttributeName);
 
+        // AB#5528 (concept §4.2, handover §2): a Secret attribute is projected as value = null plus secretIsSet,
+        // secretKeyMissing and secretSetAt. Decided by the CK attribute type (change-stream documents carry legacy
+        // plain strings that are not normalised); an RtSecretValue under a stale CK cache is covered as well.
+        if (ckTypeAttributeGraph.ValueType == AttributeValueTypesDto.Secret || value is RtSecretValue)
+        {
+            return SecretAttributeProjection.ToAttributeDto(ckTypeAttributeGraph.AttributeName.ToCamelCase(), value,
+                protector);
+        }
+
         if (value is RtRecord rtRecord)
         {
-            value = RtRecordDtoType.CreateRtRecordDtoWithAttributes(ckCacheService, tenantId, rtRecord,
+            value = RtRecordDtoType.CreateRtRecordDtoWithAttributes(ckCacheService, protector, tenantId, rtRecord,
                 resolveEnumValuesToNames,
-                filterAttributeNames?.ToArray());
+                filterAttributeNames?.ToArray(), logger);
         }
         else if (value is IEnumerable<object> rtRecordCandidates)
         {
@@ -99,11 +155,12 @@ internal sealed class RtEntityGenericDtoType : ObjectGraphType<RtEntityDto>
             {
                 if (listValue is RtRecord rtRecord2)
                 {
-                    return RtRecordDtoType.CreateRtRecordDtoWithAttributes(ckCacheService, tenantId, rtRecord2,
-                        resolveEnumValuesToNames, filterAttributeNames?.ToArray());
+                    return RtRecordDtoType.CreateRtRecordDtoWithAttributes(ckCacheService, protector, tenantId,
+                        rtRecord2,
+                        resolveEnumValuesToNames, filterAttributeNames?.ToArray(), logger);
                 }
 
-                return listValue;
+                return listValue is RtSecretValue ? null : listValue;
             });
         }
 
@@ -112,8 +169,13 @@ internal sealed class RtEntityGenericDtoType : ObjectGraphType<RtEntityDto>
             if (ckTypeAttributeGraph.ValueType == AttributeValueTypesDto.Enum &&
                 ckTypeAttributeGraph.ValueCkEnumId != null && value != null)
             {
-                var ckEnumGraph = ckCacheService.GetCkEnum(tenantId, ckTypeAttributeGraph.ValueCkEnumId);
-                if (value is IEnumerable<object> enumValues)
+                // AB#5535: an enum missing from the CK cache leaves the stored keys instead of failing the list.
+                if (!ckCacheService.TryGetCkEnum(tenantId, ckTypeAttributeGraph.ValueCkEnumId, out var ckEnumGraph))
+                {
+                    UnknownCkTypeAttributeProjection.WarnOnce(logger, tenantId, "CK enum",
+                        ckTypeAttributeGraph.ValueCkEnumId.ToString());
+                }
+                else if (value is IEnumerable<object> enumValues)
                 {
                     var enumValueList = new List<object>();
                     foreach (var enumValue in enumValues)
