@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using FluentAssertions;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Fixtures;
@@ -172,7 +173,7 @@ public class StreamDataSimpleQueryTests(StreamDataFixture fixture, ITestOutputHe
             var cells = item.GetProperty("cells").GetProperty("items").EnumerateArray().ToList();
             var voltageCell = cells.First(c => c.GetProperty("attributePath").GetString() == "Voltage");
             // All returned rows should have Voltage matching the filter
-            Convert.ToDouble(voltageCell.GetProperty("value").GetRawText()).Should().Be(225.0);
+            Convert.ToDouble(voltageCell.GetProperty("value").GetRawText(), CultureInfo.InvariantCulture).Should().Be(225.0);
         }
     }
 
@@ -221,11 +222,11 @@ public class StreamDataSimpleQueryTests(StreamDataFixture fixture, ITestOutputHe
         // First item should have the highest voltage (229.5)
         var firstCells = items[0].GetProperty("cells").GetProperty("items").EnumerateArray().ToList();
         var firstVoltage = Convert.ToDouble(firstCells.First(c =>
-            c.GetProperty("attributePath").GetString() == "Voltage").GetProperty("value").GetRawText());
+            c.GetProperty("attributePath").GetString() == "Voltage").GetProperty("value").GetRawText(), CultureInfo.InvariantCulture);
 
         var lastCells = items[^1].GetProperty("cells").GetProperty("items").EnumerateArray().ToList();
         var lastVoltage = Convert.ToDouble(lastCells.First(c =>
-            c.GetProperty("attributePath").GetString() == "Voltage").GetProperty("value").GetRawText());
+            c.GetProperty("attributePath").GetString() == "Voltage").GetProperty("value").GetRawText(), CultureInfo.InvariantCulture);
 
         firstVoltage.Should().BeGreaterThan(lastVoltage, "results should be sorted descending by Voltage");
     }

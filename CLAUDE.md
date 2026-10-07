@@ -44,6 +44,11 @@ dotnet test '**/*Tests.csproj' --exclude '**/*SystemTests.csproj' -c DebugL
 dotnet test --filter "FullyQualifiedName~RtEntityDeleteMutationTests" -c DebugL
 ```
 
+Tests must be locale-independent (developer machines run e.g. `de_AT`, CI runs `en_US`): parse and
+format numbers with `CultureInfo.InvariantCulture` (e.g. `Convert.ToDouble(raw, CultureInfo.InvariantCulture)`
+on a JSON `GetRawText()` value). Verify a culture-sensitive test with
+`LANG=de_AT.UTF-8 LC_ALL=de_AT.UTF-8 dotnet test --filter ... -c DebugL`.
+
 ### Run Locally
 ```bash
 # Run the application from the main project with DebugL configuration

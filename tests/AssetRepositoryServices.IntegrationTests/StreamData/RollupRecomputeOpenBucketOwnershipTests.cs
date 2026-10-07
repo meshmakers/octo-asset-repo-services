@@ -1,3 +1,4 @@
+using System.Globalization;
 using FluentAssertions;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Collections;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Fixtures;
@@ -134,7 +135,7 @@ public class RollupRecomputeOpenBucketOwnershipTests(StreamDataFixture fixture, 
 
         var row = result.Rows.SingleOrDefault();
         return row?.Values.TryGetValue("voltage_sum", out var v) == true
-            ? Convert.ToDouble(v)
+            ? Convert.ToDouble(v, CultureInfo.InvariantCulture)
             : null;
     }
 
