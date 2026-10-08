@@ -1,0 +1,5 @@
+"$schema": "https://schemas.meshmakers.cloud/construction-kit-meta.schema.json"
+modelId: "System.Files-1.0.0"
+description: "Platform file system: folder roots, folders and files with linked binary content (GridFS). Imported into every tenant by the asset repository; independent of Reporting (AB#6171)."
+dependencies:
+  - "System-[2.5,3.0)"
