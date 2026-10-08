@@ -9,6 +9,7 @@ using Meshmakers.Octo.Communication.Contracts.DataTransferObjects.ApiErrors;
 using Meshmakers.Octo.ConstructionKit.Contracts.BlueprintCatalogs;
 using Meshmakers.Octo.Runtime.Contracts;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb;
+using Meshmakers.Octo.Runtime.Contracts.MongoDb.DisplayRules;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb.TenantLifecycle;
 using Meshmakers.Octo.Services.Contracts.DistributionEventHub.Messages;
 using Meshmakers.Octo.Services.Infrastructure.Services;
@@ -34,13 +35,15 @@ public class TenantsController : ControllerBase
     private readonly ITenantLifecycleStore _tenantLifecycleStore;
     private readonly ITenantSetupRetryStore _tenantSetupRetryStore;
     private readonly ITenantCapabilityStateReader _capabilityStateReader;
+    private readonly IDisplayRuleRecomputeService _displayRuleRecomputeService;
 
     /// <summary>
     ///     Constructor
     /// </summary>
     public TenantsController(IOctoService octoService, IDistributionEventHubService distributionEventHubService,
         ITenantLifecycleStore tenantLifecycleStore, ITenantSetupRetryStore tenantSetupRetryStore,
-        ILogger<TenantsController> logger, ITenantCapabilityStateReader capabilityStateReader)
+        ILogger<TenantsController> logger, ITenantCapabilityStateReader capabilityStateReader,
+        IDisplayRuleRecomputeService displayRuleRecomputeService)
     {
         _octoService = octoService;
         _distributionEventHubService = distributionEventHubService;
@@ -48,6 +51,7 @@ public class TenantsController : ControllerBase
         _tenantSetupRetryStore = tenantSetupRetryStore;
         _logger = logger;
         _capabilityStateReader = capabilityStateReader;
+        _displayRuleRecomputeService = displayRuleRecomputeService;
     }
 
     private async Task<ITenantContext?> GetTenantContextAsync()
@@ -716,6 +720,60 @@ public class TenantsController : ControllerBase
         }
         catch (Exception ex)
         {
+            return StatusCode(StatusCodes.Status500InternalServerError, new InternalServerErrorDto(ex.Message));
+        }
+    }
+
+    // PUT: {tenantId}/v1/tenants/recomputeDisplayNames?childTenantId=abc&ckTypeId=Model/Type
+    /// <summary>
+    ///     Recomputes the engine-computed display fields (rtDisplayName / rtDisplayDescription) of the
+    ///     tenant itself or one of its child tenants (AB#5945). Enqueues durable, idempotent display-rule
+    ///     sweep tasks that the sweep background service processes asynchronously; only entities whose
+    ///     stored value differs from the rule's result are written.
+    /// </summary>
+    /// <param name="childTenantId">ID of the tenant to repair (the calling tenant or one of its descendants)</param>
+    /// <param name="ckTypeId">Optional CK type id to restrict the recompute to; all rule-bearing types when omitted</param>
+    /// <returns>The enqueued sweep keys (fully versioned CK type ids)</returns>
+    [HttpPut("recomputeDisplayNames")]
+    [Authorize(AssetRepositoryServiceConstants.TenantAssetApiReadWritePolicy)]
+    [ProducesResponseType(typeof(IReadOnlyList<string>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(OperationFailedErrorDto), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(InternalServerErrorDto), StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> RecomputeDisplayNames([Required] string childTenantId,
+        [FromQuery] string? ckTypeId = null)
+    {
+        try
+        {
+            var tenantContext = await GetTenantContextAsync();
+            if (tenantContext == null)
+            {
+                return BadRequest(new OperationFailedErrorDto("TenantId is required"));
+            }
+
+            // Scope: the calling tenant itself or one of its descendants - never an unrelated tenant.
+            var targetTenantId = childTenantId.NormalizeString();
+            if (targetTenantId != tenantContext.TenantId &&
+                await tenantContext.TryGetChildTenantContextAsync(targetTenantId) == null)
+            {
+                return NotFound();
+            }
+
+            var sweepKeys = await _displayRuleRecomputeService.EnqueueRecomputeAsync(targetTenantId, ckTypeId,
+                HttpContext.RequestAborted);
+            return Ok(sweepKeys);
+        }
+        catch (ArgumentException e)
+        {
+            return BadRequest(new OperationFailedErrorDto(e.Message));
+        }
+        catch (TenantException e)
+        {
+            return BadRequest(new OperationFailedErrorDto(e.Message));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Display name recompute for tenant '{ChildTenantId}' failed", childTenantId);
             return StatusCode(StatusCodes.Status500InternalServerError, new InternalServerErrorDto(ex.Message));
         }
     }

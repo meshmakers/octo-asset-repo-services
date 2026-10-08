@@ -6,6 +6,7 @@ using Meshmakers.Octo.Common.DistributionEventHub.Services;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects.ApiErrors;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb;
+using Meshmakers.Octo.Runtime.Contracts.MongoDb.DisplayRules;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb.Repositories;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb.TenantLifecycle;
 using Meshmakers.Octo.Runtime.Contracts.Repositories.Query;
@@ -28,6 +29,7 @@ public class TenantsControllerTests
     private readonly ITenantLifecycleStore _tenantLifecycleStore;
     private readonly ITenantSetupRetryStore _tenantSetupRetryStore;
     private readonly ITenantCapabilityStateReader _capabilityStateReader;
+    private readonly IDisplayRuleRecomputeService _displayRuleRecomputeService;
     private readonly TenantsController _controller;
 
     public TenantsControllerTests()
@@ -50,13 +52,16 @@ public class TenantsControllerTests
         A.CallTo(() => _capabilityStateReader.GetEnabledCapabilitiesAsync(A<ITenantContext>._, A<string>._))
             .Returns(Array.Empty<TenantCapability>());
 
+        _displayRuleRecomputeService = A.Fake<IDisplayRuleRecomputeService>();
+
         _controller = new TenantsController(
             _octoService,
             A.Fake<IDistributionEventHubService>(),
             _tenantLifecycleStore,
             _tenantSetupRetryStore,
             A.Fake<ILogger<TenantsController>>(),
-            _capabilityStateReader);
+            _capabilityStateReader,
+            _displayRuleRecomputeService);
 
         var httpContext = new DefaultHttpContext();
         httpContext.Request.RouteValues["tenantId"] = OwnTenantId;
@@ -721,5 +726,54 @@ public class TenantsControllerTests
             "If the tenant's data is still needed, create a backup with Dump before disabling.");
         message.Should().NotContain("-tid");
         message.Should().Match(m => m.All(c => c < 128), "the CLI prints the raw JSON body");
+    }
+    // AB#5945: recomputeDisplayNames - scoped to the own tenant or a descendant.
+
+    [Fact]
+    public async Task RecomputeDisplayNames_OwnTenant_EnqueuesAndReturnsSweepKeys()
+    {
+        A.CallTo(() => _displayRuleRecomputeService.EnqueueRecomputeAsync(OwnTenantId, null, A<CancellationToken>._))
+            .Returns(new[] { "Test-1.0.0/Location-1" });
+
+        var result = await _controller.RecomputeDisplayNames(OwnTenantId);
+
+        var ok = result.Should().BeOfType<OkObjectResult>().Subject;
+        ok.Value.Should().BeEquivalentTo(new[] { "Test-1.0.0/Location-1" });
+    }
+
+    [Fact]
+    public async Task RecomputeDisplayNames_ChildTenant_PassesTypeFilterThrough()
+    {
+        A.CallTo(() => _tenantContext.TryGetChildTenantContextAsync("child")).Returns(A.Fake<ITenantContext>());
+
+        var result = await _controller.RecomputeDisplayNames("Child", "Meshmakers.Accounting/FiscalYear");
+
+        result.Should().BeOfType<OkObjectResult>();
+        A.CallTo(() => _displayRuleRecomputeService.EnqueueRecomputeAsync("child",
+                "Meshmakers.Accounting/FiscalYear", A<CancellationToken>._))
+            .MustHaveHappenedOnceExactly();
+    }
+
+    [Fact]
+    public async Task RecomputeDisplayNames_UnrelatedTenant_Returns404_WithoutEnqueueing()
+    {
+        A.CallTo(() => _tenantContext.TryGetChildTenantContextAsync("other")).Returns((ITenantContext?)null);
+
+        var result = await _controller.RecomputeDisplayNames("other");
+
+        result.Should().BeOfType<NotFoundResult>();
+        A.CallTo(() => _displayRuleRecomputeService.EnqueueRecomputeAsync(A<string>._, A<string?>._,
+            A<CancellationToken>._)).MustNotHaveHappened();
+    }
+
+    [Fact]
+    public async Task RecomputeDisplayNames_UnknownType_Returns400()
+    {
+        A.CallTo(() => _displayRuleRecomputeService.EnqueueRecomputeAsync(OwnTenantId, "X/Nope", A<CancellationToken>._))
+            .Throws(new ArgumentException("CK type 'X/Nope' does not exist"));
+
+        var result = await _controller.RecomputeDisplayNames(OwnTenantId, "X/Nope");
+
+        result.Should().BeOfType<BadRequestObjectResult>();
     }
 }
