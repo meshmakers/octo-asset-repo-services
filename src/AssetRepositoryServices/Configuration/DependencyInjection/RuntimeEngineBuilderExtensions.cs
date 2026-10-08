@@ -302,7 +302,9 @@ public static class RuntimeEngineBuilderExtensions
 
                 c.PropertyNamingPolicy = JsonNamingPolicy.CamelCase;
             }) // For .NET Core 3+
-            .AddErrorInfoProvider(opt => opt.ExposeExceptionDetails = true)
+            // AB#6189: exception details (stack traces, inner exceptions) only in Development or with
+            // explicit opt-in GraphQl:ExposeExceptionDetails=true; messages and codes stay unchanged.
+            .AddErrorInfoProvider(GraphQlErrorExposure.Configure)
             .AddDataLoader() // Add required services for DataLoader support
             .AddUserContextBuilder<TenantUserContextBuilder>()
             .AddGraphTypes() // Add all IGraphType implementors in assembly
