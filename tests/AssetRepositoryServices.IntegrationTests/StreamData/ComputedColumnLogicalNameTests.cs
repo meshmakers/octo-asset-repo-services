@@ -1,3 +1,4 @@
+using System.Globalization;
 using FluentAssertions;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Fixtures;
 using Meshmakers.Octo.ConstructionKit.Contracts;
@@ -65,10 +66,10 @@ public class ComputedColumnLogicalNameTests(StreamDataFixture fixture, ITestOutp
 
             foreach (var row in result.Rows)
             {
-                var voltage = Convert.ToDouble(row.Values["voltage"]);
+                var voltage = Convert.ToDouble(row.Values["voltage"], CultureInfo.InvariantCulture);
                 row.Values[storageKey].Should().NotBeNull(
                     "a computed column whose formula was rewritten must still produce a value");
-                Convert.ToDouble(row.Values[storageKey]).Should().BeApproximately(
+                Convert.ToDouble(row.Values[storageKey], CultureInfo.InvariantCulture).Should().BeApproximately(
                     voltage * Factor, 1e-9);
             }
         }
@@ -173,7 +174,7 @@ public class ComputedColumnLogicalNameTests(StreamDataFixture fixture, ITestOutp
             var row = result.Rows.Should().ContainSingle().Subject;
             row.Values[storageKey].Should().NotBeNull(
                 "a row ingested after the formula change must still be computed");
-            Convert.ToDouble(row.Values[storageKey]).Should().BeApproximately(voltage * 3, 1e-9);
+            Convert.ToDouble(row.Values[storageKey], CultureInfo.InvariantCulture).Should().BeApproximately(voltage * 3, 1e-9);
         }
         finally
         {

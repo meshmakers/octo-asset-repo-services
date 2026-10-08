@@ -1,3 +1,4 @@
+using System.Globalization;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Fixtures;
 using Meshmakers.Octo.Runtime.Engine.CrateDb;
 using Xunit;
@@ -38,12 +39,12 @@ public class StreamDataFixtureTests(StreamDataFixture fixture, ITestOutputHelper
 
         var first = rows[0];
         Assert.Equal(fixture.TestDataStartTime, first.Timestamp);
-        Assert.Equal(220.0, Convert.ToDouble(first.Attributes["voltage"]), 0.01);
-        Assert.Equal(10.0, Convert.ToDouble(first.Attributes["current"]), 0.01);
+        Assert.Equal(220.0, Convert.ToDouble(first.Attributes["voltage"], CultureInfo.InvariantCulture), 0.01);
+        Assert.Equal(10.0, Convert.ToDouble(first.Attributes["current"], CultureInfo.InvariantCulture), 0.01);
 
         var last = rows[^1];
         Assert.Equal(fixture.TestDataEndTime, last.Timestamp);
-        Assert.Equal(229.5, Convert.ToDouble(last.Attributes["voltage"]), 1.0);
-        Assert.Equal(11.9, Convert.ToDouble(last.Attributes["current"]), 1.0);
+        Assert.Equal(229.5, Convert.ToDouble(last.Attributes["voltage"], CultureInfo.InvariantCulture), 1.0);
+        Assert.Equal(11.9, Convert.ToDouble(last.Attributes["current"], CultureInfo.InvariantCulture), 1.0);
     }
 }
