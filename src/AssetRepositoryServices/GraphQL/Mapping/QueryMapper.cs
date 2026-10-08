@@ -38,9 +38,12 @@ internal class QueryMapper(
                     var ckAssociationRoleGraph =
                         ckCacheService.GetRtCkAssociationRole(tenantId, navigationPairToInputObject.Key.CkRoleId);
 
-                    if (navigationPairToInputObject.Key.Direction == GraphDirections.Outbound &&
-                        ckAssociationRoleGraph.OutboundMultiplicity == MultiplicitiesDto.One ||
-                        ckAssociationRoleGraph.OutboundMultiplicity == MultiplicitiesDto.ZeroOrOne)
+                    var toOneReplacementDirection = GetToOneReplacementDirection(
+                        navigationPairToInputObject.Key.Direction,
+                        ckAssociationRoleGraph.InboundMultiplicity,
+                        ckAssociationRoleGraph.OutboundMultiplicity);
+
+                    if (toOneReplacementDirection == GraphDirections.Outbound)
                     {
                         var queryOptions = RtEntityQueryOptions.Create();
                         var associations = await tenantRepository.GetRtAssociationTargetsAsync(sessionAccessor.Session,
@@ -68,9 +71,7 @@ internal class QueryMapper(
                             }
                         }
                     }
-                    else if (navigationPairToInputObject.Key.Direction == GraphDirections.Inbound &&
-                             ckAssociationRoleGraph.InboundMultiplicity == MultiplicitiesDto.One ||
-                             ckAssociationRoleGraph.InboundMultiplicity == MultiplicitiesDto.ZeroOrOne)
+                    else if (toOneReplacementDirection == GraphDirections.Inbound)
                     {
                         var queryOptions = RtEntityQueryOptions.Create();
                         var associations = await tenantRepository.GetRtAssociationTargetsAsync(sessionAccessor.Session,
@@ -115,6 +116,29 @@ internal class QueryMapper(
         }
 
         RtEntityFromInputObject(rtEntity, queryRowDto, mappingResult);
+    }
+
+    /// <summary>
+    /// Decides whether a to-one edge must be replaced when a query row is updated: returns the direction of
+    /// the navigation when the multiplicity of that same side is One/ZeroOrOne, otherwise null (to-many
+    /// navigations are never replaced).
+    /// </summary>
+    internal static GraphDirections? GetToOneReplacementDirection(GraphDirections direction,
+        MultiplicitiesDto inboundMultiplicity, MultiplicitiesDto outboundMultiplicity)
+    {
+        if (direction == GraphDirections.Outbound &&
+            outboundMultiplicity is MultiplicitiesDto.One or MultiplicitiesDto.ZeroOrOne)
+        {
+            return GraphDirections.Outbound;
+        }
+
+        if (direction == GraphDirections.Inbound &&
+            inboundMultiplicity is MultiplicitiesDto.One or MultiplicitiesDto.ZeroOrOne)
+        {
+            return GraphDirections.Inbound;
+        }
+
+        return null;
     }
 
     private List<RtEntityGraphItem> CompareNavigationProperties(NavigationPair navigationPair,
