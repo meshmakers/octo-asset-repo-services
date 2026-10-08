@@ -436,12 +436,10 @@ public static class RuntimeEngineBuilderExtensions
             // access); same shape for OCTO_PublicOctoGitHubBlueprints__*.
             // Safe by default: GetSection on an absent section yields an empty section and Bind
             // then writes nothing, so installations that configure neither keep the compiled-in
-            // defaults. Note there is no __IsEnabled counterpart to the CK side: neither
-            // GitHubBlueprintCatalogOptions nor its base declares IsEnabled (only
-            // LocalFileSystemBlueprintCatalogOptions does) and GitHubBlueprintCatalog hard-codes
-            // its enabled flags, so a GitHub blueprint catalog cannot be switched off by
-            // configuration at all — only its repository coordinates are configurable, and the
-            // chart deliberately emits no such variable.
+            // defaults. AB#6112: GitHubBlueprintCatalogOptions.IsEnabled (engine default true) binds
+            // from the same sections, so OCTO_PrivateOctoGitHubBlueprints__IsEnabled=false switches
+            // the private blueprint catalog off (production: only released blueprints). The chart
+            // emits it from assetRepository.blueprintCatalog.privateGitHubEnabled.
             builder.Services.Configure<PrivateGitHubBlueprintCatalogOptions>(
                 config.GetSection("PrivateOctoGitHubBlueprints"));
             builder.Services.Configure<PublicGitHubBlueprintCatalogOptions>(
