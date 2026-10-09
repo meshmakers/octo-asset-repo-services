@@ -542,6 +542,40 @@ public class FileSystemService
     }
 
     /// <summary>
+    ///     Number of links of each visible entry to other entities: every association except
+    ///     <c>System/ParentChild</c>, any role, any direction.
+    /// </summary>
+    public async Task<Dictionary<string, int>> GetLinkedCountsAsync(ITenantRepository repository,
+        IOctoSession session, IReadOnlyList<OctoObjectId> rtIds, CancellationToken cancellationToken = default)
+    {
+        var entries = new List<FileSystemEntry>();
+        foreach (var type in new[] { FileType, FolderType, FolderRootType })
+        {
+            var result = await repository.GetRtEntitiesByIdAsync(session, type, rtIds, RtEntityQueryOptions.Create())
+                .ConfigureAwait(false);
+            entries.AddRange(result.Items.Select(ToEntry).OfType<FileSystemEntry>());
+        }
+
+        var counts = new Dictionary<string, int>();
+        foreach (var chunk in entries.Chunk(OriginBatchSize))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var associations = await repository.GetRtAssociationsAsync(session, chunk.Select(c => c.Id),
+                RtAssociationExtendedQueryOptions.Create(GraphDirections.Any)).ConfigureAwait(false);
+            foreach (var entry in chunk)
+            {
+                counts[entry.Id.RtId.ToString()] = associations.TryGetValue(entry.Id, out var set)
+                    ? set.Items.Count(a => a.AssociationRoleId == null ||
+                                           $"{a.AssociationRoleId.ModelId}/{a.AssociationRoleId.ElementId.RoleId}" !=
+                                           FileSystemConstants.ParentChildRoleId)
+                    : 0;
+            }
+        }
+
+        return counts;
+    }
+
+    /// <summary>
     ///     Message number of the engine's data-permission write guard (DataPermissionWriteGuard, AB#4973).
     /// </summary>
     private const int DataPermissionForbiddenMessageNumber = 4973;

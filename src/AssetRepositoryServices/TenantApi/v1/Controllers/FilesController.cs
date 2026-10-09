@@ -37,7 +37,8 @@ public class FilesController(
     IOctoService octoService,
     FileSystemService fileSystem,
     FileZipService zipService,
-    IOptions<FilesOptions> filesOptions) : ControllerBase
+    IOptions<FilesOptions> filesOptions,
+    ConstructionKit.Contracts.Services.ICkCacheService ckCacheService) : ControllerBase
 {
     private static readonly FileExtensionContentTypeProvider ContentTypeProvider = new();
 
@@ -50,16 +51,64 @@ public class FilesController(
     [Authorize(AuthenticationSchemes = InfrastructureCommon.OidcAuthenticationScheme,
         Policy = AssetRepositoryServiceConstants.TenantAssetApiReadOnlyPolicy)]
     [ProducesResponseType(typeof(FilesCapabilitiesDto), StatusCodes.Status200OK)]
-    public IActionResult GetCapabilities()
+    public async Task<IActionResult> GetCapabilities()
     {
+        // Tenant-aware: the file system exists only when System.Files is in the tenant's CK model.
+        var tenantId = HttpContext.GetTenantId();
+        var available = false;
+        if (!string.IsNullOrEmpty(tenantId))
+        {
+            await octoService.SystemContext.FindTenantRepositoryAsync(tenantId);
+            available = ckCacheService.TryGetRtCkType(tenantId, FileSystemService.FileType, out _);
+        }
+
         return Ok(new FilesCapabilitiesDto
         {
+            Available = available,
+            Reason = available ? null : "SYSTEM_FILES_MISSING",
+            MaxDeleteEntries = Limits.MaxDeleteEntries,
             MaxUploadBytes = Limits.MaxUploadBytes,
             ZipDownload = true,
             ZipMaxFiles = Limits.ZipMaxFiles,
             ZipMaxBytes = Limits.ZipMaxBytes,
             PreviewMaxBytes = Limits.PreviewMaxBytes,
             ReservedRootNames = FileSystemConstants.ReservedRootWellKnownNames.Order().ToList()
+        });
+    }
+
+    /// <summary>
+    ///     Number of links of each entry to other entities (any association except the folder structure, any
+    ///     role, any direction) — the "linked" marker per row. Entries the caller cannot see are left out.
+    /// </summary>
+    [HttpPost("linked-counts")]
+    [Authorize(AuthenticationSchemes = InfrastructureCommon.OidcAuthenticationScheme,
+        Policy = AssetRepositoryServiceConstants.TenantAssetApiReadOnlyPolicy)]
+    [ProducesResponseType(typeof(LinkedCountsDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    public Task<IActionResult> GetLinkedCounts([FromBody] LinkedCountsRequestDto request)
+    {
+        return ExecuteAsync(async (repository, session, _) =>
+        {
+            if (request.RtIds.Count > 500)
+            {
+                throw FileSystemException.InvalidRequest("At most 500 rtIds per request.");
+            }
+
+            var ids = new List<Meshmakers.Octo.ConstructionKit.Contracts.OctoObjectId>();
+            foreach (var rtId in request.RtIds.Distinct())
+            {
+                if (!Meshmakers.Octo.ConstructionKit.Contracts.OctoObjectId.TryParse(rtId, out var id))
+                {
+                    throw FileSystemException.InvalidRequest($"'{rtId}' is not a valid rtId.");
+                }
+
+                ids.Add(id);
+            }
+
+            return Ok(new LinkedCountsDto
+            {
+                Counts = await fileSystem.GetLinkedCountsAsync(repository, session, ids, HttpContext.RequestAborted)
+            });
         });
     }
 
