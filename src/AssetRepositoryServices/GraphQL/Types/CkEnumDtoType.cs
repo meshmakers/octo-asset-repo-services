@@ -6,6 +6,10 @@ using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.ConstructionKit.Contracts.DependencyGraph;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb.Repositories.Entities;
 
+using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Meta;
+
+using CkVisibilityDto = Meshmakers.Octo.ConstructionKit.Contracts.DataTransferObjects.CkVisibilityDto;
+
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
 
 internal sealed class CkEnumDtoType : ObjectGraphType<CkEnumDto>
@@ -15,6 +19,10 @@ internal sealed class CkEnumDtoType : ObjectGraphType<CkEnumDto>
         Name = "CkEnum";
         Description = AssetTexts.Graphql_Enum_Description;
 
+        Field<NonNullGraphType<StringGraphType>>("visibility")
+            .Description("CK v2: Public (default) or Internal.")
+            .Resolve(ctx => (CkMetaGraphLookup.Enum(ctx, ctx.Source.CkEnumId)?.Visibility ?? CkVisibilityDto.Public)
+                .ToString());
         Field(x => x.CkEnumId, typeof(NonNullGraphType<CkIdGraph<CkEnumId>>))
             .Description(AssetTexts.Graphql_Enum_CkEnumId_Description);
         Field(x => x.RtCkEnumId, typeof(NonNullGraphType<RtCkIdGraph<CkEnumId>>))

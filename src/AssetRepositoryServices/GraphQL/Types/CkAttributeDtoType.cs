@@ -9,6 +9,8 @@ using Meshmakers.Octo.ConstructionKit.Contracts.DependencyGraph;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb.Repositories.Entities;
 using CkAttributeDto = Meshmakers.Octo.Communication.Contracts.DataTransferObjects.CkAttributeDto;
 
+using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Meta;
+
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
 
 /// <summary>
@@ -23,6 +25,10 @@ internal sealed class CkAttributeDtoType : ObjectGraphType<CkAttributeDto>
         Name = "CkAttribute";
         Description = "Construction kit attribute definitions";
 
+        Field<NonNullGraphType<StringGraphType>>("visibility")
+            .Description("CK v2: Public (default) or Internal.")
+            .Resolve(ctx => (CkMetaGraphLookup.Attribute(ctx, ctx.Source.CkAttributeId)?.Visibility ??
+                             CkVisibilityDto.Public).ToString());
         Field(x => x.CkAttributeId, typeof(NonNullGraphType<CkIdGraph<CkAttributeId>>))
             .Description("Construction kit attribute id.");
         Field(x => x.AttributeValueType, typeof(NonNullGraphType<AttributeValueTypesDtoType>))

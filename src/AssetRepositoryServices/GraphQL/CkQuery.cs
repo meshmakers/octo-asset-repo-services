@@ -2,6 +2,7 @@ using GraphQL;
 using GraphQL.Builders;
 using GraphQL.Types;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Meta;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Inputs;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Utils;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
@@ -90,6 +91,16 @@ internal sealed class CkQuery : ObjectGraphType
                 "Filters items based on field compare")
             .ResolveAsync(ResolveCkRecordQuery);
 
+        // CK v2 meta introspection (F1.5-S3, AB#5922): interfaces come from the tenant's CK cache.
+        Connection<CkInterfaceDtoType>("Interfaces")
+            .Argument<ListGraphType<StringGraphType>>(Statics.CkModelIds,
+                "Filters items based on model names (e.g. 'System.Identity'; a version suffix is ignored)")
+            .Argument<StringGraphType>(Statics.RtCkIdArg,
+                "Returns the construction kit interface with the given runtime id, e.g. 'System.Identity/Named-1'.")
+            .Argument<ListGraphType<StringGraphType>>(Statics.RtCkIdsArg,
+                "Returns the construction kit interfaces with the given runtime ids.")
+            .Resolve(ResolveCkInterfacesQuery);
+
         Connection<CkAssociationRoleDtoType>("AssociationRoles")
             .Argument<ListGraphType<StringGraphType>>(Statics.CkModelIds, "Filters items based on model ids")
             .Argument<StringGraphType>(Statics.CkIdArg,
@@ -105,6 +116,47 @@ internal sealed class CkQuery : ObjectGraphType
             .Argument<ListGraphType<FieldFilterDtoType>>(Statics.FieldFilterArg,
                 "Filters items based on field compare")
             .ResolveAsync(ResolveCkAssociationRoleQuery);
+    }
+
+    private static object? ResolveCkInterfacesQuery(IResolveConnectionContext<object?> arg)
+    {
+        try
+        {
+            var graphQlUserContext = (GraphQlUserContext)arg.UserContext;
+            IEnumerable<ConstructionKit.Contracts.DependencyGraph.CkInterfaceGraph> interfaces =
+                arg.GetCkCacheService().GetRtCkInterfaces(graphQlUserContext.TenantId);
+
+            var ids = new List<string>();
+            if (arg.TryGetArgument(Statics.RtCkIdArg, out string? rtCkId) && rtCkId != null)
+            {
+                ids.Add(rtCkId);
+            }
+
+            if (arg.TryGetArgument(Statics.RtCkIdsArg, null, out IEnumerable<string>? rtCkIds) && rtCkIds != null)
+            {
+                ids.AddRange(rtCkIds);
+            }
+
+            if (ids.Count > 0 || arg.HasArgument(Statics.RtCkIdArg) || arg.HasArgument(Statics.RtCkIdsArg))
+            {
+                var wanted = ids.Select(i => new RtCkId<CkInterfaceId>(i)).ToHashSet();
+                interfaces = interfaces.Where(i => wanted.Contains(i.CkInterfaceId.ToRtCkId()));
+            }
+
+            if (arg.TryGetArgument(Statics.CkModelIds, null, out IEnumerable<string>? modelIds) && modelIds != null)
+            {
+                var names = modelIds.Select(m => new CkModelId(m).Name).ToHashSet(StringComparer.Ordinal);
+                interfaces = interfaces.Where(i => names.Contains(i.CkInterfaceId.ModelId.Name));
+            }
+
+            return ConnectionUtils.ToOctoConnection(
+                interfaces.OrderBy(i => i.CkInterfaceId.ToRtCkId().SemanticVersionedFullName, StringComparer.Ordinal)
+                    .ToList(), arg);
+        }
+        catch (Exception e)
+        {
+            return arg.HandleException(e);
+        }
     }
 
     private async Task<object?> ResolveCkModelsQuery(IResolveConnectionContext<object?> arg)

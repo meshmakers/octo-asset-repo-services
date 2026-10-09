@@ -6,6 +6,10 @@ using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb.Repositories.Entities;
 using CkAssociationRoleDto = Meshmakers.Octo.Communication.Contracts.DataTransferObjects.CkAssociationRoleDto;
 
+using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Meta;
+
+using Meshmakers.Octo.ConstructionKit.Contracts.DataTransferObjects;
+
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
 
 // ReSharper disable once ClassNeverInstantiated.Global
@@ -16,6 +20,10 @@ internal sealed class CkAssociationRoleDtoType : ObjectGraphType<CkAssociationRo
         Name = "CkAssociationRole";
         Description = AssetTexts.Graphql_AssociationRole_Description;
 
+        Field<NonNullGraphType<StringGraphType>>("visibility")
+            .Description("CK v2: Public (default) or Internal.")
+            .Resolve(ctx => (CkMetaGraphLookup.AssociationRole(ctx, ctx.Source.CkAssociationRoleId)?.Visibility ??
+                             CkVisibilityDto.Public).ToString());
         Field(x => x.CkAssociationRoleId, typeof(NonNullGraphType<CkIdGraph<CkAssociationRoleId>>))
             .Description(AssetTexts.Graphql_AssociationRole_CkAssociationRoleId_Description);
         Field(x => x.RtCkAssociationRoleId, typeof(NonNullGraphType<RtCkIdGraph<CkAssociationRoleId>>))

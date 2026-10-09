@@ -510,6 +510,26 @@ schema initialization.
   `AccessTestGroup.LinksToLabeled` is narrowed to `Labeled-1`).
 
 
+**CK meta introspection (F1.5-S3, AB#5922):** the `constructionKit` API describes the CK v2 meta model. The SDK
+meta DTOs carry no CK v2 members, so the new fields read the tenant's CK cache graph (`Types/Meta/CkMetaGraphLookup`)
+or the persisted `CkModel`; elements missing from the cache report the v1 defaults. Enumerations are strings with the
+engine's PascalCase names, like `access`.
+
+| Type | New fields |
+|---|---|
+| `CkType` | `visibility` (`Public`/`Internal`), `derivable` (`Any`/`Model`; ckLanguage 2 defaults to `Model`), `declaredInterfaces: [CkInterface!]!`, `interfaces: [CkInterface!]!` (declared + inherited + extended), `methods: [CkMethod!]!` (own + inherited, see `declaringCkTypeId`) |
+| `CkTypeAttribute` | `access` (`ReadWrite`/`ReadOnly`/`MethodOnly`/`Hidden`) |
+| `CkRecord` | `visibility`, `derivable` |
+| `CkEnum`, `CkAttribute`, `CkAssociationRole` | `visibility` |
+| `CkModel` | `ckLanguage: Int!` (1 when not declared), `minEngineVersion`, `dependencyRanges: [CkModelDependencyRange!]` (`range`, `floor`; null for classic exact-pinned models) |
+| `CkInterface` (new) | `ckInterfaceId`, `rtCkInterfaceId`, `description`, `visibility`, `deprecated`, `extends`, `allExtends`, `attributes: [CkInterfaceAttribute!]!` (`ckAttributeId`, `attributeName`, `attributeValueType`, `isOptional`; incl. extended members), `associations: [CkInterfaceAssociation!]!` (`ckAssociationRoleId`, `targetCkTypeId`, `targetCkInterfaceId`, `multiplicity`, `isOptional`, `declaringCkInterfaceId`), `methods`, `implementingTypes` |
+| `CkMethod` (new, definitions only) | `methodId`, `qualifiedMethodId` (type methods), `declaringCkTypeId` / `declaringCkInterfaceId`, `kind` (`Instance`/`Static`), `description`, `visibility`, `parameters: [CkMethodParameter!]!` (`name`, `valueType`, `valueCkRecordId`, `valueCkEnumId`, `isOptional`, `sensitive`, `description`), `result: CkMethodResultDefinition`, `errors: [CkMethodErrorDefinition!]!`, `authorization: CkMethodAuthorization!` (`roles`, `allowSelf`, `scopes`), `execution: CkMethodExecution!` (`timeoutSeconds` effective, `idempotent`) |
+| `ConstructionKitQuery` | `interfaces(ckModelIds, rtCkId, rtCkIds)` connection |
+
+`CkMethodErrorDefinition` is deliberately not named `CkMethodError` (that name belongs to the invocation result of the
+Phase 3 method runtime). `internal` elements are listed like public ones — they are internal to models, not secret.
+Tests: `GraphQL/CkV2/CkMetaIntrospectionTests`.
+
 ### Authentication
 The service supports dual authentication:
 - Cookie-based authentication for GraphQL Playground

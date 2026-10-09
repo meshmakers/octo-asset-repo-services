@@ -12,6 +12,8 @@ using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb.Repositories.Entities;
 using Meshmakers.Octo.Runtime.Contracts.Repositories.Query;
 
+using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Meta;
+
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
 
 internal sealed class CkModelDtoType : ObjectGraphType<CkModelDto>
@@ -29,6 +31,19 @@ internal sealed class CkModelDtoType : ObjectGraphType<CkModelDto>
         Field(x => x.Description, true).Description(AssetTexts.Graphql_Model_Description_Description);
         Field(x => x.ModelState, typeof(ModelStateDtoType))
             .Description("Availability of the model within the repository.");
+
+        // CK v2 meta introspection (F1.5-S3, AB#5922)
+        Field<NonNullGraphType<IntGraphType>>("ckLanguage")
+            .Description("CK language version the model declares (1 when not declared). Version 2 enables " +
+                         "interfaces, attribute access, visibility, derivable and method definitions.")
+            .Resolve(ctx => (ctx.Source as CkV2CkModelDto)?.CkLanguage ?? 1);
+        Field<StringGraphType>("minEngineVersion")
+            .Description("Lowest engine version that can read the model; null for v1 models.")
+            .Resolve(ctx => (ctx.Source as CkV2CkModelDto)?.MinEngineVersion);
+        Field<ListGraphType<NonNullGraphType<CkModelDependencyRangeDtoType>>>("dependencyRanges")
+            .Description("Declared range and floor per direct dependency of a range-retaining model; null for " +
+                         "classic models (see dependencies for the exact pins).")
+            .Resolve(ctx => (ctx.Source as CkV2CkModelDto)?.DependencyRanges);
 
         Connection<CkTypeDtoType>("Types")
             .Argument<StringGraphType>(Statics.CkIdArg, "Returns the construction kit type with the given id.")
@@ -306,11 +321,14 @@ internal sealed class CkModelDtoType : ObjectGraphType<CkModelDto>
 
     public static CkModelDto CreateCkModelDto(CkModel model)
     {
-        return new CkModelDto
+        return new CkV2CkModelDto
         {
             ModelState = model.ModelState,
             Description = model.Description,
-            Id = model.Id
+            Id = model.Id,
+            CkLanguage = model.CkLanguage,
+            MinEngineVersion = model.MinEngineVersion,
+            DependencyRanges = model.DependencyRanges
         };
     }
 }

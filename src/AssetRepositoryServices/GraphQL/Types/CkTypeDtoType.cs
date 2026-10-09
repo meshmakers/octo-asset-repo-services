@@ -14,6 +14,8 @@ using Meshmakers.Octo.Runtime.Contracts.MongoDb.Repositories.Entities;
 using CkTypeAttributeDto = Meshmakers.Octo.Communication.Contracts.DataTransferObjects.CkTypeAttributeDto;
 using CkTypeDto = Meshmakers.Octo.Communication.Contracts.DataTransferObjects.CkTypeDto;
 
+using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Meta;
+
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
 
 // ReSharper disable once ClassNeverInstantiated.Global
@@ -32,6 +34,30 @@ internal sealed class CkTypeDtoType : ObjectGraphType<CkTypeDto>
             .Description(AssetTexts.Graphql_Type_RtCkTypeId_Description);
         Field(x => x.IsAbstract).Description(AssetTexts.Graphql_Type_IsAbstract_Description);
         Field(x => x.IsFinal).Description(AssetTexts.Graphql_Type_IsFinal_Description);
+
+        // CK v2 meta introspection (F1.5-S3, AB#5922), resolved from the CK cache graph.
+        Field<NonNullGraphType<StringGraphType>>("visibility")
+            .Description("CK v2: Public (default) or Internal (not referencable from other models).")
+            .Resolve(ctx => (CkMetaGraphLookup.Type(ctx, ctx.Source.CkTypeId)?.Visibility ?? CkVisibilityDto.Public)
+                .ToString());
+        Field<NonNullGraphType<StringGraphType>>("derivable")
+            .Description("CK v2: Any (any model may derive; the v1 behaviour) or Model (only the declaring model).")
+            .Resolve(ctx => (CkMetaGraphLookup.Type(ctx, ctx.Source.CkTypeId)?.Derivable ?? CkDerivableDto.Any)
+                .ToString());
+        Field<NonNullGraphType<ListGraphType<NonNullGraphType<CkInterfaceDtoType>>>>("declaredInterfaces")
+            .Description("CK v2: the interfaces this type declares to implement.")
+            .Resolve(ctx => CkMetaGraphLookup.Interfaces(ctx,
+                CkMetaGraphLookup.Type(ctx, ctx.Source.CkTypeId)?.DeclaredImplements ?? []));
+        Field<NonNullGraphType<ListGraphType<NonNullGraphType<CkInterfaceDtoType>>>>("interfaces")
+            .Description("CK v2: all interfaces this type implements - declared, inherited from base types and " +
+                         "extended by implemented interfaces.")
+            .Resolve(ctx => CkMetaGraphLookup.Interfaces(ctx,
+                CkMetaGraphLookup.Type(ctx, ctx.Source.CkTypeId)?.AllImplementedInterfaces ?? []));
+        Field<NonNullGraphType<ListGraphType<NonNullGraphType<CkMethodDtoType>>>>("methods")
+            .Description("CK v2: method definitions of this type, own and inherited (see declaringCkTypeId).")
+            .Resolve(ctx => (CkMetaGraphLookup.Type(ctx, ctx.Source.CkTypeId)?.AllMethods.Values ?? [])
+                .OrderBy(m => m.Definition.MethodId, StringComparer.Ordinal)
+                .Select(CkMethodDefinitionView.From));
         Field(x => x.Description, true).Description(AssetTexts.Graphql_Type_Description_Description);
         Field<StringGraphType>("ownerAttributePath")
             .Description("Effective owner attribute path for owned-only data permissions (AB#4978), " +

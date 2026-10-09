@@ -12,6 +12,8 @@ using Meshmakers.Octo.Runtime.Contracts.MongoDb.Repositories.Entities;
 using CkRecordDto = Meshmakers.Octo.Communication.Contracts.DataTransferObjects.CkRecordDto;
 using CkTypeAttributeDto = Meshmakers.Octo.Communication.Contracts.DataTransferObjects.CkTypeAttributeDto;
 
+using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Meta;
+
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
 
 // ReSharper disable once ClassNeverInstantiated.Global
@@ -28,6 +30,15 @@ internal sealed class CkRecordDtoType : ObjectGraphType<CkRecordDto>
             .Description(AssetTexts.Graphql_Record_RtCkRecordId_Description);
         Field(x => x.IsAbstract).Description(AssetTexts.Graphql_Record_IsAbstract_Description);
         Field(x => x.IsFinal).Description(AssetTexts.Graphql_Record_IsFinal_Description);
+        // CK v2 meta introspection (F1.5-S3, AB#5922)
+        Field<NonNullGraphType<StringGraphType>>("visibility")
+            .Description("CK v2: Public (default) or Internal.")
+            .Resolve(ctx => (CkMetaGraphLookup.Record(ctx, ctx.Source.CkRecordId)?.Visibility ?? CkVisibilityDto.Public)
+                .ToString());
+        Field<NonNullGraphType<StringGraphType>>("derivable")
+            .Description("CK v2: Any (the v1 behaviour) or Model.")
+            .Resolve(ctx => (CkMetaGraphLookup.Record(ctx, ctx.Source.CkRecordId)?.Derivable ?? CkDerivableDto.Any)
+                .ToString());
         Field(x => x.Description, true).Description(AssetTexts.Graphql_Record_Description_Description);
 
         Connection<CkTypeAttributeDtoType>("attributes")
