@@ -2,7 +2,7 @@ $schema: https://schemas.meshmakers.cloud/construction-kit-elements.schema.json
 associationRoles:
 - id: AccessTestLabeledLink
   description: "CK v2 Phase 1 (F1.5-S2): an association whose target is narrowed to Labeled-1 implementors"
-  inboundName: LinkedFrom
+  inboundName: LabeledLinkedFrom
   inboundMultiplicity: N
   outboundName: LinksToLabeled
   outboundMultiplicity: N
