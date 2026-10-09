@@ -48,6 +48,10 @@ try
     builder.Services.Configure<Meshmakers.Octo.Backend.AssetRepositoryServices.Services.Files.FilesOptions>(
         builder.Configuration.GetSection(
             Meshmakers.Octo.Backend.AssetRepositoryServices.Services.Files.FilesOptions.SectionName));
+    // AB#6175: options of the System.Reporting -> System.Files sweep (OCTO_FilesMigration__…).
+    builder.Services.Configure<Meshmakers.Octo.Backend.AssetRepositoryServices.Services.Files.Migration.FilesMigrationOptions>(
+        builder.Configuration.GetSection(
+            Meshmakers.Octo.Backend.AssetRepositoryServices.Services.Files.Migration.FilesMigrationOptions.SectionName));
     builder.Services.AddCors();
 
     // AB#5432: CK model health sweep. Bound from configuration, so a cluster tunes it with

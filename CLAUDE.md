@@ -166,6 +166,7 @@ Located in versioned API folders:
 - `DiagnosticsController.cs` - Health and diagnostics
 - `BlueprintsController.cs` - Blueprint management
 - `CkModelCatalogController.cs` - CK model catalog browsing, search, and cache refresh
+- `FilesMigrationController.cs` - `GET system/v1/files/migration-status/{tenantId}`: pre-check report of the System.Reporting → System.Files file data move (AB#6175, see "Files migration" below)
 
 **Tenant APIs** (`TenantApi/v1/Controllers/`):
 - `TenantsController.cs` - Tenant management. `GET {tenantId}/v1/tenants` returns **only the child tenants** of the current tenant; `GET {tenantId}/v1/tenants/self` returns the current (own) tenant, including its `Database`. Keeping the two apart is deliberate (AB#4601): AB#4432 had injected the own tenant into the *list* as a virtual index 0, which made every list-row action (`Detach`, `Delete` in the Refinery Studio context menu) offer itself on the tenant the operator was signed into — an operation the API must never expose. The own tenant is only resolvable server-side (its `Database` comes from the request's `ITenantContext`; the registry entry describing a tenant lives in its **parent's** database and in the system database, never in its own), which is why `self` exists at all instead of the frontend deriving it. `self` needs no extra tenant check beyond its `TenantAssetApiReadOnlyPolicy`: it sits under the `{tenantId:tenantId}` prefix, so `TenantAuthorizationMiddleware` already 403s a user token whose `tenant_id` claim does not match the route (client-credentials tokens are exempt there by design). Child tenants come back in the underlying query's default order — the endpoint imposes **no explicit sort**, so cross-page ordering is only as stable as that default (`GetChildTenantsAsync` in the engine exposes no sort parameter). Note that none of these policies check a **role**: they are scope-only, so `TenantManagement` is enforced by the Studio's route guard for UX, not by this API.
@@ -696,6 +697,49 @@ transport-level barrier between a client-credentials client of the authority and
 ### Configuration
 Use environment variable prefix `OCTO_` to override configuration values.
 User secrets are supported for local development (UserSecretsId: `173d8e91-b831-4e8a-a43f-672c57e6a4da`).
+
+### Files migration: System.Reporting → System.Files (AB#6175)
+
+`Services/Files/Migration/`. `ReportingFilesMoveSweep` moves the file data of a tenant from the
+System.Reporting 2.x types to System.Files (the raw move of the S0 spike, `.po/ab6171-s0-spike-migrate.js`).
+Everything is raw MongoDB (own admin `MongoClient` from `OctoSystemConfiguration`,
+`TenantMongoDatabaseProvider`) — never the CK cache, because the legacy types disappear from it with
+System.Reporting 3.0.0.
+
+- **Cheap check first:** legacy `ckTypeId`s in `RtEntity_SystemReportingFileSystemEntity`, legacy
+  `originCkTypeId`/`targetCkTypeId` in `RtAssociation`, legacy `fs.files.metadata.rtEntityId` stamps. All
+  zero → no write at all (steady state, also once the legacy collection is gone).
+- **Precondition:** `RtEntity_SystemFilesFileSystemEntity` exists with its CK indexes (System.Files is
+  imported by the tenant setup before migrations); otherwise warning + skip (`TargetModelMissing`).
+- **Move:** batches (`FilesMigration:BatchSize`, 500) in one transaction each — `replaceOne` upsert by `_id`
+  into the System.Files collection with the rewritten `ckTypeId`, delete from the source — each batch
+  verified in the target afterwards. Then `RtAssociation` `updateMany` (outside the transaction, like the
+  engine), then the `fs.files` stamp prefix rewrite (**R1**: the `/largeBinaries` data-permission gate and
+  the linked-binary cascade delete both key on that stamp; with the legacy stamp the gate fails open and
+  deletes orphan the bytes), then the legacy collection is dropped when empty. A count mismatch stops after
+  the entity step (no association/stamp rewrite, no drop) and logs an error.
+- **Audit:** one document per sweep that wrote or failed in the tenant collection `FilesMigrationAudit`
+  (before/after counts, moved per type, association fields, stamps, dropped, errors, trigger, host).
+  Deliberately **not** `System/MigrationHistory` — that collection drives the CK upgrade version detection.
+- **Triggers (Q3):** `DefaultConfigurationCreatorService.StartTenantAsync` (after the System.Files import and
+  the service migrations; never fails the start) and `ReportingFilesSweepBackgroundService` every
+  `FilesMigration:StragglerSweepInterval` (10 min) for tenants in `ReportingFilesSweepTracker` — tenants whose
+  last sweep found legacy data or failed. A zero check takes a tenant off the timer (in memory, per pod; the
+  next start re-checks). Kill switch `FilesMigration:SweepEnabled` (`OCTO_FilesMigration__SweepEnabled=false`).
+- **Pre-check (R4):** `FilesMigrationStatusService`, exposed as `GET system/v1/files/migration-status/{tenantId}`
+  (`SystemAssetApiReadOnlyPolicy` **plus** in-controller check: token `tenant_id` = system tenant, user
+  tokens need `AdminPanelManagement` — the report crosses tenant boundaries). Legacy counts, System.Files
+  counts, orphans without ParentChild parent, the latest audit records, and every entity in any
+  `RtEntity_*` collection (except the two file collections) whose stored document contains
+  `System.Reporting/{FileSystemItem|Folder|FolderRoot|FileSystemEntity|FileSystemContainer}` (also the
+  versioned `System.Reporting-x.y.z/…` form) with collection, rtId, ckTypeId, well-known name,
+  `rtBlueprintSource` and field paths. The scan reads raw BSON and searches the UTF-8 bytes, so it is
+  schema-free; it reads every entity document once, so the tenant-start path runs it only when the cheap
+  check found legacy data (then it is logged before the move). Not scanned: GridFS contents, CK
+  collections, `RtAssociation`, binary values. The sweep never rewrites pipeline YAML — blueprint pipelines
+  are fixed by the app blueprint release (S9), tenant-local ones by the runbook (S11).
+- Tests: `tests/AssetRepositoryServices.IntegrationTests/Files/ReportingFilesMoveSweepTests.cs`
+  (`FilesMigrationTestFixture` seeds legacy data raw, incl. real GridFS files).
 
 ### CK Model Catalog REST API
 
