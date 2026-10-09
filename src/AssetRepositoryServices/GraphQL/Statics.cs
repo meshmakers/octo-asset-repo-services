@@ -118,19 +118,29 @@ internal static class Statics
     /// </summary>
     public const string GraphQlSecretsForbidden = "Forbidden";
 
+    /// <summary>
+    ///     GraphQL name of a CK element: model and element name without separators. An element version above 1 is
+    ///     appended without the dash (CK v2 F1.5-S2: <c>System.Identity/Named-2</c> → <c>SystemIdentityNamed2</c>, so
+    ///     <c>Named-1</c> and <c>Named-2</c> coexist in one schema; a dash is not a valid GraphQL name character).
+    /// </summary>
     public static string GetGraphQlPascalCaseName<TKey>(this RtCkId<TKey> ckKey) where TKey : IComparable<TKey>, ICkElementId
     {
         return ckKey.SemanticVersionedFullName
             .Replace(".", "")
             .Replace("/", "")
+            .Replace("-", "")
             .ToPascalCase();
     }
 
+    /// <summary>
+    ///     camelCase variant of <see cref="GetGraphQlPascalCaseName{TKey}" />.
+    /// </summary>
     public static string GetGraphQlCamelCaseName<TKey>(this RtCkId<TKey> ckKey) where TKey : IComparable<TKey>, ICkElementId
     {
         return ckKey.SemanticVersionedFullName
             .Replace(".", "")
             .Replace("/", "")
+            .Replace("-", "")
             .ToCamelCase();
     }
 

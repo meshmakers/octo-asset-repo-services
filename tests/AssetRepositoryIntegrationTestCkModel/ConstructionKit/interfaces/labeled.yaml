@@ -15,3 +15,8 @@ interfaces:
     associations:
       - id: ${this}/AccessTestMembership
         targetCkTypeId: ${this}/AccessTestGroup
+  - interfaceId: Labeled-2
+    description: "CK v2 Phase 1 test interface (F1.5-S2): the next contract version coexists with Labeled-1."
+    attributes:
+      - id: ${System}/Name
+        name: Name

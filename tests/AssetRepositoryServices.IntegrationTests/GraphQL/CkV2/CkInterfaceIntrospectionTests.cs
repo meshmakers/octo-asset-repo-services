@@ -153,6 +153,14 @@ public class CkInterfaceIntrospectionTests
             "AssetRepositoryIntegrationTestAccessTestAccount", "AssetRepositoryIntegrationTestAccessTestGroup");
     }
 
+    [Fact]
+    public async Task InterfaceVersions_CoexistUnderDistinctNames()
+    {
+        // Labeled-1 -> AssetRepositoryIntegrationTestLabeled, Labeled-2 -> AssetRepositoryIntegrationTestLabeled2.
+        (await TypeAsync(InterfaceName, "kind"))["kind"]!.Value<string>().Should().Be("INTERFACE");
+        (await TypeAsync(InterfaceName + "2", "kind"))["kind"]!.Value<string>().Should().Be("INTERFACE");
+    }
+
     private async Task<JToken> TypeAsync(string typeName, string selection)
     {
         var result = await _fixture.ExecuteGraphQlAsync($$"""query { __type(name: "{{typeName}}") { {{selection}} } }""");

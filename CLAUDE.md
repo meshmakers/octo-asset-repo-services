@@ -463,10 +463,13 @@ schema initialization.
 - Both codes come from `HiddenAttributeAccessException`, mapped by `HandleException` and the GraphQL
   `UnhandledExceptionDelegate` (`TryCreateAttributeAccessError`).
 - CK meta: `CkTypeAttribute.access: String!` (`ReadWrite` / `ReadOnly` / `MethodOnly` / `Hidden`).
-- **Known limitations** (platform-owner decision 2026-10-08, fixed with System.Identity v2 in CK v2 Phase 4): `ImportRt` writes and RT export emit Hidden /
-  MethodOnly values (review H2/H3), user tokens (H4). Stream-data queries (GraphQL/REST, `StreamDataQueryColumnValidator`)
-  have no Hidden handling yet (review M12) — no Hidden attribute is on an archived type today; before one is, apply
-  `AccessQueryGuard` to the stream-data paths or forbid Hidden on archived attributes in the compiler.
+- **Known limitations** (platform-owner decision 2026-10-08, fixed with System.Identity v2 in CK v2 Phase 4):
+  `ImportRt` writes and RT export emit Hidden / MethodOnly values (review H2/H3), user tokens (H4).
+- **Stream data** (review M12): the engine refuses to activate an archive whose columns reach a Hidden attribute
+  (`ArchiveLifecycleService.EnsureNoHiddenColumns`, checked on every activation), so no archive table carries a
+  hidden value and the stream-data query surface needs no access guard of its own.
+- **`ReadOnly`** is parsed, persisted and shown in the CK meta API (`access`), but not enforced on the GraphQL write
+  path yet (the generic input types and mutations treat it like `ReadWrite`).
 - Tests: `CkAttributeAccessSchemaTests`, `AccessQueryGuardTests` (unit); `GraphQL/CkV2/HiddenAttributeTests` and
   `HiddenAttributeNavigationTests` (integration, test types `AccessTestAccount` --`AccessTestMembership`-->
   `AccessTestGroup`; the test model is `ckLanguage: 2`).
@@ -475,10 +478,12 @@ schema initialization.
 **CK interfaces (AB#5667 / F1.5-S2 AB#5921):**
 - Each CK interface of the tenant (`ICkCacheService.GetRtCkInterfaces`) becomes a GraphQL interface
   `CkInterfaceGraphType` named without suffix (`System.Identity/Named-1` → `SystemIdentityNamed`; abstract-type
-  interfaces keep `<Type>Interface`). Fields: the system fields of `RtEntityInterfaceType` plus one field per member
+  interfaces keep `<Type>Interface`). **Naming rule** (`Statics.GetGraphQlPascalCaseName`, all CK element kinds):
+  model and element name without separators, element version > 1 appended without the dash
+  (`System.Identity/Named-2` → `SystemIdentityNamed2`), so successive interface versions coexist in one schema (the
+  dash produced an invalid GraphQL name before). Fields: the system fields of `RtEntityInterfaceType` plus one field per member
   (optional members nullable). Built in `GraphTypesCache.PopulateAsync` after enums/records and before the types,
-  registered in `GetKnownGraphTypes` (introspection, fragments; no Phase 0 field returns the interface —
-  `runtime.byInterface` is a later phase).
+  registered in `GetKnownGraphTypes` (introspection and fragments).
 - `GraphTypesCache.GetImplementedInterfaces` also returns the CK interfaces in `CkTypeGraph.AllImplementedInterfaces`
   (own and inherited). An **optional member the type does not assign** is added to the object type as a nullable
   field that always resolves to `null` — GraphQL requires every interface field on the implementing object, and
