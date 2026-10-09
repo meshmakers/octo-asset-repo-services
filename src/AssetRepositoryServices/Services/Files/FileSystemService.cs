@@ -206,6 +206,7 @@ public class FileSystemService
             return new FileSystemWalk(items, false);
         }
 
+        var visited = new HashSet<OctoObjectId> { start.Id.RtId };
         var level = new List<(FileSystemEntry Entry, string Path)> { (start, string.Empty) };
         while (level.Count > 0)
         {
@@ -230,6 +231,11 @@ public class FileSystemService
 
                         foreach (var child in children.Items.Select(ToEntry).OfType<FileSystemEntry>())
                         {
+                            if (!visited.Add(child.Id.RtId))
+                            {
+                                continue; // corrupt tree (cycle or second parent): visit every entry once
+                            }
+
                             var path = parentPath.Length == 0 ? child.Name : $"{parentPath}/{child.Name}";
                             items.Add(new FileSystemDescendant(child, path, parent.Id));
                             if (items.Count >= limit)
@@ -276,8 +282,8 @@ public class FileSystemService
             switch (conflict)
             {
                 case FileConflictMode.Replace when existing.Count == 1 && existing[0].Kind == FileSystemEntryKind.File:
-                    return (await ReplaceContentAsync(repository, session, existing[0], contentType, content)
-                        .ConfigureAwait(false), true);
+                    return (await ReplaceContentAsync(repository, session, unfilteredSession, existing[0], contentType,
+                        content).ConfigureAwait(false), true);
                 case FileConflictMode.KeepBoth:
                     var siblings = await GetChildrenAsync(repository, unfilteredSession, parent.Id)
                         .ConfigureAwait(false);
@@ -306,19 +312,35 @@ public class FileSystemService
             operationResult).ConfigureAwait(false);
         ThrowIfFailed(operationResult);
 
+        // Read back in the writing transaction; a caller who may write but not read gets the written state
+        // instead of an error (an error here would abort after GridFS already holds the bytes).
         var stored = await FindByRtIdAsync(repository, session, item.RtId).ConfigureAwait(false)
-                     ?? throw FileSystemException.ItemNotFound(item.RtId.ToString());
+                     ?? new FileSystemEntry(item, FileSystemEntryKind.File);
         return (stored, false);
     }
 
-    private async Task<FileSystemEntry> ReplaceContentAsync(ITenantRepository repository, IOctoSession session,
-        FileSystemEntry existing, string contentType, Stream content)
+    /// <summary>
+    ///     Replaces the content of an existing file (rtId, name and links stay). The engine's partial update
+    ///     does not upload linked binaries; a replace does (and deletes the previous GridFS file — outside the
+    ///     transaction, an engine limitation).
+    /// </summary>
+    public async Task<FileSystemEntry> ReplaceContentAsync(ITenantRepository repository, IOctoSession session,
+        IOctoSession unfilteredSession, FileSystemEntry existing, string contentType, Stream content)
     {
+        if (existing.Kind != FileSystemEntryKind.File)
+        {
+            throw FileSystemException.NotAFile(existing.Name);
+        }
+
         // The engine's partial update does not upload linked binaries; a replace does (and deletes the
         // previous GridFS file). The stored document is carried over except for the content.
         var replacement = new RtEntity(existing.Id.CkTypeId, existing.Id.RtId)
         {
-            RtWellKnownName = existing.Entity.RtWellKnownName
+            RtWellKnownName = existing.Entity.RtWellKnownName,
+            RtCreationDateTime = existing.Entity.RtCreationDateTime,
+            RtCreatedBy = existing.Entity.RtCreatedBy,
+            RtDisplayName = existing.Entity.RtDisplayName,
+            RtDisplayDescription = existing.Entity.RtDisplayDescription
         };
         foreach (var attribute in existing.Entity.Attributes)
         {
@@ -345,7 +367,7 @@ public class FileSystemService
         ThrowIfFailed(operationResult);
 
         return await FindByRtIdAsync(repository, session, existing.Id.RtId).ConfigureAwait(false)
-               ?? throw FileSystemException.ItemNotFound(existing.Id.RtId.ToString());
+               ?? new FileSystemEntry(replacement, FileSystemEntryKind.File);
     }
 
     /// <summary>
@@ -376,7 +398,7 @@ public class FileSystemService
         ThrowIfFailed(operationResult);
 
         return await FindByRtIdAsync(repository, session, folder.RtId).ConfigureAwait(false)
-               ?? throw FileSystemException.ItemNotFound(folder.RtId.ToString());
+               ?? new FileSystemEntry(folder, FileSystemEntryKind.Folder);
     }
 
     /// <summary>
@@ -534,6 +556,46 @@ public class FileSystemService
         }
 
         GraphQL.Utils.ResolveConnectionContextExtensions.ValidateOperationResult(operationResult);
+    }
+
+    /// <summary>
+    ///     Runs a write and turns the engine's data-permission denial (thrown as
+    ///     PersistenceException with message 4973) into FORBIDDEN with a
+    ///     message that names no hidden entry.
+    /// </summary>
+    public static async Task TranslateForbiddenAsync(Func<Task> write, string message)
+    {
+        try
+        {
+            await write().ConfigureAwait(false);
+        }
+        catch (Exception e) when (IsDataPermissionDenial(e))
+        {
+            throw FileSystemException.Forbidden(message);
+        }
+    }
+
+    /// <summary>
+    ///     True for the engine's data-permission write denial (message 4973), thrown or in an operation result.
+    /// </summary>
+    public static bool IsDataPermissionDenial(Exception exception)
+    {
+        for (var e = exception; e != null; e = e.InnerException)
+        {
+            var property = e.GetType().GetProperty("OperationResult");
+            if (property?.GetValue(e) is OperationResult result &&
+                result.Messages.Any(m => m.MessageNumber == DataPermissionForbiddenMessageNumber))
+            {
+                return true;
+            }
+
+            if (e is FileSystemException { Code: FileSystemErrorCodes.Forbidden })
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /// <summary>

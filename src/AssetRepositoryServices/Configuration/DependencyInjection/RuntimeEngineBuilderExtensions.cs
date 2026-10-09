@@ -385,7 +385,7 @@ public static class RuntimeEngineBuilderExtensions
         // the tenant setup (DefaultConfigurationCreatorService); the default root "Files" is seeded by a
         // service migration.
         builder.Services.AddCkModelSystemFilesV1();
-        builder.Services.AddMigrations(typeof(OctoAssetRepositoryServicesOptions).Assembly);
+        builder.Services.AddSingleton<Meshmakers.Octo.Backend.AssetRepositoryServices.Services.Files.FileSystemDefaults>();
         builder.Services.AddSingleton<Meshmakers.Octo.Backend.AssetRepositoryServices.Services.Files.FileSystemService>();
         builder.Services.AddSingleton<Meshmakers.Octo.Backend.AssetRepositoryServices.Services.Files.FileSystemMutationGuard>();
         builder.Services.AddSingleton<Meshmakers.Octo.Backend.AssetRepositoryServices.Services.Files.FileZipService>();

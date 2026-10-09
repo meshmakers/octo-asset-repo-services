@@ -360,6 +360,75 @@ public class FilesControllerTests
         }
     }
 
+    [Fact]
+    public async Task Replace_OfAFileTheCallerMayNotWrite_Answers403()
+    {
+        var root = await _helpers.CreateRootAsync();
+        var wkn = root.Entity.RtWellKnownName!;
+        var alice = FilesTestFixture.CreateUser("alice", "FileUser");
+        var bob = FilesTestFixture.CreateUser("bob", "FileUser");
+
+        _fixture.Permissions.Table = FileSystemMutationGuardTests.OwnedFilesTable();
+        try
+        {
+            var (a1, _) = Create(alice, "secret"u8.ToArray(), "text/plain");
+            ((ObjectResult)await a1.UploadByPath(wkn, "alice.txt")).StatusCode.Should().Be(201);
+
+            var (b1, _) = Create(bob, "overwrite"u8.ToArray(), "text/plain");
+            var denied = (ObjectResult)await b1.UploadByPath(wkn, "alice.txt", "replace");
+            denied.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
+            Code(denied).Should().Be(FileSystemErrorCodes.Forbidden);
+        }
+        finally
+        {
+            _fixture.Permissions.Table = RtDataPolicyTable.Empty;
+        }
+    }
+
+    [Fact]
+    public async Task Replace_KeepsTheCreationTime()
+    {
+        var root = await _helpers.CreateRootAsync();
+        var original = await _helpers.UploadAsync(root, "c.txt", "1", FileConflictMode.Fail);
+        var (c, _) = Create(FilesTestFixture.PlainUser, "22"u8.ToArray(), "text/plain");
+        var replaced = (FileEntryDto)((ObjectResult)await c.ReplaceById(original.Id.RtId.ToString())).Value!;
+        replaced.CreatedAt.Should().NotBeNull();
+        replaced.CreatedAt!.Value.Should().BeCloseTo(original.Entity.RtCreationDateTime!.Value, TimeSpan.FromSeconds(1));
+        replaced.Size.Should().Be(2);
+    }
+
+    [Fact]
+    public async Task MissingBytes_DownloadIs404_ZipSkipsTheFile()
+    {
+        var root = await _helpers.CreateRootAsync();
+        var wkn = root.Entity.RtWellKnownName!;
+        var broken = await _helpers.UploadAsync(root, "broken.txt", "gone", FileConflictMode.Fail);
+        await _helpers.UploadAsync(root, "ok.txt", "ok", FileConflictMode.Fail);
+        await _fixture.DeleteGridFsFileAsync(broken.Content!.BinaryId!.Value.ToString());
+
+        var (d, _) = Create(FilesTestFixture.PlainUser);
+        var download = (ObjectResult)await d.DownloadByPath(wkn, "broken.txt");
+        download.StatusCode.Should().Be(StatusCodes.Status404NotFound);
+
+        var (z, http) = Create(FilesTestFixture.PlainUser);
+        var body = new MemoryStream();
+        http.Response.Body = body;
+        await z.DownloadZip(new ZipRequestDto { Items = [new FileRefDto { Root = wkn }] });
+        body.Position = 0;
+        using var zip = new global::System.IO.Compression.ZipArchive(body, global::System.IO.Compression.ZipArchiveMode.Read);
+        zip.Entries.Select(e => e.FullName).Should().Contain($"{root.Name}/ok.txt").And.NotContain($"{root.Name}/broken.txt");
+    }
+
+    [Theory]
+    [InlineData("../evil.txt", ".._evil.txt")]
+    [InlineData("..", "_")]
+    [InlineData("a/b\\c:d", "a_b_c_d")]
+    [InlineData("  ", "_")]
+    public void ZipEntryNames_AreSanitized(string name, string expected)
+    {
+        FileZipService.SafeSegment(name).Should().Be(expected);
+    }
+
     // ---------------------------------------------------------------------------------------------
 
     private async Task<ObjectResult> Upload(string root, string path, string content, string? conflict = null,

@@ -2,28 +2,32 @@ using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.Runtime.Contracts;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb.Repositories;
 using Meshmakers.Octo.Runtime.Contracts.RepositoryEntities;
+using Microsoft.Extensions.Options;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.Services.Files;
 
 /// <summary>
 ///     File system rules on the generic GraphQL mutations for System.Files entities (AB#6171 S2, design
-///     §4.2). The generic create/update/delete resolvers call it before they apply their changes:
+///     §4.2). The generic create/update/delete resolvers call it before they apply their changes, whenever a
+///     System.Files entity is written or a <c>System/ParentChild</c> association touches one:
 ///     <list type="bullet">
 ///         <item>creating a folder root requires the role <c>FileManagement</c>; its well-known name must be
-///         unique and not reserved by the REST bytes API;</item>
+///         unique and not reserved (route segments of the REST bytes API, the Reporting prefix);</item>
 ///         <item>names are unique per parent (case-insensitive) on create, rename and move;</item>
+///         <item>every folder and file has at most one parent; a move removes the current parent in the same
+///         update; roots never get a parent; a folder cannot move into itself or below itself;</item>
 ///         <item>roots owned by a service (<c>Files</c>, <c>ReportingAssets_*</c>) or a blueprint cannot be
 ///         renamed or deleted;</item>
-///         <item>a folder cannot be moved into itself or below itself;</item>
-///         <item>deleting a root or folder deletes everything below it, and file system entries are always
-///         erased (their GridFS bytes go with them).</item>
+///         <item>deleting a root or folder deletes everything below it (up to
+///         <see cref="FilesOptions.MaxDeleteEntries" /> entries per mutation), and file system entries are
+///         always erased (their GridFS bytes go with them).</item>
 ///     </list>
-///     Conflicts are checked over an unfiltered session (entries the caller cannot see still block a
-///     name); the writes themselves stay in the caller's session, so the engine's data-permission write
-///     guard decides per entity — a cascade that reaches an entry the caller may not delete fails as a
-///     whole and leaves nothing behind.
+///     Name conflicts are checked over an unfiltered session (entries the caller cannot see still block a
+///     name); the target folder must be visible to the caller. The writes stay in the caller's session, so
+///     the engine's data-permission write guard decides per entity — a cascade that reaches an entry the
+///     caller may not delete fails as a whole and leaves nothing behind.
 /// </summary>
-public class FileSystemMutationGuard(FileSystemService fileSystem)
+public class FileSystemMutationGuard(FileSystemService fileSystem, IOptions<FilesOptions> filesOptions)
 {
     /// <summary>
     ///     Role required to create a folder root.
@@ -33,12 +37,28 @@ public class FileSystemMutationGuard(FileSystemService fileSystem)
     private const string RtBlueprintSourceAttribute = "RtBlueprintSource";
 
     /// <summary>
-    ///     Validates inserts of System.Files entities.
+    ///     True when a mutation of <paramref name="ckTypeId" /> with these associations must pass the guard.
     /// </summary>
-    public async Task BeforeCreateAsync(ITenantRepository repository, RtSecurityContext securityContext,
-        IReadOnlyList<EntityUpdateInfo<RtEntity>> inserts, IReadOnlyList<AssociationUpdateInfo> associations)
+    public static bool Applies(RtCkId<CkTypeId>? ckTypeId, IEnumerable<AssociationUpdateInfo> associations)
+    {
+        return FileSystemService.IsFileSystemType(ckTypeId) || associations.Any(TouchesFileSystem);
+    }
+
+    /// <summary>
+    ///     True when an id list of a delete contains System.Files entities.
+    /// </summary>
+    public static bool Applies(IEnumerable<RtEntityId> ids) =>
+        ids.Any(id => FileSystemService.IsFileSystemType(id.CkTypeId));
+
+    /// <summary>
+    ///     Validates inserts of System.Files entities and the parent changes of the batch.
+    /// </summary>
+    public async Task BeforeCreateAsync(ITenantRepository repository, IOctoSession session,
+        RtSecurityContext securityContext, IReadOnlyList<EntityUpdateInfo<RtEntity>> inserts,
+        IReadOnlyList<AssociationUpdateInfo> associations)
     {
         using var unfiltered = repository.GetSession();
+        var insertedIds = inserts.Where(i => i.RtEntity != null).Select(i => i.RtEntity!.RtId).ToHashSet();
         var namesPerParent = new Dictionary<RtEntityId, HashSet<string>>();
         var newRootNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
@@ -68,27 +88,46 @@ public class FileSystemMutationGuard(FileSystemService fileSystem)
                     throw FileSystemException.InvalidRequest("A folder root needs a well-known name (rtWellKnownName).");
                 }
 
-                await EnsureRootWellKnownNameFreeAsync(repository, unfiltered, wellKnownName, null).ConfigureAwait(false);
+                await EnsureRootWellKnownNameFreeAsync(repository, unfiltered, securityContext, wellKnownName, null)
+                    .ConfigureAwait(false);
                 if (!newRootNames.Add(wellKnownName))
                 {
                     throw FileSystemException.RootExists(wellKnownName);
                 }
 
+                if (ParentChanges(associations, entity.RtId).Any() || ChildChanges(associations, entity.RtId).Any())
+                {
+                    throw FileSystemException.InvalidRequest(
+                        "Create the folder root first, then add folders and files to it.");
+                }
+
                 continue;
             }
 
-            var parentId = FindParentChange(associations, entity.RtId, AssociationModOptionsDto.Create);
-            if (parentId == null)
+            var creates = ParentChanges(associations, entity.RtId)
+                .Where(a => a.ModOption == AssociationModOptionsDto.Create).ToList();
+            if (creates.Count > 1)
+            {
+                throw FileSystemException.SingleParent(name!);
+            }
+
+            if (ChildChanges(associations, entity.RtId).Any())
+            {
+                throw FileSystemException.InvalidRequest("Create the folder first, then move entries into it.");
+            }
+
+            if (creates.Count == 0)
             {
                 continue;
             }
 
-            await EnsureContainerAsync(repository, unfiltered, parentId.Value).ConfigureAwait(false);
-            await EnsureNameFreeAsync(repository, unfiltered, parentId.Value, name!, null).ConfigureAwait(false);
-            if (!namesPerParent.TryGetValue(parentId.Value, out var names))
+            var parentId = creates[0].Target;
+            await EnsureVisibleContainerAsync(repository, session, parentId).ConfigureAwait(false);
+            await EnsureNameFreeAsync(repository, unfiltered, parentId, name!, null).ConfigureAwait(false);
+            if (!namesPerParent.TryGetValue(parentId, out var names))
             {
                 names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-                namesPerParent[parentId.Value] = names;
+                namesPerParent[parentId] = names;
             }
 
             if (!names.Add(name!))
@@ -96,109 +135,50 @@ public class FileSystemMutationGuard(FileSystemService fileSystem)
                 throw FileSystemException.NameConflict(name!);
             }
         }
+
+        // Existing entries pulled into the tree by this batch (e.g. inbound "children" navigation).
+        await CheckExistingEntriesAsync(repository, session, unfiltered, securityContext, [], associations,
+            insertedIds).ConfigureAwait(false);
     }
 
     /// <summary>
-    ///     Validates updates of System.Files entities (rename, change of the well-known name, move).
+    ///     Validates updates of System.Files entities (rename, change of the well-known name, move) and every
+    ///     parent change of the batch.
     /// </summary>
-    public async Task BeforeUpdateAsync(ITenantRepository repository,
-        IReadOnlyList<EntityUpdateInfo<RtEntity>> updates, IReadOnlyList<AssociationUpdateInfo> associations)
+    public async Task BeforeUpdateAsync(ITenantRepository repository, IOctoSession session,
+        RtSecurityContext securityContext, IReadOnlyList<EntityUpdateInfo<RtEntity>> updates,
+        IReadOnlyList<AssociationUpdateInfo> associations)
     {
         using var unfiltered = repository.GetSession();
-        var handled = new HashSet<OctoObjectId>();
+        await CheckExistingEntriesAsync(repository, session, unfiltered, securityContext, updates, associations,
+            new HashSet<OctoObjectId>())
+            .ConfigureAwait(false);
+    }
 
-        // Entities that only appear through an association change (a move without attribute changes is
-        // still an update entry in the generic resolvers, but be defensive).
-        var touched = updates
-            .Where(u => FileSystemService.IsFileSystemType(u.CkTypeId) && u.RtId != null)
-            .Select(u => (Id: new RtEntityId(u.CkTypeId, u.RtId!.Value), u.RtEntity))
-            .Concat(associations
-                .Where(a => IsParentChild(a) && FileSystemService.IsFileSystemType(a.Origin.CkTypeId))
-                .Select(a => (Id: a.Origin, RtEntity: (RtEntity?)null)))
-            .ToList();
-
-        foreach (var (id, document) in touched)
+    /// <summary>
+    ///     Refuses runtime-query row mutations that would write System.Files entities or their tree: the file
+    ///     system rules are enforced on the typed and generic entity mutations only.
+    /// </summary>
+    public static void EnsureNotInQueryMutation(IEnumerable<RtCkId<CkTypeId>> ckTypeIds,
+        IEnumerable<AssociationUpdateInfo> associations)
+    {
+        if (ckTypeIds.Any(FileSystemService.IsFileSystemType) || associations.Any(TouchesFileSystem))
         {
-            if (!handled.Add(id.RtId))
-            {
-                continue;
-            }
-
-            var current = await fileSystem.FindByRtIdAsync(repository, unfiltered, id.RtId).ConfigureAwait(false);
-            if (current == null)
-            {
-                continue; // the engine answers the missing entity
-            }
-
-            var newName = document?.GetAttributeStringValueOrDefault(nameof(FileSystemAttributeNames.Name));
-            if (newName != null)
-            {
-                FileSystemNames.Validate(newName);
-            }
-
-            if (current.Kind == FileSystemEntryKind.Root)
-            {
-                var newWellKnownName = document?.RtWellKnownName;
-                var renames = newName != null && newName != current.Name;
-                var rekeys = newWellKnownName != null &&
-                             !string.Equals(newWellKnownName, current.Entity.RtWellKnownName, StringComparison.Ordinal);
-                if ((renames || rekeys) && IsProtectedRoot(current))
-                {
-                    throw FileSystemException.ProtectedRoot(current.Entity.RtWellKnownName ?? current.Name);
-                }
-
-                if (rekeys)
-                {
-                    await EnsureRootWellKnownNameFreeAsync(repository, unfiltered, newWellKnownName!, current.Id.RtId)
-                        .ConfigureAwait(false);
-                }
-
-                if (FindParentChange(associations, id.RtId, AssociationModOptionsDto.Create) != null)
-                {
-                    throw FileSystemException.InvalidRequest("A folder root cannot be placed inside a folder.");
-                }
-
-                continue;
-            }
-
-            var newParent = FindParentChange(associations, id.RtId, AssociationModOptionsDto.Create);
-            var effectiveName = newName ?? current.Name;
-            if (newParent == null && (newName == null || newName == current.Name))
-            {
-                continue;
-            }
-
-            var targetParents = newParent != null
-                ? [newParent.Value]
-                : await fileSystem.GetParentIdsAsync(repository, unfiltered, current.Id).ConfigureAwait(false);
-
-            foreach (var parentId in targetParents)
-            {
-                if (newParent != null)
-                {
-                    await EnsureContainerAsync(repository, unfiltered, parentId).ConfigureAwait(false);
-                    if (current.Kind == FileSystemEntryKind.Folder)
-                    {
-                        await EnsureNotOwnDescendantAsync(repository, unfiltered, current, parentId)
-                            .ConfigureAwait(false);
-                    }
-                }
-
-                await EnsureNameFreeAsync(repository, unfiltered, parentId, effectiveName, current.Id.RtId)
-                    .ConfigureAwait(false);
-            }
+            throw FileSystemException.InvalidRequest(
+                "Files and folders cannot be changed through a runtime query; use the entity mutations of System.Files.");
         }
     }
 
     /// <summary>
     ///     Expands a delete: every System.Files root or folder brings everything below it. Returns the
     ///     System.Files entities to erase (incl. the requested ones); the other ids stay with the caller.
-    ///     Throws for protected roots and for trees above the walk limit.
+    ///     Throws for protected roots and for cascades above <see cref="FilesOptions.MaxDeleteEntries" />.
     /// </summary>
     public async Task<IReadOnlyList<RtEntityId>> ExpandDeleteAsync(ITenantRepository repository,
         IReadOnlyList<RtEntityId> requested, CancellationToken cancellationToken = default)
     {
         using var unfiltered = repository.GetSession();
+        var max = filesOptions.Value.MaxDeleteEntries;
         var result = new List<RtEntityId>();
         var seen = new HashSet<OctoObjectId>();
 
@@ -222,25 +202,24 @@ public class FileSystemMutationGuard(FileSystemService fileSystem)
             }
 
             result.Add(entry.Id);
-            if (!entry.IsContainer)
+            if (entry.IsContainer)
             {
-                continue;
-            }
-
-            var walk = await fileSystem.WalkAsync(repository, unfiltered, entry,
-                cancellationToken: cancellationToken).ConfigureAwait(false);
-            if (walk.Truncated)
-            {
-                throw FileSystemException.InvalidRequest(
-                    $"'{entry.Name}' contains more than {FileSystemService.DefaultWalkLimit} entries; delete its subfolders first.");
-            }
-
-            foreach (var descendant in walk.Items)
-            {
-                if (seen.Add(descendant.Entry.Id.RtId))
+                var walk = await fileSystem.WalkAsync(repository, unfiltered, entry, max + 1, cancellationToken)
+                    .ConfigureAwait(false);
+                foreach (var descendant in walk.Items)
                 {
-                    result.Add(descendant.Entry.Id);
+                    if (seen.Add(descendant.Entry.Id.RtId))
+                    {
+                        result.Add(descendant.Entry.Id);
+                    }
                 }
+            }
+
+            if (result.Count > max)
+            {
+                // GridFS deletes do not take part in the mutation transaction: a cascade must stay well
+                // inside the transaction lifetime, or an abort would leave entries without their bytes.
+                throw FileSystemException.DeleteTooLarge(entry.Name, max);
             }
         }
 
@@ -256,35 +235,157 @@ public class FileSystemMutationGuard(FileSystemService fileSystem)
                !string.IsNullOrEmpty(root.Entity.GetAttributeStringValueOrDefault(RtBlueprintSourceAttribute));
     }
 
+    // ---------------------------------------------------------------------------------------------
+
+    private async Task CheckExistingEntriesAsync(ITenantRepository repository, IOctoSession session,
+        IOctoSession unfiltered, RtSecurityContext securityContext,
+        IReadOnlyList<EntityUpdateInfo<RtEntity>> updates, IReadOnlyList<AssociationUpdateInfo> associations,
+        IReadOnlySet<OctoObjectId> insertedIds)
+    {
+        var documents = updates
+            .Where(u => FileSystemService.IsFileSystemType(u.CkTypeId) && u.RtId != null)
+            .GroupBy(u => u.RtId!.Value)
+            .ToDictionary(g => g.Key, g => g.First().RtEntity);
+
+        var touched = documents.Keys
+            .Concat(associations.Where(a => IsParentChild(a) && FileSystemService.IsFileSystemType(a.Origin.CkTypeId))
+                .Select(a => a.Origin.RtId))
+            .Where(id => !insertedIds.Contains(id))
+            .Distinct()
+            .ToList();
+
+        // Containers that receive or lose children through the "children" navigation of a non-files type are
+        // covered as well: their associations carry a System.Files origin or target.
+        foreach (var association in associations.Where(a => IsParentChild(a) &&
+                     !FileSystemService.IsFileSystemType(a.Origin.CkTypeId) &&
+                     FileSystemService.IsFileSystemType(a.Target.CkTypeId)))
+        {
+            throw FileSystemException.InvalidRequest(
+                $"'{FileSystemService.SemanticName(association.Origin.CkTypeId)}' cannot be placed in a folder.");
+        }
+
+        foreach (var rtId in touched)
+        {
+            var current = await fileSystem.FindByRtIdAsync(repository, unfiltered, rtId).ConfigureAwait(false);
+            if (current == null)
+            {
+                continue; // the engine answers the missing entity
+            }
+
+            documents.TryGetValue(rtId, out var document);
+            var newName = document?.GetAttributeStringValueOrDefault(nameof(FileSystemAttributeNames.Name));
+            if (newName != null)
+            {
+                FileSystemNames.Validate(newName);
+            }
+
+            var changes = ParentChanges(associations, rtId).ToList();
+            var creates = changes.Where(c => c.ModOption == AssociationModOptionsDto.Create).ToList();
+            var deletes = changes.Where(c => c.ModOption == AssociationModOptionsDto.Delete).Select(c => c.Target.RtId)
+                .ToHashSet();
+
+            if (current.Kind == FileSystemEntryKind.Root)
+            {
+                if (creates.Count > 0)
+                {
+                    throw FileSystemException.InvalidRequest("A folder root cannot be placed inside a folder.");
+                }
+
+                var newWellKnownName = document?.RtWellKnownName;
+                var renames = newName != null && newName != current.Name;
+                var rekeys = newWellKnownName != null &&
+                             !string.Equals(newWellKnownName, current.Entity.RtWellKnownName, StringComparison.Ordinal);
+                if ((renames || rekeys) && IsProtectedRoot(current))
+                {
+                    throw FileSystemException.ProtectedRoot(current.Entity.RtWellKnownName ?? current.Name);
+                }
+
+                if (rekeys)
+                {
+                    await EnsureRootWellKnownNameFreeAsync(repository, unfiltered, securityContext, newWellKnownName!,
+                        current.Id.RtId).ConfigureAwait(false);
+                }
+
+                continue;
+            }
+
+            if (creates.Count > 1)
+            {
+                throw FileSystemException.SingleParent(current.Name);
+            }
+
+            var currentParents = await fileSystem.GetParentIdsAsync(repository, unfiltered, current.Id)
+                .ConfigureAwait(false);
+            var remaining = currentParents.Where(p => !deletes.Contains(p.RtId)).ToList();
+            if (creates.Count == 1 && remaining.Any(p => p.RtId != creates[0].Target.RtId))
+            {
+                throw FileSystemException.SingleParent(current.Name);
+            }
+
+            var effectiveName = newName ?? current.Name;
+            if (creates.Count == 1)
+            {
+                var target = creates[0].Target;
+                if (insertedIds.Contains(target.RtId))
+                {
+                    throw FileSystemException.InvalidRequest("Create the folder first, then move entries into it.");
+                }
+
+                await EnsureVisibleContainerAsync(repository, session, target).ConfigureAwait(false);
+                if (current.Kind == FileSystemEntryKind.Folder)
+                {
+                    await EnsureNotOwnDescendantAsync(repository, unfiltered, current, target).ConfigureAwait(false);
+                }
+
+                await EnsureNameFreeAsync(repository, unfiltered, target, effectiveName, current.Id.RtId)
+                    .ConfigureAwait(false);
+            }
+            else if (newName != null && newName != current.Name)
+            {
+                foreach (var parentId in remaining)
+                {
+                    await EnsureNameFreeAsync(repository, unfiltered, parentId, effectiveName, current.Id.RtId)
+                        .ConfigureAwait(false);
+                }
+            }
+        }
+    }
+
+    private static bool TouchesFileSystem(AssociationUpdateInfo association) =>
+        IsParentChild(association) &&
+        (FileSystemService.IsFileSystemType(association.Origin.CkTypeId) ||
+         FileSystemService.IsFileSystemType(association.Target.CkTypeId));
+
     private static bool IsParentChild(AssociationUpdateInfo association) =>
         string.Equals(association.RoleId.ModelId + "/" + association.RoleId.ElementId.RoleId,
             FileSystemConstants.ParentChildRoleId, StringComparison.Ordinal);
 
-    private static RtEntityId? FindParentChange(IReadOnlyList<AssociationUpdateInfo> associations,
-        OctoObjectId childRtId, AssociationModOptionsDto modOption)
-    {
-        var match = associations.FirstOrDefault(a =>
-            a.ModOption == modOption && IsParentChild(a) && a.Origin.RtId == childRtId);
-        return match?.Target;
-    }
+    private static IEnumerable<AssociationUpdateInfo> ParentChanges(IEnumerable<AssociationUpdateInfo> associations,
+        OctoObjectId childRtId) =>
+        associations.Where(a => IsParentChild(a) && a.Origin.RtId == childRtId);
 
-    private async Task EnsureContainerAsync(ITenantRepository repository, Runtime.Contracts.IOctoSession session,
+    private static IEnumerable<AssociationUpdateInfo> ChildChanges(IEnumerable<AssociationUpdateInfo> associations,
+        OctoObjectId parentRtId) =>
+        associations.Where(a => IsParentChild(a) && a.Target.RtId == parentRtId);
+
+    /// <summary>
+    ///     The target folder must exist and be visible to the caller (no placement in folders the caller
+    ///     cannot see, no existence oracle).
+    /// </summary>
+    private async Task EnsureVisibleContainerAsync(ITenantRepository repository, IOctoSession session,
         RtEntityId parentId)
     {
         var kind = FileSystemService.KindOf(parentId.CkTypeId);
-        if (kind is not (FileSystemEntryKind.Root or FileSystemEntryKind.Folder))
-        {
-            throw FileSystemException.NotAFolder(parentId.RtId.ToString());
-        }
-
-        var parent = await fileSystem.FindByRtIdAsync(repository, session, parentId.RtId).ConfigureAwait(false);
+        var parent = kind is FileSystemEntryKind.Root or FileSystemEntryKind.Folder
+            ? await fileSystem.FindByRtIdAsync(repository, session, parentId.RtId).ConfigureAwait(false)
+            : null;
         if (parent == null || !parent.IsContainer)
         {
             throw FileSystemException.NotAFolder(parentId.RtId.ToString());
         }
     }
 
-    private async Task EnsureNameFreeAsync(ITenantRepository repository, Runtime.Contracts.IOctoSession session,
+    private async Task EnsureNameFreeAsync(ITenantRepository repository, IOctoSession session,
         RtEntityId parentId, string name, OctoObjectId? self)
     {
         var siblings = await fileSystem.GetChildrenByNameAsync(repository, session, parentId, name).ConfigureAwait(false);
@@ -294,11 +395,13 @@ public class FileSystemMutationGuard(FileSystemService fileSystem)
         }
     }
 
-    private async Task EnsureRootWellKnownNameFreeAsync(ITenantRepository repository,
-        Runtime.Contracts.IOctoSession session, string wellKnownName, OctoObjectId? self)
+    private async Task EnsureRootWellKnownNameFreeAsync(ITenantRepository repository, IOctoSession session,
+        RtSecurityContext securityContext, string wellKnownName, OctoObjectId? self)
     {
         FileSystemNames.Validate(wellKnownName);
-        if (FileSystemConstants.ReservedRootWellKnownNames.Contains(wellKnownName))
+        if (FileSystemConstants.ReservedRootWellKnownNames.Contains(wellKnownName) ||
+            (!securityContext.IsSystem &&
+             wellKnownName.StartsWith(FileSystemConstants.ReportingRootPrefix, StringComparison.OrdinalIgnoreCase)))
         {
             throw FileSystemException.ReservedRootName(wellKnownName);
         }
@@ -311,24 +414,30 @@ public class FileSystemMutationGuard(FileSystemService fileSystem)
         }
     }
 
-    private async Task EnsureNotOwnDescendantAsync(ITenantRepository repository,
-        Runtime.Contracts.IOctoSession session, FileSystemEntry folder, RtEntityId targetParent)
+    private async Task EnsureNotOwnDescendantAsync(ITenantRepository repository, IOctoSession session,
+        FileSystemEntry folder, RtEntityId targetParent)
     {
-        var current = targetParent;
-        for (var depth = 0; depth < 1000; depth++)
+        var visited = new HashSet<OctoObjectId>();
+        var level = new List<RtEntityId> { targetParent };
+        while (level.Count > 0)
         {
-            if (current.RtId == folder.Id.RtId)
+            var next = new List<RtEntityId>();
+            foreach (var current in level)
             {
-                throw FileSystemException.MoveIntoItself(folder.Name);
+                if (current.RtId == folder.Id.RtId)
+                {
+                    throw FileSystemException.MoveIntoItself(folder.Name);
+                }
+
+                if (!visited.Add(current.RtId))
+                {
+                    continue;
+                }
+
+                next.AddRange(await fileSystem.GetParentIdsAsync(repository, session, current).ConfigureAwait(false));
             }
 
-            var parents = await fileSystem.GetParentIdsAsync(repository, session, current).ConfigureAwait(false);
-            if (parents.Count == 0)
-            {
-                return;
-            }
-
-            current = parents[0];
+            level = next;
         }
     }
 }

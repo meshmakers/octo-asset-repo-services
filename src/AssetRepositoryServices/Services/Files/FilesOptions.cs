@@ -32,4 +32,11 @@ public class FilesOptions
     ///     <c>GET /{tenant}/v1/files/capabilities</c>; the server does not enforce it.
     /// </summary>
     public long PreviewMaxBytes { get; set; } = 20L * 1024 * 1024;
+
+    /// <summary>
+    ///     Largest number of entries one delete of a folder or root may remove (default 2,000). GridFS deletes
+    ///     do not take part in the mutation transaction, so a cascade must finish well inside the transaction
+    ///     lifetime; larger trees are deleted subfolder by subfolder.
+    /// </summary>
+    public int MaxDeleteEntries { get; set; } = 2000;
 }

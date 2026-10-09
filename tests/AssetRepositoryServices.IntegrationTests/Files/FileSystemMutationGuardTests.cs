@@ -273,6 +273,67 @@ public class FileSystemMutationGuardTests
     }
 
     [Fact]
+    public async Task Move_WithoutRemovingTheCurrentParent_IsRefused()
+    {
+        var root = await _helpers.CreateRootAsync();
+        var a = await _helpers.CreateFolderAsync(root, "A");
+        var item = await _helpers.UploadAsync(root, "x.txt", "x", FileConflictMode.Fail);
+
+        const string addParentOnly = """
+            mutation ($rtId: OctoObjectId!, $toCkTypeId: RtCkTypeId!, $toRtId: OctoObjectId!) {
+              runtime { systemFilesFileSystemItems { update(entities: [{rtId: $rtId, item: {parent: [
+                {modOption: CREATE, target: {ckTypeId: $toCkTypeId, rtId: $toRtId}}]}}]) { rtId } } }
+            }
+            """;
+        var result = await RunAsync(addParentOnly, new
+        {
+            rtId = item.Id.RtId.ToString(),
+            toCkTypeId = FileSystemService.SemanticName(a.Id.CkTypeId),
+            toRtId = a.Id.RtId.ToString()
+        }, FilesTestFixture.PlainUser);
+        ErrorCode(result).Should().Be(FileSystemErrorCodes.InvalidRequest);
+
+        using var session = Repository.GetSession();
+        (await _fixture.FileSystem.GetParentIdsAsync(Repository, session, item.Id)).Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task CreateRoot_WithTheReportingPrefix_IsReserved()
+    {
+        var result = await RunAsync(CreateRoot, new { name = "Fake", wellKnownName = "ReportingAssets_Fake" },
+            FilesTestFixture.FileManager);
+        ErrorCode(result).Should().Be(FileSystemErrorCodes.ReservedName);
+    }
+
+    [Fact]
+    public async Task Delete_AboveTheCascadeLimit_IsRefusedBeforeAnythingIsDeleted()
+    {
+        var root = await _helpers.CreateRootAsync();
+        var a = await _helpers.CreateFolderAsync(root, "A");
+        await _helpers.UploadAsync(a, "1.txt", "1", FileConflictMode.Fail);
+        await _helpers.UploadAsync(a, "2.txt", "2", FileConflictMode.Fail);
+
+        var guard = new FileSystemMutationGuard(_fixture.FileSystem,
+            Microsoft.Extensions.Options.Options.Create(new FilesOptions { MaxDeleteEntries = 2 }));
+        var expand = async () => await guard.ExpandDeleteAsync(Repository, [a.Id], TestContext.Current.CancellationToken);
+        (await expand.Should().ThrowAsync<FileSystemException>()).Which.Code.Should().Be(FileSystemErrorCodes.LimitExceeded);
+    }
+
+    [Fact]
+    public void QueryRowMutations_CannotWriteFiles()
+    {
+        var act = () => FileSystemMutationGuard.EnsureNotInQueryMutation(
+            [new Meshmakers.Octo.ConstructionKit.Contracts.RtCkId<Meshmakers.Octo.ConstructionKit.Contracts.CkTypeId>(
+                FileSystemConstants.FolderCkTypeId)], []);
+        act.Should().Throw<FileSystemException>().Which.Code.Should().Be(FileSystemErrorCodes.InvalidRequest);
+
+        var other = () => FileSystemMutationGuard.EnsureNotInQueryMutation(
+            [new Meshmakers.Octo.ConstructionKit.Contracts.RtCkId<Meshmakers.Octo.ConstructionKit.Contracts.CkTypeId>(
+                "AssetRepositoryIntegrationTest/Product")], []);
+        other.Should().NotThrow();
+    }
+
+    [Fact]
     public async Task StudioChildrenQuery_MatchesTheSchema()
     {
         var root = await _helpers.CreateRootAsync();

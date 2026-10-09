@@ -84,6 +84,17 @@ public class FileSystemException : Exception
         new(FileSystemErrorCodes.LimitExceeded, StatusCodes.Status413PayloadTooLarge,
             $"The selection has {bytes} bytes; a zip download may contain at most {max} bytes.");
 
+    internal static FileSystemException SingleParent(string name) =>
+        new(FileSystemErrorCodes.InvalidRequest, StatusCodes.Status400BadRequest,
+            $"'{name}' can have only one parent folder; remove the current parent in the same update to move it.");
+
+    internal static FileSystemException DeleteTooLarge(string name, int max) =>
+        new(FileSystemErrorCodes.LimitExceeded, StatusCodes.Status409Conflict,
+            $"Deleting '{name}' would remove more than {max} entries in one step; delete its subfolders first.");
+
+    internal static FileSystemException Forbidden(string message) =>
+        new(FileSystemErrorCodes.Forbidden, StatusCodes.Status403Forbidden, message);
+
     internal static FileSystemException InvalidRequest(string message) =>
         new(FileSystemErrorCodes.InvalidRequest, StatusCodes.Status400BadRequest, message);
 }

@@ -40,6 +40,15 @@ public class FileSystemServiceTests
     }
 
     [Fact]
+    public async Task DefaultRoot_WithoutSystemFiles_DoesNotThrow()
+    {
+        // The test tenant has no System.Files: the tenant start must log and go on, not fail the tenant.
+        var tenant = await _fixture.GetTestTenantContextAsync();
+        var ensured = await _fixture.GetService<FileSystemDefaults>().EnsureDefaultRootAsync(tenant);
+        ensured.Should().BeFalse();
+    }
+
+    [Fact]
     public async Task Upload_ThenResolveByPath_FindsTheFileWithItsContent()
     {
         var root = await CreateRootAsync();

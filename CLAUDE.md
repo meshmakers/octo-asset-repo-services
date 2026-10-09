@@ -325,19 +325,26 @@ Files and folders are a platform capability, independent of Reporting. This serv
 (origin = child, target = parent).
 
 - **Tenant setup.** `DefaultConfigurationCreatorService.ImportCkModelAsync` imports the embedded model
-  (`AddCkModelSystemFilesV1`) into every tenant inside the setup transaction; the service migration
-  `FilesRootMigration` (key `AssetServicesDefaultData`, 0 → 1) seeds the root `Files`; `GetCkModelIds`
-  (`System.Files-[1.0,2.0)`) lets later minors migrate through the standard upgrade path. An import failure
-  throws and goes through the setup retry store.
+  (`AddCkModelSystemFilesV1`) into every tenant inside the setup transaction; `StartTenantAsync` ensures the
+  root `Files` (`FileSystemDefaults`, every start, never throws — a tenant whose System model is too old for
+  System.Files logs a warning instead of going `Failed`); `GetCkModelIds` (`System.Files-[1.0,2.0)`) lets
+  later minors migrate through the standard upgrade path. An import error throws and goes through the setup
+  retry store.
 - **Metadata = generic GraphQL** (decision Q1). `FileSystemMutationGuard` is called by the generic
-  create/update/delete resolvers (typed and `runtimeEntities`) for System.Files types: root creation needs
-  the role `FileManagement`, root well-known names are unique and not one of `capabilities`, `zip`, `items`,
-  `stats` (route segments of the bytes API); names are unique per parent (case-insensitive) on
-  create/rename/move; `Files`, `ReportingAssets_*` and blueprint roots cannot be renamed/deleted; no folder
-  moves below itself; **deleting a root/folder deletes the whole subtree, System.Files entries are always
-  erased (GridFS bytes included)** and the cascade runs in the caller's session, so an entry the caller may
-  not delete fails the whole mutation (no orphans). Conflicts are checked over an unfiltered session.
-  Error codes: FORBIDDEN, NAME_CONFLICT, RESERVED_NAME, PROTECTED_ROOT, MOVE_INTO_ITSELF, INVALID_NAME.
+  create/update/delete resolvers (typed and `runtimeEntities`) whenever a System.Files entity is written or a
+  `System/ParentChild` association touches one: root creation needs the role `FileManagement`, root
+  well-known names are unique and not one of `capabilities`, `zip`, `items`, `stats` (route segments of the
+  bytes API) nor `ReportingAssets_*` (system only); names are unique per parent (case-insensitive) on
+  create/rename/move; every entry has at most one parent (a move must DELETE the current parent with the
+  CREATE), roots never get one; `Files`, `ReportingAssets_*` and blueprint roots cannot be renamed/deleted; no
+  folder moves below itself; the target folder must be visible to the caller. **Deleting a root/folder deletes
+  the whole subtree** (at most `MaxDeleteEntries`, default 2,000, per mutation — GridFS deletes are not part of
+  the transaction, so a cascade must finish well inside the transaction lifetime), System.Files entries are
+  always erased (GridFS bytes included), and the cascade runs in the caller's session, so an entry the caller
+  may not delete fails the whole mutation (FORBIDDEN, no rtIds named). Runtime-query row mutations
+  (`runtimeQuery { create/update/delete }`) refuse System.Files entities and their tree. Conflicts are checked
+  over an unfiltered session. Error codes: FORBIDDEN, NAME_CONFLICT, RESERVED_NAME, PROTECTED_ROOT,
+  MOVE_INTO_ITSELF, INVALID_NAME, INVALID_REQUEST, LIMIT_EXCEEDED.
 - **Bytes = REST** `FilesController`: `PUT|GET {root}/{**path}` (upload `?conflict=fail|replace|keepBoth`
   `&createFolders`, download `?inline`), `POST items/{rtId}/content?name=` (upload into folder),
   `PUT|GET items/{rtId}/content`, `GET stats?root=&path=` / `GET items/{rtId}/stats` (deep counts incl.
@@ -348,14 +355,17 @@ Files and folders are a platform capability, independent of Reporting. This serv
   seekable stream) while `MaxUploadBytes` is enforced; Kestrel's body limit is raised per request.
 - **Limits** (`FilesOptions`, section `Files`, env `OCTO_Files__…`): MaxUploadBytes 100 MB, ZipMaxFiles 1,000,
   ZipMaxBytes 500 MB, PreviewMaxBytes 20 MB (advisory). The ingress must accept more than MaxUploadBytes
-  (octo-helm-core `ingress.proxyBodySize`, 110m). GraphQL multipart uploads get the same limit (+1 MB).
+  (octo-helm-core `ingress.proxyBodySize`, 110m). GraphQL multipart uploads get the same limit (+1 MB, set
+  per request for `multipart/*` only; JSON GraphQL bodies keep Kestrel's 30 MB).
 - **Download headers** (`FileResponseHeaders`, also on `/v1/largeBinaries`): `Content-Disposition` with ASCII
   fallback + `filename*=UTF-8''…`, `Access-Control-Expose-Headers` (the shared CORS policy does not expose
-  them), `ETag` = binary id, nosniff. Active content (SVG, HTML, XML, JS) is never inline and gets a
-  `sandbox` CSP; largeBinaries default to inline for passive content (`?inline=false` = attachment).
+  them), `ETag` = binary id, nosniff. Inline delivery is an allow-list (images except SVG, audio, video, PDF,
+  text/plain, CSV, JSON); everything else is an attachment with a `sandbox` CSP. largeBinaries default to
+  inline for passive content (`?inline=false` = attachment). Zip entry names are sanitized (no separators,
+  no `..`); a file whose GridFS bytes are missing is skipped in a zip and answers 404 on download.
 - Known engine limitation: a nested association connection with `first: 0` fails ($slice) — ask `first: 1`.
 - Tests: `tests/AssetRepositoryServices.IntegrationTests/Files/*` (`FilesTestFixture` imports System.Files,
-  runs the service migrations and has a switchable data-policy table).
+  ensures the default root and has a switchable data-policy table).
 
 ### Important Naming Conventions
 - **Ck** prefix = Construction Kit (metadata/model definitions)
@@ -722,7 +732,7 @@ System.Reporting 3.0.0.
   (before/after counts, moved per type, association fields, stamps, dropped, errors, trigger, host).
   Deliberately **not** `System/MigrationHistory` — that collection drives the CK upgrade version detection.
 - **Triggers (Q3):** `DefaultConfigurationCreatorService.StartTenantAsync` (after the System.Files import and
-  the service migrations; never fails the start) and `ReportingFilesSweepBackgroundService` every
+  the default root; never fails the start) and `ReportingFilesSweepBackgroundService` every
   `FilesMigration:StragglerSweepInterval` (10 min) for tenants in `ReportingFilesSweepTracker` — tenants whose
   last sweep found legacy data or failed. A zero check takes a tenant off the timer (in memory, per pod; the
   next start re-checks). Kill switch `FilesMigration:SweepEnabled` (`OCTO_FilesMigration__SweepEnabled=false`).

@@ -80,9 +80,9 @@ internal class RtEntityMutation : RtMutationBase
             }
 
             // AB#6171: file system rules for System.Files entities (root role, unique names per folder).
-            if (FileSystemService.IsFileSystemType(rtCkTypeId))
+            if (FileSystemMutationGuard.Applies(rtCkTypeId, associationUpdateInfoList))
             {
-                await arg.GetFileSystemMutationGuard().BeforeCreateAsync(tenantRepository,
+                await arg.GetFileSystemMutationGuard().BeforeCreateAsync(tenantRepository, sessionAccessor.Session,
                     Helpers.GetSecurityContext(arg.UserContext), entityUpdateInfos, associationUpdateInfoList);
             }
 
@@ -147,10 +147,10 @@ internal class RtEntityMutation : RtMutationBase
             }
 
             // AB#6171: file system rules for System.Files entities (rename, move, protected roots).
-            if (FileSystemService.IsFileSystemType(ckTypeId))
+            if (FileSystemMutationGuard.Applies(ckTypeId, associationUpdateInfoList))
             {
-                await arg.GetFileSystemMutationGuard().BeforeUpdateAsync(tenantRepository, entityUpdateInfos,
-                    associationUpdateInfoList);
+                await arg.GetFileSystemMutationGuard().BeforeUpdateAsync(tenantRepository, sessionAccessor.Session,
+                    Helpers.GetSecurityContext(arg.UserContext), entityUpdateInfos, associationUpdateInfoList);
             }
 
             OperationResult operationResult = new();

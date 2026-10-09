@@ -29,18 +29,27 @@ public static class FileResponseHeaders
     ];
 
     /// <summary>
-    ///     True for content types a browser can execute (script inside SVG/HTML/XML, JavaScript).
+    ///     False only for passive types a browser renders without running anything (images except SVG, PDF,
+    ///     plain text, audio, video). Everything else — SVG, HTML, XML, script, unknown types — counts as
+    ///     active content: never inline, always sandboxed (allow-list, not deny-list).
     /// </summary>
     public static bool IsActiveContent(string? contentType)
     {
         if (string.IsNullOrWhiteSpace(contentType))
         {
-            return false;
+            return true;
         }
 
-        var mediaType = contentType.Split(';')[0].Trim();
-        return ActiveContentTypes.Contains(mediaType, StringComparer.OrdinalIgnoreCase) ||
-               mediaType.EndsWith("+xml", StringComparison.OrdinalIgnoreCase);
+        var mediaType = contentType.Split(';')[0].Trim().ToLowerInvariant();
+        if (ActiveContentTypes.Contains(mediaType) || mediaType.EndsWith("+xml", StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        return !(mediaType.StartsWith("image/", StringComparison.Ordinal) ||
+                 mediaType.StartsWith("audio/", StringComparison.Ordinal) ||
+                 mediaType.StartsWith("video/", StringComparison.Ordinal) ||
+                 mediaType is "application/pdf" or "text/plain" or "text/csv" or "application/json");
     }
 
     /// <summary>
