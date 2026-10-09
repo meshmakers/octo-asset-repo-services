@@ -465,9 +465,16 @@ schema initialization.
 - CK meta: `CkTypeAttribute.access: String!` (`ReadWrite` / `ReadOnly` / `MethodOnly` / `Hidden`).
 - **Known limitations** (platform-owner decision 2026-10-08, fixed with System.Identity v2 in CK v2 Phase 4):
   `ImportRt` writes and RT export emit Hidden / MethodOnly values (review H2/H3), user tokens (H4).
-- **Stream data** (review M12): the engine refuses to activate an archive whose columns reach a Hidden attribute
-  (`ArchiveLifecycleService.EnsureNoHiddenColumns`, checked on every activation), so no archive table carries a
-  hidden value and the stream-data query surface needs no access guard of its own.
+- **Stream data** (review M12 / G3 E-M2): no archive column may reach a Hidden attribute. The engine refuses to
+  activate such an archive and fails an active one when a model change makes a column reach Hidden
+  (`ArchiveHiddenColumnGuard`, `ArchiveLifecycleService`). The asset-repo additionally refuses every stream-data
+  query path that reaches Hidden (`StreamDataHiddenGuard` over `ArchiveHiddenColumnGuard.FindHiddenAttribute`: a
+  Hidden segment, or a whole-record column whose record contains a Hidden sub-attribute) with
+  `ATTRIBUTE_NOT_QUERYABLE`: columns, group-by, sort (incl. runtime overrides), filters (transient: all operators incl.
+  `IS_NULL`; persisted: comparison filters) and aggregations, on the transient `simple` / `aggregation` /
+  `groupingAggregation` / `downsampling` queries, persisted `streamDataQuery` rows and both `aggregations`
+  sub-connections. The check runs inside `StreamDataFieldValidation.ValidateStreamDataFields` (required parameter) and
+  explicitly in the aggregation and runtime-override resolvers. Tests: `StreamData/StreamDataHiddenAttributeTests`.
 - **Generic writes can still destroy Hidden / MethodOnly values** (G3 review A-M2, backlog): `clearSecretAttributes`
   has no access check (a Secret attribute that is also MethodOnly can be cleared), and a whole-record write rebuilds
   the record from its input fields, so Hidden / MethodOnly sub-attributes of a written record are nulled. No current

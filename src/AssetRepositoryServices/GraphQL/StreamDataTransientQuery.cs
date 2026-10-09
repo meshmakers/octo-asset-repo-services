@@ -122,11 +122,14 @@ internal sealed class StreamDataTransientQuery : ObjectGraphType
             ctx.TryGetArgument(Statics.RtIdsArg, null, out IEnumerable<OctoObjectId>? rtIds);
             var execArgs = ctx.GetArgument<StreamDataArguments?>(Statics.StreamDataArgument);
             var fieldFilters = fieldFilterDtos?.ToList();
+            // CK v2 (review G3 E-M2): no filter operator (incl. IS_NULL) on a Hidden attribute.
+            StreamDataHiddenGuard.For(ctx, gql.TenantId, ckTypeId).EnsureNotHidden(fieldFilters?.Select(f => f.AttributePath));
 
             StreamDataFieldValidation.ValidateStreamDataFields(
                 fieldResolver, columnPaths,
                 sortDtos?.Select(s => s.AttributePath),
-                fieldFilters?.Where(f => f.ComparisonValue != null).Select(f => f.AttributePath));
+                fieldFilters?.Where(f => f.ComparisonValue != null).Select(f => f.AttributePath),
+                StreamDataHiddenGuard.For(ctx, gql.TenantId, ckTypeId));
 
             // Stream-data archives only carry physical columns — navigation paths are meaningless
             // for CrateDB tables, and unbounded navigation expansion over a densely connected CK
@@ -215,12 +218,15 @@ internal sealed class StreamDataTransientQuery : ObjectGraphType
             ctx.TryGetArgument(Statics.RtIdsArg, null, out IEnumerable<OctoObjectId>? rtIds);
             var execArgs = ctx.GetArgument<StreamDataArguments?>(Statics.StreamDataArgument);
             var fieldFilters = fieldFilterDtos?.ToList();
+            // CK v2 (review G3 E-M2): no filter operator (incl. IS_NULL) on a Hidden attribute.
+            StreamDataHiddenGuard.For(ctx, gql.TenantId, ckTypeId).EnsureNotHidden(fieldFilters?.Select(f => f.AttributePath));
 
             StreamDataFieldValidation.ValidateStreamDataFields(
                 fieldResolver,
                 columnInputs.Select(c => c.AttributePath),
                 null,
-                fieldFilters?.Where(f => f.ComparisonValue != null).Select(f => f.AttributePath));
+                fieldFilters?.Where(f => f.ComparisonValue != null).Select(f => f.AttributePath),
+                StreamDataHiddenGuard.For(ctx, gql.TenantId, ckTypeId));
 
             var aggColumns = columnInputs
                 .Select(c => new AggregationColumn(
@@ -285,12 +291,15 @@ internal sealed class StreamDataTransientQuery : ObjectGraphType
             ctx.TryGetArgument(Statics.RtIdsArg, null, out IEnumerable<OctoObjectId>? rtIds);
             var execArgs = ctx.GetArgument<StreamDataArguments?>(Statics.StreamDataArgument);
             var fieldFilters = fieldFilterDtos?.ToList();
+            // CK v2 (review G3 E-M2): no filter operator (incl. IS_NULL) on a Hidden attribute.
+            StreamDataHiddenGuard.For(ctx, gql.TenantId, ckTypeId).EnsureNotHidden(fieldFilters?.Select(f => f.AttributePath));
 
             StreamDataFieldValidation.ValidateStreamDataFields(
                 fieldResolver,
                 groupByColumnPaths.Concat(columnInputs.Select(c => c.AttributePath)),
                 null,
-                fieldFilters?.Where(f => f.ComparisonValue != null).Select(f => f.AttributePath));
+                fieldFilters?.Where(f => f.ComparisonValue != null).Select(f => f.AttributePath),
+                StreamDataHiddenGuard.For(ctx, gql.TenantId, ckTypeId));
 
             var aggColumns = columnInputs
                 .Select(c => new AggregationColumn(
@@ -359,12 +368,15 @@ internal sealed class StreamDataTransientQuery : ObjectGraphType
             ctx.TryGetArgument(Statics.FieldFilterArg, out IEnumerable<FieldFilterDto>? fieldFilterDtos);
             ctx.TryGetArgument(Statics.RtIdsArg, null, out IEnumerable<OctoObjectId>? rtIds);
             var fieldFilters = fieldFilterDtos?.ToList();
+            // CK v2 (review G3 E-M2): no filter operator (incl. IS_NULL) on a Hidden attribute.
+            StreamDataHiddenGuard.For(ctx, gql.TenantId, ckTypeId).EnsureNotHidden(fieldFilters?.Select(f => f.AttributePath));
 
             StreamDataFieldValidation.ValidateStreamDataFields(
                 fieldResolver,
                 columnInputs.Select(c => c.AttributePath),
                 null,
-                fieldFilters?.Where(f => f.ComparisonValue != null).Select(f => f.AttributePath));
+                fieldFilters?.Where(f => f.ComparisonValue != null).Select(f => f.AttributePath),
+                StreamDataHiddenGuard.For(ctx, gql.TenantId, ckTypeId));
 
             var aggColumns = columnInputs
                 .Select(c => new AggregationColumn(

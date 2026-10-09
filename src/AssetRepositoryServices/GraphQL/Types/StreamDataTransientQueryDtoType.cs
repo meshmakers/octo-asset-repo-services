@@ -103,6 +103,9 @@ internal sealed class StreamDataTransientQueryDtoType : ObjectGraphType<StreamDa
                     // Allow runtime overrides for sort and time filter
                     ctx.TryGetArgument(Statics.SortOrderArg, out IEnumerable<SortDto>? runtimeSortDtos);
                     var runtimeSortList = runtimeSortDtos?.ToList();
+                    // CK v2 (review G3 E-M2): a runtime sort override must not reach a Hidden attribute.
+                    StreamDataHiddenGuard.For(ctx, tenantId, ckTypeId)
+                        .EnsureNotHidden(runtimeSortList?.Select(s => s.AttributePath));
 
                     var execOverride = ctx.GetArgument<StreamDataArguments?>(Statics.StreamDataArgument);
 
@@ -273,6 +276,9 @@ internal sealed class StreamDataTransientQueryDtoType : ObjectGraphType<StreamDa
             if (aggInput.SumAttributePaths != null)
                 aggColumns.AddRange(aggInput.SumAttributePaths.Select(p =>
                     new AggregationColumn(p, AggregationFunction.Sum)));
+
+            // CK v2 (review G3 E-M2): aggregation paths must not reach a Hidden attribute.
+            StreamDataHiddenGuard.For(ctx, gql.TenantId, ckTypeId).EnsureNotHidden(aggColumns.Select(c => c.AttributePath));
 
             var input = new StreamQueryExecutionInput
             {

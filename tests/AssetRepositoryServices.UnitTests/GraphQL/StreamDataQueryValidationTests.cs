@@ -1,4 +1,7 @@
+using FakeItEasy;
 using FluentAssertions;
+using Meshmakers.Octo.ConstructionKit.Contracts;
+using Meshmakers.Octo.ConstructionKit.Contracts.Services;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL;
 using Meshmakers.Octo.Runtime.Engine.CrateDb;
 using Xunit;
@@ -9,6 +12,17 @@ public class StreamDataQueryValidationTests
 {
     private readonly StreamDataFieldResolver _fieldResolver = new(["Voltage", "Temperature"]);
 
+    // No CK type in the cache: the Hidden check (CK v2 E-M2) finds nothing; it is covered by the integration tests.
+    private readonly StreamDataHiddenGuard _noHidden = CreateNoHiddenGuard();
+
+    private static StreamDataHiddenGuard CreateNoHiddenGuard()
+    {
+        var cache = A.Fake<ICkCacheService>();
+        A.CallTo(() => cache.GetRtCkType(A<string>._, A<RtCkId<CkTypeId>>._))
+            .Throws(new InvalidOperationException("not in cache"));
+        return new StreamDataHiddenGuard(cache, "tenant", new RtCkId<CkTypeId>("Test/Type"));
+    }
+
     [Fact]
     public void AllValidFields_DoesNotThrow()
     {
@@ -16,7 +30,7 @@ public class StreamDataQueryValidationTests
             _fieldResolver,
             ["Voltage", "Temperature"],
             ["Timestamp"],
-            ["Voltage"]);
+            ["Voltage"], _noHidden);
 
         act.Should().NotThrow();
     }
@@ -28,7 +42,7 @@ public class StreamDataQueryValidationTests
             _fieldResolver,
             ["Voltage", "NonExistent"],
             null,
-            null);
+            null, _noHidden);
 
         act.Should().Throw<OctoGraphQLException>()
             .WithMessage("*NonExistent*");
@@ -41,7 +55,7 @@ public class StreamDataQueryValidationTests
             _fieldResolver,
             null,
             ["BadSort"],
-            null);
+            null, _noHidden);
 
         act.Should().Throw<OctoGraphQLException>()
             .WithMessage("*BadSort*");
@@ -54,7 +68,7 @@ public class StreamDataQueryValidationTests
             _fieldResolver,
             null,
             null,
-            ["UnknownFilter"]);
+            ["UnknownFilter"], _noHidden);
 
         act.Should().Throw<OctoGraphQLException>()
             .WithMessage("*UnknownFilter*");
@@ -67,7 +81,7 @@ public class StreamDataQueryValidationTests
             _fieldResolver,
             ["BadCol"],
             ["BadSort"],
-            ["BadFilter"]);
+            ["BadFilter"], _noHidden);
 
         act.Should().Throw<OctoGraphQLException>()
             .WithMessage("*BadCol*")
@@ -82,7 +96,7 @@ public class StreamDataQueryValidationTests
             _fieldResolver,
             null,
             null,
-            null);
+            null, _noHidden);
 
         act.Should().NotThrow();
 
@@ -90,7 +104,7 @@ public class StreamDataQueryValidationTests
             _fieldResolver,
             [],
             [],
-            []);
+            [], _noHidden);
 
         act2.Should().NotThrow();
     }
@@ -102,7 +116,7 @@ public class StreamDataQueryValidationTests
             _fieldResolver,
             ["Timestamp", "RtId"],
             ["Timestamp"],
-            ["RtId"]);
+            ["RtId"], _noHidden);
 
         act.Should().NotThrow();
     }
@@ -114,7 +128,7 @@ public class StreamDataQueryValidationTests
             _fieldResolver,
             ["voltage", "TEMPERATURE", "timestamp"],
             ["rtId"],
-            ["voltage"]);
+            ["voltage"], _noHidden);
 
         act.Should().NotThrow();
     }

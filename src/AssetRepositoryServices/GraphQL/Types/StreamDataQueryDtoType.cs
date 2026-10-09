@@ -143,7 +143,8 @@ internal sealed class StreamDataQueryDtoType : ObjectGraphType<StreamDataQueryDt
                             ?.Where(f => f.ComparisonValue != null).Select(f => f.AttributePath);
                         StreamDataFieldValidation.ValidateStreamDataFields(
                             fieldResolver, columnNames, null,
-                            ConcatNullable(dsPersistedFilterPaths, dsRuntimeFilterPaths));
+                            ConcatNullable(dsPersistedFilterPaths, dsRuntimeFilterPaths),
+                StreamDataHiddenGuard.For(ctx, gql.TenantId, ckTypeId));
 
                         // Per value-type reducers: numeric → AVG + MIN + MAX (envelope keeps peaks);
                         // string/enum/bool → MAX (a stable representative, exact for the
@@ -200,7 +201,8 @@ internal sealed class StreamDataQueryDtoType : ObjectGraphType<StreamDataQueryDt
                         ?.Where(f => f.ComparisonValue != null).Select(f => f.AttributePath);
                     StreamDataFieldValidation.ValidateStreamDataFields(
                         fieldResolver, columnNames, sortFieldNames,
-                        ConcatNullable(persistedFilterPaths, runtimeFilterPaths));
+                        ConcatNullable(persistedFilterPaths, runtimeFilterPaths),
+                StreamDataHiddenGuard.For(ctx, gql.TenantId, ckTypeId));
 
                     resolvedColumnNames = fieldResolver.ResolveToMappings(columnNames, enumIdResolver);
 
@@ -255,7 +257,8 @@ internal sealed class StreamDataQueryDtoType : ObjectGraphType<StreamDataQueryDt
                         fieldResolver,
                         aggregationColumns.Select(c => c.AttributePath),
                         null,
-                        ConcatNullable(persistedFilterPaths, runtimeFilterPaths));
+                        ConcatNullable(persistedFilterPaths, runtimeFilterPaths),
+                StreamDataHiddenGuard.For(ctx, gql.TenantId, ckTypeId));
 
                     var aggInputAgg = aggregationColumns
                         .Select(c => new AggregationColumn(
@@ -305,7 +308,8 @@ internal sealed class StreamDataQueryDtoType : ObjectGraphType<StreamDataQueryDt
                         fieldResolver,
                         groupingColumns.Concat(aggregationColumns.Select(c => c.AttributePath)),
                         null,
-                        ConcatNullable(persistedFilterPaths, runtimeFilterPaths));
+                        ConcatNullable(persistedFilterPaths, runtimeFilterPaths),
+                StreamDataHiddenGuard.For(ctx, gql.TenantId, ckTypeId));
 
                     var aggInputGrp = aggregationColumns
                         .Select(c => new AggregationColumn(
@@ -358,7 +362,8 @@ internal sealed class StreamDataQueryDtoType : ObjectGraphType<StreamDataQueryDt
                         fieldResolver,
                         aggregationColumns.Select(c => c.AttributePath),
                         null,
-                        ConcatNullable(persistedFilterPaths, runtimeFilterPaths));
+                        ConcatNullable(persistedFilterPaths, runtimeFilterPaths),
+                StreamDataHiddenGuard.For(ctx, gql.TenantId, ckTypeId));
 
                     var aggInputDs = aggregationColumns
                         .Select(c => new AggregationColumn(
@@ -467,6 +472,14 @@ internal sealed class StreamDataQueryDtoType : ObjectGraphType<StreamDataQueryDt
             if (aggInput.SumAttributePaths != null)
                 aggColumns.AddRange(aggInput.SumAttributePaths.Select(p =>
                     new AggregationColumn(p, AggregationFunction.Sum)));
+
+            // CK v2 (review G3 E-M2): aggregation paths must not reach a Hidden attribute.
+            StreamDataHiddenGuard.For(ctx, gql.TenantId, ckTypeId).EnsureNotHidden(aggColumns.Select(c => c.AttributePath));
+            if (ctx.TryGetArgument(Statics.FieldFilterArg, out IEnumerable<FieldFilterDto>? aggFilterDtos))
+            {
+                StreamDataHiddenGuard.For(ctx, gql.TenantId, ckTypeId)
+                    .EnsureNotHidden(aggFilterDtos?.Select(f => f.AttributePath));
+            }
 
             // Re-use the same field filters as the loaded query (same data-set semantics),
             // AND-combined with any runtime field filters passed alongside the aggregations request.
