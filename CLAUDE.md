@@ -628,6 +628,13 @@ Tenant-scoped endpoint to import a CK model directly from a catalog without file
 
 **Response:** `DependencyResolutionResponseDto` with recursive `RootModel` tree. Each item contains: `modelId`, `name`, `requiredVersion`, `installedVersion` (null if not installed), `action` ("install", "none"), and nested `dependencies`.
 
+Installed state is checked **by name** (CK v2 F1.0, AB#5900 — the embedded-import downgrade guard keeps newer installed
+versions): exact version installed → `none`; a newer `Available` version of the same model → `none` with
+`installedVersion` "(newer version installed)" (installing the exact version would be a downgrade); service-managed
+models (System*) → `none` when the installed version is the same major and ≥ the required one, otherwise
+`incompatible`. `CkModelLibraryStatusService.CheckSystemCompatibilityAsync` still compares service-managed versions
+exactly.
+
 | `POST` | `{tenantId}/v1/models/CheckUpgrade` | ReadOnly | Pre-flight check for migration impact |
 
 **Request body:** Same as ImportFromCatalog (`catalogName` + `modelId`).

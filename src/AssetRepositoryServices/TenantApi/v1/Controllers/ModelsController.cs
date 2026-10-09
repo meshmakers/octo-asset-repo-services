@@ -797,12 +797,14 @@ public class ModelsController : ControllerBase
         }
         else if (CkModelLibraryStatusService.IsSystemManaged(modelId.Name))
         {
-            // Service-managed models: strict version check because compiled models
-            // contain exact CkTypeId references (e.g. System-2.0.7/Entity-1)
+            // Service-managed models are checked by name (CK v2 F1.0, AB#5900): the embedded-import downgrade guard
+            // keeps a newer installed version of the same major, which satisfies the dependency. A lower version or
+            // a different major stays "incompatible" — service-managed models are never imported from a catalog.
             if (installedSystemVersions != null &&
                 installedSystemVersions.TryGetValue(modelId.Name, out var installedSysVersion))
             {
-                if (installedSysVersion.CompareTo(modelId.Version) != 0)
+                if (installedSysVersion.Major != modelId.Version.Major ||
+                    installedSysVersion.CompareTo(modelId.Version) < 0)
                 {
                     item.Action = "incompatible";
                     item.InstalledVersion =
@@ -819,6 +821,13 @@ public class ModelsController : ControllerBase
                 item.Action = "none";
                 item.InstalledVersion = "(service-managed)";
             }
+        }
+        else if (await tenantContext.IsCkModelSatisfiedAsync(modelId))
+        {
+            // By name (AB#5900): a newer version of the same model is installed and Available, so the exact
+            // version must not be offered for installation (that would be a downgrade).
+            item.InstalledVersion = "(newer version installed)";
+            item.Action = "none";
         }
         else
         {

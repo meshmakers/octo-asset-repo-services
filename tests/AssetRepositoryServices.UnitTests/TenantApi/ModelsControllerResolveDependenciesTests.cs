@@ -256,4 +256,56 @@ public class ModelsControllerResolveDependenciesTests
         var statusResult = result.Should().BeOfType<ObjectResult>().Subject;
         statusResult.StatusCode.Should().Be(StatusCodes.Status500InternalServerError);
     }
+
+    [Fact]
+    public async Task ResolveDependencies_ReturnsNone_WhenANewerVersionOfTheModelIsInstalled()
+    {
+        // AB#5900 (S2 review): the dependency status is checked by name; an exact miss with a newer
+        // installed version must not offer a downgrade install.
+        StubCatalogModel("Energy-2.0.0");
+        A.CallTo(() => _tenantContext.IsCkModelExistingAsync(A<CkModelId>.Ignored)).Returns(false);
+        A.CallTo(() => _tenantContext.IsCkModelSatisfiedAsync(
+                A<CkModelId>.That.Matches(m => m.FullName == "Energy-2.0.0")))
+            .Returns(true);
+
+        var root = await ResolveRootAsync("Energy-2.0.0");
+
+        root.Action.Should().Be("none");
+        root.InstalledVersion.Should().Be("(newer version installed)");
+    }
+
+    [Theory]
+    [InlineData("2.5.0", "2.5.0", "none")]
+    [InlineData("2.5.0", "2.6.1", "none")]
+    [InlineData("2.5.0", "2.4.0", "incompatible")]
+    [InlineData("2.5.0", "3.0.0", "incompatible")]
+    public async Task ResolveDependencies_ServiceManaged_IsCheckedByNameWithinTheMajor(string required,
+        string installed, string expectedAction)
+    {
+        StubCatalogModel($"System-{required}");
+        A.CallTo(() => _tenantContext.IsCkModelExistingAsync(A<CkModelId>.Ignored)).Returns(false);
+        A.CallTo(() => _libraryStatusService.GetInstalledSystemVersionsAsync(A<ITenantContext>._))
+            .Returns(new Dictionary<string, CkVersion> { ["System"] = new(installed) });
+
+        var root = await ResolveRootAsync($"System-{required}");
+
+        root.Action.Should().Be(expectedAction);
+    }
+
+    private void StubCatalogModel(string modelId)
+    {
+        A.CallTo(() => _catalogService.GetAsync("PublicGitHub",
+                A<CkModelId>.Ignored, A<OperationResult>.Ignored,
+                A<CancellationToken?>.Ignored))
+            .Returns(new CkCompiledModelRoot { ModelId = new CkModelId(modelId), Dependencies = null });
+    }
+
+    private async Task<DependencyResolutionItemDto> ResolveRootAsync(string modelId)
+    {
+        var result = await _controller.ResolveDependencies(
+            new ImportFromCatalogRequestDto { CatalogName = "PublicGitHub", ModelId = modelId },
+            TestContext.Current.CancellationToken);
+        return result.Should().BeOfType<OkObjectResult>().Subject.Value
+            .Should().BeOfType<DependencyResolutionResponseDto>().Subject.RootModel;
+    }
 }
