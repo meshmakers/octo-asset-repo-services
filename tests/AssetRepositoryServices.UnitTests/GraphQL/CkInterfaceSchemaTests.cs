@@ -16,7 +16,7 @@ using Xunit;
 namespace AssetRepositoryServices.UnitTests.GraphQL;
 
 /// <summary>
-///     CK v2 Phase 0 (AB#5667, contract §4.2 / §8.3): CK interface graph type naming and fields, and the warning
+///     CK v2 (AB#5667): CK interface graph type naming and fields, and the warning
 ///     that replaces the silent skip when an object type cannot implement a CK interface.
 /// </summary>
 public class CkInterfaceSchemaTests

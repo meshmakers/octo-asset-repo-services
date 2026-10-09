@@ -9,7 +9,7 @@ using Xunit;
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.GraphQL.Errors;
 
 /// <summary>
-///     F1.5-S4 (AB#5923, Phase 0 E2E run 2 finding R2-4): outside Development, GraphQL errors carry code and message
+///     F1.5-S4 (AB#5923, CK v2 E2E finding R2-4): outside Development, GraphQL errors carry code and message
 ///     but no exception details (stack traces, local source paths). Access errors carry code, attribute path and
 ///     operation, never a value, in every environment.
 /// </summary>

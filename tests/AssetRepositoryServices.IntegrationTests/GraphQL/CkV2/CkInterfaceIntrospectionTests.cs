@@ -7,7 +7,7 @@ using Xunit;
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.GraphQL.CkV2;
 
 /// <summary>
-///     CK v2 Phase 0 (AB#5667, contract §4.2 / §8.3): a CK interface (<c>AssetRepositoryIntegrationTest/Labeled-1</c>)
+///     CK v2 (AB#5667): a CK interface (<c>AssetRepositoryIntegrationTest/Labeled-1</c>)
 ///     becomes a GraphQL interface without suffix, carrying the system fields and its members (optional members are
 ///     nullable), and every implementing concrete type lists it.
 /// </summary>

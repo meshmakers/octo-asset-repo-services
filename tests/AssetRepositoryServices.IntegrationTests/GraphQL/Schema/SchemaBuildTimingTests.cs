@@ -9,9 +9,8 @@ using Xunit;
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.GraphQL.Schema;
 
 /// <summary>
-///     CK v2 Phase 0, task G0 (risk R8): records how long a cold per-tenant schema build takes for the integration
-///     test CK model, so the CK interface and method types added in Phase 0 can be compared against this
-///     baseline. The service logs the same figure at Information level
+///     CK v2 (risk R8): records how long a cold per-tenant schema build takes for the integration test CK model, so
+///     the cost of the CK v2 GraphQL types can be compared against this baseline. The service logs the same figure at Information level
 ///     ("GraphQL schema for tenant … built in … ms (…)").
 /// </summary>
 [Collection(GraphQlCollection.Name)]

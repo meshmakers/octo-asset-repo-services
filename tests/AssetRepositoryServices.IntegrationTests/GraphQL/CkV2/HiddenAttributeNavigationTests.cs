@@ -9,7 +9,7 @@ using Xunit;
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.GraphQL.CkV2;
 
 /// <summary>
-///     CK v2 Phase 0 review H1: a Hidden attribute must not be usable as filter / sort / search / aggregation oracle
+///     CK v2 review H1: a Hidden attribute must not be usable as filter / sort / search / aggregation oracle
 ///     through any association or navigation connection. Each entry point is tried with the hidden path (rejected
 ///     with <c>ATTRIBUTE_NOT_QUERYABLE</c>) and with a visible path (positive control, finds the member).
 ///     Model: <c>AccessTestAccount</c> --AccessTestMembership--> <c>AccessTestGroup</c> (navigation <c>members</c> on

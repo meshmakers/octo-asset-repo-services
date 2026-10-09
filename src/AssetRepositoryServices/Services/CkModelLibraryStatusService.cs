@@ -39,6 +39,12 @@ public interface ICkModelLibraryStatusService
     Task<Dictionary<string, CkVersion>> GetInstalledSystemVersionsAsync(ITenantContext tenantContext);
 
     /// <summary>
+    ///     Installed versions of ALL models of a tenant in state <c>Available</c> (highest version per model name).
+    ///     Used to judge a catalog dependency against what is installed (CK v2 F1.0, AB#5900).
+    /// </summary>
+    Task<Dictionary<string, CkVersion>> GetInstalledModelVersionsAsync(ITenantContext tenantContext);
+
+    /// <summary>
     ///     Walks the catalog dependency graph of <paramref name="catalogModelId" /> and decides
     ///     whether it can be installed against the tenant's installed system models.
     ///     <paramref name="unresolvedDependencies" /> collects model ids that could not be resolved
@@ -158,6 +164,27 @@ public sealed class CkModelLibraryStatusService : ICkModelLibraryStatusService
         {
             if (IsSystemManaged(inst.ModelId) &&
                 inst.ModelState == ConstructionKit.Contracts.DataTransferObjects.ModelState.Available)
+            {
+                result[inst.ModelId] = inst.Id.Version;
+            }
+        }
+
+        return result;
+    }
+
+    /// <inheritdoc />
+    public async Task<Dictionary<string, CkVersion>> GetInstalledModelVersionsAsync(ITenantContext tenantContext)
+    {
+        var repository = tenantContext.GetTenantRepository();
+        var session = repository.GetSession();
+        var installedResult = await repository.GetCkModelsAsync(session, null, RtEntityQueryOptions.Create(),
+            take: ModelPageSize);
+
+        var result = new Dictionary<string, CkVersion>();
+        foreach (var inst in installedResult.Items.Where(i =>
+                     i.ModelState == ConstructionKit.Contracts.DataTransferObjects.ModelState.Available))
+        {
+            if (!result.TryGetValue(inst.ModelId, out var existing) || inst.Id.Version.CompareTo(existing) > 0)
             {
                 result[inst.ModelId] = inst.Id.Version;
             }

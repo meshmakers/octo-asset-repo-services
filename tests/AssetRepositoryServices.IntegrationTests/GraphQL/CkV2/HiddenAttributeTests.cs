@@ -10,7 +10,7 @@ using Xunit;
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.GraphQL.CkV2;
 
 /// <summary>
-///     CK v2 Phase 0 (AB#5668, contract §4.1 / §8.3): an attribute assigned with <c>access: Hidden</c> never appears in
+///     CK v2 (AB#5668): an attribute assigned with <c>access: Hidden</c> never appears in
 ///     GraphQL output, input, update, generic attribute lists or query columns, cannot be written through the generic
 ///     mutations or a query row, and cannot be used as a filter / sort oracle. <c>MethodOnly</c> is readable but not
 ///     generically writable. Test type: <c>AssetRepositoryIntegrationTest/AccessTestAccount</c>.

@@ -61,8 +61,8 @@ internal class SchemaContext(
                 entry.SetSize(1);
                 entry.SlidingExpiration = TimeSpan.FromDays(1);
 
-                // Schema-build timing (CK v2 risk R8): the CK interface and method types added in Phase 0
-                // must not make the per-tenant schema build noticeably slower.
+                // Schema-build timing (CK v2 risk R8): the CK v2 types (interfaces, inheritance, association
+                // members) must not make the per-tenant schema build noticeably slower.
                 var stopwatch = Stopwatch.StartNew();
 
                 var graphTypesCache = new GraphTypesCache(ckCacheService, octoService, options, tenantId,

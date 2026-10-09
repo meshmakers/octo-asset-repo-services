@@ -468,6 +468,15 @@ schema initialization.
 - **Stream data** (review M12): the engine refuses to activate an archive whose columns reach a Hidden attribute
   (`ArchiveLifecycleService.EnsureNoHiddenColumns`, checked on every activation), so no archive table carries a
   hidden value and the stream-data query surface needs no access guard of its own.
+- **Generic writes can still destroy Hidden / MethodOnly values** (G3 review A-M2, backlog): `clearSecretAttributes`
+  has no access check (a Secret attribute that is also MethodOnly can be cleared), and a whole-record write rebuilds
+  the record from its input fields, so Hidden / MethodOnly sub-attributes of a written record are nulled. No current
+  model combines these.
+- **GraphQL name collisions** (G3 review A-L1/A-L2, backlog): two CK elements that map to the same GraphQL name (e.g.
+  a literal `Named2` next to `Named-2`, or names colliding with the generated `…Interface`, `…Input`, `…Update` names)
+  make schema initialization throw, and the whole tenant schema is unavailable. `SchemaContext` builds every tenant
+  under one process-wide semaphore and does not cache failures, so a broken tenant serialises all cache-miss builds.
+  Compiler rule I-5 only compares exact type/interface names.
 - **`ReadOnly`** is parsed, persisted and shown in the CK meta API (`access`), but not enforced on the GraphQL write
   path yet (the generic input types and mutations treat it like `ReadWrite`).
 - Tests: `CkAttributeAccessSchemaTests`, `AccessQueryGuardTests` (unit); `GraphQL/CkV2/HiddenAttributeTests` and
@@ -681,12 +690,15 @@ Tenant-scoped endpoint to import a CK model directly from a catalog without file
 
 **Response:** `DependencyResolutionResponseDto` with recursive `RootModel` tree. Each item contains: `modelId`, `name`, `requiredVersion`, `installedVersion` (null if not installed), `action` ("install", "none"), and nested `dependencies`.
 
-Installed state is checked **by name** (CK v2 F1.0, AB#5900 — the embedded-import downgrade guard keeps newer installed
-versions): exact version installed → `none`; a newer `Available` version of the same model → `none` with
-`installedVersion` "(newer version installed)" (installing the exact version would be a downgrade); service-managed
-models (System*) → `none` when the installed version is the same major and ≥ the required one, otherwise
-`incompatible`. `CkModelLibraryStatusService.CheckSystemCompatibilityAsync` still compares service-managed versions
-exactly.
+Installed state is judged by what the **parent model requires** (CK v2 F1.0 AB#5900, G3 review A-M1): a classic
+parent's compile-time exact pin stays exact (a newer installed version would make the parent `ResolveFailed`), a
+range-retaining parent (`CkCompiledModelRoot.DependencyRanges`) accepts any installed version within its range and
+≥ the floor, and no requirement is ever satisfied across majors. Actions: requirement met → `none`; a newer installed
+version that does not meet it (or any unmet service-managed model) → `incompatible`, which blocks the batch import —
+a newer installed version is never offered for a downgrade install (explicit downgrades go through `ImportCk`); an
+older installed version → `install` (upgrade). The root model is judged as an exact pin. Installed versions come from
+`ICkModelLibraryStatusService.GetInstalledModelVersionsAsync` (highest `Available` version per name).
+`CkModelLibraryStatusService.CheckSystemCompatibilityAsync` still compares service-managed versions exactly.
 
 | `POST` | `{tenantId}/v1/models/CheckUpgrade` | ReadOnly | Pre-flight check for migration impact |
 

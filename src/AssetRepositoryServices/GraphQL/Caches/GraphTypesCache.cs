@@ -333,7 +333,7 @@ internal class GraphTypesCache : IGraphTypesCache
         inputTypes.AddRange(_types.Values);
         inputTypes.AddRange(_inputTypes.Values);
         inputTypes.AddRange(_interfaceTypes.Values);
-        // CK v2 (AB#5667): registered even though no Phase 0 field returns them (introspection, fragments).
+        // CK v2 (AB#5667): registered even though no query field returns them yet (introspection, fragments).
         inputTypes.AddRange(_ckInterfaceTypes.Values);
         inputTypes.AddRange(_enumTypes.Values);
         inputTypes.AddRange(_recordTypes.Values);

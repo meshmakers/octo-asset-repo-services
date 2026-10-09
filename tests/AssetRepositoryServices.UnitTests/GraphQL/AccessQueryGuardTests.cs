@@ -12,7 +12,7 @@ using Xunit;
 namespace AssetRepositoryServices.UnitTests.GraphQL;
 
 /// <summary>
-///     CK v2 Phase 0 review fixes in <see cref="AccessQueryGuard" />: hidden-name cache per CK model graph (M8), fail
+///     CK v2 review fixes in <see cref="AccessQueryGuard" />: hidden-name cache per CK model graph (M8), fail
 ///     closed for unknown targets / unloaded tenants (L11), entity-selector keys (L10).
 /// </summary>
 public class AccessQueryGuardTests

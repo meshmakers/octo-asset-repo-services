@@ -8,6 +8,8 @@ using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects.ApiErrors;
 using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.ConstructionKit.Contracts.Serialization;
+using CkCompiledModelRoot = Meshmakers.Octo.ConstructionKit.Contracts.DataTransferObjects.CkCompiledModelRoot;
+using CkModelDependencyDto = Meshmakers.Octo.ConstructionKit.Contracts.DataTransferObjects.CkModelDependencyDto;
 using Meshmakers.Octo.ConstructionKit.Contracts.Services;
 using Meshmakers.Octo.Runtime.Contracts.CkModelMigrations;
 using Meshmakers.Octo.Runtime.Contracts.Exchange;
@@ -379,13 +381,13 @@ public class ModelsController : ControllerBase
 
             // Get tenant context and installed system versions
             var tenantContext = await _systemContext.FindTenantContextAsync(tenantId);
-            var sysVersions = await _libraryStatusService.GetInstalledSystemVersionsAsync(tenantContext);
+            var installedVersions = await _libraryStatusService.GetInstalledModelVersionsAsync(tenantContext);
 
             // Resolve the dependency tree
             var resolved = new HashSet<string>();
             var rootItem = await ResolveDependencyTreeAsync(
-                compiledModel.ModelId, compiledModel.Dependencies,
-                tenantContext, sysVersions, resolved, cancellationToken);
+                compiledModel.ModelId, DependencyRequirement.Exact(compiledModel.ModelId), compiledModel,
+                tenantContext, installedVersions, resolved, cancellationToken);
 
             return Ok(new DependencyResolutionResponseDto { RootModel = rootItem });
         }
@@ -529,7 +531,7 @@ public class ModelsController : ControllerBase
             }
 
             var tenantContext = await _systemContext.FindTenantContextAsync(tenantId);
-            var sysVersions = await _libraryStatusService.GetInstalledSystemVersionsAsync(tenantContext);
+            var installedVersions = await _libraryStatusService.GetInstalledModelVersionsAsync(tenantContext);
             var dependencyTrees = new List<DependencyResolutionResponseDto>();
             var allModelsToImport = new List<string>();
             var seen = new HashSet<string>();
@@ -552,8 +554,8 @@ public class ModelsController : ControllerBase
 
                 var resolved = new HashSet<string>();
                 var rootItem = await ResolveDependencyTreeAsync(
-                    compiledModel.ModelId, compiledModel.Dependencies,
-                    tenantContext, sysVersions, resolved, cancellationToken);
+                    compiledModel.ModelId, DependencyRequirement.Exact(compiledModel.ModelId), compiledModel,
+                    tenantContext, installedVersions, resolved, cancellationToken);
 
                 dependencyTrees.Add(new DependencyResolutionResponseDto { RootModel = rootItem });
 
@@ -773,11 +775,42 @@ public class ModelsController : ControllerBase
         }
     }
 
+    /// <summary>
+    ///     What the parent model requires of a dependency: the exact compile-time pin of a classic model, or the declared
+    ///     range + floor of a range-retaining model (CK v2 F1.0 / G3 review A-M1).
+    /// </summary>
+    private sealed record DependencyRequirement(CkModelId Pin, CkModelDependencyDto? Range)
+    {
+        public static DependencyRequirement Exact(CkModelId pin) => new(pin, null);
+
+        public static DependencyRequirement For(CkModelId pin, CkCompiledModelRoot? parent) =>
+            new(pin, parent?.DependencyRanges?.FirstOrDefault(r => r.Range.Name == pin.Name));
+
+        /// <summary>
+        ///     True when the installed version satisfies the requirement: exact pin -> the same version; range -> within
+        ///     the effective range (>= floor). Never across majors.
+        /// </summary>
+        public bool IsSatisfiedBy(CkVersion installed)
+        {
+            if (installed.Major != Pin.Version.Major)
+            {
+                return false;
+            }
+
+            return Range == null
+                ? installed.CompareTo(Pin.Version) == 0
+                : Range.IsSatisfiedBy(new CkModelId(Pin.Name, installed.ToString()));
+        }
+
+        public string Describe() => Range == null ? $"v{Pin.Version}" : Range.ToString();
+    }
+
     private async Task<DependencyResolutionItemDto> ResolveDependencyTreeAsync(
         CkModelId modelId,
-        List<CkModelId>? dependencies,
+        DependencyRequirement requirement,
+        CkCompiledModelRoot? compiledModel,
         ITenantContext tenantContext,
-        Dictionary<string, CkVersion>? installedSystemVersions,
+        Dictionary<string, CkVersion> installedVersions,
         HashSet<string> resolved,
         CancellationToken cancellationToken)
     {
@@ -785,49 +818,44 @@ public class ModelsController : ControllerBase
         {
             ModelId = modelId.FullName,
             Name = modelId.Name,
-            RequiredVersion = modelId.Version.ToString()
+            RequiredVersion = requirement.Range?.Range.ToString() ?? modelId.Version.ToString()
         };
 
-        // Check if exact version is installed
+        var isServiceManaged = CkModelLibraryStatusService.IsSystemManaged(modelId.Name);
         var isInstalled = await tenantContext.IsCkModelExistingAsync(modelId);
         if (isInstalled)
         {
             item.InstalledVersion = modelId.Version.ToString();
             item.Action = "none";
         }
-        else if (CkModelLibraryStatusService.IsSystemManaged(modelId.Name))
+        else if (installedVersions.TryGetValue(modelId.Name, out var installedVersion))
         {
-            // Service-managed models are checked by name (CK v2 F1.0, AB#5900): the embedded-import downgrade guard
-            // keeps a newer installed version of the same major, which satisfies the dependency. A lower version or
-            // a different major stays "incompatible" — service-managed models are never imported from a catalog.
-            if (installedSystemVersions != null &&
-                installedSystemVersions.TryGetValue(modelId.Name, out var installedSysVersion))
+            // Judged by what the PARENT requires (G3 review A-M1): a classic parent is pinned to the exact version
+            // (a newer installed version makes it ResolveFailed), a range-retaining parent accepts its range from
+            // the floor; never across majors. A newer installed version is never offered for a downgrade install.
+            if (requirement.IsSatisfiedBy(installedVersion))
             {
-                if (installedSysVersion.Major != modelId.Version.Major ||
-                    installedSysVersion.CompareTo(modelId.Version) < 0)
-                {
-                    item.Action = "incompatible";
-                    item.InstalledVersion =
-                        $"(requires v{modelId.Version}, installed v{installedSysVersion})";
-                }
-                else
-                {
-                    item.Action = "none";
-                    item.InstalledVersion = $"(service-managed: v{installedSysVersion})";
-                }
+                item.Action = "none";
+                item.InstalledVersion = isServiceManaged
+                    ? $"(service-managed: v{installedVersion})"
+                    : installedVersion.ToString();
+            }
+            else if (isServiceManaged || installedVersion.CompareTo(modelId.Version) > 0)
+            {
+                item.Action = "incompatible";
+                item.InstalledVersion = $"(requires {requirement.Describe()}, installed v{installedVersion})";
             }
             else
             {
-                item.Action = "none";
-                item.InstalledVersion = "(service-managed)";
+                // Older installed version: the import upgrades it.
+                item.Action = "install";
+                item.InstalledVersion = installedVersion.ToString();
             }
         }
-        else if (await tenantContext.IsCkModelSatisfiedAsync(modelId))
+        else if (isServiceManaged)
         {
-            // By name (AB#5900): a newer version of the same model is installed and Available, so the exact
-            // version must not be offered for installation (that would be a downgrade).
-            item.InstalledVersion = "(newer version installed)";
             item.Action = "none";
+            item.InstalledVersion = "(service-managed)";
         }
         else
         {
@@ -835,9 +863,9 @@ public class ModelsController : ControllerBase
         }
 
         // Resolve sub-dependencies
-        if (dependencies != null)
+        if (compiledModel?.Dependencies != null)
         {
-            foreach (var dep in dependencies)
+            foreach (var dep in compiledModel.Dependencies)
             {
                 // Prevent circular dependencies
                 if (!resolved.Add(dep.FullName))
@@ -846,17 +874,12 @@ public class ModelsController : ControllerBase
                 }
 
                 // Fetch sub-dependency from catalog to get its dependencies
-                List<CkModelId>? subDeps = null;
                 var operationResult = new OperationResult();
                 var depModel = await _catalogService.GetAsync(dep, operationResult,
                     cancellationToken: cancellationToken);
-                if (depModel != null)
-                {
-                    subDeps = depModel.Dependencies;
-                }
 
-                var depItem = await ResolveDependencyTreeAsync(
-                    dep, subDeps, tenantContext, installedSystemVersions, resolved, cancellationToken);
+                var depItem = await ResolveDependencyTreeAsync(dep, DependencyRequirement.For(dep, compiledModel),
+                    depModel, tenantContext, installedVersions, resolved, cancellationToken);
                 item.Dependencies.Add(depItem);
             }
         }

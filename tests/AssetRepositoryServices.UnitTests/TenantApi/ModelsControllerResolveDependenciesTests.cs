@@ -257,39 +257,85 @@ public class ModelsControllerResolveDependenciesTests
         statusResult.StatusCode.Should().Be(StatusCodes.Status500InternalServerError);
     }
 
-    [Fact]
-    public async Task ResolveDependencies_ReturnsNone_WhenANewerVersionOfTheModelIsInstalled()
+    // G3 review A-M1: a dependency is judged by what the PARENT requires - an exact pin of a classic parent stays
+    // exact (a newer installed version would make the parent ResolveFailed), a range-retaining parent accepts its
+    // range from the floor; never across majors; a newer installed version is never offered for a downgrade.
+    [Theory]
+    [InlineData("Basic", "2.0.0", "2.0.0", "none")]
+    [InlineData("Basic", "2.0.0", "2.1.0", "incompatible")]
+    [InlineData("Basic", "2.0.0", "1.5.0", "install")]
+    [InlineData("Basic", "2.0.0", null, "install")]
+    [InlineData("System", "2.5.0", "2.6.1", "incompatible")]
+    [InlineData("System", "2.5.0", "2.5.0", "none")]
+    [InlineData("System", "2.5.0", null, "none")]
+    public async Task ClassicParent_JudgesTheDependencyByItsExactPin(string name, string pin, string? installed,
+        string expectedAction)
     {
-        // AB#5900 (S2 review): the dependency status is checked by name; an exact miss with a newer
-        // installed version must not offer a downgrade install.
-        StubCatalogModel("Energy-2.0.0");
-        A.CallTo(() => _tenantContext.IsCkModelExistingAsync(A<CkModelId>.Ignored)).Returns(false);
-        A.CallTo(() => _tenantContext.IsCkModelSatisfiedAsync(
-                A<CkModelId>.That.Matches(m => m.FullName == "Energy-2.0.0")))
-            .Returns(true);
+        var dependency = await ResolveSingleDependencyAsync(new CkModelId(name, pin), null, installed);
 
-        var root = await ResolveRootAsync("Energy-2.0.0");
-
-        root.Action.Should().Be("none");
-        root.InstalledVersion.Should().Be("(newer version installed)");
+        dependency.Action.Should().Be(expectedAction);
     }
 
     [Theory]
-    [InlineData("2.5.0", "2.5.0", "none")]
-    [InlineData("2.5.0", "2.6.1", "none")]
-    [InlineData("2.5.0", "2.4.0", "incompatible")]
-    [InlineData("2.5.0", "3.0.0", "incompatible")]
-    public async Task ResolveDependencies_ServiceManaged_IsCheckedByNameWithinTheMajor(string required,
-        string installed, string expectedAction)
+    [InlineData("Basic", "[2.0,3.0)", "2.0.0", "2.1.0", "none")]
+    [InlineData("Basic", "[2.2,3.0)", "2.2.0", "2.1.0", "install")]
+    [InlineData("Basic", "[2.0,3.0)", "2.0.0", "3.0.0", "incompatible")]
+    [InlineData("System", "[2.5,3.0)", "2.5.0", "2.6.1", "none")]
+    [InlineData("System", "[2.5,3.0)", "2.5.0", "3.0.0", "incompatible")]
+    public async Task RangeRetainingParent_JudgesTheDependencyByItsRangeAndFloor(string name, string range,
+        string floor, string installed, string expectedAction)
     {
-        StubCatalogModel($"System-{required}");
+        var dependencyRange = new CkModelDependencyDto
+        {
+            Range = new CkModelIdVersionRange($"{name}-{range}"),
+            Floor = floor
+        };
+
+        var dependency = await ResolveSingleDependencyAsync(new CkModelId(name, floor), dependencyRange, installed);
+
+        dependency.Action.Should().Be(expectedAction);
+        dependency.RequiredVersion.Should().Be(dependencyRange.Range.ToString());
+    }
+
+    [Fact]
+    public async Task Root_WithANewerInstalledVersion_IsNotOfferedForADowngrade()
+    {
+        StubCatalogModel("Energy-2.0.0");
         A.CallTo(() => _tenantContext.IsCkModelExistingAsync(A<CkModelId>.Ignored)).Returns(false);
-        A.CallTo(() => _libraryStatusService.GetInstalledSystemVersionsAsync(A<ITenantContext>._))
-            .Returns(new Dictionary<string, CkVersion> { ["System"] = new(installed) });
+        A.CallTo(() => _libraryStatusService.GetInstalledModelVersionsAsync(A<ITenantContext>._))
+            .Returns(new Dictionary<string, CkVersion> { ["Energy"] = new("2.1.0") });
 
-        var root = await ResolveRootAsync($"System-{required}");
+        var root = await ResolveRootAsync("Energy-2.0.0");
 
-        root.Action.Should().Be(expectedAction);
+        root.Action.Should().Be("incompatible");
+        root.InstalledVersion.Should().Contain("installed v2.1.0");
+    }
+
+    private async Task<DependencyResolutionItemDto> ResolveSingleDependencyAsync(CkModelId dependency,
+        CkModelDependencyDto? range, string? installed)
+    {
+        var parent = new CkCompiledModelRoot
+        {
+            ModelId = new CkModelId("Parent", "1.0.0"),
+            Dependencies = [dependency],
+            DependencyRanges = range == null ? null : [range]
+        };
+        A.CallTo(() => _catalogService.GetAsync("PublicGitHub", A<CkModelId>.Ignored, A<OperationResult>.Ignored,
+                A<CancellationToken?>.Ignored))
+            .Returns(parent);
+        A.CallTo(() => _catalogService.GetAsync(A<CkModelId>.That.Matches(m => m.Name == dependency.Name),
+                A<OperationResult>.Ignored, null, A<CancellationToken?>.Ignored))
+            .Returns(new CkCompiledModelRoot { ModelId = dependency, Dependencies = null });
+        A.CallTo(() => _tenantContext.IsCkModelExistingAsync(A<CkModelId>.Ignored))
+            .ReturnsLazily((CkModelId id) => installed != null && id.Name == dependency.Name &&
+                                             id.Version.CompareTo(new CkVersion(installed)) == 0);
+        A.CallTo(() => _libraryStatusService.GetInstalledModelVersionsAsync(A<ITenantContext>._))
+            .Returns(installed == null
+                ? new Dictionary<string, CkVersion>()
+                : new Dictionary<string, CkVersion> { [dependency.Name] = new(installed) });
+
+        var root = await ResolveRootAsync("Parent-1.0.0");
+        return root.Dependencies.Should().ContainSingle().Subject;
     }
 
     private void StubCatalogModel(string modelId)

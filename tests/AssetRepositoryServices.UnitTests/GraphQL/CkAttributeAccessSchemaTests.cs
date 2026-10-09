@@ -16,9 +16,9 @@ using Xunit;
 namespace AssetRepositoryServices.UnitTests.GraphQL;
 
 /// <summary>
-///     CK v2 Phase 0 (AB#5668, contract §4.1): <c>OctoBuilder.Attribute</c> is the single chokepoint for attribute
+///     CK v2 (AB#5668): <c>OctoBuilder.Attribute</c> is the single chokepoint for attribute
 ///     fields of entity, interface, input, update and record types. Hidden never appears; MethodOnly is readable but
-///     not part of the generic input; ReadOnly is unchanged in Phase 0.
+///     not part of the generic input; ReadOnly is not enforced yet.
 /// </summary>
 public class CkAttributeAccessSchemaTests
 {
