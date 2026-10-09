@@ -387,6 +387,7 @@ public static class RuntimeEngineBuilderExtensions
         builder.Services.AddCkModelSystemFilesV1();
         builder.Services.AddMigrations(typeof(OctoAssetRepositoryServicesOptions).Assembly);
         builder.Services.AddSingleton<Meshmakers.Octo.Backend.AssetRepositoryServices.Services.Files.FileSystemService>();
+        builder.Services.AddSingleton<Meshmakers.Octo.Backend.AssetRepositoryServices.Services.Files.FileSystemMutationGuard>();
 
 
         builder.Services.AddOctoServiceInfrastructure("AssetRepositoryService", c =>

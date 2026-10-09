@@ -2,6 +2,7 @@ using AssetRepositoryServices.Resources;
 using GraphQL;
 using GraphQL.Types;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Enums;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.Services.Files;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Inputs;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Utils;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
@@ -89,6 +90,13 @@ internal sealed class RtEntityMutationGeneric : RtMutationBase
                 entityUpdateInfos.Add(EntityUpdateInfo<RtEntity>.CreateInsert(rtEntity));
             }
 
+            // AB#6171: file system rules for System.Files entities (root role, unique names per folder).
+            if (FileSystemService.IsFileSystemType(firstCkTypeId))
+            {
+                await arg.GetFileSystemMutationGuard().BeforeCreateAsync(tenantRepository,
+                    Helpers.GetSecurityContext(arg.UserContext), entityUpdateInfos, associationUpdateInfoList);
+            }
+
             var deleteAssociations =
                 associationUpdateInfoList.Where(x => x.ModOption == AssociationModOptionsDto.Delete);
             if (deleteAssociations.Any())
@@ -161,6 +169,13 @@ internal sealed class RtEntityMutationGeneric : RtMutationBase
                 }
             }
 
+            // AB#6171: file system rules for System.Files entities (rename, move, protected roots).
+            if (FileSystemService.IsFileSystemType(firstCkTypeId))
+            {
+                await arg.GetFileSystemMutationGuard().BeforeUpdateAsync(tenantRepository, entityUpdateInfos,
+                    associationUpdateInfoList);
+            }
+
             OperationResult operationResult = new();
             await tenantRepository.ApplyChangesAsync(sessionAccessor.Session, entityUpdateInfos,
                 associationUpdateInfoList, operationResult);
@@ -185,19 +200,36 @@ internal sealed class RtEntityMutationGeneric : RtMutationBase
 
         try
         {
-            var entityUpdateInfos = new List<EntityUpdateInfo<RtEntity>>();
-            foreach (var rtEntityIdDto in inputObjects)
-            {
-                entityUpdateInfos.Add(
-                    EntityUpdateInfo<RtEntity>.CreateDelete(new RtEntityId(rtEntityIdDto.CkTypeId,
-                        rtEntityIdDto.RtId)));
-            }
+            var requested = inputObjects
+                .Select(dto => new RtEntityId(dto.CkTypeId, dto.RtId))
+                .ToList();
+
+            // AB#6171: deleting a file system root or folder deletes everything below it, and file system
+            // entries are always erased so their GridFS bytes go with them. The cascade runs in the caller's
+            // session: an entry the caller may not delete fails the whole mutation (no orphans).
+            var fileSystemIds = requested.Any(id => FileSystemService.IsFileSystemType(id.CkTypeId))
+                ? await arg.GetFileSystemMutationGuard().ExpandDeleteAsync(tenantRepository, requested)
+                : [];
+            var otherIds = requested.Where(id => !FileSystemService.IsFileSystemType(id.CkTypeId)).ToList();
 
             OperationResult operationResult = new();
-            await tenantRepository.ApplyChangesAsync(sessionAccessor.Session, entityUpdateInfos,
-                new DeleteOptions { Strategy = deleteStrategy },
-                operationResult);
-            ResolveConnectionContextExtensions.ValidateOperationResult(operationResult);
+            if (otherIds.Count > 0)
+            {
+                await tenantRepository.ApplyChangesAsync(sessionAccessor.Session,
+                    otherIds.Select(EntityUpdateInfo<RtEntity>.CreateDelete).ToList(),
+                    new DeleteOptions { Strategy = deleteStrategy },
+                    operationResult);
+                ResolveConnectionContextExtensions.ValidateOperationResult(operationResult);
+            }
+
+            if (fileSystemIds.Count > 0)
+            {
+                await tenantRepository.ApplyChangesAsync(sessionAccessor.Session,
+                    fileSystemIds.Select(EntityUpdateInfo<RtEntity>.CreateDelete).ToList(),
+                    DeleteOptions.Erase,
+                    operationResult);
+                ResolveConnectionContextExtensions.ValidateOperationResult(operationResult);
+            }
 
             return true;
         }
