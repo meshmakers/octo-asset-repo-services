@@ -361,6 +361,10 @@ N:M associations are exposed as query columns with `::totalCount` (INT64) and `:
   `SimpleScalarType.Serialize` applies the same normalization to top-level DateTime cell values.
 - Schema caching is automatic per tenant (up to 64 cached schemas)
 - Schema invalidation happens via `SchemaContext.Invalidate(tenantId)`
+- The schema is **initialized eagerly** inside `SchemaContext.GetOrCreateAsync` (not lazily on the first request),
+  so an invalid schema is never cached and the build time is measured completely. Every build logs at Information:
+  `GraphQL schema for tenant {TenantId} built in {ElapsedMs} ms ({TypeCount} types, {InterfaceCount} CK interfaces;
+  populate {PopulateMs} ms, initialize {InitializeMs} ms)` (CK v2 risk R8)
 - All GraphQL types must be thread-safe (they're cached and reused)
 - Use resource strings from `AssetRepositoryServices.Resources` for descriptions
 
@@ -396,6 +400,16 @@ attribute-value-type coercion that lives in `RtPathEvaluator.SetValueByPath` mus
   coercion accepts every whole-number CLR type — not just `int` (which is all `RtPathEvaluator`
   handles). The same `TryHandleAttributeAsync` is reused by `HandleRecordAsync`, so enum attributes
   inside records are covered too.
+
+### CK v2 (Epic AB#5584)
+
+CK language 2 (`ckLanguage: 2`) adds attribute `access`, CK interfaces, `visibility`, `derivable` and method
+*definitions* to the construction kit. Phase 1 (F1.5) brings the meta-model to the GraphQL surface; the method
+**runtime** (method mutation fields, dispatcher, caller-token forwarding) is Phase 3 and not on main.
+
+**Schema-build timing (risk R8):** `SchemaContext` logs the build time per tenant (see "When Working with GraphQL").
+Baseline for the integration test CK model (`SchemaBuildTimingTests`): ~100–250 ms cold, of which ~75–200 ms is
+schema initialization.
 
 ### Authentication
 The service supports dual authentication:

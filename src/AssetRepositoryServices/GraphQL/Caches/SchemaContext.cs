@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using GraphQL;
 using GraphQL.Types;
 using Meshmakers.Common.Shared;
@@ -60,8 +61,13 @@ internal class SchemaContext(
                 entry.SetSize(1);
                 entry.SlidingExpiration = TimeSpan.FromDays(1);
 
+                // Schema-build timing (CK v2 risk R8): the CK interface and method types added in Phase 0
+                // must not make the per-tenant schema build noticeably slower.
+                var stopwatch = Stopwatch.StartNew();
+
                 var graphTypesCache = new GraphTypesCache(ckCacheService, octoService, options, tenantId);
                 await graphTypesCache.PopulateAsync();
+                var populateMs = stopwatch.ElapsedMilliseconds;
 
                 var query = new OctoQuery(loggerFactory, graphTypesCache);
                 var mutation = new OctoMutation(loggerFactory, graphTypesCache);
@@ -70,7 +76,17 @@ internal class SchemaContext(
                 var createdSchema = new OctoSchema(serviceProvider, query, mutation, subscriptions);
                 createdSchema.RegisterTypes(graphTypesCache.GetKnownGraphTypes());
 
-                logger.LogDebug("GraphQL schema for {TenantId} completed", tenantId);
+                // Initialize eagerly so the measured time is the real build cost (GraphQL.NET would otherwise
+                // initialize lazily on the first request) and an invalid schema is never cached.
+                createdSchema.Initialize();
+                stopwatch.Stop();
+
+                var statistics = graphTypesCache.GetStatistics();
+                logger.LogInformation(
+                    "GraphQL schema for tenant {TenantId} built in {ElapsedMs} ms ({TypeCount} types, {InterfaceCount} CK interfaces; populate {PopulateMs} ms, initialize {InitializeMs} ms)",
+                    tenantId, stopwatch.ElapsedMilliseconds, createdSchema.AllTypes.Count, statistics.CkInterfaceCount,
+                    populateMs, stopwatch.ElapsedMilliseconds - populateMs);
+
                 return createdSchema;
             });
 

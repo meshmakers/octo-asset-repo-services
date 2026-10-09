@@ -203,6 +203,14 @@ internal class GraphTypesCache : IGraphTypesCache
         return inputTypes.ToArray();
     }
 
+    /// <summary>
+    ///     Returns counters for the schema-build timing log (CK v2 risk R8).
+    /// </summary>
+    public GraphTypesCacheStatistics GetStatistics()
+    {
+        return new GraphTypesCacheStatistics(_types.Count, CkInterfaceCount: 0);
+    }
+
     public async Task PopulateAsync()
     {
         ITenantContext tenantContext = _octoService.SystemContext;
@@ -284,3 +292,10 @@ internal class GraphTypesCache : IGraphTypesCache
         }
     }
 }
+
+/// <summary>
+///     Counters of a populated <see cref="GraphTypesCache" />, used by the schema-build timing log.
+/// </summary>
+/// <param name="CkTypeCount">Number of CK entity object types</param>
+/// <param name="CkInterfaceCount">Number of CK v2 interfaces mapped to GraphQL interface types</param>
+internal sealed record GraphTypesCacheStatistics(int CkTypeCount, int CkInterfaceCount);
