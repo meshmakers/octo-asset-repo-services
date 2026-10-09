@@ -2,7 +2,6 @@ using System.Security.Claims;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.Services.Files;
 using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.ConstructionKit.Models.System.Files.Generated.System.Files.v1;
-using Meshmakers.Octo.Services.Infrastructure.Migrations;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Fixtures;
@@ -72,15 +71,22 @@ public class FilesTestFixture : GraphQlTestFixture
     }
 
     /// <summary>
-    ///     Runs the asset repository's service migrations against the system tenant (idempotent).
+    ///     Deletes a GridFS file behind the engine's back (orphaned binary reference).
+    /// </summary>
+    public async Task DeleteGridFsFileAsync(string binaryId)
+    {
+        var database = new MongoDB.Driver.MongoClient(GetConnectionString()).GetDatabase(SystemDatabaseName);
+        var id = MongoDB.Bson.ObjectId.Parse(binaryId);
+        await database.GetCollection<MongoDB.Bson.BsonDocument>("fs.files").DeleteOneAsync(new MongoDB.Bson.BsonDocument("_id", id));
+        await database.GetCollection<MongoDB.Bson.BsonDocument>("fs.chunks").DeleteManyAsync(new MongoDB.Bson.BsonDocument("files_id", id));
+    }
+
+    /// <summary>
+    ///     Ensures the default root "Files" in the system tenant, as the tenant start does (idempotent).
     /// </summary>
     public async Task RunServiceMigrationsAsync()
     {
-        var systemContext = GetSystemContext();
-        using var session = await systemContext.GetAdminSessionAsync();
-        session.StartTransaction();
-        await GetService<MigrationService>().ExecuteMigrationsAsync(session, systemContext);
-        await session.CommitTransactionAsync();
+        await GetService<FileSystemDefaults>().EnsureDefaultRootAsync(GetSystemContext());
     }
 }
 

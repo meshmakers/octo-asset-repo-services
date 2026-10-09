@@ -29,15 +29,14 @@ internal class DefaultConfigurationCreatorService(
     OctoAssetRepositoryServicesOptions octoAssetRepositoryServicesOptions,
     ITenantLifecycleStore tenantLifecycleStore,
     ITenantSetupRetryStore tenantSetupRetryStore,
-    MigrationService migrationService,
     ICkModelUpgradeService ckModelUpgradeService,
     IRuntimeRepositoryProvider runtimeRepositoryProvider,
-    Files.Migration.ReportingFilesSweepRunner reportingFilesSweepRunner)
+    Files.Migration.ReportingFilesSweepRunner reportingFilesSweepRunner,
+    Files.FileSystemDefaults fileSystemDefaults)
     : DefaultConfigurationCreatorServiceStandardized(logger, systemContext, createIdentityDataCommandClient,
         AssetRepositoryServiceConstants.AssetServiceIdentityDataVersionKey,
         AssetRepositoryServiceConstants.AssetServiceIdentityDataVersionValue,
-        // AB#6171: service migrations seed the default data of the platform file system (root "Files").
-        migrationService,
+        null, // migrationService - the default file root is ensured at tenant start (FileSystemDefaults)
         // AB#6171: CK data migrations of System.Files (GetCkModelIds) run through the standard upgrade path.
         ckModelUpgradeService,
         runtimeRepositoryProvider,
@@ -63,6 +62,8 @@ internal class DefaultConfigurationCreatorService(
     protected override async Task StartTenantAsync(string tenantId)
     {
         await base.StartTenantAsync(tenantId);
+        // AB#6171 D8: default root "Files"; logs and retries at the next start when System.Files is missing.
+        await fileSystemDefaults.EnsureDefaultRootAsync(tenantId);
         await reportingFilesSweepRunner.RunAtTenantStartAsync(tenantId);
     }
 

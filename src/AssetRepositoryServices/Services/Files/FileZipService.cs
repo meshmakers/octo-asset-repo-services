@@ -38,8 +38,9 @@ public class FileZipService(FileSystemService fileSystem, ILogger<FileZipService
             var unique = path;
             if (usedPaths.Contains(unique + (isFolder ? "/" : string.Empty)))
             {
-                var parent = Path.GetDirectoryName(path)?.Replace('\\', '/');
-                var name = Path.GetFileName(path);
+                var slash = path.LastIndexOf('/');
+                var parent = slash < 0 ? string.Empty : path[..slash];
+                var name = slash < 0 ? path : path[(slash + 1)..];
                 var prefix = string.IsNullOrEmpty(parent) ? string.Empty : parent + "/";
                 unique = prefix + FileSystemNames.NextFreeName(name,
                     candidate => usedPaths.Contains(prefix + candidate + (isFolder ? "/" : string.Empty)));
@@ -62,11 +63,11 @@ public class FileZipService(FileSystemService fileSystem, ILogger<FileZipService
         {
             if (!entry.IsContainer)
             {
-                Add(entry.Name, entry);
+                Add(SafeSegment(entry.Name), entry);
                 continue;
             }
 
-            var topName = entry.Name.Length > 0 ? entry.Name : entry.Entity.RtWellKnownName ?? "folder";
+            var topName = SafeSegment(entry.Name.Length > 0 ? entry.Name : entry.Entity.RtWellKnownName ?? "folder");
             var before = plan.Count;
             Add(topName, null);
             var top = plan[before].Path.TrimEnd('/');
@@ -80,9 +81,16 @@ public class FileZipService(FileSystemService fileSystem, ILogger<FileZipService
 
             // Renamed (deduplicated) parents keep their children below the new name: paths are rebuilt
             // from the walk's relative paths under the top-level name actually used.
+            // Paths are rebuilt from sanitized segments (legacy names may contain '/', '\' or '..').
+            var safePaths = new Dictionary<string, string>();
             foreach (var descendant in walk.Items)
             {
-                Add($"{top}/{descendant.RelativePath}", descendant.Entry.IsContainer ? null : descendant.Entry);
+                var parentPath = safePaths.TryGetValue(descendant.ParentId.RtId.ToString(), out var p)
+                    ? p
+                    : top;
+                var before2 = plan.Count;
+                Add($"{parentPath}/{SafeSegment(descendant.Entry.Name)}", descendant.Entry.IsContainer ? null : descendant.Entry);
+                safePaths[descendant.Entry.Id.RtId.ToString()] = plan[before2].Path.TrimEnd('/');
             }
         }
 
@@ -92,6 +100,21 @@ public class FileZipService(FileSystemService fileSystem, ILogger<FileZipService
         }
 
         return plan;
+    }
+
+    /// <summary>
+    ///     A name usable as one zip path segment: no separators, no '.'/'..', no control characters.
+    /// </summary>
+    internal static string SafeSegment(string? name)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            return "_";
+        }
+
+        var chars = name.Select(c => c is '/' or '\\' or ':' || char.IsControl(c) ? '_' : c).ToArray();
+        var safe = new string(chars).Trim();
+        return safe is "" or "." or ".." ? "_" : safe;
     }
 
     /// <summary>
@@ -119,8 +142,18 @@ public class FileZipService(FileSystemService fileSystem, ILogger<FileZipService
                 continue;
             }
 
-            using var download = await repository.DownloadLargeBinaryAsync(session, binaryId.Value)
-                .ConfigureAwait(false);
+            Runtime.Contracts.Repositories.IDownloadStreamHandler download;
+            try
+            {
+                download = await repository.DownloadLargeBinaryAsync(session, binaryId.Value).ConfigureAwait(false);
+            }
+            catch (Runtime.Contracts.MongoDb.EntityNotFoundException)
+            {
+                logger.LogWarning("Zip download: bytes of file '{RtId}' missing, skipped", item.File.Id.RtId);
+                continue;
+            }
+
+            using var downloadScope = download;
             if (download.Stream == null)
             {
                 logger.LogWarning("Zip download: bytes of file '{RtId}' missing, skipped", item.File.Id.RtId);

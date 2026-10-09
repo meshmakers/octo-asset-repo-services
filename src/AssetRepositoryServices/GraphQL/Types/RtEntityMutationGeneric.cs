@@ -91,9 +91,9 @@ internal sealed class RtEntityMutationGeneric : RtMutationBase
             }
 
             // AB#6171: file system rules for System.Files entities (root role, unique names per folder).
-            if (FileSystemService.IsFileSystemType(firstCkTypeId))
+            if (FileSystemMutationGuard.Applies(firstCkTypeId, associationUpdateInfoList))
             {
-                await arg.GetFileSystemMutationGuard().BeforeCreateAsync(tenantRepository,
+                await arg.GetFileSystemMutationGuard().BeforeCreateAsync(tenantRepository, sessionAccessor.Session,
                     Helpers.GetSecurityContext(arg.UserContext), entityUpdateInfos, associationUpdateInfoList);
             }
 
@@ -170,10 +170,10 @@ internal sealed class RtEntityMutationGeneric : RtMutationBase
             }
 
             // AB#6171: file system rules for System.Files entities (rename, move, protected roots).
-            if (FileSystemService.IsFileSystemType(firstCkTypeId))
+            if (FileSystemMutationGuard.Applies(firstCkTypeId, associationUpdateInfoList))
             {
-                await arg.GetFileSystemMutationGuard().BeforeUpdateAsync(tenantRepository, entityUpdateInfos,
-                    associationUpdateInfoList);
+                await arg.GetFileSystemMutationGuard().BeforeUpdateAsync(tenantRepository, sessionAccessor.Session,
+                    Helpers.GetSecurityContext(arg.UserContext), entityUpdateInfos, associationUpdateInfoList);
             }
 
             OperationResult operationResult = new();
@@ -207,7 +207,7 @@ internal sealed class RtEntityMutationGeneric : RtMutationBase
             // AB#6171: deleting a file system root or folder deletes everything below it, and file system
             // entries are always erased so their GridFS bytes go with them. The cascade runs in the caller's
             // session: an entry the caller may not delete fails the whole mutation (no orphans).
-            var fileSystemIds = requested.Any(id => FileSystemService.IsFileSystemType(id.CkTypeId))
+            var fileSystemIds = FileSystemMutationGuard.Applies(requested)
                 ? await arg.GetFileSystemMutationGuard().ExpandDeleteAsync(tenantRepository, requested)
                 : [];
             var otherIds = requested.Where(id => !FileSystemService.IsFileSystemType(id.CkTypeId)).ToList();
@@ -224,11 +224,14 @@ internal sealed class RtEntityMutationGeneric : RtMutationBase
 
             if (fileSystemIds.Count > 0)
             {
-                await tenantRepository.ApplyChangesAsync(sessionAccessor.Session,
-                    fileSystemIds.Select(EntityUpdateInfo<RtEntity>.CreateDelete).ToList(),
-                    DeleteOptions.Erase,
-                    operationResult);
-                ResolveConnectionContextExtensions.ValidateOperationResult(operationResult);
+                await FileSystemService.TranslateForbiddenAsync(async () =>
+                {
+                    await tenantRepository.ApplyChangesAsync(sessionAccessor.Session,
+                        fileSystemIds.Select(EntityUpdateInfo<RtEntity>.CreateDelete).ToList(),
+                        DeleteOptions.Erase,
+                        operationResult);
+                    FileSystemService.ThrowIfFailed(operationResult);
+                }, "You may not delete every entry below the selected folder; nothing was deleted.");
             }
 
             return true;

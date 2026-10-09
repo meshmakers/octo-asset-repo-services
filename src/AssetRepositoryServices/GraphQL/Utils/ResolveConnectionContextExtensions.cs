@@ -262,7 +262,8 @@ internal static class ResolveConnectionContextExtensions
     internal static Services.Files.FileSystemMutationGuard GetFileSystemMutationGuard(this IResolveFieldContext context)
     {
         return context.RequestServices?.GetService<Services.Files.FileSystemMutationGuard>()
-               ?? new Services.Files.FileSystemMutationGuard(new Services.Files.FileSystemService());
+               ?? new Services.Files.FileSystemMutationGuard(new Services.Files.FileSystemService(),
+                   Microsoft.Extensions.Options.Options.Create(new Services.Files.FilesOptions()));
     }
 
     internal static void ValidateOperationResult(OperationResult operationResult)

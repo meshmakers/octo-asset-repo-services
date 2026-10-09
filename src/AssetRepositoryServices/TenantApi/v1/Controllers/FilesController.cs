@@ -170,16 +170,13 @@ public class FilesController(
                 throw FileSystemException.NotAFile(file.Name);
             }
 
-            var parents = await fileSystem.GetParentIdsAsync(repository, unfiltered, file.Id);
-            if (parents.Count == 0)
-            {
-                throw FileSystemException.InvalidRequest("The file has no folder; upload it into a folder instead.");
-            }
-
-            var parent = await fileSystem.FindByRtIdAsync(repository, unfiltered, parents[0].RtId)
-                         ?? throw FileSystemException.ItemNotFound(parents[0].RtId.ToString());
-            return await UploadAsync(repository, session, unfiltered, parent, file.Name, FileConflictMode.Replace,
-                null, null);
+            // Addressed by rtId: no name resolution, so legacy duplicates and legacy names stay replaceable.
+            await using var content = await BufferRequestBodyAsync();
+            session.StartTransaction();
+            var replaced = await fileSystem.ReplaceContentAsync(repository, session, unfiltered, file,
+                ResolveContentType(file.Name), content);
+            await session.CommitTransactionAsync();
+            return Ok(FileSystemService.ToDto(replaced, replaced: true));
         });
     }
 
@@ -234,9 +231,16 @@ public class FilesController(
             }
 
             var folderPath = FileSystemNames.JoinPath(segments.Take(segments.Count - 1));
+            FileSystemNames.Validate(segments[^1]);
+
+            // Buffer (and enforce the limit) first, then create missing folders and the file in one
+            // transaction, so a refused upload leaves no empty folders behind.
+            await using var content = await BufferRequestBodyAsync();
+            session.StartTransaction();
             var folder = await fileSystem.ResolveFolderAsync(repository, session, unfiltered, root, folderPath,
                 createFolders);
-            return await UploadAsync(repository, session, unfiltered, folder, segments[^1], mode, root, folderPath);
+            return await StoreAsync(repository, session, unfiltered, folder, segments[^1], mode, root, folderPath,
+                content);
         });
     }
 
@@ -324,8 +328,14 @@ public class FilesController(
     {
         FileSystemNames.Validate(name);
         await using var content = await BufferRequestBodyAsync();
-
         session.StartTransaction();
+        return await StoreAsync(repository, session, unfiltered, folder, name, mode, root, folderPath, content);
+    }
+
+    private async Task<IActionResult> StoreAsync(ITenantRepository repository, IOctoSession session,
+        IOctoSession unfiltered, FileSystemEntry folder, string name, FileConflictMode mode, string? root,
+        string? folderPath, Stream content)
+    {
         var (entry, replaced) = await fileSystem.UploadAsync(repository, session, unfiltered, folder, name,
             ResolveContentType(name), content, mode);
         await session.CommitTransactionAsync();
@@ -350,7 +360,16 @@ public class FilesController(
             throw FileSystemException.PathNotFound(file.Name);
         }
 
-        var download = await repository.DownloadLargeBinaryAsync(session, content.BinaryId.Value);
+        Runtime.Contracts.Repositories.IDownloadStreamHandler download;
+        try
+        {
+            download = await repository.DownloadLargeBinaryAsync(session, content.BinaryId.Value);
+        }
+        catch (Runtime.Contracts.MongoDb.EntityNotFoundException)
+        {
+            throw FileSystemException.PathNotFound(file.Name); // entity without bytes (orphaned GridFS reference)
+        }
+
         if (download.Stream == null)
         {
             throw FileSystemException.PathNotFound(file.Name);
@@ -472,6 +491,19 @@ public class FilesController(
         catch (FileSystemException e)
         {
             return Problem(e);
+        }
+        catch (Exception e) when (FileSystemService.IsDataPermissionDenial(e))
+        {
+            return Problem(FileSystemException.Forbidden("Access denied by data permissions."));
+        }
+        catch (Runtime.Contracts.MongoDb.EntityNotFoundException)
+        {
+            return Problem(FileSystemException.PathNotFound("entry"));
+        }
+        catch (Runtime.Contracts.PersistenceException e)
+        {
+            return Problem(new FileSystemException(FileSystemErrorCodes.InvalidRequest, StatusCodes.Status400BadRequest,
+                e.Message));
         }
         catch (AssetRepositoryException e)
         {
