@@ -254,6 +254,7 @@ Located in versioned API folders:
 - `FeaturesController.cs` - `GET {tenantId}/v1/features/status` (AB#4884): aggregate enabled-state of the four capabilities the delete/detach guard evaluates, read through the same `ITenantCapabilityStateReader` — one state source for the Studio's Tenant Features panel and the guard, so they never disagree. Stream Data additionally carries the instance-level `StreamData:Enabled` flag. Whether Reporting/AI are installed at all is NOT answered here — that comes from the `_configuration` discovery document (empty URL = not installed). Read failures propagate as 500 (an unreadable state must never render as "disabled"). Replaces the former `GET streamdata/status`.
 - `ModelsController.cs` - Construction kit and runtime model import/export (includes `ImportFromCatalog` endpoint)
 - `LargeBinariesController.cs` - Binary file download. Falls back to magic-byte sniffing via `BinaryContentTypeDetector` when the stored `ContentType` is missing or `application/octet-stream` (legacy data uploaded before detection existed). For non-seekable source streams the head bytes are re-prepended via `PrependedReadStream`.
+- `FilesController.cs` - **Platform file system bytes API (AB#6171 / AB#6174, zip AB#6225)**, `{tenantId}/v1/files`. See "Platform file system" below.
 - `DiagnosticsController.cs` - Per-tenant diagnostics.
   - `GET slow-mongo-queries` returns the recent in-memory `SlowQueriesBuffer` entries filtered by `Database == tenantId` (AB#4212); backs the Refinery Studio Diagnostics → Slow Queries page.
   - `GET index-usage` (AB#4224 / Stage 3) runs MongoDB's `$indexStats` across every non-system collection in the tenant's database, classifies each index as `builtin` / `unused` / `lowUsage` / `used`, and orders Unused first then LowUsage. Query params: `minAgeDays` (default 7), `lowUsageOps` (default 10), `includeUsed` (default false — Builtin/Used are filtered out unless explicitly requested). Delegates to `IIndexUsageService` from the engine; tenant resolution happens inside the service via `ISystemContext`. Backs the Refinery Studio Diagnostics → Index Usage page.
@@ -313,6 +314,47 @@ GraphQL types are generated dynamically based on Construction Kit models:
 Delete operations support multiple strategies via `DeleteOptions`:
 - `Archive` (default) - Soft delete
 - `Permanent` - Hard delete
+
+### Platform file system (AB#6171)
+
+Files and folders are a platform capability, independent of Reporting. This service owns the
+**System.Files 1.0.0** CK model (`src/SystemFilesCkModel`, service-managed, depends on `System-[2.5,3.0)`):
+`FolderRoot`, `Folder`, `FileSystemItem` (attribute `Content`, BinaryLinked), abstract `FileSystemEntity` /
+`FileSystemContainer`, all in `RtEntity_SystemFilesFileSystemEntity`; the tree is `System/ParentChild`
+(origin = child, target = parent).
+
+- **Tenant setup.** `DefaultConfigurationCreatorService.ImportCkModelAsync` imports the embedded model
+  (`AddCkModelSystemFilesV1`) into every tenant inside the setup transaction; the service migration
+  `FilesRootMigration` (key `AssetServicesDefaultData`, 0 → 1) seeds the root `Files`; `GetCkModelIds`
+  (`System.Files-[1.0,2.0)`) lets later minors migrate through the standard upgrade path. An import failure
+  throws and goes through the setup retry store.
+- **Metadata = generic GraphQL** (decision Q1). `FileSystemMutationGuard` is called by the generic
+  create/update/delete resolvers (typed and `runtimeEntities`) for System.Files types: root creation needs
+  the role `FileManagement`, root well-known names are unique and not one of `capabilities`, `zip`, `items`,
+  `stats` (route segments of the bytes API); names are unique per parent (case-insensitive) on
+  create/rename/move; `Files`, `ReportingAssets_*` and blueprint roots cannot be renamed/deleted; no folder
+  moves below itself; **deleting a root/folder deletes the whole subtree, System.Files entries are always
+  erased (GridFS bytes included)** and the cascade runs in the caller's session, so an entry the caller may
+  not delete fails the whole mutation (no orphans). Conflicts are checked over an unfiltered session.
+  Error codes: FORBIDDEN, NAME_CONFLICT, RESERVED_NAME, PROTECTED_ROOT, MOVE_INTO_ITSELF, INVALID_NAME.
+- **Bytes = REST** `FilesController`: `PUT|GET {root}/{**path}` (upload `?conflict=fail|replace|keepBoth`
+  `&createFolders`, download `?inline`), `POST items/{rtId}/content?name=` (upload into folder),
+  `PUT|GET items/{rtId}/content`, `GET stats?root=&path=` / `GET items/{rtId}/stats` (deep counts incl.
+  `hiddenEntries` hidden by data permissions), `POST zip` (`{ items: [{root, path}], rtIds, fileName }`,
+  streamed, limits checked before the first byte), `GET capabilities`. Reads run in the caller's session
+  (hidden = 404), writes through the engine's data-permission write guard (403 FORBIDDEN, message 4973).
+  Problem details carry a stable `code` extension. Uploads are buffered to a temp file (the engine needs a
+  seekable stream) while `MaxUploadBytes` is enforced; Kestrel's body limit is raised per request.
+- **Limits** (`FilesOptions`, section `Files`, env `OCTO_Files__…`): MaxUploadBytes 100 MB, ZipMaxFiles 1,000,
+  ZipMaxBytes 500 MB, PreviewMaxBytes 20 MB (advisory). The ingress must accept more than MaxUploadBytes
+  (octo-helm-core `ingress.proxyBodySize`, 110m). GraphQL multipart uploads get the same limit (+1 MB).
+- **Download headers** (`FileResponseHeaders`, also on `/v1/largeBinaries`): `Content-Disposition` with ASCII
+  fallback + `filename*=UTF-8''…`, `Access-Control-Expose-Headers` (the shared CORS policy does not expose
+  them), `ETag` = binary id, nosniff. Active content (SVG, HTML, XML, JS) is never inline and gets a
+  `sandbox` CSP; largeBinaries default to inline for passive content (`?inline=false` = attachment).
+- Known engine limitation: a nested association connection with `first: 0` fails ($slice) — ask `first: 1`.
+- Tests: `tests/AssetRepositoryServices.IntegrationTests/Files/*` (`FilesTestFixture` imports System.Files,
+  runs the service migrations and has a switchable data-policy table).
 
 ### Important Naming Conventions
 - **Ck** prefix = Construction Kit (metadata/model definitions)
