@@ -31,7 +31,8 @@ internal class DefaultConfigurationCreatorService(
     ITenantSetupRetryStore tenantSetupRetryStore,
     MigrationService migrationService,
     ICkModelUpgradeService ckModelUpgradeService,
-    IRuntimeRepositoryProvider runtimeRepositoryProvider)
+    IRuntimeRepositoryProvider runtimeRepositoryProvider,
+    Files.Migration.ReportingFilesSweepRunner reportingFilesSweepRunner)
     : DefaultConfigurationCreatorServiceStandardized(logger, systemContext, createIdentityDataCommandClient,
         AssetRepositoryServiceConstants.AssetServiceIdentityDataVersionKey,
         AssetRepositoryServiceConstants.AssetServiceIdentityDataVersionValue,
@@ -53,6 +54,16 @@ internal class DefaultConfigurationCreatorService(
         await diagnosticsService.ReconfigureLogLevelAsync(options.Value.MinLogLevel);
 
         await base.InitializeAsync();
+    }
+
+    /// <summary>
+    ///     AB#6175: after the System.Files import and the service migrations, moves System.Reporting file data
+    ///     of the tenant to System.Files (idempotent sweep; no-op without legacy data). Never fails the start.
+    /// </summary>
+    protected override async Task StartTenantAsync(string tenantId)
+    {
+        await base.StartTenantAsync(tenantId);
+        await reportingFilesSweepRunner.RunAtTenantStartAsync(tenantId);
     }
 
     /// <summary>
