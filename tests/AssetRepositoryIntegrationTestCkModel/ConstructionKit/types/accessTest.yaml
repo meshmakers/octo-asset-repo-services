@@ -19,6 +19,38 @@ types:
       name: ApprovalState
       isOptional: true
       access: MethodOnly
+  # CK v2: method definitions only (the method runtime is Phase 3); used by the CK meta introspection tests.
+  methods:
+    - methodId: ResetPassword-1
+      kind: Instance
+      description: "Self change (with currentPassword) or admin reset."
+      parameters:
+        - { name: currentPassword, valueType: String, isOptional: true, sensitive: true }
+        - { name: newPassword, valueType: String, sensitive: true }
+      errors:
+        - code: PASSWORD_POLICY_VIOLATION
+      authorization:
+        roles: [ AccessTestAdmin ]
+        allowSelf: true
+      execution:
+        timeoutSeconds: 5
+    - methodId: ResetPassword-2
+      description: "Version 2 with only optional parameters and a String result."
+      parameters:
+        - { name: count, valueType: Int, isOptional: true }
+      result:
+        valueType: String
+      authorization:
+        roles: [ AccessTestAdmin ]
+    - methodId: Touch-1
+      description: "Parameterless instance method."
+      authorization:
+        allowSelf: true
+    - methodId: Lookup-1
+      kind: Static
+      description: "Static methods get no GraphQL field in Phase 0."
+      authorization:
+        roles: [ AccessTestAdmin ]
 - typeId: AccessTestGroup
   derivedFromCkTypeId: ${System}/Entity
   description: "CK v2 Phase 0 test type: implements Labeled-1 without the optional member (AB#5667)"
