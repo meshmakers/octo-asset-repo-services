@@ -9,9 +9,10 @@
 # Asset-repo-specific quirks preserved from the legacy YAML:
 #   - InstallSSHKey + submodules:recursive — Octo.User.props from private submodule
 #   - download-ca — internal CA for dotnet restore
-#   - NO separate Build step (Test does the implicit build, matches legacy)
+#   - Separate Build step since AB#6174: it publishes the System.Files CK model
+#     (src/SystemFilesCkModel) to $(effectivePublishCatalog) during the build, after the
+#     ValidateVersion gate; Test reuses that build (--no-build, no second publish)
 #   - NO push-nuget — service doesn't publish NuGets
-#   - NO CK library output — no ConstructionKit project in this repo
 #   - NO SystemTests exclusion (uses bare **/*Tests.csproj — matches legacy)
 
 name: $(MajorVersion).$(MinorVersion).$(date:yyMM).$(DayOfMonth)$(rev:rrr)-$(Build.SourceBranchName)
@@ -125,6 +126,13 @@ stages:
               sshPassphrase: '$(SSHPassphrase)'
               sshKeySecureFile: '$(SSHPrivateKeyFile)'
           - template: templates/steps/set-version.yml@pipelineTemplates
+          # CK SemVer honesty gate (AB#4420): System.Files (AB#6171, owned by this service) is
+          # published DURING the dotnet build (/p:OctoPublishCatalog), so the gate must be able
+          # to fail first. Same pattern as octo-identity-services.
+          - template: templates/steps/validate-ck-versions.yml@pipelineTemplates
+            parameters:
+              constructionKitPaths:
+                - 'src/SystemFilesCkModel/ConstructionKit'
           - template: templates/steps/download-ca.yml@pipelineTemplates
           # Fresh package list for the private feed only; nuget.org stays cached.
           # Replaces restore --force and noCache (AB#5720).
@@ -138,10 +146,20 @@ stages:
               restoreArguments: '/p:OctoNugetPrivateServer=$(nugetPrivateServer)'
           - task: DotNetCoreCLI@2
             retryCountOnTaskFailure: 2
+            displayName: 'Build'
+            inputs:
+              command: 'build'
+              projects: '$(solutionFile)'
+              arguments: '--no-restore --configuration $(buildConfiguration) /p:OctoNugetPrivateServer=$(nugetPrivateServer) /p:OctoPublishCatalog="$(effectivePublishCatalog)" /p:OctoPrivateGitHubApiKey=$(GitHubPAT) /p:OctoPublicGitHubApiKey=$(GitHubPAT)'
+              publishWebProjects: false
+              zipAfterPublish: false
+              modifyOutputPath: false
+          - task: DotNetCoreCLI@2
+            retryCountOnTaskFailure: 2
             displayName: 'Test'
             inputs:
               command: 'test'
-              arguments: '--configuration $(buildConfiguration) /p:OctoNugetPrivateServer=$(nugetPrivateServer)'
+              arguments: '--configuration $(buildConfiguration) --no-build --no-restore /p:OctoNugetPrivateServer=$(nugetPrivateServer) /p:OctoPublishCkModel=false'
               projects: |
                 **/*Tests.csproj
               testRunTitle: 'CI'
