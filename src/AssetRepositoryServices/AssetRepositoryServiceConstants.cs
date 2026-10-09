@@ -36,6 +36,12 @@ public static class AssetRepositoryServiceConstants
     public const int AssetServiceIdentityDataVersionValue = 5;
 
     /// <summary>
+    /// Name of the key for the version of the asset repository's default data per tenant
+    /// (e.g. the default file root, AB#6171)
+    /// </summary>
+    public const string AssetServiceDefaultDataVersionKey = "AssetServicesDefaultData";
+
+    /// <summary>
     ///     The name of the cookie of cookie-based auth
     /// </summary>
     public const string CookieName = "Octo-AssetRepositoryServices";
