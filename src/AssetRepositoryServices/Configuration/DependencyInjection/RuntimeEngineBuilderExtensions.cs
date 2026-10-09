@@ -28,6 +28,8 @@ using Meshmakers.Octo.Runtime.Engine.Configuration.DependencyInjection;
 using Meshmakers.Octo.Services.Contracts.DistributionEventHub.Commands;
 using Meshmakers.Octo.Services.Contracts.DistributionEventHub.Messages;
 using Meshmakers.Octo.Services.Infrastructure;
+using Meshmakers.Octo.Services.Infrastructure.Migrations;
+using Meshmakers.Octo.ConstructionKit.Models.System.Files.Generated.System.Files.v1;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -367,6 +369,13 @@ public static class RuntimeEngineBuilderExtensions
         // AB#5544: secrets overview - RevealSecret@1 usage scan over the tenant's pipeline definitions.
         builder.Services.AddSingleton<IPipelineDefinitionSource, TenantPipelineDefinitionSource>();
         builder.Services.AddSingleton<SecretUsageScanner>();
+
+        // AB#6171: the platform file system. System.Files is embedded and imported into every tenant by
+        // the tenant setup (DefaultConfigurationCreatorService); the default root "Files" is seeded by a
+        // service migration.
+        builder.Services.AddCkModelSystemFilesV1();
+        builder.Services.AddMigrations(typeof(OctoAssetRepositoryServicesOptions).Assembly);
+        builder.Services.AddSingleton<Meshmakers.Octo.Backend.AssetRepositoryServices.Services.Files.FileSystemService>();
 
 
         builder.Services.AddOctoServiceInfrastructure("AssetRepositoryService", c =>

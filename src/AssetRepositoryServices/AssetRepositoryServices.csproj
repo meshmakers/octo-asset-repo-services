@@ -49,6 +49,7 @@
         <PackageReference Include="Meshmakers.Octo.Runtime.Engine.CrateDb" Version="$(OctoCoreLibVersion)" />
         <ProjectReference Include="..\..\tests\AssetRepositoryIntegrationTestCkModel\AssetRepositoryIntegrationTestCkModel.csproj" />
         <ProjectReference Include="..\AssetRepositoryServices.Resources\AssetRepositoryServices.Resources.csproj" />
+        <ProjectReference Include="..\SystemFilesCkModel\SystemFilesCkModel.csproj" />
     </ItemGroup>
 
     <ItemGroup>

@@ -43,6 +43,11 @@ try
         .AddUserSecrets(typeof(Program).Assembly, true);
 
     builder.Services.AddTransient<IDefaultConfigurationCreatorService, DefaultConfigurationCreatorService>();
+
+    // AB#6171: per-cluster limits of the platform file system (OCTO_Files__…).
+    builder.Services.Configure<Meshmakers.Octo.Backend.AssetRepositoryServices.Services.Files.FilesOptions>(
+        builder.Configuration.GetSection(
+            Meshmakers.Octo.Backend.AssetRepositoryServices.Services.Files.FilesOptions.SectionName));
     builder.Services.AddCors();
 
     // AB#5432: CK model health sweep. Bound from configuration, so a cluster tunes it with

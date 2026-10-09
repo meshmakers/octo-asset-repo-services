@@ -9,6 +9,13 @@ using Meshmakers.Octo.Runtime.Contracts.MongoDb.TenantLifecycle;
 using Meshmakers.Octo.Services.Contracts.DistributionEventHub.Commands;
 using Meshmakers.Octo.Services.Contracts.DistributionEventHub.Commands.Payloads;
 using Meshmakers.Octo.Services.Infrastructure.Services;
+using Meshmakers.Octo.ConstructionKit.Contracts;
+using Meshmakers.Octo.ConstructionKit.Models.System.Files.Generated.System.Files.v1;
+using Meshmakers.Octo.Runtime.Contracts;
+using Meshmakers.Octo.Runtime.Contracts.CkModelMigrations;
+using Meshmakers.Octo.Runtime.Contracts.MongoDb.Repositories;
+using Meshmakers.Octo.Services.Infrastructure;
+using Meshmakers.Octo.Services.Infrastructure.Migrations;
 using Microsoft.Extensions.Options;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.Services;
@@ -21,13 +28,18 @@ internal class DefaultConfigurationCreatorService(
     ICommandClient<CreateIdentityDataCommandRequest> createIdentityDataCommandClient,
     OctoAssetRepositoryServicesOptions octoAssetRepositoryServicesOptions,
     ITenantLifecycleStore tenantLifecycleStore,
-    ITenantSetupRetryStore tenantSetupRetryStore)
+    ITenantSetupRetryStore tenantSetupRetryStore,
+    MigrationService migrationService,
+    ICkModelUpgradeService ckModelUpgradeService,
+    IRuntimeRepositoryProvider runtimeRepositoryProvider)
     : DefaultConfigurationCreatorServiceStandardized(logger, systemContext, createIdentityDataCommandClient,
         AssetRepositoryServiceConstants.AssetServiceIdentityDataVersionKey,
         AssetRepositoryServiceConstants.AssetServiceIdentityDataVersionValue,
-        null, // migrationService - we don't need migrations here
-        null, // ckModelUpgradeService - we don't need CK model migrations
-        null, // runtimeRepositoryProvider - not needed without CK model migrations
+        // AB#6171: service migrations seed the default data of the platform file system (root "Files").
+        migrationService,
+        // AB#6171: CK data migrations of System.Files (GetCkModelIds) run through the standard upgrade path.
+        ckModelUpgradeService,
+        runtimeRepositoryProvider,
         null, // serviceEnabledKey - the service is auto-enabled
         // Asset-Repo owns the durable tenant-lifecycle record (it runs setup for every tenant and drives
         // identity seeding), so it is the single writer of Creating/Active/Failed states (AB#4348).
@@ -41,6 +53,30 @@ internal class DefaultConfigurationCreatorService(
         await diagnosticsService.ReconfigureLogLevelAsync(options.Value.MinLogLevel);
 
         await base.InitializeAsync();
+    }
+
+    /// <summary>
+    ///     Imports System.Files into every tenant (AB#6171 D2 = B'): the platform file system is available
+    ///     everywhere, without an enable step and independent of Reporting. Runs inside the setup
+    ///     transaction before the service migrations, so the file collection and its indexes exist before
+    ///     the default root is seeded. A failure throws and goes through the setup retry path.
+    /// </summary>
+    protected override async Task ImportCkModelAsync(IOctoAdminSession session, ITenantContext tenantContext)
+    {
+        OperationResult operationResult = new();
+        await tenantContext.ImportCkModelAsync(SystemFilesCkIds.CkModelId, operationResult);
+        if (operationResult.HasErrors || operationResult.HasFatalErrors)
+        {
+            throw InitializationException.ImportCkModelFailed(tenantContext.TenantId,
+                operationResult.GetMessages());
+        }
+    }
+
+    /// <inheritdoc />
+    protected override IEnumerable<CkModelIdVersionRange> GetCkModelIds()
+    {
+        // Any System.Files 1.x: later minors of the model migrate through the standard upgrade path.
+        return [new CkModelIdVersionRange($"{SystemFilesCkIds.CkModelId.Name}-[1.0,2.0)")];
     }
 
     protected override void CreateApiScopes(CreateIdentityDataCommandRequest createIdentityDataCommandRequest)
