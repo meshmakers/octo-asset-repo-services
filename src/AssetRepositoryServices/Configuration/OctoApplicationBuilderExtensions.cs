@@ -62,9 +62,14 @@ public static class OctoApplicationBuilderExtensions
                 GraphQLEndPoint = "/tenants/{tenantId}/graphQl"
             }, "tenants/{tenantId:tenantId}/graphQl/playground")
             .RequireAuthorization(AssetRepositoryServiceConstants.AuthenticatedUserPolicy);
+        // AB#6171: GraphQL multipart uploads (BinaryLinked) accept the per-file upload limit of the file
+        // system plus multipart overhead, instead of Kestrel's 30 MB default.
+        var maxUploadBytes = app.Services
+            .GetRequiredService<Microsoft.Extensions.Options.IOptions<Meshmakers.Octo.Backend.AssetRepositoryServices.Services.Files.FilesOptions>>().Value.MaxUploadBytes;
         app.MapGraphQL<OctoSchema>("tenants/{tenantId:tenantId}/graphQl", c =>
-        {
-            c.ReadFormOnPost = true;
-        }).RequireAuthorization(AssetRepositoryServiceConstants.AuthenticatedUserPolicyGraphApi);
+            {
+                c.ReadFormOnPost = true;
+            }).RequireAuthorization(AssetRepositoryServiceConstants.AuthenticatedUserPolicyGraphApi)
+            .WithMetadata(new Microsoft.AspNetCore.Mvc.RequestSizeLimitAttribute(maxUploadBytes + 1024 * 1024));
     }
 }

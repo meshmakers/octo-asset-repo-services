@@ -304,7 +304,7 @@ public class FileSystemService
             [EntityUpdateInfo<RtEntity>.CreateInsert(FileType, item)],
             [AssociationUpdateInfo.CreateInsert(new RtEntityId(FileType, item.RtId), parent.Id, ParentChildRole)],
             operationResult).ConfigureAwait(false);
-        GraphQL.Utils.ResolveConnectionContextExtensions.ValidateOperationResult(operationResult);
+        ThrowIfFailed(operationResult);
 
         var stored = await FindByRtIdAsync(repository, session, item.RtId).ConfigureAwait(false)
                      ?? throw FileSystemException.ItemNotFound(item.RtId.ToString());
@@ -342,10 +342,229 @@ public class FileSystemService
         await repository.ApplyChangesAsync(session,
             [EntityUpdateInfo<RtEntity>.CreateReplace(existing.Id, replacement)],
             [], operationResult).ConfigureAwait(false);
-        GraphQL.Utils.ResolveConnectionContextExtensions.ValidateOperationResult(operationResult);
+        ThrowIfFailed(operationResult);
 
         return await FindByRtIdAsync(repository, session, existing.Id.RtId).ConfigureAwait(false)
                ?? throw FileSystemException.ItemNotFound(existing.Id.RtId.ToString());
+    }
+
+    /// <summary>
+    ///     Creates a folder in a root or folder; the name must be free (checked over
+    ///     <paramref name="unfilteredSession" />).
+    /// </summary>
+    public async Task<FileSystemEntry> CreateFolderAsync(ITenantRepository repository, IOctoSession session,
+        IOctoSession unfilteredSession, FileSystemEntry parent, string name)
+    {
+        FileSystemNames.Validate(name);
+        if (!parent.IsContainer)
+        {
+            throw FileSystemException.NotAFolder(parent.Name);
+        }
+
+        if ((await GetChildrenByNameAsync(repository, unfilteredSession, parent.Id, name).ConfigureAwait(false)).Count > 0)
+        {
+            throw FileSystemException.NameConflict(name);
+        }
+
+        var folder = await repository.CreateTransientRtEntityAsync<RtFolder>().ConfigureAwait(false);
+        folder.Name = name;
+        var operationResult = new OperationResult();
+        await repository.ApplyChangesAsync(session,
+            [EntityUpdateInfo<RtEntity>.CreateInsert(FolderType, folder)],
+            [AssociationUpdateInfo.CreateInsert(new RtEntityId(FolderType, folder.RtId), parent.Id, ParentChildRole)],
+            operationResult).ConfigureAwait(false);
+        ThrowIfFailed(operationResult);
+
+        return await FindByRtIdAsync(repository, session, folder.RtId).ConfigureAwait(false)
+               ?? throw FileSystemException.ItemNotFound(folder.RtId.ToString());
+    }
+
+    /// <summary>
+    ///     Resolves the folder <paramref name="folderPath" /> below a root; with <paramref name="createMissing" />
+    ///     missing folders are created on the way.
+    /// </summary>
+    public async Task<FileSystemEntry> ResolveFolderAsync(ITenantRepository repository, IOctoSession session,
+        IOctoSession unfilteredSession, string root, string? folderPath, bool createMissing)
+    {
+        if (!createMissing)
+        {
+            var entry = await ResolveAsync(repository, session, root, folderPath).ConfigureAwait(false);
+            return entry.IsContainer ? entry : throw FileSystemException.NotAFolder($"{root}/{folderPath}");
+        }
+
+        var current = await FindRootAsync(repository, session, root).ConfigureAwait(false)
+                      ?? throw FileSystemException.RootNotFound(root);
+        var walked = new List<string>();
+        foreach (var segment in FileSystemNames.SplitPath(folderPath))
+        {
+            walked.Add(segment);
+            var displayPath = $"{root}/{FileSystemNames.JoinPath(walked)}";
+            var matches = await GetChildrenByNameAsync(repository, session, current.Id, segment).ConfigureAwait(false);
+            var exact = matches.Where(m => string.Equals(m.Name, segment, StringComparison.Ordinal)).ToList();
+            var candidates = exact.Count > 0 ? exact : matches;
+            if (candidates.Count > 1)
+            {
+                throw FileSystemException.AmbiguousPath(displayPath);
+            }
+
+            current = candidates.Count == 1
+                ? candidates[0].IsContainer ? candidates[0] : throw FileSystemException.NotAFolder(displayPath)
+                : await CreateFolderAsync(repository, session, unfilteredSession, current, segment).ConfigureAwait(false);
+        }
+
+        return current;
+    }
+
+    /// <summary>
+    ///     Deep statistics of a root or folder: visible folders, files, bytes and linked files over
+    ///     <paramref name="session" />, hidden entries as the difference to an unfiltered walk.
+    /// </summary>
+    public async Task<DataTransferObjects.Files.FolderStatsDto> GetStatsAsync(ITenantRepository repository,
+        IOctoSession session, IOctoSession unfilteredSession, FileSystemEntry folder,
+        CancellationToken cancellationToken = default)
+    {
+        if (!folder.IsContainer)
+        {
+            throw FileSystemException.NotAFolder(folder.Name);
+        }
+
+        var visible = await WalkAsync(repository, session, folder, cancellationToken: cancellationToken)
+            .ConfigureAwait(false);
+        var all = await WalkAsync(repository, unfilteredSession, folder, cancellationToken: cancellationToken)
+            .ConfigureAwait(false);
+
+        var files = visible.Items.Where(i => i.Entry.Kind == FileSystemEntryKind.File).ToList();
+        var linkedFiles = 0L;
+        var samples = new List<DataTransferObjects.Files.LinkedFileSampleDto>();
+        foreach (var chunk in files.Chunk(OriginBatchSize))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var associations = await repository.GetRtAssociationsAsync(session, chunk.Select(c => c.Entry.Id),
+                RtAssociationExtendedQueryOptions.Create(GraphDirections.Any)).ConfigureAwait(false);
+            foreach (var file in chunk)
+            {
+                if (!associations.TryGetValue(file.Entry.Id, out var fileAssociations))
+                {
+                    continue;
+                }
+
+                var links = fileAssociations.Items
+                    .Where(a => a.AssociationRoleId == null ||
+                                $"{a.AssociationRoleId.ModelId}/{a.AssociationRoleId.ElementId.RoleId}" !=
+                                FileSystemConstants.ParentChildRoleId)
+                    .Select(a => a.OriginRtId == file.Entry.Id.RtId
+                        ? new RtEntityId(a.TargetCkTypeId, a.TargetRtId)
+                        : new RtEntityId(a.OriginCkTypeId, a.OriginRtId))
+                    .ToList();
+                if (links.Count == 0)
+                {
+                    continue;
+                }
+
+                linkedFiles++;
+                if (samples.Count >= 5)
+                {
+                    continue;
+                }
+
+                var entities = new List<DataTransferObjects.Files.LinkedEntityDto>();
+                foreach (var link in links.Take(3))
+                {
+                    var entity = await repository.GetRtEntityByRtIdAsync(session, link).ConfigureAwait(false);
+                    if (entity == null)
+                    {
+                        continue; // not visible to the caller: never named
+                    }
+
+                    entities.Add(new DataTransferObjects.Files.LinkedEntityDto
+                    {
+                        RtId = entity.RtId.ToString(),
+                        CkTypeId = SemanticName(link.CkTypeId),
+                        DisplayName = entity.RtDisplayName
+                                      ?? entity.GetAttributeStringValueOrDefault(nameof(FileSystemAttributeNames.Name))
+                                      ?? entity.RtWellKnownName
+                                      ?? entity.RtId.ToString()
+                    });
+                }
+
+                samples.Add(new DataTransferObjects.Files.LinkedFileSampleDto
+                {
+                    RtId = file.Entry.Id.RtId.ToString(),
+                    Name = file.Entry.Name,
+                    Path = file.RelativePath,
+                    Entities = entities
+                });
+            }
+        }
+
+        var complete = !visible.Truncated && !all.Truncated;
+        return new DataTransferObjects.Files.FolderStatsDto
+        {
+            Folders = visible.Items.Count(i => i.Entry.Kind == FileSystemEntryKind.Folder),
+            Files = files.Count,
+            Bytes = files.Sum(f => f.Entry.Content?.Size ?? 0),
+            LinkedFiles = linkedFiles,
+            HiddenEntries = Math.Max(0, all.Items.Count - visible.Items.Count),
+            Complete = complete,
+            LinkedSamples = samples
+        };
+    }
+
+    /// <summary>
+    ///     Message number of the engine's data-permission write guard (DataPermissionWriteGuard, AB#4973).
+    /// </summary>
+    private const int DataPermissionForbiddenMessageNumber = 4973;
+
+    /// <summary>
+    ///     Throws for a failed write: a data-permission denial as FORBIDDEN (403), anything else as the
+    ///     generic operation-result error.
+    /// </summary>
+    internal static void ThrowIfFailed(OperationResult operationResult)
+    {
+        if (!operationResult.HasErrors && !operationResult.HasFatalErrors)
+        {
+            return;
+        }
+
+        var forbidden = operationResult.Messages.FirstOrDefault(m => m.MessageNumber == DataPermissionForbiddenMessageNumber);
+        if (forbidden != null)
+        {
+            throw new FileSystemException(FileSystemErrorCodes.Forbidden, StatusCodes.Status403Forbidden,
+                forbidden.MessageText);
+        }
+
+        GraphQL.Utils.ResolveConnectionContextExtensions.ValidateOperationResult(operationResult);
+    }
+
+    /// <summary>
+    ///     REST representation of an entry.
+    /// </summary>
+    public static DataTransferObjects.Files.FileEntryDto ToDto(FileSystemEntry entry, string? root = null,
+        string? path = null, RtEntityId? parentId = null, bool replaced = false)
+    {
+        var content = entry.Content;
+        return new DataTransferObjects.Files.FileEntryDto
+        {
+            RtId = entry.Id.RtId.ToString(),
+            CkTypeId = SemanticName(entry.Id.CkTypeId),
+            Kind = entry.Kind switch
+            {
+                FileSystemEntryKind.Root => "root",
+                FileSystemEntryKind.Folder => "folder",
+                _ => "file"
+            },
+            Name = entry.Name,
+            Root = root,
+            Path = path,
+            ParentRtId = parentId?.RtId.ToString(),
+            Size = content?.Size,
+            ContentType = content?.ContentType,
+            BinaryId = content?.BinaryId?.ToString(),
+            CreatedAt = entry.Entity.RtCreationDateTime,
+            ChangedAt = entry.Entity.RtChangedDateTime,
+            CreatedBy = entry.Entity.RtCreatedBy,
+            Replaced = replaced
+        };
     }
 
     internal static string CaseInsensitiveExact(string name) => $"(?i)^{Regex.Escape(name)}$";

@@ -1,6 +1,7 @@
 using Asp.Versioning;
 using Duende.IdentityModel;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.Services;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.Services.Files;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects.ApiErrors;
 using Meshmakers.Octo.ConstructionKit.Contracts;
@@ -46,6 +47,12 @@ public class LargeBinariesController : ControllerBase
     /// <summary>
     ///     Downloads are large binary with given tenantId and large binary id
     /// </summary>
+    /// <param name="largeBinaryId">GridFS id of the binary</param>
+    /// <param name="inline">
+    ///     AB#6171: <c>false</c> asks for a download (<c>Content-Disposition: attachment</c>). Default: inline
+    ///     for passive content, as before; active content (SVG, HTML, XML, script) is always an attachment
+    ///     with a sandboxing CSP. The stored file name is sent as <c>filename*=UTF-8''…</c> either way.
+    /// </param>
     /// <returns></returns>
     [HttpGet]
     // AB#4973: previously bearer-auth only — no scope requirement at all on a direct binary download.
@@ -56,7 +63,7 @@ public class LargeBinariesController : ControllerBase
     [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status404NotFound)]
     [ProducesResponseType(typeof(InternalServerErrorDto), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(InternalServerErrorDto), StatusCodes.Status500InternalServerError)]
-    public async Task<IActionResult> Get([FromQuery] string largeBinaryId)
+    public async Task<IActionResult> Get([FromQuery] string largeBinaryId, [FromQuery] bool? inline = null)
     {
         try
         {
@@ -105,6 +112,8 @@ public class LargeBinariesController : ControllerBase
                 streamHandler.Stream,
                 streamHandler.ContentType);
 
+            // AB#6171 S2c: real file name (AB#2146), headers readable by browser clients, safe delivery.
+            FileResponseHeaders.Apply(Response, streamHandler.Filename, contentType, inline ?? true, largeBinaryId);
             return new FileStreamResult(responseStream, contentType);
         }
         catch (Runtime.Contracts.MongoDb.EntityNotFoundException)
