@@ -14,3 +14,21 @@ public class GraphQlCollection : ICollectionFixture<GraphQlTestFixture>
 {
     public const string Name = "GraphQl";
 }
+
+/// <summary>
+///     F1.5-S4 (AB#5923): GraphQL executed by a host in the Production environment.
+/// </summary>
+[CollectionDefinition(Name)]
+public class GraphQlProductionCollection : ICollectionFixture<ProductionGraphQlTestFixture>
+{
+    public const string Name = "GraphQlProduction";
+}
+
+/// <summary>
+///     F1.5-S4 (AB#5923): GraphQL executed by a host in the Development environment.
+/// </summary>
+[CollectionDefinition(Name)]
+public class GraphQlDevelopmentCollection : ICollectionFixture<DevelopmentGraphQlTestFixture>
+{
+    public const string Name = "GraphQlDevelopment";
+}

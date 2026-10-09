@@ -124,7 +124,7 @@ public class HiddenAttributeNavigationTests
         // Without the guard the cell is filled exactly when the stored hash equals the guess (equality oracle).
         await CreateGroupWithMemberAsync();
 
-        await AssertRejectedAsync(TransientSelectorQuery(HiddenSelectorColumn), queryContainsGuess: true);
+        await AssertRejectedAsync(TransientSelectorQuery(HiddenSelectorColumn));
     }
 
     [Fact]
@@ -145,7 +145,7 @@ public class HiddenAttributeNavigationTests
         await AssertRejectedAsync($$"""
             query { runtime { runtimeQuery(rtId: "{{queryRtId}}") {
               items { rows { items { ... on RtSimpleQueryRow { cells { items { attributePath value } } } } } } } } }
-            """, queryContainsGuess: true);
+            """);
     }
 
     private static string TransientSelectorQuery(string column) => $$"""
@@ -171,7 +171,7 @@ public class HiddenAttributeNavigationTests
                                          includeIndirect: {{(indirect ? "true" : "false")}}, {{arguments}}) { totalCount } } } } } }
         """;
 
-    private async Task AssertRejectedAsync(string query, bool queryContainsGuess = false)
+    private async Task AssertRejectedAsync(string query)
     {
         var result = await _fixture.ExecuteGraphQlAsync(query);
         var json = _fixture.SerializeGraphQl(result);
@@ -180,11 +180,8 @@ public class HiddenAttributeNavigationTests
         result.Errors!.Select(e => e.Code).Should().Contain("ATTRIBUTE_NOT_QUERYABLE", json);
         result.Data.Should().NotBeNull();
         json.Should().NotContain("nav-member", "no cell may be filled");
-        if (!queryContainsGuess)
-        {
-            // The error may echo the caller's own path (incl. a guessed value), never stored data.
-            json.Should().NotContain(StoredHash);
-        }
+        // F1.5-S4 (AB#5923): access errors carry no value - not even the caller's guess in a selector.
+        json.Should().NotContain(StoredHash);
     }
 
     private async Task<int> TotalCountAsync(string query)

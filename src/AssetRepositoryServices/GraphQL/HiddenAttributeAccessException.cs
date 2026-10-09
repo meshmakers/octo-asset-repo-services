@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using Meshmakers.Octo.ConstructionKit.Contracts.DataTransferObjects;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL;
@@ -7,7 +8,7 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL;
 ///     GraphQL surface. Mapped by <c>HandleException</c> to <see cref="Statics.GraphQlAttributeNotWritable" /> (writes)
 ///     or <see cref="Statics.GraphQlAttributeNotQueryable" /> (queries). The message names the attribute, never a value.
 /// </summary>
-internal sealed class HiddenAttributeAccessException : Exception
+internal sealed partial class HiddenAttributeAccessException : Exception
 {
     private HiddenAttributeAccessException(string message, string attributePath, string entityName,
         CkAttributeAccessDto? access, string operation, bool isWrite)
@@ -34,6 +35,7 @@ internal sealed class HiddenAttributeAccessException : Exception
     public static HiddenAttributeAccessException NotWritable(string attributeName, string entityName,
         CkAttributeAccessDto access)
     {
+        attributeName = RedactSelectorValues(attributeName);
         return new HiddenAttributeAccessException(
             $"Attribute '{attributeName}' of '{entityName}' is not writable via generic mutations (access: {access}).",
             attributeName, entityName, access, "write", true);
@@ -42,8 +44,22 @@ internal sealed class HiddenAttributeAccessException : Exception
     public static HiddenAttributeAccessException NotQueryable(string attributePath, string entityName,
         string operation)
     {
+        attributePath = RedactSelectorValues(attributePath);
         return new HiddenAttributeAccessException(
             $"Attribute '{attributePath}' of '{entityName}' is hidden and cannot be used for {operation}.",
             attributePath, entityName, CkAttributeAccessDto.Hidden, operation, false);
     }
+
+    /// <summary>
+    ///     F1.5-S4 (AB#5923): an access error never carries a value — not even the caller's own guess in an entity
+    ///     selector (<c>members.type[passwordHash='X']-&gt;name</c> becomes <c>members.type[passwordHash=…]-&gt;name</c>),
+    ///     because error texts end up in logs and client error reports.
+    /// </summary>
+    internal static string RedactSelectorValues(string path)
+    {
+        return SelectorValueRegex().Replace(path, "[$1=…]");
+    }
+
+    [GeneratedRegex(@"\[([^\[\]=]+)=[^\[\]]*\]", RegexOptions.Compiled)]
+    private static partial Regex SelectorValueRegex();
 }

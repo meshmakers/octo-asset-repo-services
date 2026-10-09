@@ -365,6 +365,15 @@ N:M associations are exposed as query columns with `::totalCount` (INT64) and `:
   so an invalid schema is never cached and the build time is measured completely. Every build logs at Information:
   `GraphQL schema for tenant {TenantId} built in {ElapsedMs} ms ({TypeCount} types, {InterfaceCount} CK interfaces;
   populate {PopulateMs} ms, initialize {InitializeMs} ms)` (CK v2 risk R8)
+- **Exception details in GraphQL errors** (`extensions.details`: exception text, inner exceptions, stack trace) are
+  exposed only in the `Development` environment or with the explicit opt-in `GraphQl:ExposeExceptionDetails`
+  (`OCTO_GraphQl__ExposeExceptionDetails`; an explicit value wins over the environment) — `GraphQlErrorExposure`,
+  AB#6189. Messages, `extensions.code`/`codes` and custom extensions (`OctoDetails`, `attributePath`, `operation`)
+  are unchanged. Containers run as `Production` (the Helm charts and the test-2 values do not set
+  `ASPNETCORE_ENVIRONMENT`). CK v2 access errors (`ATTRIBUTE_NOT_WRITABLE` / `ATTRIBUTE_NOT_QUERYABLE`) carry code,
+  attribute path and operation but never a value in any environment: entity-selector values in the path are redacted
+  (`[passwordHash=…]`, F1.5-S4 AB#5923). Tests: `GraphQlErrorExposureTests` (unit),
+  `GraphQL/Errors/GraphQlErrorDetailsTests` (integration, Production and Development host fixtures).
 - All GraphQL types must be thread-safe (they're cached and reused)
 - Use resource strings from `AssetRepositoryServices.Resources` for descriptions
 

@@ -88,6 +88,19 @@ public class CkAttributeAccessSchemaTests
         read.Code.Should().Be("ATTRIBUTE_NOT_QUERYABLE");
     }
 
+    [Theory]
+    [InlineData("members.someType[passwordHash='AQAA']->name", "members.someType[passwordHash=…]->name")]
+    [InlineData("a.t[x=1].b.u[y='z']->c", "a.t[x=…].b.u[y=…]->c")]
+    [InlineData("items[0].name", "items[0].name")]
+    public void AccessErrors_RedactSelectorValues(string path, string expected)
+    {
+        // F1.5-S4 (AB#5923): access errors never carry values.
+        var error = HiddenAttributeAccessException.NotQueryable(path, "Test/Type", "query column");
+
+        error.AttributePath.Should().Be(expected);
+        error.Message.Should().Contain(expected).And.NotContain("AQAA");
+    }
+
     private static CkTypeAttributeGraph Attribute(string name, CkAttributeAccessDto access)
     {
         return new CkTypeAttributeGraph(new CkId<CkAttributeId>("Test/" + name), name, null,
