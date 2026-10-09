@@ -195,6 +195,24 @@ public class CkMetaIntrospectionTests
         system["minEngineVersion"]!.Type.Should().Be(JTokenType.Null);
     }
 
+    [Fact]
+    public async Task Schema_HasNoMethodRuntime()
+    {
+        // F1.5-S1 (AB#5920): method definitions are meta data only - no method mutation fields and no invocation
+        // result types until the method runtime (CK v2 Phase 3).
+        var answer = await ExecuteAsync("""
+            query {
+              mutations: __type(name: "AssetRepositoryIntegrationTestAccessTestAccountMutations") { fields { name } }
+              schema: __schema { types { name } }
+            }
+            """);
+
+        answer.SelectTokens("data.mutations.fields[*].name").Values<string>().Should().BeEquivalentTo("create", "update");
+        var typeNames = answer.SelectTokens("data.schema.types[*].name").Values<string>().ToList();
+        typeNames.Should().NotContain(["CkMethodError", "CkMethodErrorDetail"]);
+        typeNames.Should().NotContain(n => n!.EndsWith("ResetPasswordResult") || n.EndsWith("ResetPasswordInput"));
+    }
+
     private static IEnumerable<string> Ids(JToken interfaces) =>
         interfaces.Select(i => i["rtCkInterfaceId"]!.Value<string>()!);
 

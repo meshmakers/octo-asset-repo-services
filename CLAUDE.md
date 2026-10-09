@@ -528,7 +528,11 @@ engine's PascalCase names, like `access`.
 
 `CkMethodErrorDefinition` is deliberately not named `CkMethodError` (that name belongs to the invocation result of the
 Phase 3 method runtime). `internal` elements are listed like public ones — they are internal to models, not secret.
-Tests: `GraphQL/CkV2/CkMetaIntrospectionTests`.
+Tests: `GraphQL/CkV2/CkMetaIntrospectionTests` (incl. `Schema_HasNoMethodRuntime`: no method mutation fields and no
+invocation types until the method runtime lands). **Schema export for frontend codegen:** run
+`OCTO_SCHEMA_EXPORT_PATH=<file> dotnet test tests/AssetRepositoryServices.IntegrationTests -c DebugL --filter
+"FullyQualifiedName~SchemaExportTests"` — writes the SDL of the integration-test tenant (all CK meta types plus the
+CK v2 test model's runtime types); the Studio's own `schema.graphql` stays an introspection of a real tenant.
 
 ### Authentication
 The service supports dual authentication:
