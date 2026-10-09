@@ -716,38 +716,49 @@ Everything is raw MongoDB (own admin `MongoClient` from `OctoSystemConfiguration
 `TenantMongoDatabaseProvider`) — never the CK cache, because the legacy types disappear from it with
 System.Reporting 3.0.0.
 
-- **Cheap check first:** legacy `ckTypeId`s in `RtEntity_SystemReportingFileSystemEntity`, legacy
+- **Cheap check first (read-only):** legacy `ckTypeId`s in `RtEntity_SystemReportingFileSystemEntity`, legacy
   `originCkTypeId`/`targetCkTypeId` in `RtAssociation`, legacy `fs.files.metadata.rtEntityId` stamps. All
-  zero → no write at all (steady state, also once the legacy collection is gone).
-- **Precondition:** `RtEntity_SystemFilesFileSystemEntity` exists with its CK indexes (System.Files is
-  imported by the tenant setup before migrations); otherwise warning + skip (`TargetModelMissing`).
-- **Move:** batches (`FilesMigration:BatchSize`, 500) in one transaction each — `replaceOne` upsert by `_id`
-  into the System.Files collection with the rewritten `ckTypeId`, delete from the source — each batch
-  verified in the target afterwards. Then `RtAssociation` `updateMany` (outside the transaction, like the
-  engine), then the `fs.files` stamp prefix rewrite (**R1**: the `/largeBinaries` data-permission gate and
-  the linked-binary cascade delete both key on that stamp; with the legacy stamp the gate fails open and
-  deletes orphan the bytes), then the legacy collection is dropped when empty. A count mismatch stops after
-  the entity step (no association/stamp rewrite, no drop) and logs an error.
-- **Audit:** one document per sweep that wrote or failed in the tenant collection `FilesMigrationAudit`
-  (before/after counts, moved per type, association fields, stamps, dropped, errors, trigger, host).
-  Deliberately **not** `System/MigrationHistory` — that collection drives the CK upgrade version detection.
+  zero → no write, no lease, no scan (steady state). Then System.Files must be imported (collection with CK
+  indexes), else `TargetModelMissing` (still read-only, warning rate-limited to `RepeatedWarningInterval`).
+- **Lease:** per-tenant `findOneAndUpdate` lease in `FilesMigrationLease` (`TenantSweepLease`, expiry
+  `LeaseDuration` 5 min, renewed per batch). Every pod runs the start hook; only the holder scans and moves,
+  the others skip at debug level (`LeaseHeld`).
+- **Root conflict:** a legacy `FolderRoot` whose well-known name equals (case-insensitive) an existing
+  System.Files root (e.g. `Files`) aborts the move for the tenant (`RootConflict`, error log rate-limited,
+  one audit record per distinct conflict set).
+- **Move:** batches (`BatchSize` 500) in one transaction each — `replaceOne` upsert by `_id` into the
+  System.Files collection with the rewritten `ckTypeId`, delete from the source, each batch verified
+  afterwards. An rtId that already exists in System.Files (stale writer re-wrote a moved entity) is **never
+  replaced**: the System.Files version is kept, the legacy document is parked in `FilesMigrationConflicts`
+  (with `rtId`, `detectedAt`, full `document`) and listed in the audit. Then `RtAssociation` `updateMany`
+  (outside the transaction, like the engine) and the `fs.files` stamp prefix rewrite (**R1**: the
+  `/largeBinaries` data-permission gate and the linked-binary cascade delete key on that stamp). A count
+  mismatch stops after the entity step (no association/stamp rewrite) and logs an error. The legacy
+  collection is **never dropped** (a straggler written between "empty" and "drop" would be lost); other
+  (derived/unknown) types in it are not moved and are reported.
+- **Audit:** one document per sweep that wrote or failed in `FilesMigrationAudit` (before/after counts,
+  moved per type, conflicts, association fields, stamps, errors, trigger, host). Deliberately **not**
+  `System/MigrationHistory` — that collection drives the CK upgrade version detection.
 - **Triggers (Q3):** `DefaultConfigurationCreatorService.StartTenantAsync` (after the System.Files import and
   the default root; never fails the start) and `ReportingFilesSweepBackgroundService` every
-  `FilesMigration:StragglerSweepInterval` (10 min) for tenants in `ReportingFilesSweepTracker` — tenants whose
-  last sweep found legacy data or failed. A zero check takes a tenant off the timer (in memory, per pod; the
+  `StragglerSweepInterval` (10 min) for tenants in `ReportingFilesSweepTracker`. A tenant stays on the timer
+  for `StragglerWindow` (24 h) after its last finding (legacy data, failure, lease held elsewhere), or until
+  System.Reporting 3.0.0+ is installed (`CkModel` ids), even through zero checks (in memory, per pod; the
   next start re-checks). Kill switch `FilesMigration:SweepEnabled` (`OCTO_FilesMigration__SweepEnabled=false`).
 - **Pre-check (R4):** `FilesMigrationStatusService`, exposed as `GET system/v1/files/migration-status/{tenantId}`
   (`SystemAssetApiReadOnlyPolicy` **plus** in-controller check: token `tenant_id` = system tenant, user
-  tokens need `AdminPanelManagement` — the report crosses tenant boundaries). Legacy counts, System.Files
-  counts, orphans without ParentChild parent, the latest audit records, and every entity in any
-  `RtEntity_*` collection (except the two file collections) whose stored document contains
+  tokens need `AdminPanelManagement` — the report crosses tenant boundaries; a 500 carries no exception
+  text). Legacy counts, other types in the legacy collection, root conflicts, System.Files counts, orphans
+  without ParentChild parent, the latest audit records, and every entity in any `RtEntity_*` collection
+  (except the two file collections) whose stored document contains
   `System.Reporting/{FileSystemItem|Folder|FolderRoot|FileSystemEntity|FileSystemContainer}` (also the
   versioned `System.Reporting-x.y.z/…` form) with collection, rtId, ckTypeId, well-known name,
-  `rtBlueprintSource` and field paths. The scan reads raw BSON and searches the UTF-8 bytes, so it is
-  schema-free; it reads every entity document once, so the tenant-start path runs it only when the cheap
-  check found legacy data (then it is logged before the move). Not scanned: GridFS contents, CK
-  collections, `RtAssociation`, binary values. The sweep never rewrites pipeline YAML — blueprint pipelines
-  are fixed by the app blueprint release (S9), tenant-local ones by the runbook (S11).
+  `rtBlueprintSource` and field paths. The scan reads raw BSON (secondary-preferred) and searches the UTF-8
+  bytes, so it is schema-free; scans are serialized per pod and cut off after `ScanTimeout` (5 min,
+  `LiteralScanComplete = false`). At tenant start only the lease holder scans, and only when the cheap
+  check found legacy data. Not scanned: GridFS contents, CK collections, `RtAssociation`, binary values. The
+  sweep never rewrites pipeline YAML — blueprint pipelines are fixed by the app blueprint release (S9),
+  tenant-local ones by the runbook (S11).
 - Tests: `tests/AssetRepositoryServices.IntegrationTests/Files/ReportingFilesMoveSweepTests.cs`
   (`FilesMigrationTestFixture` seeds legacy data raw, incl. real GridFS files).
 

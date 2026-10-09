@@ -17,8 +17,11 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.Services.Files.Migrati
 ///         the search finds the literal in any string value at any depth (pipeline YAML, policy type lists,
 ///         query type ids, record fields, UI JSON) without knowing the schema. Limits: it reads every
 ///         entity document once (cost grows with the tenant's entity count — the sweep therefore runs it
-///         only when it finds legacy data); strings stored outside RtEntity collections (GridFS contents,
-///         CK model collections, RtAssociation) and inside binary values are not scanned.
+///         only when it finds legacy data, on the lease holder); strings stored outside RtEntity collections
+///         (GridFS contents, CK model collections, RtAssociation) and inside binary values are not scanned.
+///         Scans are serialized per instance (one at a time), read from secondaries when available
+///         (secondary-preferred) and cut off after <see cref="FilesMigrationOptions.ScanTimeout" /> (the report
+///         then says <c>LiteralScanComplete = false</c>).
 ///     </para>
 /// </summary>
 public class FilesMigrationStatusService
@@ -35,6 +38,8 @@ public class FilesMigrationStatusService
         FileSystemConstants.EntityCollectionName
     };
 
+    private readonly SemaphoreSlim _scanGate = new(1, 1);
+    private long _literalScans;
     private readonly ITenantMongoDatabaseProvider _databaseProvider;
     private readonly ReportingFilesSweepTracker _tracker;
     private readonly IOptionsMonitor<FilesMigrationOptions> _options;
@@ -49,6 +54,11 @@ public class FilesMigrationStatusService
         _tracker = tracker;
         _options = options;
     }
+
+    /// <summary>
+    ///     Number of literal reference scans this instance started (diagnostics and tests).
+    /// </summary>
+    public long LiteralScanCount => Interlocked.Read(ref _literalScans);
 
     /// <summary>
     ///     Builds the report, or returns null when the tenant does not exist.
@@ -71,8 +81,12 @@ public class FilesMigrationStatusService
             : ReportingFilesMigrationConstants.TargetTypeIds.ToDictionary(t => t, _ => 0L);
         var (orphanCount, orphans) = await FindOrphansAsync(database, Math.Max(0, options.MaxReportedOrphans),
             cancellationToken).ConfigureAwait(false);
-        var scan = await ScanLiteralReferencesAsync(database, Math.Max(0, options.MaxReportedReferences),
-            cancellationToken).ConfigureAwait(false);
+        var otherTypes = await ReportingFilesMoveSweep.CountOtherLegacyTypesAsync(database, cancellationToken)
+            .ConfigureAwait(false);
+        var rootConflicts = targetReady
+            ? await ReportingFilesMoveSweep.FindRootConflictsAsync(database, cancellationToken).ConfigureAwait(false)
+            : [];
+        var scan = await ScanSerializedAsync(database, options, cancellationToken).ConfigureAwait(false);
         var recent = await ReadRecentSweepsAsync(database, cancellationToken).ConfigureAwait(false);
 
         return new FilesMigrationStatusDto
@@ -82,6 +96,9 @@ public class FilesMigrationStatusService
             Legacy = legacy,
             TargetModelReady = targetReady,
             Target = target,
+            OtherLegacyTypes = otherTypes,
+            RootConflicts = rootConflicts,
+            LiteralScanComplete = scan.Complete,
             OrphanCount = orphanCount,
             Orphans = orphans,
             LiteralReferenceCount = scan.Count,
@@ -160,10 +177,49 @@ public class FilesMigrationStatusService
     }
 
     private sealed record ScanResult(long Count, IReadOnlyList<LegacyTypeReferenceDto> References, int Collections,
-        long Documents);
+        long Documents, bool Complete);
 
-    private static async Task<ScanResult> ScanLiteralReferencesAsync(IMongoDatabase database, int maxReferences,
+    private sealed class ScanState
+    {
+        public long Count;
+        public long Documents;
+        public int Collections;
+        public readonly List<LegacyTypeReferenceDto> References = [];
+    }
+
+    private async Task<ScanResult> ScanSerializedAsync(IMongoDatabase database, FilesMigrationOptions options,
         CancellationToken cancellationToken)
+    {
+        await _scanGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            Interlocked.Increment(ref _literalScans);
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            var limit = options.ScanTimeout > TimeSpan.Zero ? options.ScanTimeout : TimeSpan.FromMinutes(5);
+            timeout.CancelAfter(limit);
+            var state = new ScanState();
+            var complete = true;
+            try
+            {
+                await ScanLiteralReferencesAsync(database.WithReadPreference(ReadPreference.SecondaryPreferred),
+                    Math.Max(0, options.MaxReportedReferences), limit, state, timeout.Token).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is OperationCanceledException or MongoExecutionTimeoutException &&
+                                       !cancellationToken.IsCancellationRequested)
+            {
+                complete = false;
+            }
+
+            return new ScanResult(state.Count, state.References, state.Collections, state.Documents, complete);
+        }
+        finally
+        {
+            _scanGate.Release();
+        }
+    }
+
+    private static async Task ScanLiteralReferencesAsync(IMongoDatabase database, int maxReferences, TimeSpan maxTime,
+        ScanState state, CancellationToken cancellationToken)
     {
         var collectionNames = await (await database.ListCollectionNamesAsync(new ListCollectionNamesOptions
                 {
@@ -171,41 +227,35 @@ public class FilesMigrationStatusService
                 }, cancellationToken).ConfigureAwait(false))
             .ToListAsync(cancellationToken).ConfigureAwait(false);
 
-        long count = 0;
-        long documents = 0;
-        var collections = 0;
-        var references = new List<LegacyTypeReferenceDto>();
-
         foreach (var collectionName in collectionNames.Where(n => !ExcludedCollections.Contains(n)).Order(StringComparer.Ordinal))
         {
-            collections++;
+            state.Collections++;
             var collection = database.GetCollection<RawBsonDocument>(collectionName);
             using var cursor = await collection.FindAsync(FilterDefinition<RawBsonDocument>.Empty,
-                new FindOptions<RawBsonDocument> { BatchSize = 500 }, cancellationToken).ConfigureAwait(false);
+                new FindOptions<RawBsonDocument> { BatchSize = 500, MaxTime = maxTime }, cancellationToken).ConfigureAwait(false);
             while (await cursor.MoveNextAsync(cancellationToken).ConfigureAwait(false))
             {
                 foreach (var document in cursor.Current)
                 {
                     using (document)
                     {
-                        documents++;
+                        state.Documents++;
                         var literals = FindLiteralsInRawDocument(document);
                         if (literals.Count == 0)
                         {
                             continue;
                         }
 
-                        count++;
-                        if (references.Count < maxReferences)
+                        state.Count++;
+                        if (state.References.Count < maxReferences)
                         {
-                            references.Add(BuildReference(collectionName, document, literals));
+                            state.References.Add(BuildReference(collectionName, document, literals));
                         }
                     }
                 }
             }
         }
 
-        return new ScanResult(count, references, collections, documents);
     }
 
     private static IReadOnlySet<string> FindLiteralsInRawDocument(RawBsonDocument document)
@@ -348,7 +398,9 @@ public class FilesMigrationStatusService
             AssociationFieldsUpdated = r.GetValue("associationOriginsUpdated", 0).ToInt64() +
                                        r.GetValue("associationTargetsUpdated", 0).ToInt64(),
             StampsUpdated = r.GetValue("stampsUpdated", 0).ToInt64(),
-            SourceCollectionDropped = r.GetValue("sourceCollectionDropped", false).ToBoolean(),
+            Conflicts = r.GetValue("conflicts", new BsonArray()) is BsonArray conflicts
+                ? conflicts.Select(c => c.ToString() ?? string.Empty).ToList()
+                : [],
             Errors = r.GetValue("errors", new BsonArray()) is BsonArray errors
                 ? errors.Select(e => e.ToString() ?? string.Empty).ToList()
                 : []

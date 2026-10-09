@@ -25,14 +25,17 @@ public class FilesMigrationController : ControllerBase
 
     private readonly FilesMigrationStatusService _statusService;
     private readonly ISystemContext _systemContext;
+    private readonly ILogger<FilesMigrationController> _logger;
 
     /// <summary>
     ///     Constructor
     /// </summary>
-    public FilesMigrationController(FilesMigrationStatusService statusService, ISystemContext systemContext)
+    public FilesMigrationController(FilesMigrationStatusService statusService, ISystemContext systemContext,
+        ILogger<FilesMigrationController> logger)
     {
         _statusService = statusService;
         _systemContext = systemContext;
+        _logger = logger;
     }
 
     // GET system/v1/files/migration-status/{tenantId}
@@ -75,7 +78,9 @@ public class FilesMigrationController : ControllerBase
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            return StatusCode(StatusCodes.Status500InternalServerError, new InternalServerErrorDto(ex.Message));
+            _logger.LogError(ex, "Files migration status of tenant '{TenantId}' failed", tenantId);
+            return StatusCode(StatusCodes.Status500InternalServerError,
+                new InternalServerErrorDto("The files migration status could not be built; see the service log."));
         }
     }
 

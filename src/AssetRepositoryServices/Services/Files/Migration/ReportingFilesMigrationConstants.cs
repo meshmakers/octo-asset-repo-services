@@ -54,6 +54,23 @@ public static class ReportingFilesMigrationConstants
     public const string AuditCollectionName = "FilesMigrationAudit";
 
     /// <summary>
+    ///     Per-tenant lease collection of the sweep (one document per lease name, with expiry).
+    /// </summary>
+    public const string LeaseCollectionName = "FilesMigrationLease";
+
+    /// <summary>
+    ///     Quarantine of legacy documents whose rtId already exists in System.Files (a stale writer re-wrote
+    ///     an already moved entity): the System.Files version is kept, the legacy document is parked here for
+    ///     inspection and removed from the legacy collection.
+    /// </summary>
+    public const string ConflictCollectionName = "FilesMigrationConflicts";
+
+    /// <summary>
+    ///     CK model collection (document ids are "Name-x.y.z").
+    /// </summary>
+    public const string CkModelCollectionName = "CkModel";
+
+    /// <summary>
     ///     Name of the sweep in log lines and audit records.
     /// </summary>
     public const string SweepName = "ReportingFilesMoveSweep";

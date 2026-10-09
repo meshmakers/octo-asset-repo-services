@@ -91,7 +91,18 @@ public enum ReportingFilesSweepOutcome
     /// <summary>
     ///     The sweep is switched off (<see cref="FilesMigrationOptions.SweepEnabled" />).
     /// </summary>
-    Disabled
+    Disabled,
+
+    /// <summary>
+    ///     Another pod holds the tenant's sweep lease; this run skipped.
+    /// </summary>
+    LeaseHeld,
+
+    /// <summary>
+    ///     A legacy folder root has the well-known name of an existing System.Files root (e.g. "Files"); the
+    ///     move is aborted for the tenant instead of creating a duplicate root.
+    /// </summary>
+    RootConflict
 }
 
 /// <summary>
@@ -140,9 +151,15 @@ public sealed class ReportingFilesSweepResult
     public long StampsUpdated { get; set; }
 
     /// <summary>
-    ///     True when the emptied legacy collection was dropped.
+    ///     Legacy documents whose rtId already existed in System.Files ("type@rtId"): the System.Files version
+    ///     was kept, the legacy document parked in <see cref="ReportingFilesMigrationConstants.ConflictCollectionName" />.
     /// </summary>
-    public bool SourceCollectionDropped { get; set; }
+    public List<string> Conflicts { get; } = [];
+
+    /// <summary>
+    ///     Legacy folder roots whose well-known name collides with an existing System.Files root.
+    /// </summary>
+    public List<string> RootConflicts { get; } = [];
 
     /// <summary>
     ///     Errors (count mismatches, exceptions).
@@ -249,9 +266,9 @@ public sealed class FilesMigrationAuditDto
     public long StampsUpdated { get; init; }
 
     /// <summary>
-    ///     True when the legacy collection was dropped.
+    ///     Legacy documents parked because their rtId already existed in System.Files.
     /// </summary>
-    public bool SourceCollectionDropped { get; init; }
+    public IReadOnlyList<string> Conflicts { get; init; } = [];
 
     /// <summary>
     ///     Errors of the run.
@@ -278,6 +295,24 @@ public sealed class FilesMigrationStatusDto
     ///     Legacy data still present (the sweep's cheap check).
     /// </summary>
     public required ReportingFilesCounts Legacy { get; init; }
+
+    /// <summary>
+    ///     Documents in the legacy collection of other (derived or unknown) types, per type id. They are not
+    ///     moved; the legacy collection is never dropped by the sweep.
+    /// </summary>
+    public required IReadOnlyDictionary<string, long> OtherLegacyTypes { get; init; }
+
+    /// <summary>
+    ///     Legacy folder roots whose well-known name collides with an existing System.Files root; the sweep
+    ///     refuses to move the tenant while any exist.
+    /// </summary>
+    public required IReadOnlyList<string> RootConflicts { get; init; }
+
+    /// <summary>
+    ///     False when the literal scan hit <see cref="FilesMigrationOptions.ScanTimeout" /> and the reference
+    ///     list is incomplete.
+    /// </summary>
+    public bool LiteralScanComplete { get; init; } = true;
 
     /// <summary>
     ///     True when System.Files is imported (target collection with indexes exists).

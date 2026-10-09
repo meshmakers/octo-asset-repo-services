@@ -36,6 +36,7 @@ public class ReportingFilesMoveSweepTests
     private const string Target = FileSystemConstants.EntityCollectionName;
     private const string Associations = ReportingFilesMigrationConstants.AssociationCollectionName;
     private const string Audit = ReportingFilesMigrationConstants.AuditCollectionName;
+    private const string TenantSweepLeaseCollection = ReportingFilesMigrationConstants.LeaseCollectionName;
 
     private readonly FilesMigrationTestFixture _fixture;
 
@@ -75,10 +76,11 @@ public class ReportingFilesMoveSweepTests
         result.AssociationOriginsUpdated.Should().Be(3);
         result.AssociationTargetsUpdated.Should().Be(4);
         result.StampsUpdated.Should().Be(3);
-        result.SourceCollectionDropped.Should().BeTrue();
+        result.Conflicts.Should().BeEmpty();
         result.After!.IsZero.Should().BeTrue();
 
-        (await _fixture.CollectionExistsAsync(Legacy)).Should().BeFalse("the emptied legacy collection is dropped");
+        (await _fixture.Collection(Legacy).CountDocumentsAsync(FilterDefinition<BsonDocument>.Empty, cancellationToken: Ct))
+            .Should().Be(0, "the legacy collection is emptied but never dropped (a straggler could be lost)");
 
         // Entities: same _id, new ckTypeId, content reference unchanged.
         var moved = await _fixture.Collection(Target).Find(Builders<BsonDocument>.Filter.In("_id",
@@ -124,7 +126,9 @@ public class ReportingFilesMoveSweepTests
         second.TotalEntitiesMoved.Should().Be(0);
         (await _fixture.Collection(Audit).CountDocumentsAsync(FilterDefinition<BsonDocument>.Empty,
             cancellationToken: Ct)).Should().Be(auditBefore + 1);
-        (await _fixture.CollectionExistsAsync(Legacy)).Should().BeFalse();
+        (await _fixture.CollectionExistsAsync(TenantSweepLeaseCollection)).Should().BeTrue();
+        (await _fixture.Collection(TenantSweepLeaseCollection).CountDocumentsAsync(FilterDefinition<BsonDocument>.Empty,
+            cancellationToken: Ct)).Should().Be(0, "the lease is released after the sweep");
     }
 
     [Fact]
@@ -232,7 +236,12 @@ public class ReportingFilesMoveSweepTests
         }
 
         await _fixture.Runner.RunStragglerSweepAsync(Ct);
-        _fixture.Tracker.IsPending(TenantId).Should().BeFalse("a zero check takes the tenant off the timer");
+        _fixture.Tracker.IsPending(TenantId).Should().BeTrue(
+            "a zero check inside the straggler window keeps the tenant on the timer (old writers may still appear)");
+
+        _fixture.Tracker.SetLastFinding(TenantId, DateTime.UtcNow - TimeSpan.FromHours(25));
+        await _fixture.Runner.RunStragglerSweepAsync(Ct);
+        _fixture.Tracker.IsPending(TenantId).Should().BeFalse("a zero check after the window takes the tenant off the timer");
     }
 
     [Fact]
@@ -307,7 +316,8 @@ public class ReportingFilesMoveSweepTests
             status.ScannedCollections.Should().BeGreaterThan(2);
 
             // The system endpoint returns the same report to a system administrator only.
-            var controller = new FilesMigrationController(_fixture.Status, _fixture.GetSystemContext())
+            var controller = new FilesMigrationController(_fixture.Status, _fixture.GetSystemContext(),
+                NullLogger<FilesMigrationController>.Instance)
             {
                 ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext { User = SystemAdmin() } }
             };
@@ -341,6 +351,7 @@ public class ReportingFilesMoveSweepTests
         var empty = await sweep.SweepAsync("t", "Test", Ct);
         empty.Outcome.Should().Be(ReportingFilesSweepOutcome.NothingToDo);
         (await (await emptyDatabase.ListCollectionNamesAsync(cancellationToken: Ct)).ToListAsync(Ct)).Should().BeEmpty();
+        (await ReportingFilesMoveSweep.IsReporting3InstalledAsync(emptyDatabase, Ct)).Should().BeFalse();
 
         // Legacy data but no System.Files: skipped, legacy data untouched.
         await emptyDatabase.GetCollection<BsonDocument>(Legacy).InsertOneAsync(new BsonDocument
@@ -357,11 +368,145 @@ public class ReportingFilesMoveSweepTests
                 .CountDocumentsAsync(FilterDefinition<BsonDocument>.Empty, cancellationToken: Ct)).Should().Be(1);
             (await (await emptyDatabase.ListCollectionNamesAsync(cancellationToken: Ct)).ToListAsync(Ct))
                 .Should().BeEquivalentTo([Legacy]);
+
+            var ckModels = emptyDatabase.GetCollection<BsonDocument>(ReportingFilesMigrationConstants.CkModelCollectionName);
+            await ckModels.InsertOneAsync(new BsonDocument("_id", "System.Reporting-2.3.0"), cancellationToken: Ct);
+            (await ReportingFilesMoveSweep.IsReporting3InstalledAsync(emptyDatabase, Ct)).Should().BeFalse();
+            await ckModels.InsertOneAsync(new BsonDocument("_id", "System.Reporting-3.0.0"), cancellationToken: Ct);
+            (await ReportingFilesMoveSweep.IsReporting3InstalledAsync(emptyDatabase, Ct)).Should().BeTrue();
         }
         finally
         {
             await emptyDatabase.Client.DropDatabaseAsync(emptyDatabase.DatabaseNamespace.DatabaseName, Ct);
         }
+    }
+
+    [Fact]
+    public async Task TenantStart_WithoutLegacyData_RunsNoScan()
+    {
+        // Make sure nothing is left from other tests.
+        await _fixture.Sweep.SweepAsync(TenantId, "Test", Ct);
+        var scansBefore = _fixture.Status.LiteralScanCount;
+
+        var result = await _fixture.Runner.RunAtTenantStartAsync(TenantId, Ct);
+
+        result!.Outcome.Should().Be(ReportingFilesSweepOutcome.NothingToDo);
+        _fixture.Status.LiteralScanCount.Should().Be(scansBefore,
+            "the start path runs only the cheap check when there is nothing to move");
+
+        // With legacy data the lease holder scans once.
+        await _fixture.SeedLegacyTreeAsync();
+        var moved = await _fixture.Runner.RunAtTenantStartAsync(TenantId, Ct);
+        moved!.Outcome.Should().Be(ReportingFilesSweepOutcome.Moved, string.Join("; ", moved.Errors));
+        _fixture.Status.LiteralScanCount.Should().Be(scansBefore + 1);
+    }
+
+    [Fact]
+    public async Task Lease_HeldByAnotherInstance_SkipsQuietly_AndAnExpiredLeaseIsTakenOver()
+    {
+        var tree = await _fixture.SeedLegacyTreeAsync();
+        var other = await TenantSweepLease.TryAcquireAsync(_fixture.Database, ReportingFilesMoveSweep.LeaseName,
+            TimeSpan.FromMinutes(5), Ct);
+        other.Should().NotBeNull();
+        try
+        {
+            (await TenantSweepLease.TryAcquireAsync(_fixture.Database, ReportingFilesMoveSweep.LeaseName,
+                TimeSpan.FromMinutes(5), Ct)).Should().BeNull("only one holder at a time");
+
+            var skipped = await _fixture.Sweep.SweepAsync(TenantId, "Test", Ct);
+            skipped.Outcome.Should().Be(ReportingFilesSweepOutcome.LeaseHeld);
+            skipped.TotalEntitiesMoved.Should().Be(0);
+            (await _fixture.Collection(Legacy).CountDocumentsAsync(Builders<BsonDocument>.Filter.Eq("_id", tree.ItemA),
+                cancellationToken: Ct)).Should().Be(1, "nothing moves without the lease");
+        }
+        finally
+        {
+            await other!.DisposeAsync();
+        }
+
+        // A crashed holder: its lease has expired and is taken over.
+        await _fixture.Collection(TenantSweepLeaseCollection).InsertOneAsync(new BsonDocument
+        {
+            { "_id", ReportingFilesMoveSweep.LeaseName },
+            { "owner", "crashed-pod/1" },
+            { "expiresAt", DateTime.UtcNow.AddMinutes(-1) }
+        }, cancellationToken: Ct);
+
+        var result = await _fixture.Sweep.SweepAsync(TenantId, "Test", Ct);
+        result.Outcome.Should().Be(ReportingFilesSweepOutcome.Moved, string.Join("; ", result.Errors));
+    }
+
+    [Fact]
+    public async Task StaleWriter_ReWritingAMovedRtId_DoesNotOverwriteTheTarget()
+    {
+        var tree = await _fixture.SeedLegacyTreeAsync();
+        (await _fixture.Sweep.SweepAsync(TenantId, "Test", Ct)).Outcome.Should().Be(ReportingFilesSweepOutcome.Moved);
+
+        // An old writer re-creates b.txt under its legacy type with the same rtId.
+        await _fixture.Collection(Legacy).InsertOneAsync(new BsonDocument
+        {
+            { "_id", tree.ItemB },
+            { "_t", "RtEntity" },
+            { "ckTypeId", ReportingFilesMigrationConstants.LegacyFileSystemItemCkTypeId },
+            { "attributes", new BsonDocument("name", "stale.txt") }
+        }, cancellationToken: Ct);
+
+        var result = await _fixture.Sweep.SweepAsync(TenantId, "Test", Ct);
+
+        result.Outcome.Should().Be(ReportingFilesSweepOutcome.Moved, string.Join("; ", result.Errors));
+        result.Conflicts.Should().BeEquivalentTo([$"{ReportingFilesMigrationConstants.LegacyFileSystemItemCkTypeId}@{tree.ItemB}"]);
+        result.TotalEntitiesMoved.Should().Be(0);
+        var target = await _fixture.Collection(Target).Find(Builders<BsonDocument>.Filter.Eq("_id", tree.ItemB)).SingleAsync(Ct);
+        target["attributes"]["name"].AsString.Should().Be("b.txt", "the System.Files version is kept");
+        var parked = await _fixture.Collection(ReportingFilesMigrationConstants.ConflictCollectionName)
+            .Find(Builders<BsonDocument>.Filter.Eq("rtId", tree.ItemB)).SingleAsync(Ct);
+        parked["document"]["attributes"]["name"].AsString.Should().Be("stale.txt");
+        result.After!.IsZero.Should().BeTrue();
+
+        var audit = await _fixture.Collection(Audit).Find(FilterDefinition<BsonDocument>.Empty)
+            .Sort(Builders<BsonDocument>.Sort.Descending("executedAt")).FirstAsync(Ct);
+        audit["conflicts"].AsBsonArray.Should().HaveCount(1);
+    }
+
+    [Fact]
+    public async Task RootConflict_AbortsTheMove_IsReportedAndAuditedOnce_OtherLegacyTypesAreReported()
+    {
+        var tree = await _fixture.SeedLegacyTreeAsync();
+        var clash = await _fixture.InsertLegacyEntityAsync(ReportingFilesMigrationConstants.LegacyFolderRootCkTypeId,
+            "files", "files");
+        var derivedId = ObjectId.GenerateNewId();
+        await _fixture.Collection(Legacy).InsertOneAsync(new BsonDocument
+        {
+            { "_id", derivedId }, { "_t", "RtEntity" }, { "ckTypeId", "Custom.Model/SpecialItem" },
+            { "attributes", new BsonDocument("name", "special") }
+        }, cancellationToken: Ct);
+        try
+        {
+            var auditBefore = await _fixture.Collection(Audit).CountDocumentsAsync(FilterDefinition<BsonDocument>.Empty,
+                cancellationToken: Ct);
+
+            var result = await _fixture.Sweep.SweepAsync(TenantId, "Test", Ct);
+            result.Outcome.Should().Be(ReportingFilesSweepOutcome.RootConflict);
+            result.RootConflicts.Should().ContainSingle().Which.Should().Contain(clash.ToString()).And.Contain("'Files'");
+            result.TotalEntitiesMoved.Should().Be(0);
+            (await _fixture.Collection(Legacy).CountDocumentsAsync(Builders<BsonDocument>.Filter.Eq("_id", tree.ItemA),
+                cancellationToken: Ct)).Should().Be(1, "nothing moves while a root collides");
+
+            (await _fixture.Sweep.SweepAsync(TenantId, "Test", Ct)).Outcome.Should().Be(ReportingFilesSweepOutcome.RootConflict);
+            (await _fixture.Collection(Audit).CountDocumentsAsync(FilterDefinition<BsonDocument>.Empty,
+                cancellationToken: Ct)).Should().Be(auditBefore + 1, "a persistent conflict is audited once");
+
+            var status = await _fixture.Status.GetStatusAsync(TenantId, Ct);
+            status!.RootConflicts.Should().ContainSingle();
+            status.OtherLegacyTypes.Should().ContainKey("Custom.Model/SpecialItem").WhoseValue.Should().Be(1);
+            status.LiteralScanComplete.Should().BeTrue();
+        }
+        finally
+        {
+            await _fixture.Collection(Legacy).DeleteManyAsync(Builders<BsonDocument>.Filter.In("_id", new[] { clash, derivedId }), Ct);
+        }
+
+        (await _fixture.Sweep.SweepAsync(TenantId, "Test", Ct)).Outcome.Should().Be(ReportingFilesSweepOutcome.Moved);
     }
 
     [Fact]
