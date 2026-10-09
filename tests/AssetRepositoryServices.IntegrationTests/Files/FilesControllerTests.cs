@@ -429,6 +429,34 @@ public class FilesControllerTests
     }
 
     [Fact]
+    public async Task Upload_StampsTheUserRtIdAsCreator_LikeGraphQl()
+    {
+        // F4 (S6 browser test): REST and GraphQL must stamp the same creator — the token's subject (user rtId),
+        // never a user name, also when the token carries name / preferred_username claims.
+        var root = await _helpers.CreateRootAsync();
+        var user = new global::System.Security.Claims.ClaimsPrincipal(new global::System.Security.Claims.ClaimsIdentity(
+        [
+            new global::System.Security.Claims.Claim("sub", "6aa19643e21296d4d2f39a4c"),
+            new global::System.Security.Claims.Claim("name", "xt_octosystem_someone@example.org"),
+            new global::System.Security.Claims.Claim("preferred_username", "xt_octosystem_someone@example.org"),
+            new global::System.Security.Claims.Claim(global::System.Security.Claims.ClaimTypes.Name, "xt_octosystem_someone@example.org")
+        ], "Bearer"));
+
+        var (rest, _) = Create(user, "x"u8.ToArray(), "text/plain");
+        var uploaded = (FileEntryDto)((ObjectResult)await rest.UploadIntoFolderById(root.Id.RtId.ToString(), "rest.txt")).Value!;
+        uploaded.CreatedBy.Should().Be("6aa19643e21296d4d2f39a4c");
+
+        var created = await _fixture.ExecuteGraphQlAsync("""
+            mutation ($p: OctoObjectId!) { runtime { systemFilesFolders { create(entities: [{name: "gql",
+              parent: [{modOption: CREATE, target: {ckTypeId: "System.Files/FolderRoot", rtId: $p}}]}]) { rtCreatedBy } } } }
+            """, global::System.Text.Json.JsonSerializer.Serialize(new { p = root.Id.RtId.ToString() }), user);
+        created.Errors.Should().BeNullOrEmpty();
+        Newtonsoft.Json.Linq.JObject.Parse(_fixture.SerializeGraphQl(created))
+            .SelectToken("data.runtime.systemFilesFolders.create[0].rtCreatedBy")!.ToString()
+            .Should().Be(uploaded.CreatedBy);
+    }
+
+    [Fact]
     public async Task Replace_KeepsTheCreationTime()
     {
         var root = await _helpers.CreateRootAsync();
