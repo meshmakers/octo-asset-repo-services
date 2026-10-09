@@ -36,6 +36,7 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.TenantApi.v1.Controlle
 public class FilesController(
     IOctoService octoService,
     FileSystemService fileSystem,
+    FileZipService zipService,
     IOptions<FilesOptions> filesOptions) : ControllerBase
 {
     private static readonly FileExtensionContentTypeProvider ContentTypeProvider = new();
@@ -54,7 +55,7 @@ public class FilesController(
         return Ok(new FilesCapabilitiesDto
         {
             MaxUploadBytes = Limits.MaxUploadBytes,
-            ZipDownload = false,
+            ZipDownload = true,
             ZipMaxFiles = Limits.ZipMaxFiles,
             ZipMaxBytes = Limits.ZipMaxBytes,
             PreviewMaxBytes = Limits.PreviewMaxBytes,
@@ -236,6 +237,82 @@ public class FilesController(
             var folder = await fileSystem.ResolveFolderAsync(repository, session, unfiltered, root, folderPath,
                 createFolders);
             return await UploadAsync(repository, session, unfiltered, folder, segments[^1], mode, root, folderPath);
+        });
+    }
+
+    /// <summary>
+    ///     Streamed zip of files and folders (AB#6225), addressed by path (<c>items</c>) and/or rtId
+    ///     (<c>rtIds</c>); folders are included recursively. Limits (ZipMaxFiles, ZipMaxBytes = sum of the
+    ///     source sizes) are checked before the first byte (413 LIMIT_EXCEEDED); an entry that does not exist
+    ///     or is hidden by data permissions answers 404 before streaming; hidden entries below a selected
+    ///     folder are left out silently.
+    /// </summary>
+    [HttpPost("zip")]
+    [Authorize(AuthenticationSchemes = InfrastructureCommon.OidcAuthenticationScheme,
+        Policy = AssetRepositoryServiceConstants.TenantAssetApiReadOnlyPolicy)]
+    [ProducesResponseType(typeof(FileStreamResult), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status413PayloadTooLarge)]
+    public Task<IActionResult> DownloadZip([FromBody] ZipRequestDto request)
+    {
+        return ExecuteAsync(async (repository, session, _) =>
+        {
+            var refs = request.Items ?? [];
+            var rtIds = request.RtIds ?? [];
+            if (refs.Count + rtIds.Count == 0)
+            {
+                throw FileSystemException.InvalidRequest("Select at least one file or folder (items or rtIds).");
+            }
+
+            if (refs.Count + rtIds.Count > Limits.ZipMaxFiles)
+            {
+                throw FileSystemException.ZipTooManyFiles(refs.Count + rtIds.Count, Limits.ZipMaxFiles);
+            }
+
+            var selection = new List<FileSystemEntry>();
+            var seen = new HashSet<string>();
+            foreach (var item in refs)
+            {
+                var entry = await fileSystem.ResolveAsync(repository, session, item.Root, item.Path);
+                if (seen.Add(entry.Id.RtId.ToString()))
+                {
+                    selection.Add(entry);
+                }
+            }
+
+            foreach (var rtId in rtIds)
+            {
+                var entry = await FindByIdAsync(repository, session, rtId);
+                if (seen.Add(entry.Id.RtId.ToString()))
+                {
+                    selection.Add(entry);
+                }
+            }
+
+            var plan = await zipService.PlanAsync(repository, session, selection, Limits, HttpContext.RequestAborted);
+
+            var fileName = string.IsNullOrWhiteSpace(request.FileName) ? "files.zip" : request.FileName.Trim();
+            if (!fileName.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
+            {
+                fileName += ".zip";
+            }
+
+            Response.StatusCode = StatusCodes.Status200OK;
+            Response.ContentType = "application/zip";
+            FileResponseHeaders.Apply(Response, fileName, "application/zip", inline: false);
+            HttpContext.Features.Get<IHttpResponseBodyFeature>()?.DisableBuffering();
+            try
+            {
+                await zipService.WriteAsync(repository, session, plan, Response.Body, HttpContext.RequestAborted);
+            }
+            catch (Exception) when (Response.HasStarted)
+            {
+                // The status line is gone: abort so the client sees a broken download, not a truncated zip.
+                HttpContext.Abort();
+            }
+
+            return new EmptyResult();
         });
     }
 

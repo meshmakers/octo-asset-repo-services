@@ -268,6 +268,98 @@ public class FilesControllerTests
         http.Response.Headers.AccessControlExposeHeaders.ToString().Should().Contain("Content-Disposition");
     }
 
+    [Fact]
+    public async Task Zip_FoldersAndFiles_ByPathAndRtId_StreamsAValidArchive()
+    {
+        var root = await _helpers.CreateRootAsync();
+        var wkn = root.Entity.RtWellKnownName!;
+        var a = await _helpers.CreateFolderAsync(root, "A");
+        await _helpers.CreateFolderAsync(a, "Empty");
+        await _helpers.UploadAsync(a, "in-a.txt", "aaa", FileConflictMode.Fail);
+        var top = await _helpers.UploadAsync(root, "top.txt", "top", FileConflictMode.Fail);
+        var other = await _helpers.CreateFolderAsync(root, "B");
+        await _helpers.UploadAsync(other, "top.txt", "other top", FileConflictMode.Fail);
+
+        var (controller, http) = Create(FilesTestFixture.PlainUser);
+        var body = new MemoryStream();
+        http.Response.Body = body;
+        var result = await controller.DownloadZip(new ZipRequestDto
+        {
+            Items = [new FileRefDto { Root = wkn, Path = "A" }, new FileRefDto { Root = wkn, Path = "B/top.txt" }],
+            RtIds = [top.Id.RtId.ToString()],
+            FileName = "Auswahl Ä"
+        });
+
+        result.Should().BeOfType<EmptyResult>();
+        http.Response.ContentType.Should().Be("application/zip");
+        http.Response.Headers.ContentDisposition.ToString().Should().Contain("filename*=UTF-8''Auswahl%20%C3%84.zip");
+
+        body.Position = 0;
+        using var zip = new global::System.IO.Compression.ZipArchive(body, global::System.IO.Compression.ZipArchiveMode.Read);
+        zip.Entries.Select(e => e.FullName).Should().BeEquivalentTo(
+            "A/", "A/Empty/", "A/in-a.txt", "top.txt", "top (1).txt");
+        using var reader = new StreamReader(zip.GetEntry("A/in-a.txt")!.Open());
+        (await reader.ReadToEndAsync(TestContext.Current.CancellationToken)).Should().Be("aaa");
+    }
+
+    [Fact]
+    public async Task Zip_Limits_AreCheckedBeforeTheFirstByte()
+    {
+        var root = await _helpers.CreateRootAsync();
+        var wkn = root.Entity.RtWellKnownName!;
+        await _helpers.UploadAsync(root, "1.txt", "11111", FileConflictMode.Fail);
+        await _helpers.UploadAsync(root, "2.txt", "22222", FileConflictMode.Fail);
+
+        var (tooMany, http1) = Create(FilesTestFixture.PlainUser, limits: new FilesOptions { ZipMaxFiles = 1 });
+        var r1 = (ObjectResult)await tooMany.DownloadZip(new ZipRequestDto { Items = [new FileRefDto { Root = wkn }] });
+        r1.StatusCode.Should().Be(StatusCodes.Status413PayloadTooLarge);
+        Code(r1).Should().Be(FileSystemErrorCodes.LimitExceeded);
+        http1.Response.HasStarted.Should().BeFalse();
+
+        var (tooBig, _) = Create(FilesTestFixture.PlainUser, limits: new FilesOptions { ZipMaxBytes = 9 });
+        var r2 = (ObjectResult)await tooBig.DownloadZip(new ZipRequestDto { Items = [new FileRefDto { Root = wkn }] });
+        r2.StatusCode.Should().Be(StatusCodes.Status413PayloadTooLarge);
+
+        var (missing, _) = Create(FilesTestFixture.PlainUser);
+        var r3 = (ObjectResult)await missing.DownloadZip(new ZipRequestDto { Items = [new FileRefDto { Root = wkn, Path = "nope.txt" }] });
+        r3.StatusCode.Should().Be(StatusCodes.Status404NotFound);
+
+        var (empty, _) = Create(FilesTestFixture.PlainUser);
+        var r4 = (ObjectResult)await empty.DownloadZip(new ZipRequestDto());
+        r4.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+    }
+
+    [Fact]
+    public async Task Zip_LeavesOutFilesHiddenByDataPermissions()
+    {
+        var root = await _helpers.CreateRootAsync();
+        var wkn = root.Entity.RtWellKnownName!;
+        await _helpers.CreateFolderAsync(root, "Shared");
+        var alice = FilesTestFixture.CreateUser("alice", "FileUser");
+        var bob = FilesTestFixture.CreateUser("bob", "FileUser");
+
+        _fixture.Permissions.Table = FileSystemMutationGuardTests.OwnedFilesTable();
+        try
+        {
+            var (a1, _) = Create(alice, "secret"u8.ToArray(), "text/plain");
+            await a1.UploadByPath(wkn, "Shared/alice.txt");
+            var (b1, _) = Create(bob, "mine"u8.ToArray(), "text/plain");
+            await b1.UploadByPath(wkn, "Shared/bob.txt");
+
+            var (zipper, http) = Create(bob);
+            var body = new MemoryStream();
+            http.Response.Body = body;
+            await zipper.DownloadZip(new ZipRequestDto { Items = [new FileRefDto { Root = wkn, Path = "Shared" }] });
+            body.Position = 0;
+            using var zip = new global::System.IO.Compression.ZipArchive(body, global::System.IO.Compression.ZipArchiveMode.Read);
+            zip.Entries.Select(e => e.FullName).Should().BeEquivalentTo("Shared/", "Shared/bob.txt");
+        }
+        finally
+        {
+            _fixture.Permissions.Table = RtDataPolicyTable.Empty;
+        }
+    }
+
     // ---------------------------------------------------------------------------------------------
 
     private async Task<ObjectResult> Upload(string root, string path, string content, string? conflict = null,
@@ -289,7 +381,7 @@ public class FilesControllerTests
         }
 
         var controller = new FilesController(_fixture.GetService<IOctoService>(), _fixture.FileSystem,
-            Options.Create(limits ?? new FilesOptions()))
+            _fixture.GetService<FileZipService>(), Options.Create(limits ?? new FilesOptions()))
         {
             ControllerContext = new ControllerContext { HttpContext = http }
         };
