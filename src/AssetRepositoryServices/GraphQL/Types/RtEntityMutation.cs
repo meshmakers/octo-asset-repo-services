@@ -8,6 +8,7 @@ using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.ConstructionKit.Contracts.Messages;
 using Meshmakers.Octo.Runtime.Contracts;
 using Meshmakers.Octo.Runtime.Contracts.RepositoryEntities;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.Services.Files;
 using MongoDB.Driver;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
@@ -78,6 +79,13 @@ internal class RtEntityMutation : RtMutationBase
                 entityUpdateInfos.Add(EntityUpdateInfo<RtEntity>.CreateInsert(rtEntity));
             }
 
+            // AB#6171: file system rules for System.Files entities (root role, unique names per folder).
+            if (FileSystemService.IsFileSystemType(rtCkTypeId))
+            {
+                await arg.GetFileSystemMutationGuard().BeforeCreateAsync(tenantRepository,
+                    Helpers.GetSecurityContext(arg.UserContext), entityUpdateInfos, associationUpdateInfoList);
+            }
+
             var deleteAssociations =
                 associationUpdateInfoList.Where(x => x.ModOption == AssociationModOptionsDto.Delete);
             if (deleteAssociations.Any())
@@ -136,6 +144,13 @@ internal class RtEntityMutation : RtMutationBase
                 {
                     entityUpdateInfos.Add(entityUpdateInfo);
                 }
+            }
+
+            // AB#6171: file system rules for System.Files entities (rename, move, protected roots).
+            if (FileSystemService.IsFileSystemType(ckTypeId))
+            {
+                await arg.GetFileSystemMutationGuard().BeforeUpdateAsync(tenantRepository, entityUpdateInfos,
+                    associationUpdateInfoList);
             }
 
             OperationResult operationResult = new();
