@@ -58,7 +58,8 @@ internal sealed class CkInterfaceGraphType : InterfaceGraphType<RtEntityDto>
         CkInterfaceGraph ckInterfaceGraph)
     {
         var builder = OctoBuilder<RtEntityDto>.Create(this, options);
-        foreach (var attribute in ckInterfaceGraph.Attributes.Values)
+        // CK v2 (F1.5-S2): AllAttributes includes the members of every extended interface.
+        foreach (var attribute in ckInterfaceGraph.AllAttributes.Values)
         {
             builder.Attribute(graphTypesCache, attribute, isInputType: false, isInterface: true);
         }

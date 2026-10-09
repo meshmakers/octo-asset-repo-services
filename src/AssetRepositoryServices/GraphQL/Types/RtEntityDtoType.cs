@@ -92,8 +92,12 @@ internal sealed class RtEntityDtoType : ObjectGraphType<RtEntityDto>
         {
             // Get all derived types but filter out abstract types since they can't have instances
             // The union should only contain concrete types that can actually be returned
+            // CK v2 (F1.1-S5): an association may narrow its target to types implementing a CK interface
+            // (TargetCkInterfaceId) - only those can be targets, so only they belong to the union.
             var allowedTypes = ckTypeAssociationGraph
-                .SelectMany(x => ckCacheService.GetCkType(tenantId, x.TargetCkTypeId).GetAllDerivedTypes(true))
+                .SelectMany(x => ckCacheService.GetCkType(tenantId, x.TargetCkTypeId).GetAllDerivedTypes(true)
+                    .Where(t => x.TargetCkInterfaceId == null || ckCacheService.GetCkType(tenantId, t)
+                        .AllImplementedInterfaces.Contains(x.TargetCkInterfaceId)))
                 .Where(x => !ckCacheService.GetCkType(tenantId, x).IsAbstract)
                 .Select(x => x.ToRtCkId())
                 .Distinct()

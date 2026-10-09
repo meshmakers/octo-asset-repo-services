@@ -483,11 +483,26 @@ schema initialization.
   (own and inherited). An **optional member the type does not assign** is added to the object type as a nullable
   field that always resolves to `null` — GraphQL requires every interface field on the implementing object, and
   rules I-1..I-4 only cover required members (e.g. `Named-1.Description` on `Role`).
+- **Interface inheritance (`extends`, F1.5-S2):** a CK interface's fields are its `AllAttributes` (own plus every
+  extended interface's members), and the GraphQL interface implements all its (transitive) parent interfaces
+  (`LinkExtendedInterfaces`, GraphQL interface inheritance). Implementing object types list the full closure — the
+  engine's `CkTypeGraph.AllImplementedInterfaces` already contains the extended interfaces.
+- **Interface association members** become interface fields after all object types are populated
+  (`AddInterfaceAssociationFields`, parents first): when **every** implementing object type has the outbound
+  association field of that role with the same name, connection type name and arguments, the interface gets the same
+  field (shared connection type and arguments); a child interface reuses the field of its parent. Otherwise the member
+  is omitted with a **Warning** (members without any implementor: Debug). Inbound association members are not exposed.
+- **Associations narrowed to an interface** (`targetCkInterfaceId` on a type association): the navigation union
+  only contains the concrete targets that implement the interface.
 - When the field alignment in `RtEntityDtoType` still fails, `ReportInterfaceNotImplemented` logs a **Warning** for CK
   interfaces (Debug for abstract-type interfaces, where it is expected for overridden associations) instead of
   skipping silently.
-- Tests: `CkInterfaceSchemaTests` (unit), `GraphQL/CkV2/CkInterfaceIntrospectionTests` (integration, test interface
-  `AssetRepositoryIntegrationTest/Labeled-1` implemented by `AccessTestAccount` and `AccessTestGroup`).
+- `runtime.byInterface` and `GetRtEntitiesByType ckInterfaceId` are CK v2 Phase 4 (no field returns an interface
+  type yet; the interfaces serve introspection and fragments).
+- Tests: `CkInterfaceSchemaTests` (unit), `GraphQL/CkV2/CkInterfaceIntrospectionTests` (integration, test interfaces
+  `AssetRepositoryIntegrationTest/Labeled-1` implemented by `AccessTestAccount` and `AccessTestGroup`, and `Member-1`
+  extending `Labeled-1` with the `AccessTestMembership` association member, implemented by `AccessTestAccount`;
+  `AccessTestGroup.LinksToLabeled` is narrowed to `Labeled-1`).
 
 
 ### Authentication

@@ -5,6 +5,8 @@ using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Enums;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Inputs;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.Services;
+using Meshmakers.Octo.ConstructionKit.Contracts.DependencyGraph;
+using Meshmakers.Octo.Runtime.Contracts.Repositories;
 using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.ConstructionKit.Contracts.Services;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb;
@@ -126,6 +128,114 @@ internal class GraphTypesCache : IGraphTypesCache
         }
 
         return interfaces;
+    }
+
+    private void LinkExtendedInterfaces(CkInterfaceGraph ckInterfaceGraph)
+    {
+        var child = _ckInterfaceTypes[ckInterfaceGraph.CkInterfaceId.ToRtCkId()];
+        foreach (var parentId in ckInterfaceGraph.AllExtendedInterfaces)
+        {
+            if (!_ckInterfaceTypes.TryGetValue(parentId.ToRtCkId(), out var parent))
+            {
+                continue;
+            }
+
+            // The compiler merges the parent's members into the child (AllAttributes), so the fields align; this is
+            // the safety net GraphQL schema validation would otherwise turn into a failed schema build.
+            var missing = parent.Fields.FirstOrDefault(pf => child.Fields.All(cf => cf.Name != pf.Name));
+            if (missing != null)
+            {
+                ReportInterfaceNotImplemented(child.Name, parent, $"field '{missing.Name}' is missing");
+                continue;
+            }
+
+            child.AddResolvedInterface(parent);
+        }
+    }
+
+    private void AddInterfaceAssociationFields(CkInterfaceGraph ckInterfaceGraph)
+    {
+        var interfaceType = _ckInterfaceTypes[ckInterfaceGraph.CkInterfaceId.ToRtCkId()];
+        var implementors = _types.Values.Where(t => t.ResolvedInterfaces.Contains(interfaceType)).ToList();
+
+        foreach (var association in ckInterfaceGraph.AllAssociations)
+        {
+            var roleId = association.Definition.CkRoleId;
+
+            // Inherited from a parent interface that could add the field: reuse it (the child's implementors are a
+            // subset of the parent's, so they have the same field).
+            var inherited = interfaceType.ResolvedInterfaces
+                .SelectMany(p => p.Fields)
+                .FirstOrDefault(f => f.Metadata.TryGetValue(Statics.RoleId, out var r) &&
+                                     Equals(r, roleId.ToRtCkId()));
+            if (inherited != null)
+            {
+                if (interfaceType.Fields.All(f => f.Name != inherited.Name))
+                {
+                    interfaceType.AddField(CloneInterfaceField(inherited, roleId));
+                }
+
+                continue;
+            }
+
+            if (implementors.Count == 0)
+            {
+                _logger.LogDebug(
+                    "CK interface {InterfaceName} of tenant {TenantId}: association {RoleId} has no implementing type; no field",
+                    interfaceType.Name, _tenantId, roleId);
+                continue;
+            }
+
+            var fields = implementors.Select(t => (Type: t, Field: FindAssociationField(t, roleId))).ToList();
+            var first = fields[0].Field;
+            var mismatch = fields.FirstOrDefault(f => f.Field == null || first == null ||
+                                                      f.Field.Name != first.Name ||
+                                                      GetTypeName(f.Field) != GetTypeName(first) ||
+                                                      !SameArguments(f.Field, first));
+            if (first == null || mismatch.Type != null)
+            {
+                _logger.LogWarning(
+                    "CK interface {InterfaceName} of tenant {TenantId}: association {RoleId} is not exposed as an interface field because the implementing types do not expose the same field shape (first mismatch: {TypeName})",
+                    interfaceType.Name, _tenantId, roleId, (mismatch.Type ?? fields[0].Type).Name);
+                continue;
+            }
+
+            interfaceType.AddField(CloneInterfaceField(first, roleId));
+        }
+    }
+
+    private static FieldType? FindAssociationField(RtEntityDtoType type, CkId<CkAssociationRoleId> roleId)
+    {
+        var rtRoleId = roleId.ToRtCkId();
+        return type.Fields.FirstOrDefault(f =>
+            f.Metadata.TryGetValue(Statics.RoleId, out var r) && Equals(r, rtRoleId) &&
+            f.Metadata.TryGetValue(Statics.GraphDirection, out var d) && Equals(d, GraphDirections.Outbound));
+    }
+
+    private static FieldType CloneInterfaceField(FieldType source, CkId<CkAssociationRoleId> roleId)
+    {
+        var field = new FieldType
+        {
+            Name = source.Name,
+            Description = source.Description,
+            Type = source.Type,
+            ResolvedType = source.ResolvedType,
+            Arguments = source.Arguments
+        };
+        field.Metadata[Statics.RoleId] = roleId.ToRtCkId();
+        return field;
+    }
+
+    private static string? GetTypeName(FieldType field)
+    {
+        return field.ResolvedType?.Name ?? field.Type?.Name;
+    }
+
+    private static bool SameArguments(FieldType a, FieldType b)
+    {
+        var argsA = (a.Arguments?.Select(x => x.Name) ?? []).OrderBy(x => x, StringComparer.Ordinal);
+        var argsB = (b.Arguments?.Select(x => x.Name) ?? []).OrderBy(x => x, StringComparer.Ordinal);
+        return argsA.SequenceEqual(argsB);
     }
 
     /// <inheritdoc />
@@ -292,11 +402,18 @@ internal class GraphTypesCache : IGraphTypesCache
 
         // CK v2 (AB#5667): CK interfaces after enums and records (members may use them), before the types
         // (object types add them as implemented interfaces while they are populated).
-        foreach (var ckInterfaceGraph in _ckCacheService.GetRtCkInterfaces(_tenantId))
+        var ckInterfaceGraphs = _ckCacheService.GetRtCkInterfaces(_tenantId).ToList();
+        foreach (var ckInterfaceGraph in ckInterfaceGraphs)
         {
             var ckInterfaceType = _ckInterfaceTypes.GetOrAdd(ckInterfaceGraph.CkInterfaceId.ToRtCkId(),
                 _ => new CkInterfaceGraphType(ckInterfaceGraph));
             ckInterfaceType.Populate(_options, this, ckInterfaceGraph);
+        }
+
+        // CK v2 (F1.5-S2, AB#5921): interface `extends` -> GraphQL interfaces implement their (transitive) parents.
+        foreach (var ckInterfaceGraph in ckInterfaceGraphs)
+        {
+            LinkExtendedInterfaces(ckInterfaceGraph);
         }
 
         foreach (var ckTypeGraph in _ckCacheService.GetCkTypes(_tenantId))
@@ -332,6 +449,13 @@ internal class GraphTypesCache : IGraphTypesCache
         foreach (var rtEntityDtoType in _types.Values)
         {
             rtEntityDtoType.Populate(_options, _ckCacheService, _tenantId, this);
+        }
+
+        // CK v2 (F1.5-S2, AB#5921): interface association members become interface fields when every implementing
+        // object type exposes the same field shape. Parents first, so a child interface can inherit the field.
+        foreach (var ckInterfaceGraph in ckInterfaceGraphs.OrderBy(g => g.AllExtendedInterfaces.Count))
+        {
+            AddInterfaceAssociationFields(ckInterfaceGraph);
         }
     }
 }

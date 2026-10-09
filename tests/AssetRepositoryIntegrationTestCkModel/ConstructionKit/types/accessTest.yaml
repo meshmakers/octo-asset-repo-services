@@ -4,7 +4,7 @@ types:
   derivedFromCkTypeId: ${System}/Entity
   description: "CK v2 Phase 0 test type: attribute access (AB#5668), interface (AB#5667)"
   implements:
-    - ${this}/Labeled-1
+    - ${this}/Member-1
   attributes:
     - id: ${System}/Name
       name: Name
@@ -62,3 +62,7 @@ types:
   attributes:
     - id: ${System}/Name
       name: Name
+  associations:
+    - id: ${this}/AccessTestLabeledLink
+      targetCkTypeId: ${System}/Entity
+      targetCkInterfaceId: ${this}/Labeled-1

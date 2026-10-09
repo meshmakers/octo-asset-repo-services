@@ -92,6 +92,67 @@ public class CkInterfaceIntrospectionTests
             .Should().OnlyContain(t => t.Type == JTokenType.Null);
     }
 
+    private const string ChildInterfaceName = "AssetRepositoryIntegrationTestMember";
+
+    [Fact]
+    public async Task ExtendingInterface_ImplementsItsParent_AndCarriesInheritedAndAssociationMembers()
+    {
+        // F1.5-S2 (AB#5921): Member-1 extends Labeled-1 and declares the AccessTestMembership association.
+        var type = await TypeAsync(ChildInterfaceName,
+            "kind interfaces { name } fields { name } possibleTypes { name }");
+
+        type["kind"]!.Value<string>().Should().Be("INTERFACE");
+        type["interfaces"]!.Select(i => i["name"]!.Value<string>()).Should().Equal(InterfaceName);
+        type["fields"]!.Select(f => f["name"]!.Value<string>()).Should()
+            .Contain(["name", "label", "memberOf"], "inherited members and the association member are fields");
+        type["possibleTypes"]!.Select(t => t["name"]!.Value<string>()).Should()
+            .BeEquivalentTo("AssetRepositoryIntegrationTestAccessTestAccount");
+    }
+
+    [Fact]
+    public async Task ImplementingType_ListsTheFullInterfaceClosure()
+    {
+        var type = await TypeAsync("AssetRepositoryIntegrationTestAccessTestAccount", "interfaces { name }");
+
+        type["interfaces"]!.Select(i => i["name"]!.Value<string>()).Should()
+            .Contain([ChildInterfaceName, InterfaceName]);
+    }
+
+    [Fact]
+    public async Task Fragment_OnExtendingInterface_ResolvesTheAssociationField()
+    {
+        var result = await _fixture.ExecuteGraphQlAsync($$"""
+            query {
+              runtime {
+                assetRepositoryIntegrationTestAccessTestAccount(first: 5) {
+                  items { ... on {{ChildInterfaceName}} { name memberOf(ckTypeIds: ["AssetRepositoryIntegrationTest/AccessTestGroup"]) { totalCount } } }
+                }
+              }
+            }
+            """);
+
+        var json = _fixture.SerializeGraphQl(result);
+        result.Errors.Should().BeNullOrEmpty(json);
+    }
+
+    [Fact]
+    public async Task AssociationNarrowedToAnInterface_OnlyOffersImplementingTypes()
+    {
+        // F1.1-S5: AccessTestGroup.LinksToLabeled targets System/Entity narrowed to Labeled-1 implementors.
+        var group = await TypeAsync("AssetRepositoryIntegrationTestAccessTestGroup",
+            "fields { name type { name } }");
+        var connectionName = group["fields"]!.Single(f => f["name"]!.Value<string>() == "linksToLabeled")
+            .SelectToken("type.name")!.Value<string>()!;
+
+        var connection = await TypeAsync(connectionName, "fields { name type { kind name ofType { name } } }");
+        var unionName = connection["fields"]!.Single(f => f["name"]!.Value<string>() == "items")
+            .SelectToken("type.ofType.name")!.Value<string>()!;
+        var union = await TypeAsync(unionName, "possibleTypes { name }");
+
+        union["possibleTypes"]!.Select(t => t["name"]!.Value<string>()).Should().BeEquivalentTo(
+            "AssetRepositoryIntegrationTestAccessTestAccount", "AssetRepositoryIntegrationTestAccessTestGroup");
+    }
+
     private async Task<JToken> TypeAsync(string typeName, string selection)
     {
         var result = await _fixture.ExecuteGraphQlAsync($$"""query { __type(name: "{{typeName}}") { {{selection}} } }""");

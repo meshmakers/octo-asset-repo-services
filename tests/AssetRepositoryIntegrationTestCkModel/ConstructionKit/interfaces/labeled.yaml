@@ -8,3 +8,10 @@ interfaces:
       - id: ${this}/AccessTestLabel
         name: Label
         isOptional: true
+  - interfaceId: Member-1
+    description: "CK v2 Phase 1 test interface (F1.5-S2, AB#5921): extends Labeled-1 and adds an association member."
+    extends:
+      - ${this}/Labeled-1
+    associations:
+      - id: ${this}/AccessTestMembership
+        targetCkTypeId: ${this}/AccessTestGroup
