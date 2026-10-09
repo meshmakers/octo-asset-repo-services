@@ -60,7 +60,7 @@ public static class FileSystemConstants
     ///     (<c>/{tenant}/v1/files/{root}/…</c>) uses them as literal route segments.
     /// </summary>
     public static readonly IReadOnlySet<string> ReservedRootWellKnownNames =
-        new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "capabilities", "zip", "items", "stats" };
+        new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "capabilities", "zip", "items", "stats", "linked-counts" };
 
     /// <summary>
     ///     True when a root is owned by a service and must not be renamed or deleted: the default root
