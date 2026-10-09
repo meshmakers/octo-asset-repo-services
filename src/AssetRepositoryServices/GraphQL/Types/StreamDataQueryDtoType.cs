@@ -114,6 +114,12 @@ internal sealed class StreamDataQueryDtoType : ObjectGraphType<StreamDataQueryDt
             var runtimeFieldFilters = runtimeFieldFilterDtos?.ToList();
             var mappedRuntimeFieldFilters = StreamDataGraphQlMapper.MapFieldFilters(runtimeFieldFilters);
 
+            // CK v2 (review G3 E-M2): no filter on a Hidden attribute, whatever the operator - stored filters of the
+            // persisted query (incl. IS_NULL / IS_NOT_NULL) and query-time filters alike.
+            var hiddenGuard = StreamDataHiddenGuard.For(ctx, tenantId, ckTypeId);
+            hiddenGuard.EnsureNotHidden(runtimeFieldFilters?.Select(f => f.AttributePath));
+            hiddenGuard.EnsureNotHidden(loaded.FieldFilter?.Select(f => f.AttributePath));
+
             StreamQueryExecutionInput input;
             IReadOnlyList<ColumnNameMapping> resolvedColumnNames;
 

@@ -66,25 +66,70 @@ public class StreamDataHiddenAttributeTests(StreamDataFixture fixture, ITestOutp
     public async Task PersistedQuery_WithAHiddenColumn_IsRejected()
     {
         fixture.OutputHelper = output;
+        var queryRtId = await CreatePersistedQueryAsync("""columns: ["name", "passwordHash"]""");
+
+        AssertRejected(await ExecutePersistedRowsAsync(queryRtId, ""));
+    }
+
+    [Theory]
+    [InlineData("operator: EQUALS")] // stored without comparison value: was not validated before
+    [InlineData("operator: LIKE, comparisonValue: \"AQ\"")]
+    public async Task PersistedQuery_WithAStoredFilterOnAHiddenAttribute_IsRejected(string filter)
+    {
+        // The stored filter operator enum (System/FieldFilterOperator) has no IS_NULL / IS_NOT_NULL; every stored
+        // filter is checked regardless of its operator or value.
+        fixture.OutputHelper = output;
+        var queryRtId = await CreatePersistedQueryAsync(
+            $$"""columns: ["name"], fieldFilter: [{ attributePath: "passwordHash", {{filter}} }]""");
+
+        AssertRejected(await ExecutePersistedRowsAsync(queryRtId, ""));
+    }
+
+    [Fact]
+    public async Task PersistedQuery_WithAQueryTimeNullFilterOnAHiddenAttribute_IsRejected()
+    {
+        fixture.OutputHelper = output;
+        var queryRtId = await CreatePersistedQueryAsync("""columns: ["name"]""");
+
+        AssertRejected(await ExecutePersistedRowsAsync(queryRtId,
+            """(fieldFilter: [{ attributePath: "passwordHash", operator: IS_NULL }])"""));
+    }
+
+    [Fact]
+    public async Task PersistedQuery_OnVisibleColumnsAndFilters_StillWorks()
+    {
+        fixture.OutputHelper = output;
+        var queryRtId = await CreatePersistedQueryAsync(
+            """columns: ["name"], fieldFilter: [{ attributePath: "label", operator: EQUALS, comparisonValue: "x" }]""");
+
+        var result = await ExecutePersistedRowsAsync(queryRtId,
+            """(fieldFilter: [{ attributePath: "name", operator: IS_NOT_NULL }])""");
+
+        result.Errors.Should().BeNullOrEmpty(fixture.SerializeGraphQl(result));
+    }
+
+    private async Task<string> CreatePersistedQueryAsync(string fields)
+    {
         var archiveRtId = await EnsureArchiveAsync();
         var create = await fixture.ExecuteGraphQlAsync($$"""
             mutation {
               runtime { systemSimpleSdQuerys {
                 create(entities: [{ name: "hidden-sd", queryCkTypeId: "{{AccountType}}", archiveRtId: "{{archiveRtId}}",
-                                    columns: ["name", "passwordHash"] }]) { rtId }
+                                    {{fields}} }]) { rtId }
               } }
             }
             """);
         var createJson = fixture.SerializeGraphQl(create);
         create.Errors.Should().BeNullOrEmpty(createJson);
-        var queryRtId = JObject.Parse(createJson).SelectToken("data.runtime.systemSimpleSdQuerys.create[0].rtId")!
-            .Value<string>();
+        return JObject.Parse(createJson).SelectToken("data.runtime.systemSimpleSdQuerys.create[0].rtId")!
+            .Value<string>()!;
+    }
 
-        var result = await fixture.ExecuteGraphQlAsync($$"""
-            { streamData { streamDataQuery(rtId: "{{queryRtId}}") { items { rows { items { timestamp } } } } } }
+    private Task<ExecutionResult> ExecutePersistedRowsAsync(string queryRtId, string rowsArguments)
+    {
+        return fixture.ExecuteGraphQlAsync($$"""
+            { streamData { streamDataQuery(rtId: "{{queryRtId}}") { items { rows{{rowsArguments}} { items { timestamp } } } } } }
             """);
-
-        AssertRejected(result);
     }
 
     private void AssertRejected(ExecutionResult result)

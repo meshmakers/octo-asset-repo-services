@@ -470,8 +470,9 @@ schema initialization.
   (`ArchiveHiddenColumnGuard`, `ArchiveLifecycleService`). The asset-repo additionally refuses every stream-data
   query path that reaches Hidden (`StreamDataHiddenGuard` over `ArchiveHiddenColumnGuard.FindHiddenAttribute`: a
   Hidden segment, or a whole-record column whose record contains a Hidden sub-attribute) with
-  `ATTRIBUTE_NOT_QUERYABLE`: columns, group-by, sort (incl. runtime overrides), filters (transient: all operators incl.
-  `IS_NULL`; persisted: comparison filters) and aggregations, on the transient `simple` / `aggregation` /
+  `ATTRIBUTE_NOT_QUERYABLE`: columns, group-by, sort (incl. runtime overrides), filters (all operators and values incl. `IS_NULL`,
+  transient and query-time; every stored filter of a persisted query — the stored operator enum has no null
+  operators) and aggregations, on the transient `simple` / `aggregation` /
   `groupingAggregation` / `downsampling` queries, persisted `streamDataQuery` rows and both `aggregations`
   sub-connections. The check runs inside `StreamDataFieldValidation.ValidateStreamDataFields` (required parameter) and
   explicitly in the aggregation and runtime-override resolvers. Tests: `StreamData/StreamDataHiddenAttributeTests`.
