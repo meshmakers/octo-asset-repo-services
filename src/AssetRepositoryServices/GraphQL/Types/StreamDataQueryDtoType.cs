@@ -487,6 +487,10 @@ internal sealed class StreamDataQueryDtoType : ObjectGraphType<StreamDataQueryDt
                     .EnsureNotHidden(aggFilterDtos?.Select(f => f.AttributePath));
             }
 
+            // Re-review N5: the stored filter of the persisted query is merged below - check it like Rows does.
+            StreamDataHiddenGuard.For(ctx, gql.TenantId, ckTypeId)
+                .EnsureNotHidden(loaded.FieldFilter?.Select(f => f.AttributePath));
+
             // Re-use the same field filters as the loaded query (same data-set semantics),
             // AND-combined with any runtime field filters passed alongside the aggregations request.
             ctx.TryGetArgument(Statics.FieldFilterArg, out IEnumerable<FieldFilterDto>? runtimeFieldFilterDtos);

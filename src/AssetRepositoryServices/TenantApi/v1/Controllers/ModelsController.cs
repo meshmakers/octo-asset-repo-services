@@ -818,7 +818,8 @@ public class ModelsController : ControllerBase
         {
             ModelId = modelId.FullName,
             Name = modelId.Name,
-            RequiredVersion = requirement.Range?.Range.ToString() ?? modelId.Version.ToString()
+            RequiredVersion = modelId.Version.ToString(),
+            RequiredRange = requirement.Range?.ToString()
         };
 
         var isServiceManaged = CkModelLibraryStatusService.IsSystemManaged(modelId.Name);
@@ -867,8 +868,11 @@ public class ModelsController : ControllerBase
         {
             foreach (var dep in compiledModel.Dependencies)
             {
-                // Prevent circular dependencies
-                if (!resolved.Add(dep.FullName))
+                // Prevent circular dependencies. Keyed by the requirement too (re-review N8): a dependency shared by
+                // a range-retaining and a classic parent must be judged against each requirement, otherwise the
+                // classic parent's exact pin would never be checked.
+                var requirementForDep = DependencyRequirement.For(dep, compiledModel);
+                if (!resolved.Add($"{dep.FullName}|{requirementForDep.Describe()}"))
                 {
                     continue;
                 }
@@ -878,7 +882,7 @@ public class ModelsController : ControllerBase
                 var depModel = await _catalogService.GetAsync(dep, operationResult,
                     cancellationToken: cancellationToken);
 
-                var depItem = await ResolveDependencyTreeAsync(dep, DependencyRequirement.For(dep, compiledModel),
+                var depItem = await ResolveDependencyTreeAsync(dep, requirementForDep,
                     depModel, tenantContext, installedVersions, resolved, cancellationToken);
                 item.Dependencies.Add(depItem);
             }
@@ -900,7 +904,8 @@ public class ModelsController : ControllerBase
         if (item.Action is "install" or "update" &&
             importVersionByName.TryGetValue(item.Name, out var importVersion))
         {
-            var itemVersion = new CkVersion(item.RequiredVersion);
+            // The typed id, never the display strings (re-review N1).
+            var itemVersion = new CkModelId(item.ModelId).Version;
             if (importVersion.Version.CompareTo(itemVersion) > 0)
             {
                 item.Action = "none";

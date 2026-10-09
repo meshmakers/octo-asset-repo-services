@@ -294,7 +294,8 @@ public class ModelsControllerResolveDependenciesTests
         var dependency = await ResolveSingleDependencyAsync(new CkModelId(name, floor), dependencyRange, installed);
 
         dependency.Action.Should().Be(expectedAction);
-        dependency.RequiredVersion.Should().Be(dependencyRange.Range.ToString());
+        dependency.RequiredVersion.Should().Be(floor, "RequiredVersion stays the pinned (floor) version");
+        dependency.RequiredRange.Should().Be(dependencyRange.ToString());
     }
 
     [Fact]
@@ -309,6 +310,80 @@ public class ModelsControllerResolveDependenciesTests
 
         root.Action.Should().Be("incompatible");
         root.InstalledVersion.Should().Contain("installed v2.1.0");
+    }
+
+    [Fact]
+    public async Task Batch_WithARangeRetainingParent_DoesNotFail()
+    {
+        // Re-review N1: the batch tree correction parsed the range display string as a version and answered 500.
+        var dependency = new CkModelId("Basic", "2.0.0");
+        var parent = new CkCompiledModelRoot
+        {
+            ModelId = new CkModelId("Parent", "1.0.0"),
+            Dependencies = [dependency],
+            DependencyRanges = [new CkModelDependencyDto { Range = new CkModelIdVersionRange("Basic-[2.0,3.0)"), Floor = "2.0.0" }]
+        };
+        A.CallTo(() => _catalogService.GetAsync("PublicGitHub", A<CkModelId>.Ignored, A<OperationResult>.Ignored,
+                A<CancellationToken?>.Ignored))
+            .Returns(parent);
+        A.CallTo(() => _catalogService.GetAsync(A<CkModelId>.That.Matches(m => m.Name == "Basic"),
+                A<OperationResult>.Ignored, null, A<CancellationToken?>.Ignored))
+            .Returns(new CkCompiledModelRoot { ModelId = dependency, Dependencies = null });
+        A.CallTo(() => _tenantContext.IsCkModelExistingAsync(A<CkModelId>.Ignored)).Returns(false);
+        A.CallTo(() => _libraryStatusService.GetInstalledModelVersionsAsync(A<ITenantContext>._))
+            .Returns(new Dictionary<string, CkVersion>());
+
+        var result = await _controller.ResolveDependenciesBatch(
+            [new ImportFromCatalogRequestDto { CatalogName = "PublicGitHub", ModelId = "Parent-1.0.0" }],
+            TestContext.Current.CancellationToken);
+
+        var response = result.Should().BeOfType<OkObjectResult>().Subject.Value
+            .Should().BeOfType<BatchDependencyResolutionResponseDto>().Subject;
+        response.ModelsToImport.Should().Contain(["Basic-2.0.0", "Parent-1.0.0"]);
+        var basic = response.DependencyTrees.Single().RootModel.Dependencies.Single();
+        basic.Action.Should().Be("install");
+        basic.RequiredVersion.Should().Be("2.0.0");
+        basic.RequiredRange.Should().StartWith("Basic-[2.0");
+    }
+
+    [Fact]
+    public async Task SharedDependency_IsJudgedAgainstEveryRequirement()
+    {
+        // Re-review N8: Lib-1.2.0 is required by a range parent (satisfied by the installed 1.3.0) and by a classic
+        // parent (exact pin, not satisfied). The classic requirement must still be judged -> incompatible.
+        var lib = new CkModelId("Lib", "1.2.0");
+        var rangeParent = new CkModelId("RangeParent", "1.0.0");
+        var classicParent = new CkModelId("ClassicParent", "1.0.0");
+        var root = new CkCompiledModelRoot
+        {
+            ModelId = new CkModelId("Root", "1.0.0"),
+            Dependencies = [rangeParent, classicParent]
+        };
+        A.CallTo(() => _catalogService.GetAsync("PublicGitHub", A<CkModelId>.Ignored, A<OperationResult>.Ignored,
+                A<CancellationToken?>.Ignored))
+            .Returns(root);
+        A.CallTo(() => _catalogService.GetAsync(A<CkModelId>.That.Matches(m => m.Name == "RangeParent"),
+                A<OperationResult>.Ignored, null, A<CancellationToken?>.Ignored))
+            .Returns(new CkCompiledModelRoot
+            {
+                ModelId = rangeParent, Dependencies = [lib],
+                DependencyRanges = [new CkModelDependencyDto { Range = new CkModelIdVersionRange("Lib-[1.2,2.0)"), Floor = "1.2.0" }]
+            });
+        A.CallTo(() => _catalogService.GetAsync(A<CkModelId>.That.Matches(m => m.Name == "ClassicParent"),
+                A<OperationResult>.Ignored, null, A<CancellationToken?>.Ignored))
+            .Returns(new CkCompiledModelRoot { ModelId = classicParent, Dependencies = [lib] });
+        A.CallTo(() => _catalogService.GetAsync(A<CkModelId>.That.Matches(m => m.Name == "Lib"),
+                A<OperationResult>.Ignored, null, A<CancellationToken?>.Ignored))
+            .Returns(new CkCompiledModelRoot { ModelId = lib, Dependencies = null });
+        A.CallTo(() => _tenantContext.IsCkModelExistingAsync(A<CkModelId>.Ignored)).Returns(false);
+        A.CallTo(() => _libraryStatusService.GetInstalledModelVersionsAsync(A<ITenantContext>._))
+            .Returns(new Dictionary<string, CkVersion> { ["Lib"] = new("1.3.0") });
+
+        var tree = await ResolveRootAsync("Root-1.0.0");
+
+        var byParent = tree.Dependencies.ToDictionary(d => d.Name, d => d.Dependencies.Single().Action);
+        byParent["RangeParent"].Should().Be("none");
+        byParent["ClassicParent"].Should().Be("incompatible");
     }
 
     private async Task<DependencyResolutionItemDto> ResolveSingleDependencyAsync(CkModelId dependency,

@@ -471,8 +471,8 @@ schema initialization.
   query path that reaches Hidden (`StreamDataHiddenGuard` over `ArchiveHiddenColumnGuard.FindHiddenAttribute`: a
   Hidden segment, or a whole-record column whose record contains a Hidden sub-attribute) with
   `ATTRIBUTE_NOT_QUERYABLE`: columns, group-by, sort (incl. runtime overrides), filters (all operators and values incl. `IS_NULL`,
-  transient and query-time; every stored filter of a persisted query — the stored operator enum has no null
-  operators) and aggregations, on the transient `simple` / `aggregation` /
+  transient and query-time; every stored filter of a persisted query, in Rows and in the Aggregations
+  sub-connection — the stored operator enum has no null operators) and aggregations, on the transient `simple` / `aggregation` /
   `groupingAggregation` / `downsampling` queries, persisted `streamDataQuery` rows and both `aggregations`
   sub-connections. The check runs inside `StreamDataFieldValidation.ValidateStreamDataFields` (required parameter) and
   explicitly in the aggregation and runtime-override resolvers. Tests: `StreamData/StreamDataHiddenAttributeTests`.
@@ -704,7 +704,10 @@ range-retaining parent (`CkCompiledModelRoot.DependencyRanges`) accepts any inst
 ≥ the floor, and no requirement is ever satisfied across majors. Actions: requirement met → `none`; a newer installed
 version that does not meet it (or any unmet service-managed model) → `incompatible`, which blocks the batch import —
 a newer installed version is never offered for a downgrade install (explicit downgrades go through `ImportCk`); an
-older installed version → `install` (upgrade). The root model is judged as an exact pin. Installed versions come from
+older installed version → `install` (upgrade). The root model is judged as an exact pin. A dependency shared by
+several parents is judged once per distinct requirement (re-review N8). `RequiredVersion` stays the pinned (floor)
+version; `RequiredRange` (new, display only) carries the declared range + floor of a range-retaining parent, and the
+batch tree correction works on the typed model id, never on the display strings (re-review N1). Installed versions come from
 `ICkModelLibraryStatusService.GetInstalledModelVersionsAsync` (highest `Available` version per name).
 `CkModelLibraryStatusService.CheckSystemCompatibilityAsync` still compares service-managed versions exactly.
 

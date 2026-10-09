@@ -86,6 +86,23 @@ public class StreamDataHiddenAttributeTests(StreamDataFixture fixture, ITestOutp
     }
 
     [Fact]
+    public async Task PersistedQuery_Aggregations_CheckTheStoredFilter()
+    {
+        // Re-review N5: the aggregations sub-connection merges the stored filter - a yes/no oracle with count.
+        fixture.OutputHelper = output;
+        var queryRtId = await CreatePersistedQueryAsync(
+            """columns: ["name"], fieldFilter: [{ attributePath: "passwordHash", operator: EQUALS, comparisonValue: "AQ" }]""");
+
+        var result = await fixture.ExecuteGraphQlAsync($$"""
+            { streamData { streamDataQuery(rtId: "{{queryRtId}}") { items {
+                aggregations(aggregations: { countAttributePaths: ["name"] }) { items { countStatistics { attributePath value } } }
+            } } } }
+            """);
+
+        AssertRejected(result);
+    }
+
+    [Fact]
     public async Task PersistedQuery_WithAQueryTimeNullFilterOnAHiddenAttribute_IsRejected()
     {
         fixture.OutputHelper = output;

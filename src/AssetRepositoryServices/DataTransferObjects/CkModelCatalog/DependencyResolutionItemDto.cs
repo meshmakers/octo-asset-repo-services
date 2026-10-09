@@ -21,6 +21,13 @@ public class DependencyResolutionItemDto
     public string RequiredVersion { get; set; } = string.Empty;
 
     /// <summary>
+    ///     CK v2: the version range the parent declares for this dependency when the parent is a range-retaining
+    ///     model (e.g. "Basic-[2.0,3.0) (floor 2.0.0)"); null for an exact compile-time pin. Display only — the
+    ///     action already reflects it. <see cref="RequiredVersion" /> stays the pinned (floor) version.
+    /// </summary>
+    public string? RequiredRange { get; set; }
+
+    /// <summary>
     ///     Currently installed version in the tenant, or null if not installed
     /// </summary>
     public string? InstalledVersion { get; set; }
