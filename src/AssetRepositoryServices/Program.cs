@@ -42,7 +42,11 @@ try
     builder.Configuration.AddEnvironmentVariables("OCTO_").AddCommandLine(args)
         .AddUserSecrets(typeof(Program).Assembly, true);
 
-    builder.Services.AddTransient<IDefaultConfigurationCreatorService, DefaultConfigurationCreatorService>();
+    // Scoped like the other services: the startup pipeline (DefaultConfigurationInitializationService sets
+    // DeferTenantStart and queues the tenants, TenantStartupInitializationService starts them) must see the SAME
+    // instance. As transient, the deferred list was lost and StartTenantAsync never ran at startup — harmless
+    // while it was empty, but AB#6171 ensures the default file root and runs the files sweep there.
+    builder.Services.AddScoped<IDefaultConfigurationCreatorService, DefaultConfigurationCreatorService>();
 
     // AB#6171: per-cluster limits of the platform file system (OCTO_Files__…).
     builder.Services.Configure<Meshmakers.Octo.Backend.AssetRepositoryServices.Services.Files.FilesOptions>(
