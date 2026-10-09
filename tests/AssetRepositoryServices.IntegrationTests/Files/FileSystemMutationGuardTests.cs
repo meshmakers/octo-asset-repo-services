@@ -298,6 +298,16 @@ public class FileSystemMutationGuardTests
     }
 
     [Fact]
+    public async Task CreateFolder_WithoutParent_IsRefused()
+    {
+        const string orphan = """
+            mutation { runtime { systemFilesFolders { create(entities: [{name: "Orphan"}]) { rtId } } } }
+            """;
+        var result = await RunAsync(orphan, new { }, FilesTestFixture.PlainUser);
+        ErrorCode(result).Should().Be(FileSystemErrorCodes.InvalidRequest);
+    }
+
+    [Fact]
     public async Task CreateRoot_WithTheReportingPrefix_IsReserved()
     {
         var result = await RunAsync(CreateRoot, new { name = "Fake", wellKnownName = "ReportingAssets_Fake" },

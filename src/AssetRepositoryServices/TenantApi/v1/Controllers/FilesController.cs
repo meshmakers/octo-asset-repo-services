@@ -500,10 +500,11 @@ public class FilesController(
         {
             return Problem(FileSystemException.PathNotFound("entry"));
         }
-        catch (Runtime.Contracts.PersistenceException e)
+        catch (Runtime.Contracts.PersistenceException)
         {
-            return Problem(new FileSystemException(FileSystemErrorCodes.InvalidRequest, StatusCodes.Status400BadRequest,
-                e.Message));
+            // Write conflicts and other engine failures: retryable, no engine internals in the answer.
+            return Problem(new FileSystemException(FileSystemErrorCodes.InvalidRequest, StatusCodes.Status409Conflict,
+                "The change could not be stored (concurrent change?); reload and retry."));
         }
         catch (AssetRepositoryException e)
         {

@@ -31,6 +31,41 @@ public class FileSystemDefaults(FileSystemService fileSystem, ISystemContext sys
     }
 
     /// <summary>
+    ///     Every pod runs the tenant start (broadcast events), so two pods can seed "Files" at the same time
+    ///     (no unique index on well-known names). The oldest root wins (the one FindRootAsync answers); empty
+    ///     younger duplicates are erased.
+    /// </summary>
+    private async Task RemoveConcurrentDuplicatesAsync(ITenantRepository repository, ITenantContext tenantContext)
+    {
+        using var session = await tenantContext.GetAdminSessionAsync().ConfigureAwait(false);
+        var duplicates = (await fileSystem.GetRootsAsync(repository, session).ConfigureAwait(false))
+            .Where(r => string.Equals(r.Entity.RtWellKnownName, FileSystemConstants.DefaultRootWellKnownName,
+                StringComparison.Ordinal))
+            .OrderBy(r => r.Entity.RtCreationDateTime ?? DateTime.MaxValue)
+            .ThenBy(r => r.Id.RtId.ToString(), StringComparer.Ordinal)
+            .Skip(1)
+            .ToList();
+        foreach (var duplicate in duplicates)
+        {
+            if ((await fileSystem.GetChildrenAsync(repository, session, duplicate.Id).ConfigureAwait(false)).Count > 0)
+            {
+                logger.LogWarning("Duplicate default file root '{RtId}' in tenant '{TenantId}' has content; kept",
+                    duplicate.Id.RtId, tenantContext.TenantId);
+                continue;
+            }
+
+            var result = new Meshmakers.Octo.ConstructionKit.Contracts.OperationResult();
+            session.StartTransaction();
+            await repository.ApplyChangesAsync(session,
+                [Meshmakers.Octo.Runtime.Contracts.EntityUpdateInfo<Meshmakers.Octo.Runtime.Contracts.RepositoryEntities.RtEntity>.CreateDelete(duplicate.Id)],
+                Meshmakers.Octo.Runtime.Contracts.Repositories.DeleteOptions.Erase, result).ConfigureAwait(false);
+            await session.CommitTransactionAsync().ConfigureAwait(false);
+            logger.LogInformation("Removed duplicate default file root '{RtId}' in tenant '{TenantId}'",
+                duplicate.Id.RtId, tenantContext.TenantId);
+        }
+    }
+
+    /// <summary>
     ///     Creates the root <c>Files</c> when it is missing. Never throws; answers whether the root exists.
     /// </summary>
     public async Task<bool> EnsureDefaultRootAsync(ITenantContext tenantContext)
@@ -53,6 +88,8 @@ public class FileSystemDefaults(FileSystemService fileSystem, ISystemContext sys
             await session.CommitTransactionAsync().ConfigureAwait(false);
             logger.LogInformation("Created the default file root 'Files' for tenant '{TenantId}'",
                 tenantContext.TenantId);
+
+            await RemoveConcurrentDuplicatesAsync(repository, tenantContext).ConfigureAwait(false);
             return true;
         }
         catch (Exception e)

@@ -72,10 +72,19 @@ public class FileSystemService
     public async Task<FileSystemEntry?> FindRootAsync(ITenantRepository repository, IOctoSession session,
         string wellKnownName)
     {
+        // Well-known names of roots are unique case-insensitively (guard), so the lookup is too; an exact
+        // match wins should legacy data hold two roots that differ in case only.
         var options = RtEntityQueryOptions.Create();
-        options.FieldEquals(nameof(RtEntity.RtWellKnownName), wellKnownName);
+        options.FieldMatchRegex(nameof(RtEntity.RtWellKnownName), CaseInsensitiveExact(wellKnownName));
         var result = await repository.GetRtEntitiesByTypeAsync(session, FolderRootType, options).ConfigureAwait(false);
-        var root = result.Items.FirstOrDefault();
+        // Deterministic when duplicates exist (e.g. two pods seeded "Files" concurrently): exact case first,
+        // then the oldest.
+        var roots = result.Items
+            .OrderByDescending(r => string.Equals(r.RtWellKnownName, wellKnownName, StringComparison.Ordinal))
+            .ThenBy(r => r.RtCreationDateTime ?? DateTime.MaxValue)
+            .ThenBy(r => r.RtId.ToString(), StringComparer.Ordinal)
+            .ToList();
+        var root = roots.FirstOrDefault();
         return root == null ? null : new FileSystemEntry(root, FileSystemEntryKind.Root);
     }
 

@@ -72,7 +72,7 @@ public class FileSystemServiceTests
         resolved.Id.Should().Be(item.Id);
 
         var caseInsensitive = await _fixture.FileSystem.ResolveAsync(Repository, readSession,
-            root.Entity.RtWellKnownName!, "receipts 2026/rechnung ä.pdf");
+            root.Entity.RtWellKnownName!.ToUpperInvariant(), "receipts 2026/rechnung ä.pdf");
         caseInsensitive.Id.Should().Be(item.Id);
     }
 

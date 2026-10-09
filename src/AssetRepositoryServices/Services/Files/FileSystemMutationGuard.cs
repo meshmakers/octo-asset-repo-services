@@ -118,7 +118,8 @@ public class FileSystemMutationGuard(FileSystemService fileSystem, IOptions<File
 
             if (creates.Count == 0)
             {
-                continue;
+                // A folder or file without a parent is invisible in the tree (AB#4175 class of orphans).
+                throw FileSystemException.InvalidRequest($"'{name}' needs a parent folder or root (parent).");
             }
 
             var parentId = creates[0].Target;
@@ -257,6 +258,7 @@ public class FileSystemMutationGuard(FileSystemService fileSystem, IOptions<File
         // Containers that receive or lose children through the "children" navigation of a non-files type are
         // covered as well: their associations carry a System.Files origin or target.
         foreach (var association in associations.Where(a => IsParentChild(a) &&
+                     a.ModOption == AssociationModOptionsDto.Create &&
                      !FileSystemService.IsFileSystemType(a.Origin.CkTypeId) &&
                      FileSystemService.IsFileSystemType(a.Target.CkTypeId)))
         {
@@ -317,9 +319,16 @@ public class FileSystemMutationGuard(FileSystemService fileSystem, IOptions<File
             var currentParents = await fileSystem.GetParentIdsAsync(repository, unfiltered, current.Id)
                 .ConfigureAwait(false);
             var remaining = currentParents.Where(p => !deletes.Contains(p.RtId)).ToList();
-            if (creates.Count == 1 && remaining.Any(p => p.RtId != creates[0].Target.RtId))
+            if (creates.Count == 1 && remaining.Count > 0)
             {
+                // Either a second parent or a CREATE of the parent it already has (duplicate association).
                 throw FileSystemException.SingleParent(current.Name);
+            }
+
+            if (creates.Count == 0 && deletes.Count > 0 && remaining.Count == 0)
+            {
+                throw FileSystemException.InvalidRequest(
+                    $"'{current.Name}' would be left without a folder; move it (DELETE + CREATE) or delete it.");
             }
 
             var effectiveName = newName ?? current.Name;
