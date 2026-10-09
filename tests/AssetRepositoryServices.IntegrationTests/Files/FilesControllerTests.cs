@@ -323,7 +323,9 @@ public class FilesControllerTests
 
         var (controller, http) = Create(FilesTestFixture.PlainUser);
         var body = new MemoryStream();
-        http.Response.Body = body;
+        var bodyControl = new KestrelLikeBodyControl();
+        http.Features.Set<Microsoft.AspNetCore.Http.Features.IHttpBodyControlFeature>(bodyControl);
+        http.Response.Body = new KestrelLikeResponseBody(body, bodyControl);
         var result = await controller.DownloadZip(new ZipRequestDto
         {
             Items = [new FileRefDto { Root = wkn, Path = "A" }, new FileRefDto { Root = wkn, Path = "B/top.txt" }],
@@ -492,7 +494,8 @@ public class FilesControllerTests
 
         var controller = new FilesController(_fixture.GetService<IOctoService>(), _fixture.FileSystem,
             _fixture.GetService<FileZipService>(), Options.Create(limits ?? new FilesOptions()),
-            _fixture.GetService<Meshmakers.Octo.ConstructionKit.Contracts.Services.ICkCacheService>())
+            _fixture.GetService<Meshmakers.Octo.ConstructionKit.Contracts.Services.ICkCacheService>(),
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<FilesController>.Instance)
         {
             ControllerContext = new ControllerContext { HttpContext = http }
         };
@@ -515,4 +518,41 @@ public class FilesControllerTests
         await stream.CopyToAsync(memory);
         return memory.ToArray();
     }
+}
+
+/// <summary>Kestrel's switch for synchronous IO (off by default).</summary>
+internal sealed class KestrelLikeBodyControl : Microsoft.AspNetCore.Http.Features.IHttpBodyControlFeature
+{
+    public bool AllowSynchronousIO { get; set; }
+}
+
+/// <summary>A response body like Kestrel's: not seekable, synchronous writes fail unless allowed.</summary>
+internal sealed class KestrelLikeResponseBody(Stream inner, KestrelLikeBodyControl control) : Stream
+{
+    public override bool CanRead => false;
+    public override bool CanSeek => false;
+    public override bool CanWrite => true;
+    public override long Length => throw new NotSupportedException();
+    public override long Position { get => throw new NotSupportedException(); set => throw new NotSupportedException(); }
+    public override void Flush() { }
+    public override Task FlushAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+    public override int Read(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+    public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+    public override void SetLength(long value) => throw new NotSupportedException();
+
+    public override void Write(byte[] buffer, int offset, int count)
+    {
+        if (!control.AllowSynchronousIO)
+        {
+            throw new InvalidOperationException("Synchronous operations are disallowed.");
+        }
+
+        inner.Write(buffer, offset, count);
+    }
+
+    public override Task WriteAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken) =>
+        inner.WriteAsync(buffer, offset, count, cancellationToken);
+
+    public override ValueTask WriteAsync(ReadOnlyMemory<byte> buffer, CancellationToken cancellationToken = default) =>
+        inner.WriteAsync(buffer, cancellationToken);
 }

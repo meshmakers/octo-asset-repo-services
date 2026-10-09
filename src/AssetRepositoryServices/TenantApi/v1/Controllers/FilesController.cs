@@ -38,7 +38,8 @@ public class FilesController(
     FileSystemService fileSystem,
     FileZipService zipService,
     IOptions<FilesOptions> filesOptions,
-    ConstructionKit.Contracts.Services.ICkCacheService ckCacheService) : ControllerBase
+    ConstructionKit.Contracts.Services.ICkCacheService ckCacheService,
+    ILogger<FilesController> logger) : ControllerBase
 {
     private static readonly FileExtensionContentTypeProvider ContentTypeProvider = new();
 
@@ -355,13 +356,24 @@ public class FilesController(
             Response.ContentType = "application/zip";
             FileResponseHeaders.Apply(Response, fileName, "application/zip", inline: false);
             HttpContext.Features.Get<IHttpResponseBodyFeature>()?.DisableBuffering();
+            // ZipArchive writes the small local-header/data-descriptor records synchronously when an entry
+            // stream is disposed (also with DisposeAsync, .NET 10, non-seekable output). Kestrel forbids
+            // synchronous IO by default, which aborted every zip after its first entry; allow it for this
+            // response only. File contents are still copied asynchronously.
+            var bodyControl = HttpContext.Features.Get<Microsoft.AspNetCore.Http.Features.IHttpBodyControlFeature>();
+            if (bodyControl != null)
+            {
+                bodyControl.AllowSynchronousIO = true;
+            }
+
             try
             {
                 await zipService.WriteAsync(repository, session, plan, Response.Body, HttpContext.RequestAborted);
             }
-            catch (Exception) when (Response.HasStarted)
+            catch (Exception e) when (Response.HasStarted)
             {
                 // The status line is gone: abort so the client sees a broken download, not a truncated zip.
+                logger.LogError(e, "Zip download aborted after the response started");
                 HttpContext.Abort();
             }
 

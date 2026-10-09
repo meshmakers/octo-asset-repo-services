@@ -366,7 +366,11 @@ Files and folders are a platform capability, independent of Reporting. This serv
   text/plain, CSV, JSON); everything else is an attachment with a `sandbox` CSP. largeBinaries default to
   inline for passive content (`?inline=false` = attachment). Zip entry names are sanitized (no separators,
   no `..`); a file whose GridFS bytes are missing is skipped in a zip and answers 404 on download.
-- Known engine limitation: a nested association connection with `first: 0` fails ($slice) — ask `first: 1`.
+- Known engine limitations: a nested association connection with `first: 0` fails ($slice) — ask `first: 1`;
+  with `fieldFilter` + `sortOrder` + `first` its totalCount is the unfiltered association count, which answers
+  INCOMPLETE_SLICE (or a wrong hasNextPage) — name lookups and searches must not sort (skipped repro test).
+- Zip writes need synchronous IO for ZipArchive's small header records (Kestrel forbids it by default);
+  the zip action allows it for its own response only.
 - Tests: `tests/AssetRepositoryServices.IntegrationTests/Files/*` (`FilesTestFixture` imports System.Files,
   ensures the default root and has a switchable data-policy table).
 
