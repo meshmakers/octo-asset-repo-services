@@ -5,6 +5,21 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.DataTransferObjects.Fi
 /// </summary>
 public class FilesCapabilitiesDto
 {
+    /// <summary>
+    ///     False when the tenant has no System.Files model (e.g. its System model is too old); the file API and
+    ///     the System.Files GraphQL types are then not usable. See <see cref="Reason" />.
+    /// </summary>
+    public bool Available { get; init; } = true;
+
+    /// <summary>Why the file system is not available (<c>SYSTEM_FILES_MISSING</c>), null when it is.</summary>
+    public string? Reason { get; init; }
+
+    /// <summary>Largest number of entries one delete of a folder or root may remove.</summary>
+    public int MaxDeleteEntries { get; init; }
+
+    /// <summary>The linked-counts endpoint exists.</summary>
+    public bool LinkedCounts { get; init; } = true;
+
     /// <summary>Version of the file API contract.</summary>
     public int ApiVersion { get; init; } = 1;
 

@@ -96,9 +96,9 @@ internal class RtEntityMutation : RtMutationBase
             }
 
             OperationResult operationResult = new();
-            await tenantRepository.ApplyChangesAsync(sessionAccessor.Session, entityUpdateInfos,
-                associationUpdateInfoList, operationResult);
-            ResolveConnectionContextExtensions.ValidateOperationResult(operationResult);
+            // AB#6171: a data-permission denial on files and folders answers FORBIDDEN (no rtIds named).
+            await ApplyChangesAsync(tenantRepository, sessionAccessor.Session, entityUpdateInfos,
+                associationUpdateInfoList, operationResult, FileSystemMutationGuard.Applies(rtCkTypeId, associationUpdateInfoList));
 
             return await GetResultSet(sessionAccessor.Session, tenantRepository, entityUpdateInfos);
         }
@@ -154,9 +154,9 @@ internal class RtEntityMutation : RtMutationBase
             }
 
             OperationResult operationResult = new();
-            await tenantRepository.ApplyChangesAsync(sessionAccessor.Session, entityUpdateInfos,
-                associationUpdateInfoList, operationResult);
-            ResolveConnectionContextExtensions.ValidateOperationResult(operationResult);
+            // AB#6171: a data-permission denial on files and folders answers FORBIDDEN (no rtIds named).
+            await ApplyChangesAsync(tenantRepository, sessionAccessor.Session, entityUpdateInfos,
+                associationUpdateInfoList, operationResult, FileSystemMutationGuard.Applies(ckTypeId, associationUpdateInfoList));
 
             return await GetResultSet(sessionAccessor.Session, tenantRepository, entityUpdateInfos);
         }

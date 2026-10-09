@@ -39,14 +39,55 @@ public class FilesControllerTests
     public async Task Capabilities_AdvertiseTheLimits()
     {
         var (controller, _) = Create(FilesTestFixture.PlainUser);
-        var result = controller.GetCapabilities().Should().BeOfType<OkObjectResult>().Subject;
+        var result = (await controller.GetCapabilities()).Should().BeOfType<OkObjectResult>().Subject;
         var caps = result.Value.Should().BeOfType<FilesCapabilitiesDto>().Subject;
+        caps.Available.Should().BeTrue();
+        caps.MaxDeleteEntries.Should().Be(2000);
         caps.MaxUploadBytes.Should().Be(100L * 1024 * 1024);
         caps.ZipMaxFiles.Should().Be(1000);
         caps.ZipMaxBytes.Should().Be(500L * 1024 * 1024);
         caps.PreviewMaxBytes.Should().Be(20L * 1024 * 1024);
         caps.ReservedRootNames.Should().Contain(["capabilities", "zip", "items", "stats"]);
-        await Task.CompletedTask;
+    }
+
+    [Fact]
+    public async Task Capabilities_TenantWithoutSystemFiles_IsNotAvailable()
+    {
+        var (controller, http) = Create(FilesTestFixture.PlainUser);
+        http.Request.RouteValues["tenantId"] = _fixture.TestTenantId; // child tenant without System.Files
+        var caps = (FilesCapabilitiesDto)((OkObjectResult)await controller.GetCapabilities()).Value!;
+        caps.Available.Should().BeFalse();
+        caps.Reason.Should().Be("SYSTEM_FILES_MISSING");
+    }
+
+    [Fact]
+    public async Task LinkedCounts_CountEveryAssociationExceptTheFolderTree()
+    {
+        var root = await _helpers.CreateRootAsync();
+        var linked = await _helpers.UploadAsync(root, "linked.pdf", "x", FileConflictMode.Fail);
+        var plain = await _helpers.UploadAsync(root, "plain.pdf", "y", FileConflictMode.Fail);
+        var other = await _helpers.UploadAsync(root, "other.pdf", "z", FileConflictMode.Fail);
+
+        // Any non-ParentChild association counts, whatever the role (here System/Related between two files).
+        using (var session = Repository.GetSession())
+        {
+            session.StartTransaction();
+            var op = new Meshmakers.Octo.ConstructionKit.Contracts.OperationResult();
+            await Repository.ApplyChangesAsync(session,
+                [Meshmakers.Octo.Runtime.Contracts.AssociationUpdateInfo.CreateInsert(other.Id, linked.Id,
+                    new Meshmakers.Octo.ConstructionKit.Contracts.RtCkId<Meshmakers.Octo.ConstructionKit.Contracts.CkAssociationRoleId>("System/Related"))],
+                op);
+            await session.CommitTransactionAsync();
+            op.HasErrors.Should().BeFalse(op.GetMessages());
+        }
+
+        var (controller, _) = Create(FilesTestFixture.PlainUser);
+        var counts = (LinkedCountsDto)((OkObjectResult)await controller.GetLinkedCounts(new LinkedCountsRequestDto
+        {
+            RtIds = [linked.Id.RtId.ToString(), plain.Id.RtId.ToString()]
+        })).Value!;
+        counts.Counts[linked.Id.RtId.ToString()].Should().Be(1);
+        counts.Counts[plain.Id.RtId.ToString()].Should().Be(0);
     }
 
     [Fact]
@@ -450,7 +491,8 @@ public class FilesControllerTests
         }
 
         var controller = new FilesController(_fixture.GetService<IOctoService>(), _fixture.FileSystem,
-            _fixture.GetService<FileZipService>(), Options.Create(limits ?? new FilesOptions()))
+            _fixture.GetService<FileZipService>(), Options.Create(limits ?? new FilesOptions()),
+            _fixture.GetService<Meshmakers.Octo.ConstructionKit.Contracts.Services.ICkCacheService>())
         {
             ControllerContext = new ControllerContext { HttpContext = http }
         };

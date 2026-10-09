@@ -349,7 +349,10 @@ Files and folders are a platform capability, independent of Reporting. This serv
   `&createFolders`, download `?inline`), `POST items/{rtId}/content?name=` (upload into folder),
   `PUT|GET items/{rtId}/content`, `GET stats?root=&path=` / `GET items/{rtId}/stats` (deep counts incl.
   `hiddenEntries` hidden by data permissions), `POST zip` (`{ items: [{root, path}], rtIds, fileName }`,
-  streamed, limits checked before the first byte), `GET capabilities`. Reads run in the caller's session
+  streamed, limits checked before the first byte), `POST linked-counts` (`{ rtIds }` → `{ counts: {rtId: n} }`,
+  every association except `System/ParentChild`, any role/direction, visible entries only), `GET capabilities`
+  (tenant-aware: `available: false`, `reason: SYSTEM_FILES_MISSING` without System.Files; plus `maxDeleteEntries`).
+  GraphQL writes on files and folders answer a data-permission denial with the code `FORBIDDEN`. Reads run in the caller's session
   (hidden = 404), writes through the engine's data-permission write guard (403 FORBIDDEN, message 4973).
   Problem details carry a stable `code` extension. Uploads are buffered to a temp file (the engine needs a
   seekable stream) while `MaxUploadBytes` is enforced; Kestrel's body limit is raised per request.

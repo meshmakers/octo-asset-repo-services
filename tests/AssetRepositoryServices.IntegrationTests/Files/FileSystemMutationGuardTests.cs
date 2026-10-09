@@ -248,6 +248,27 @@ public class FileSystemMutationGuardTests
         }
     }
 
+    [Fact]
+    public async Task Rename_OfAFileTheCallerMayNotWrite_AnswersForbidden()
+    {
+        var root = await _helpers.CreateRootAsync();
+        var bob = FilesTestFixture.CreateUser("bob", "FileUser");
+        _fixture.Permissions.Table = OwnedFilesTable();
+        try
+        {
+            var aliceFile = await UploadAsAsync("alice", root, "alice.txt");
+            var result = await RunAsync("""
+                mutation ($rtId: OctoObjectId!) { runtime { systemFilesFileSystemItems {
+                  update(entities: [{rtId: $rtId, item: {name: "mine.txt"}}]) { rtId } } } }
+                """, new { rtId = aliceFile.Id.RtId.ToString() }, bob);
+            ErrorCode(result).Should().Be(FileSystemErrorCodes.Forbidden);
+        }
+        finally
+        {
+            _fixture.Permissions.Table = Meshmakers.Octo.Runtime.Contracts.DataPermissions.RtDataPolicyTable.Empty;
+        }
+    }
+
     internal static Meshmakers.Octo.Runtime.Contracts.DataPermissions.RtDataPolicyTable OwnedFilesTable() =>
         new([
             new Meshmakers.Octo.Runtime.Contracts.DataPermissions.RtDataPolicyRule("files.owned",
