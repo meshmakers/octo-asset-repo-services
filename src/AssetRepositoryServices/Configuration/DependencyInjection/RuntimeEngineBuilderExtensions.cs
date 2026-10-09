@@ -376,6 +376,9 @@ public static class RuntimeEngineBuilderExtensions
         builder.Services.AddCkModelSystemFilesV1();
         builder.Services.AddMigrations(typeof(OctoAssetRepositoryServicesOptions).Assembly);
         builder.Services.AddSingleton<Meshmakers.Octo.Backend.AssetRepositoryServices.Services.Files.FileSystemService>();
+        // AB#6175: move of System.Reporting file data to System.Files (sweep at tenant start + straggler timer).
+        Meshmakers.Octo.Backend.AssetRepositoryServices.Services.Files.Migration.FilesMigrationServiceCollectionExtensions
+            .AddReportingFilesMigration(builder.Services);
 
 
         builder.Services.AddOctoServiceInfrastructure("AssetRepositoryService", c =>
