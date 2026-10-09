@@ -319,6 +319,67 @@ public class FileSystemMutationGuardTests
     }
 
     [Fact]
+    public async Task ChildrenQuery_WithNameFilterAndFirstTwo_ReturnsTheMatch()
+    {
+        var root = await _helpers.CreateRootAsync();
+        var a = await _helpers.CreateFolderAsync(root, "A");
+        await _helpers.UploadAsync(a, "a.txt", "a", FileConflictMode.Fail);
+        await _helpers.UploadAsync(a, "b.txt", "b", FileConflictMode.Fail);
+        // Name lookup as the clients send it: aliases and paging variables, no sortOrder (see the skipped test below).
+        var result = await RunAsync("""
+            query filesChildren($rtId: OctoObjectId!, $first: Int, $after: String, $filter: [FieldFilter]) { runtime {
+              roots: systemFilesFolderRoot(rtId: $rtId) { items { rtId children(ckTypeIds: ["System.Files/Folder", "System.Files/FileSystemItem"], first: $first, after: $after, fieldFilter: $filter) {
+                totalCount pageInfo { endCursor hasNextPage } items { __typename ... on SystemFilesFileSystemItem { name } } } } }
+              folders: systemFilesFolder(rtId: $rtId) { items { rtId children(ckTypeIds: ["System.Files/Folder", "System.Files/FileSystemItem"], first: $first, after: $after, fieldFilter: $filter) {
+                totalCount pageInfo { endCursor hasNextPage } items { __typename ... on SystemFilesFileSystemItem { name } } } } }
+              files: systemFilesFileSystemItem(rtId: $rtId) { items { rtId } } } }
+            """, new
+        {
+            rtId = a.Id.RtId.ToString(),
+            first = 2,
+            after = (string?)null,
+            filter = new[] { new { attributePath = "name", @operator = "MATCH_REG_EX", comparisonValue = "(?i)^a\\.txt$" } }
+        }, FilesTestFixture.PlainUser);
+        result.Errors.Should().BeNullOrEmpty(_fixture.SerializeGraphQl(result));
+        var json = JObject.Parse(_fixture.SerializeGraphQl(result));
+        json.SelectTokens("data.runtime.folders.items[0].children.items[*].name").Select(t => t.Value<string>())
+            .Should().Equal("a.txt");
+    }
+
+    /// <remarks>
+    ///     Engine bug (octo-construction-kit-engine-mongodb, MultipleOriginDirectAssociationsRtQuery, optimized
+    ///     sorted+limited path): totalCount is the number of associations, not of the filtered targets, so a
+    ///     fieldFilter together with sortOrder and first answers INCOMPLETE_SLICE. Re-enable when fixed.
+    /// </remarks>
+    [Fact(Skip = "Engine bug: association connection with fieldFilter + sortOrder + first counts unfiltered associations (INCOMPLETE_SLICE)")]
+    public async Task ChildrenQuery_WithNameFilterSortAndFirstTwo_ReturnsTheMatch()
+    {
+        var root = await _helpers.CreateRootAsync();
+        var a = await _helpers.CreateFolderAsync(root, "A");
+        await _helpers.UploadAsync(a, "a.txt", "a", FileConflictMode.Fail);
+        await _helpers.UploadAsync(a, "b.txt", "b", FileConflictMode.Fail);
+        // The octo-sdk files client's ChildrenQuery (S12), verbatim shape: aliases, sort, paging variables.
+        var result = await RunAsync("""
+            query filesChildren($rtId: OctoObjectId!, $first: Int, $after: String, $filter: [FieldFilter]) { runtime {
+              roots: systemFilesFolderRoot(rtId: $rtId) { items { rtId children(ckTypeIds: ["System.Files/Folder", "System.Files/FileSystemItem"], first: $first, after: $after, fieldFilter: $filter, sortOrder: [{attributePath: "name", sortOrder: ASCENDING}]) {
+                totalCount pageInfo { endCursor hasNextPage } items { __typename ... on SystemFilesFileSystemItem { name } } } } }
+              folders: systemFilesFolder(rtId: $rtId) { items { rtId children(ckTypeIds: ["System.Files/Folder", "System.Files/FileSystemItem"], first: $first, after: $after, fieldFilter: $filter, sortOrder: [{attributePath: "name", sortOrder: ASCENDING}]) {
+                totalCount pageInfo { endCursor hasNextPage } items { __typename ... on SystemFilesFileSystemItem { name } } } } }
+              files: systemFilesFileSystemItem(rtId: $rtId) { items { rtId } } } }
+            """, new
+        {
+            rtId = a.Id.RtId.ToString(),
+            first = 2,
+            after = (string?)null,
+            filter = new[] { new { attributePath = "name", @operator = "MATCH_REG_EX", comparisonValue = "(?i)^a\\.txt$" } }
+        }, FilesTestFixture.PlainUser);
+        result.Errors.Should().BeNullOrEmpty(_fixture.SerializeGraphQl(result));
+        var json = JObject.Parse(_fixture.SerializeGraphQl(result));
+        json.SelectTokens("data.runtime.folders.items[0].children.items[*].name").Select(t => t.Value<string>())
+            .Should().Equal("a.txt");
+    }
+
+    [Fact]
     public async Task CreateFolder_WithoutParent_IsRefused()
     {
         const string orphan = """
