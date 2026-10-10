@@ -90,6 +90,10 @@ internal sealed class RtQueryMutation : RtMutationBase
                 throw NavigationPropertyException.MatchFailed(mappingResult);
             }
 
+            // AB#6171: the file system rules live on the entity mutations; query rows cannot write files.
+            Services.Files.FileSystemMutationGuard.EnsureNotInQueryMutation(
+                entityUpdateInfos.Select(e => e.CkTypeId), associationUpdateInfoList);
+
             OperationResult operationResult = new();
             await tenantRepository.ApplyChangesAsync(sessionAccessor.Session, entityUpdateInfos,
                 associationUpdateInfoList, operationResult);
@@ -122,6 +126,10 @@ internal sealed class RtQueryMutation : RtMutationBase
                 entityUpdateInfos.Add(
                     EntityUpdateInfo<RtEntity>.CreateDelete(new RtEntityId(rtEntityId.CkTypeId, rtEntityId.RtId)));
             }
+
+            // AB#6171: deleting files and folders goes through runtimeEntities.delete (recursive, erases bytes).
+            Services.Files.FileSystemMutationGuard.EnsureNotInQueryMutation(
+                entityUpdateInfos.Select(e => e.CkTypeId), []);
 
             OperationResult operationResult = new();
             await tenantRepository.ApplyChangesAsync(sessionAccessor.Session, entityUpdateInfos, operationResult);
@@ -192,6 +200,10 @@ internal sealed class RtQueryMutation : RtMutationBase
             {
                 throw NavigationPropertyException.MatchFailed(mappingResult);
             }
+
+            // AB#6171: the file system rules live on the entity mutations; query rows cannot write files.
+            Services.Files.FileSystemMutationGuard.EnsureNotInQueryMutation(
+                inputObjects.Select(i => i.Item.CkTypeId), associationUpdateInfoList);
 
             OperationResult operationResult = new();
             await tenantRepository.ApplyChangesAsync(sessionAccessor.Session, entityUpdateInfos,

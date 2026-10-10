@@ -35,6 +35,7 @@ public static class AssetRepositoryServiceConstants
     /// </summary>
     public const int AssetServiceIdentityDataVersionValue = 5;
 
+
     /// <summary>
     ///     The name of the cookie of cookie-based auth
     /// </summary>

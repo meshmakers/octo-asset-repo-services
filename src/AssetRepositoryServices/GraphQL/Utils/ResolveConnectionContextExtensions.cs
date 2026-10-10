@@ -78,6 +78,12 @@ internal static class ResolveConnectionContextExtensions
         {
             context.Errors.Add(accessError);
         }
+        else if (exception is Services.Files.FileSystemException fileSystemException)
+        {
+            // AB#6171: file system rules answer their stable code (NAME_CONFLICT, PROTECTED_ROOT, …).
+            context.Errors.Add(new ExecutionError(fileSystemException.Message, fileSystemException)
+                { Code = fileSystemException.Code });
+        }
         else if (exception is SecretEncryptionNotConfiguredException secretEncryptionNotConfigured)
         {
             // The message names the missing configuration only; it never carries a value.
@@ -323,6 +329,17 @@ internal static class ResolveConnectionContextExtensions
         }
 
         context.Errors.Add(error);
+    }
+
+    /// <summary>
+    ///     The file system rules of the generic mutations (AB#6171); stateless, so a fallback instance is used
+    ///     when the request has no service provider.
+    /// </summary>
+    internal static Services.Files.FileSystemMutationGuard GetFileSystemMutationGuard(this IResolveFieldContext context)
+    {
+        return context.RequestServices?.GetService<Services.Files.FileSystemMutationGuard>()
+               ?? new Services.Files.FileSystemMutationGuard(new Services.Files.FileSystemService(),
+                   Microsoft.Extensions.Options.Options.Create(new Services.Files.FilesOptions()));
     }
 
     internal static void ValidateOperationResult(OperationResult operationResult)

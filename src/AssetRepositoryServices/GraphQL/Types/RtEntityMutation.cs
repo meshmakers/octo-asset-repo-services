@@ -8,6 +8,7 @@ using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.ConstructionKit.Contracts.Messages;
 using Meshmakers.Octo.Runtime.Contracts;
 using Meshmakers.Octo.Runtime.Contracts.RepositoryEntities;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.Services.Files;
 using MongoDB.Driver;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
@@ -78,6 +79,13 @@ internal class RtEntityMutation : RtMutationBase
                 entityUpdateInfos.Add(EntityUpdateInfo<RtEntity>.CreateInsert(rtEntity));
             }
 
+            // AB#6171: file system rules for System.Files entities (root role, unique names per folder).
+            if (FileSystemMutationGuard.Applies(rtCkTypeId, associationUpdateInfoList))
+            {
+                await arg.GetFileSystemMutationGuard().BeforeCreateAsync(tenantRepository, sessionAccessor.Session,
+                    Helpers.GetSecurityContext(arg.UserContext), entityUpdateInfos, associationUpdateInfoList);
+            }
+
             var deleteAssociations =
                 associationUpdateInfoList.Where(x => x.ModOption == AssociationModOptionsDto.Delete);
             if (deleteAssociations.Any())
@@ -88,9 +96,9 @@ internal class RtEntityMutation : RtMutationBase
             }
 
             OperationResult operationResult = new();
-            await tenantRepository.ApplyChangesAsync(sessionAccessor.Session, entityUpdateInfos,
-                associationUpdateInfoList, operationResult);
-            ResolveConnectionContextExtensions.ValidateOperationResult(operationResult);
+            // AB#6171: a data-permission denial on files and folders answers FORBIDDEN (no rtIds named).
+            await ApplyChangesAsync(tenantRepository, sessionAccessor.Session, entityUpdateInfos,
+                associationUpdateInfoList, operationResult, FileSystemMutationGuard.Applies(rtCkTypeId, associationUpdateInfoList));
 
             return await GetResultSet(sessionAccessor.Session, tenantRepository, entityUpdateInfos);
         }
@@ -138,10 +146,17 @@ internal class RtEntityMutation : RtMutationBase
                 }
             }
 
+            // AB#6171: file system rules for System.Files entities (rename, move, protected roots).
+            if (FileSystemMutationGuard.Applies(ckTypeId, associationUpdateInfoList))
+            {
+                await arg.GetFileSystemMutationGuard().BeforeUpdateAsync(tenantRepository, sessionAccessor.Session,
+                    Helpers.GetSecurityContext(arg.UserContext), entityUpdateInfos, associationUpdateInfoList);
+            }
+
             OperationResult operationResult = new();
-            await tenantRepository.ApplyChangesAsync(sessionAccessor.Session, entityUpdateInfos,
-                associationUpdateInfoList, operationResult);
-            ResolveConnectionContextExtensions.ValidateOperationResult(operationResult);
+            // AB#6171: a data-permission denial on files and folders answers FORBIDDEN (no rtIds named).
+            await ApplyChangesAsync(tenantRepository, sessionAccessor.Session, entityUpdateInfos,
+                associationUpdateInfoList, operationResult, FileSystemMutationGuard.Applies(ckTypeId, associationUpdateInfoList));
 
             return await GetResultSet(sessionAccessor.Session, tenantRepository, entityUpdateInfos);
         }

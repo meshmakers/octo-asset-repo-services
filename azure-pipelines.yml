@@ -9,9 +9,10 @@
 # Asset-repo-specific quirks preserved from the legacy YAML:
 #   - InstallSSHKey + submodules:recursive — Octo.User.props from private submodule
 #   - download-ca — internal CA for dotnet restore
-#   - NO separate Build step (Test does the implicit build, matches legacy)
+#   - Separate Build step since AB#6174 (without CK publish); Test reuses that build
+#     (--no-build). The System.Files CK model (src/SystemFilesCkModel) is validated and
+#     published after the tests by validate-and-publish-ck-versions.yml
 #   - NO push-nuget — service doesn't publish NuGets
-#   - NO CK library output — no ConstructionKit project in this repo
 #   - NO SystemTests exclusion (uses bare **/*Tests.csproj — matches legacy)
 
 name: $(MajorVersion).$(MinorVersion).$(date:yyMM).$(DayOfMonth)$(rev:rrr)-$(Build.SourceBranchName)
@@ -138,13 +139,29 @@ stages:
               restoreArguments: '/p:OctoNugetPrivateServer=$(nugetPrivateServer)'
           - task: DotNetCoreCLI@2
             retryCountOnTaskFailure: 2
+            displayName: 'Build'
+            inputs:
+              command: 'build'
+              projects: '$(solutionFile)'
+              arguments: '--no-restore --configuration $(buildConfiguration) /p:OctoNugetPrivateServer=$(nugetPrivateServer) /p:OctoPublishCkModel=false /p:OctoPrivateGitHubApiKey=$(GitHubPAT) /p:OctoPublicGitHubApiKey=$(GitHubPAT)'
+              publishWebProjects: false
+              zipAfterPublish: false
+              modifyOutputPath: false
+          - task: DotNetCoreCLI@2
+            retryCountOnTaskFailure: 2
             displayName: 'Test'
             inputs:
               command: 'test'
-              arguments: '--configuration $(buildConfiguration) /p:OctoNugetPrivateServer=$(nugetPrivateServer)'
+              arguments: '--configuration $(buildConfiguration) --no-build --no-restore /p:OctoNugetPrivateServer=$(nugetPrivateServer) /p:OctoPublishCkModel=false'
               projects: |
                 **/*Tests.csproj
               testRunTitle: 'CI'
+          # CK SemVer gate + publish (AB#4420) of System.Files (AB#6171, owned by this service),
+          # after the tests like octo-identity-services.
+          - template: templates/steps/validate-and-publish-ck-versions.yml@pipelineTemplates
+            parameters:
+              constructionKitPaths:
+                - 'src/SystemFilesCkModel/ConstructionKit'
           # Multi-arch image (AB#4451): arm64 for Apple-Silicon kind clusters and
           # edge devices, amd64 for the managed clusters.
           - template: templates/steps/build-and-push-docker.yml@pipelineTemplates

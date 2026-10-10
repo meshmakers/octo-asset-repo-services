@@ -1,0 +1,41 @@
+"$schema": "https://schemas.meshmakers.cloud/construction-kit-elements.schema.json"
+# Same shape as System.Reporting 2.3.0 so existing System.Reporting file entities move to these
+# types by a pure ckTypeId rewrite (AB#6171 D3). All five types share one collection
+# (RtEntity_SystemFilesFileSystemEntity).
+types:
+  - typeId: FileSystemEntity
+    description: "Abstract base type of all file system entries (folder roots, folders and files)."
+    derivedFromCkTypeId: ${System}/Entity
+    isFinal: false
+    isAbstract: true
+    attributes:
+      - id: ${System}/Name
+        name: Name
+  - typeId: FileSystemContainer
+    description: "Abstract base type of file system entries that live inside a folder or a folder root (folders and files)."
+    derivedFromCkTypeId: ${this}/FileSystemEntity
+    isFinal: false
+    isAbstract: true
+    associations:
+      - id: ${System}/ParentChild
+        targetCkTypeId: ${this}/Folder
+      - id: ${System}/ParentChild
+        targetCkTypeId: ${this}/FolderRoot
+  - typeId: FileSystemItem
+    description: "A file. The bytes are stored as linked binary in the Content attribute."
+    derivedFromCkTypeId: ${this}/FileSystemContainer
+    isFinal: false
+    isAbstract: false
+    attributes:
+      - id: ${this}/Content
+        name: Content
+  - typeId: Folder
+    description: "A folder inside a folder root or another folder."
+    derivedFromCkTypeId: ${this}/FileSystemContainer
+    isFinal: false
+    isAbstract: false
+  - typeId: FolderRoot
+    description: "Top-level folder of a file system tree, addressed by its well-known name (e.g. 'Files')."
+    derivedFromCkTypeId: ${this}/FileSystemEntity
+    isFinal: false
+    isAbstract: false

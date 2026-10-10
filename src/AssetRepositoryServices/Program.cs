@@ -42,7 +42,20 @@ try
     builder.Configuration.AddEnvironmentVariables("OCTO_").AddCommandLine(args)
         .AddUserSecrets(typeof(Program).Assembly, true);
 
-    builder.Services.AddTransient<IDefaultConfigurationCreatorService, DefaultConfigurationCreatorService>();
+    // Scoped like the other services: the startup pipeline (DefaultConfigurationInitializationService sets
+    // DeferTenantStart and queues the tenants, TenantStartupInitializationService starts them) must see the SAME
+    // instance. As transient, the deferred list was lost and StartTenantAsync never ran at startup — harmless
+    // while it was empty, but AB#6171 ensures the default file root and runs the files sweep there.
+    builder.Services.AddScoped<IDefaultConfigurationCreatorService, DefaultConfigurationCreatorService>();
+
+    // AB#6171: per-cluster limits of the platform file system (OCTO_Files__…).
+    builder.Services.Configure<Meshmakers.Octo.Backend.AssetRepositoryServices.Services.Files.FilesOptions>(
+        builder.Configuration.GetSection(
+            Meshmakers.Octo.Backend.AssetRepositoryServices.Services.Files.FilesOptions.SectionName));
+    // AB#6175: options of the System.Reporting -> System.Files sweep (OCTO_FilesMigration__…).
+    builder.Services.Configure<Meshmakers.Octo.Backend.AssetRepositoryServices.Services.Files.Migration.FilesMigrationOptions>(
+        builder.Configuration.GetSection(
+            Meshmakers.Octo.Backend.AssetRepositoryServices.Services.Files.Migration.FilesMigrationOptions.SectionName));
     builder.Services.AddCors();
 
     // AB#5432: CK model health sweep. Bound from configuration, so a cluster tunes it with

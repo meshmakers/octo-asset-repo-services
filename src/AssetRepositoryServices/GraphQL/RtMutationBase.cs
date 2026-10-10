@@ -19,6 +19,28 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL;
 
 internal abstract class RtMutationBase : ObjectGraphType
 {
+    /// <summary>
+    ///     Applies the changes; for file system mutations (AB#6171) the engine's data-permission denial becomes
+    ///     the GraphQL error code FORBIDDEN without naming entities.
+    /// </summary>
+    protected static async Task ApplyChangesAsync(ITenantRepository repository, IOctoSession session,
+        List<EntityUpdateInfo<RtEntity>> entityUpdateInfos, List<AssociationUpdateInfo> associations,
+        OperationResult operationResult, bool fileSystemMutation)
+    {
+        if (!fileSystemMutation)
+        {
+            await repository.ApplyChangesAsync(session, entityUpdateInfos, associations, operationResult);
+            ResolveConnectionContextExtensions.ValidateOperationResult(operationResult);
+            return;
+        }
+
+        await Services.Files.FileSystemService.TranslateForbiddenAsync(async () =>
+        {
+            await repository.ApplyChangesAsync(session, entityUpdateInfos, associations, operationResult);
+            Services.Files.FileSystemService.ThrowIfFailed(operationResult);
+        }, "Access denied by data permissions.");
+    }
+
     protected async Task RtEntityFromInputObjectAsync(ICkCacheService ckCacheService, string tenantId,
         RtEntity rtEntity,
         RtEntityDto rtEntityDto,

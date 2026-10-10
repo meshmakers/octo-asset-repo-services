@@ -166,6 +166,7 @@ Located in versioned API folders:
 - `DiagnosticsController.cs` - Health and diagnostics
 - `BlueprintsController.cs` - Blueprint management
 - `CkModelCatalogController.cs` - CK model catalog browsing, search, and cache refresh
+- `FilesMigrationController.cs` - `GET system/v1/files/migration-status/{tenantId}`: pre-check report of the System.Reporting → System.Files file data move (AB#6175, see "Files migration" below)
 
 **Tenant APIs** (`TenantApi/v1/Controllers/`):
 - `TenantsController.cs` - Tenant management. `GET {tenantId}/v1/tenants` returns **only the child tenants** of the current tenant; `GET {tenantId}/v1/tenants/self` returns the current (own) tenant, including its `Database`. Keeping the two apart is deliberate (AB#4601): AB#4432 had injected the own tenant into the *list* as a virtual index 0, which made every list-row action (`Detach`, `Delete` in the Refinery Studio context menu) offer itself on the tenant the operator was signed into — an operation the API must never expose. The own tenant is only resolvable server-side (its `Database` comes from the request's `ITenantContext`; the registry entry describing a tenant lives in its **parent's** database and in the system database, never in its own), which is why `self` exists at all instead of the frontend deriving it. `self` needs no extra tenant check beyond its `TenantAssetApiReadOnlyPolicy`: it sits under the `{tenantId:tenantId}` prefix, so `TenantAuthorizationMiddleware` already 403s a user token whose `tenant_id` claim does not match the route (client-credentials tokens are exempt there by design). Child tenants come back in the underlying query's default order — the endpoint imposes **no explicit sort**, so cross-page ordering is only as stable as that default (`GetChildTenantsAsync` in the engine exposes no sort parameter). Note that none of these policies check a **role**: they are scope-only, so `TenantManagement` is enforced by the Studio's route guard for UX, not by this API.
@@ -254,6 +255,7 @@ Located in versioned API folders:
 - `FeaturesController.cs` - `GET {tenantId}/v1/features/status` (AB#4884): aggregate enabled-state of the four capabilities the delete/detach guard evaluates, read through the same `ITenantCapabilityStateReader` — one state source for the Studio's Tenant Features panel and the guard, so they never disagree. Stream Data additionally carries the instance-level `StreamData:Enabled` flag. Whether Reporting/AI are installed at all is NOT answered here — that comes from the `_configuration` discovery document (empty URL = not installed). Read failures propagate as 500 (an unreadable state must never render as "disabled"). Replaces the former `GET streamdata/status`.
 - `ModelsController.cs` - Construction kit and runtime model import/export (includes `ImportFromCatalog` endpoint)
 - `LargeBinariesController.cs` - Binary file download. Falls back to magic-byte sniffing via `BinaryContentTypeDetector` when the stored `ContentType` is missing or `application/octet-stream` (legacy data uploaded before detection existed). For non-seekable source streams the head bytes are re-prepended via `PrependedReadStream`.
+- `FilesController.cs` - **Platform file system bytes API (AB#6171 / AB#6174, zip AB#6225)**, `{tenantId}/v1/files`. See "Platform file system" below.
 - `DiagnosticsController.cs` - Per-tenant diagnostics.
   - `GET slow-mongo-queries` returns the recent in-memory `SlowQueriesBuffer` entries filtered by `Database == tenantId` (AB#4212); backs the Refinery Studio Diagnostics → Slow Queries page.
   - `GET index-usage` (AB#4224 / Stage 3) runs MongoDB's `$indexStats` across every non-system collection in the tenant's database, classifies each index as `builtin` / `unused` / `lowUsage` / `used`, and orders Unused first then LowUsage. Query params: `minAgeDays` (default 7), `lowUsageOps` (default 10), `includeUsed` (default false — Builtin/Used are filtered out unless explicitly requested). Delegates to `IIndexUsageService` from the engine; tenant resolution happens inside the service via `ISystemContext`. Backs the Refinery Studio Diagnostics → Index Usage page.
@@ -313,6 +315,64 @@ GraphQL types are generated dynamically based on Construction Kit models:
 Delete operations support multiple strategies via `DeleteOptions`:
 - `Archive` (default) - Soft delete
 - `Permanent` - Hard delete
+
+### Platform file system (AB#6171)
+
+Files and folders are a platform capability, independent of Reporting. This service owns the
+**System.Files 1.0.0** CK model (`src/SystemFilesCkModel`, service-managed, depends on `System-[2.5,3.0)`):
+`FolderRoot`, `Folder`, `FileSystemItem` (attribute `Content`, BinaryLinked), abstract `FileSystemEntity` /
+`FileSystemContainer`, all in `RtEntity_SystemFilesFileSystemEntity`; the tree is `System/ParentChild`
+(origin = child, target = parent).
+
+- **Tenant setup.** `DefaultConfigurationCreatorService.ImportCkModelAsync` imports the embedded model
+  (`AddCkModelSystemFilesV1`) into every tenant inside the setup transaction; `StartTenantAsync` ensures the
+  root `Files` (`FileSystemDefaults`, every start, never throws — a tenant whose System model is too old for
+  System.Files logs a warning instead of going `Failed`); `GetCkModelIds` (`System.Files-[1.0,2.0)`) lets
+  later minors migrate through the standard upgrade path. An import error throws and goes through the setup
+  retry store.
+- **Metadata = generic GraphQL** (decision Q1). `FileSystemMutationGuard` is called by the generic
+  create/update/delete resolvers (typed and `runtimeEntities`) whenever a System.Files entity is written or a
+  `System/ParentChild` association touches one: root creation needs the role `FileManagement`, root
+  well-known names are unique and not one of `capabilities`, `zip`, `items`, `stats` (route segments of the
+  bytes API) nor `ReportingAssets_*` (system only); names are unique per parent (case-insensitive) on
+  create/rename/move; every entry has at most one parent (a move must DELETE the current parent with the
+  CREATE), roots never get one; `Files`, `ReportingAssets_*` and blueprint roots cannot be renamed/deleted; no
+  folder moves below itself; the target folder must be visible to the caller. **Deleting a root/folder deletes
+  the whole subtree** (at most `MaxDeleteEntries`, default 2,000, per mutation — GridFS deletes are not part of
+  the transaction, so a cascade must finish well inside the transaction lifetime), System.Files entries are
+  always erased (GridFS bytes included), and the cascade runs in the caller's session, so an entry the caller
+  may not delete fails the whole mutation (FORBIDDEN, no rtIds named). Runtime-query row mutations
+  (`runtimeQuery { create/update/delete }`) refuse System.Files entities and their tree. Conflicts are checked
+  over an unfiltered session. Error codes: FORBIDDEN, NAME_CONFLICT, RESERVED_NAME, PROTECTED_ROOT,
+  MOVE_INTO_ITSELF, INVALID_NAME, INVALID_REQUEST, LIMIT_EXCEEDED.
+- **Bytes = REST** `FilesController`: `PUT|GET {root}/{**path}` (upload `?conflict=fail|replace|keepBoth`
+  `&createFolders`, download `?inline`), `POST items/{rtId}/content?name=` (upload into folder),
+  `PUT|GET items/{rtId}/content`, `GET stats?root=&path=` / `GET items/{rtId}/stats` (deep counts incl.
+  `hiddenEntries` hidden by data permissions), `POST zip` (`{ items: [{root, path}], rtIds, fileName }`,
+  streamed, limits checked before the first byte), `POST linked-counts` (`{ rtIds }` → `{ counts: {rtId: n} }`,
+  every association except `System/ParentChild`, any role/direction, visible entries only), `GET capabilities`
+  (tenant-aware: `available: false`, `reason: SYSTEM_FILES_MISSING` without System.Files; plus `maxDeleteEntries`).
+  GraphQL writes on files and folders answer a data-permission denial with the code `FORBIDDEN`. Reads run in the caller's session
+  (hidden = 404), writes through the engine's data-permission write guard (403 FORBIDDEN, message 4973).
+  Problem details carry a stable `code` extension. Uploads are buffered to a temp file (the engine needs a
+  seekable stream) while `MaxUploadBytes` is enforced; Kestrel's body limit is raised per request.
+- **Limits** (`FilesOptions`, section `Files`, env `OCTO_Files__…`): MaxUploadBytes 100 MB, ZipMaxFiles 1,000,
+  ZipMaxBytes 500 MB, PreviewMaxBytes 20 MB (advisory). The ingress must accept more than MaxUploadBytes
+  (octo-helm-core `ingress.proxyBodySize`, 110m). GraphQL multipart uploads get the same limit (+1 MB, set
+  per request for `multipart/*` only; JSON GraphQL bodies keep Kestrel's 30 MB).
+- **Download headers** (`FileResponseHeaders`, also on `/v1/largeBinaries`): `Content-Disposition` with ASCII
+  fallback + `filename*=UTF-8''…`, `Access-Control-Expose-Headers` (the shared CORS policy does not expose
+  them), `ETag` = binary id, nosniff. Inline delivery is an allow-list (images except SVG, audio, video, PDF,
+  text/plain, CSV, JSON); everything else is an attachment with a `sandbox` CSP. largeBinaries default to
+  inline for passive content (`?inline=false` = attachment). Zip entry names are sanitized (no separators,
+  no `..`); a file whose GridFS bytes are missing is skipped in a zip and answers 404 on download.
+- Known engine limitations: a nested association connection with `first: 0` fails ($slice) — ask `first: 1`;
+  with `fieldFilter` + `sortOrder` + `first` its totalCount is the unfiltered association count, which answers
+  INCOMPLETE_SLICE (or a wrong hasNextPage) — name lookups and searches must not sort (skipped repro test).
+- Zip writes need synchronous IO for ZipArchive's small header records (Kestrel forbids it by default);
+  the zip action allows it for its own response only.
+- Tests: `tests/AssetRepositoryServices.IntegrationTests/Files/*` (`FilesTestFixture` imports System.Files,
+  ensures the default root and has a switchable data-policy table).
 
 ### Important Naming Conventions
 - **Ck** prefix = Construction Kit (metadata/model definitions)
@@ -654,6 +714,60 @@ transport-level barrier between a client-credentials client of the authority and
 ### Configuration
 Use environment variable prefix `OCTO_` to override configuration values.
 User secrets are supported for local development (UserSecretsId: `173d8e91-b831-4e8a-a43f-672c57e6a4da`).
+
+### Files migration: System.Reporting → System.Files (AB#6175)
+
+`Services/Files/Migration/`. `ReportingFilesMoveSweep` moves the file data of a tenant from the
+System.Reporting 2.x types to System.Files (the raw move of the S0 spike, `.po/ab6171-s0-spike-migrate.js`).
+Everything is raw MongoDB (own admin `MongoClient` from `OctoSystemConfiguration`,
+`TenantMongoDatabaseProvider`) — never the CK cache, because the legacy types disappear from it with
+System.Reporting 3.0.0.
+
+- **Cheap check first (read-only):** legacy `ckTypeId`s in `RtEntity_SystemReportingFileSystemEntity`, legacy
+  `originCkTypeId`/`targetCkTypeId` in `RtAssociation`, legacy `fs.files.metadata.rtEntityId` stamps. All
+  zero → no write, no lease, no scan (steady state). Then System.Files must be imported (collection with CK
+  indexes), else `TargetModelMissing` (still read-only, warning rate-limited to `RepeatedWarningInterval`).
+- **Lease:** per-tenant `findOneAndUpdate` lease in `FilesMigrationLease` (`TenantSweepLease`, expiry
+  `LeaseDuration` 5 min, renewed per batch). Every pod runs the start hook; only the holder scans and moves,
+  the others skip at debug level (`LeaseHeld`).
+- **Root conflict:** a legacy `FolderRoot` whose well-known name equals (case-insensitive) an existing
+  System.Files root (e.g. `Files`) aborts the move for the tenant (`RootConflict`, error log rate-limited,
+  one audit record per distinct conflict set).
+- **Move:** batches (`BatchSize` 500) in one transaction each — `replaceOne` upsert by `_id` into the
+  System.Files collection with the rewritten `ckTypeId`, delete from the source, each batch verified
+  afterwards. An rtId that already exists in System.Files (stale writer re-wrote a moved entity) is **never
+  replaced**: the System.Files version is kept, the legacy document is parked in `FilesMigrationConflicts`
+  (with `rtId`, `detectedAt`, full `document`) and listed in the audit. Then `RtAssociation` `updateMany`
+  (outside the transaction, like the engine) and the `fs.files` stamp prefix rewrite (**R1**: the
+  `/largeBinaries` data-permission gate and the linked-binary cascade delete key on that stamp). A count
+  mismatch stops after the entity step (no association/stamp rewrite) and logs an error. The legacy
+  collection is **never dropped** (a straggler written between "empty" and "drop" would be lost); other
+  (derived/unknown) types in it are not moved and are reported.
+- **Audit:** one document per sweep that wrote or failed in `FilesMigrationAudit` (before/after counts,
+  moved per type, conflicts, association fields, stamps, errors, trigger, host). Deliberately **not**
+  `System/MigrationHistory` — that collection drives the CK upgrade version detection.
+- **Triggers (Q3):** `DefaultConfigurationCreatorService.StartTenantAsync` (after the System.Files import and
+  the default root; never fails the start) and `ReportingFilesSweepBackgroundService` every
+  `StragglerSweepInterval` (10 min) for tenants in `ReportingFilesSweepTracker`. A tenant stays on the timer
+  for `StragglerWindow` (24 h) after its last finding (legacy data, failure, lease held elsewhere), or until
+  System.Reporting 3.0.0+ is installed (`CkModel` ids), even through zero checks (in memory, per pod; the
+  next start re-checks). Switch `FilesMigration:SweepEnabled`, **off by default** (`OCTO_FilesMigration__SweepEnabled=true` to enable; Helm `services.assetRepository.filesMigration.sweepEnabled`). It is switched on per cluster in the rollout (AB#6183) after Reporting (AB#6176) and the consumers (AB#6181) read System.Files (risk R5).
+- **Pre-check (R4):** `FilesMigrationStatusService`, exposed as `GET system/v1/files/migration-status/{tenantId}`
+  (`SystemAssetApiReadOnlyPolicy` **plus** in-controller check: token `tenant_id` = system tenant, user
+  tokens need `AdminPanelManagement` — the report crosses tenant boundaries; a 500 carries no exception
+  text). Legacy counts, other types in the legacy collection, root conflicts, System.Files counts, orphans
+  without ParentChild parent, the latest audit records, and every entity in any `RtEntity_*` collection
+  (except the two file collections) whose stored document contains
+  `System.Reporting/{FileSystemItem|Folder|FolderRoot|FileSystemEntity|FileSystemContainer}` (also the
+  versioned `System.Reporting-x.y.z/…` form) with collection, rtId, ckTypeId, well-known name,
+  `rtBlueprintSource` and field paths. The scan reads raw BSON (secondary-preferred) and searches the UTF-8
+  bytes, so it is schema-free; scans are serialized per pod and cut off after `ScanTimeout` (5 min,
+  `LiteralScanComplete = false`). At tenant start only the lease holder scans, and only when the cheap
+  check found legacy data. Not scanned: GridFS contents, CK collections, `RtAssociation`, binary values. The
+  sweep never rewrites pipeline YAML — blueprint pipelines are fixed by the app blueprint release (S9),
+  tenant-local ones by the runbook (S11).
+- Tests: `tests/AssetRepositoryServices.IntegrationTests/Files/ReportingFilesMoveSweepTests.cs`
+  (`FilesMigrationTestFixture` seeds legacy data raw, incl. real GridFS files).
 
 ### CK Model Catalog REST API
 

@@ -1,0 +1,5 @@
+"$schema": "https://schemas.meshmakers.cloud/construction-kit-elements.schema.json"
+attributes:
+  - id: Content
+    valueType: BinaryLinked
+    description: "Binary content of a file, stored in the tenant's GridFS bucket and linked to the owning entity."

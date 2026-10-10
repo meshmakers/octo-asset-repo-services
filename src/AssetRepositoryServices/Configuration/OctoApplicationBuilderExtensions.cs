@@ -46,6 +46,27 @@ public static class OctoApplicationBuilderExtensions
         forwardedHeadersOptions.KnownProxies.Clear();
         app.UseForwardedHeaders(forwardedHeadersOptions);
 
+        // AB#6171: GraphQL multipart uploads (BinaryLinked) accept the per-file upload limit of the file system
+        // plus multipart overhead instead of Kestrel's 30 MB default. JSON GraphQL bodies keep the default.
+        var maxUploadBytes = app.Services
+            .GetRequiredService<Microsoft.Extensions.Options.IOptions<Meshmakers.Octo.Backend.AssetRepositoryServices.Services.Files.FilesOptions>>()
+            .Value.MaxUploadBytes;
+        app.Use(async (context, next) =>
+        {
+            if (HttpMethods.IsPost(context.Request.Method) &&
+                context.Request.ContentType?.StartsWith("multipart/", StringComparison.OrdinalIgnoreCase) == true &&
+                context.Request.Path.Value?.EndsWith("/graphQl", StringComparison.OrdinalIgnoreCase) == true)
+            {
+                var sizeFeature = context.Features.Get<Microsoft.AspNetCore.Http.Features.IHttpMaxRequestBodySizeFeature>();
+                if (sizeFeature is { IsReadOnly: false })
+                {
+                    sizeFeature.MaxRequestBodySize = maxUploadBytes + 1024 * 1024;
+                }
+            }
+
+            await next(context);
+        });
+
         app.UseRouting();
 
         app.UseAuthentication();
