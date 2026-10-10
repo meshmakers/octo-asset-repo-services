@@ -1,0 +1,40 @@
+$schema: https://schemas.meshmakers.cloud/runtime-model.schema.json
+dependencies:
+  - AssetRepositoryIntegrationTest
+entities:
+  - rtId: 67000099aaaa1111bbbb0011
+    ckTypeId: AssetRepositoryIntegrationTest/Customer
+    rtWellKnownName: OwnedKept
+    attributes:
+      - id: System/RtBlueprintLocked
+        value: false
+      - id: AssetRepositoryIntegrationTest/FirstName
+        value: Owned
+      - id: AssetRepositoryIntegrationTest/LastName
+        value: OwnedKept
+      - id: AssetRepositoryIntegrationTest/Street
+        value: Seed Street 2.0.0
+      - id: AssetRepositoryIntegrationTest/PostalCode
+        value: 5020
+      - id: AssetRepositoryIntegrationTest/City
+        value: Salzburg
+      - id: AssetRepositoryIntegrationTest/Country
+        value: Austria
+  - rtId: 67000099aaaa1111bbbb0012
+    ckTypeId: AssetRepositoryIntegrationTest/Customer
+    rtWellKnownName: OwnedGone
+    attributes:
+      - id: System/RtBlueprintLocked
+        value: false
+      - id: AssetRepositoryIntegrationTest/FirstName
+        value: Owned
+      - id: AssetRepositoryIntegrationTest/LastName
+        value: OwnedGone
+      - id: AssetRepositoryIntegrationTest/Street
+        value: Seed Street 2.0.0
+      - id: AssetRepositoryIntegrationTest/PostalCode
+        value: 5020
+      - id: AssetRepositoryIntegrationTest/City
+        value: Salzburg
+      - id: AssetRepositoryIntegrationTest/Country
+        value: Austria

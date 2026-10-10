@@ -28,7 +28,7 @@ internal sealed class BlueprintBlankedAttributeDtoType : ObjectGraphType<Bluepri
             .Resolve(ctx => ctx.Source!.AttributeName);
 
         Field<NonNullGraphType<StringGraphType>>("reason")
-            .Description("SeedEmpty (empty value, or a JSON text emptying a string the tenant filled) or SeedOmitted (attribute not declared by the seed).")
+            .Description("SeedEmpty (empty value, or a JSON text emptying a string the tenant filled), SeedOmitted (attribute not declared by the seed) or ResetToDefault (current value differs from the CK default; incoming = default).")
             .Resolve(ctx => ctx.Source!.Reason);
 
         Field<StringGraphType>("currentSummary")

@@ -240,6 +240,53 @@ public class BlueprintUpdatePreviewMapperTests
     }
 
     [Fact]
+    public void ToDto_CarriesTheTenantOwnedListsAsIdentityOnly_ForPreviewAndResult()
+    {
+        var skipped = new BlueprintTenantOwnedEntity
+        {
+            Key = "OwnedKept", CkTypeId = "T/Rule", EntityId = "67d4a2f0b2e4d8c3a1f00131", WellKnownName = "OwnedKept"
+        };
+        var gone = new BlueprintTenantOwnedEntity { Key = "67d4a2f0b2e4d8c3a1f00132", CkTypeId = "T/Rule" };
+
+        var preview = BlueprintUpdatePreviewMapper.ToDto(
+            new BlueprintUpdatePreview { TenantOwnedSkipped = [skipped], TenantOwnedStaysDeleted = [gone] }, "Bp-2.0.0");
+        var result = BlueprintUpdatePreviewMapper.ToDto(
+            new BlueprintUpdateResult { Success = true, TenantOwnedSkipped = [skipped], TenantOwnedStaysDeleted = [gone] });
+
+        foreach (var (kept, deleted) in new[]
+                 {
+                     (preview.TenantOwnedSkipped, preview.TenantOwnedStaysDeleted),
+                     (result.TenantOwnedSkipped, result.TenantOwnedStaysDeleted)
+                 })
+        {
+            var k = Assert.Single(kept);
+            Assert.Equal("OwnedKept", k.Key);
+            Assert.Equal("T/Rule", k.CkTypeId);
+            Assert.Equal("67d4a2f0b2e4d8c3a1f00131", k.EntityId);
+            Assert.Equal("OwnedKept", k.WellKnownName);
+
+            var d = Assert.Single(deleted);
+            Assert.Equal("67d4a2f0b2e4d8c3a1f00132", d.Key);
+            Assert.Null(d.EntityId);
+            Assert.Null(d.WellKnownName);
+        }
+    }
+
+    [Fact]
+    public void ToDto_TenantOwnedListsDefaultToEmpty()
+    {
+        var preview = BlueprintUpdatePreviewMapper.ToDto(new BlueprintUpdatePreview(), "Bp-2.0.0");
+        var result = BlueprintUpdatePreviewMapper.ToDto(new BlueprintUpdateResult());
+
+        Assert.Empty(preview.TenantOwnedSkipped);
+        Assert.Empty(preview.TenantOwnedStaysDeleted);
+        Assert.Empty(result.TenantOwnedSkipped);
+        Assert.Empty(result.TenantOwnedStaysDeleted);
+        Assert.Empty(new BlueprintApplyResultDto().TenantOwnedSkipped);
+        Assert.Empty(new BlueprintApplyResultDto().TenantOwnedStaysDeleted);
+    }
+
+    [Fact]
     public void ToConfirmations_NullStaysNull_InvalidPairsAreDropped()
     {
         Assert.Null(BlueprintUpdatePreviewMapper.ToConfirmations(null));

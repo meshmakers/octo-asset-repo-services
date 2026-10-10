@@ -178,7 +178,9 @@ internal sealed class BlueprintsMutation : ObjectGraphType
                 SeedDataFilesApplied = result.EntitiesAdded + result.EntitiesUpdated,
                 LoadedCkModels = [],
                 Warnings = result.Warnings.ToList(),
-                BlankedAttributes = BlueprintUpdatePreviewMapper.ToDtos(result.BlankedAttributes)
+                BlankedAttributes = BlueprintUpdatePreviewMapper.ToDtos(result.BlankedAttributes),
+                TenantOwnedSkipped = BlueprintUpdatePreviewMapper.ToDtos(result.TenantOwnedSkipped),
+                TenantOwnedStaysDeleted = BlueprintUpdatePreviewMapper.ToDtos(result.TenantOwnedStaysDeleted)
             };
         }
         catch (Exception e)

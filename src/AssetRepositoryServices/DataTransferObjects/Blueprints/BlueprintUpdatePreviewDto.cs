@@ -55,6 +55,38 @@ public class BlueprintUpdatePreviewDto
     ///     <c>false</c>). Descriptions only, never values.
     /// </summary>
     public List<BlueprintBlankedAttributeDto> BlankedAttributes { get; set; } = [];
+
+    /// <summary>
+    ///     Tenant-owned seed entities the update leaves untouched because the tenant still holds them
+    ///     (AB#6454, engine AB#6383). Identity only, never attribute values. Counted in the skipped total.
+    /// </summary>
+    public List<BlueprintTenantOwnedEntityDto> TenantOwnedSkipped { get; set; } = [];
+
+    /// <summary>
+    ///     Tenant-owned seed entities the tenant deleted and the update does not bring back (AB#6454).
+    ///     <c>EntityId</c> is <c>null</c>. Counted in the skipped total.
+    /// </summary>
+    public List<BlueprintTenantOwnedEntityDto> TenantOwnedStaysDeleted { get; set; } = [];
+}
+
+/// <summary>
+///     A tenant-owned seed entity a blueprint update did not write (AB#6454): the tenant still holds
+///     it (skipped) or deleted it (stays deleted). Identity only - tenant-owned entities may hold
+///     credentials, so no attribute values travel.
+/// </summary>
+public class BlueprintTenantOwnedEntityDto
+{
+    /// <summary>Identity key of the seed entity: its well-known name, else its runtime id.</summary>
+    public string Key { get; set; } = string.Empty;
+
+    /// <summary>Construction-kit type of the entity.</summary>
+    public string CkTypeId { get; set; } = string.Empty;
+
+    /// <summary>Runtime id on the tenant; <c>null</c> for an entity the tenant deleted.</summary>
+    public string? EntityId { get; set; }
+
+    /// <summary>Well-known name of the entity, when the seed assigns one.</summary>
+    public string? WellKnownName { get; set; }
 }
 
 /// <summary>
@@ -74,7 +106,9 @@ public class BlueprintBlankedAttributeDto
 
     /// <summary>
     ///     Why the seed counts as blanking: <c>SeedEmpty</c> (empty value, or a JSON text emptying a
-    ///     string the tenant filled) or <c>SeedOmitted</c> (attribute not declared by the seed).
+    ///     string the tenant filled), <c>SeedOmitted</c> (attribute not declared by the seed) or
+    ///     <c>ResetToDefault</c> (current value differs from the CK default; the incoming value is the
+    ///     default, AB#6395).
     /// </summary>
     public string Reason { get; set; } = string.Empty;
 
