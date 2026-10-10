@@ -331,7 +331,7 @@ External Octo services referenced via `$(OctoVersion)`:
 Version resolution (from `Directory.Build.props`):
 - DebugL configuration: uses version 999.0.0 and local NuGet at `$(OctoRepoRootPath)../nuget`
 - With private server: uses version 0.1.*
-- Public: uses version 3.2.*
+- Otherwise: no fallback — versions come only from the pipeline (AB#6297); a non-DebugL build without `-p:OctoVersion=X.Y.Z` fails fast with `OCTO0001`
 
 ## Development Notes
 
