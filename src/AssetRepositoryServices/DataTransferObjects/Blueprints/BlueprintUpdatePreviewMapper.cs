@@ -39,7 +39,9 @@ internal static class BlueprintUpdatePreviewMapper
             }).ToList(),
             Warnings = preview.Warnings.ToList(),
             Changes = preview.Changes.Select(ToDto).ToList(),
-            BlankedAttributes = ToDtos(preview.BlankedAttributes)
+            BlankedAttributes = ToDtos(preview.BlankedAttributes),
+            TenantOwnedSkipped = ToDtos(preview.TenantOwnedSkipped),
+            TenantOwnedStaysDeleted = ToDtos(preview.TenantOwnedStaysDeleted)
         };
     }
 
@@ -57,7 +59,9 @@ internal static class BlueprintUpdatePreviewMapper
             EntitiesDeleted = result.EntitiesDeleted,
             EntitiesSkipped = result.EntitiesSkipped,
             Warnings = result.Warnings.ToList(),
-            BlankedAttributes = ToDtos(result.BlankedAttributes)
+            BlankedAttributes = ToDtos(result.BlankedAttributes),
+            TenantOwnedSkipped = ToDtos(result.TenantOwnedSkipped),
+            TenantOwnedStaysDeleted = ToDtos(result.TenantOwnedStaysDeleted)
         };
     }
 
@@ -75,6 +79,20 @@ internal static class BlueprintUpdatePreviewMapper
             CurrentSummary = b.CurrentSummary,
             IncomingSummary = b.IncomingSummary,
             AppliedOnUpdate = b.AppliedOnUpdate
+        }).ToList();
+    }
+
+    /// <summary>
+    ///     AB#6454: tenant-owned seed entities an update did not write, identity only.
+    /// </summary>
+    public static List<BlueprintTenantOwnedEntityDto> ToDtos(IEnumerable<BlueprintTenantOwnedEntity> entities)
+    {
+        return entities.Select(e => new BlueprintTenantOwnedEntityDto
+        {
+            Key = e.Key,
+            CkTypeId = e.CkTypeId,
+            EntityId = e.EntityId,
+            WellKnownName = e.WellKnownName
         }).ToList();
     }
 

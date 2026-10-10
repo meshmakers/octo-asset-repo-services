@@ -16,7 +16,7 @@ value the seed would blank:
 |-------|---------|
 | `rtId`, `ckTypeId` | The entity |
 | `attributeName` | Attribute as stored |
-| `reason` | `SeedEmpty` (empty value, or JSON text emptying a string the tenant filled) or `SeedOmitted` |
+| `reason` | `SeedEmpty` (empty value, or JSON text emptying a string the tenant filled), `SeedOmitted` (attribute not declared by the seed) or `ResetToDefault` (the current value differs from the CK default and the incoming value is the default, AB#6395) |
 | `currentSummary`, `incomingSummary` | Kind and size only, e.g. `string (223 chars)`, `empty string`, `omitted`. **Never the value** (it may be a credential) |
 | `appliedOnUpdate` | Always `false` in a preview: without confirmation the update keeps the tenant value |
 
@@ -42,6 +42,32 @@ attributes with `appliedOnUpdate`: `false` = tenant value kept, `true` = blanked
 Typical flow: preview, read `blankedAttributes`, apply without flags (keeps) or with the confirmed
 pairs (blanks exactly those).
 
+## Tenant-owned seed entities the update did not write (AB#6454)
+
+A seed entity with `rtBlueprintLocked: false` belongs to the tenant after the first install (engine
+AB#6383): an update never rewrites it and never brings back one the tenant deleted. Two further lists
+show this, on the preview (`POST {tenantId}/v1/blueprints/updates/preview`, GraphQL
+`blueprints.previewUpdate`) and on the apply result (REST `updates/apply` `BlueprintUpdateResultDto`,
+GraphQL `applyUpdate` `BlueprintApplyResult`; always empty for an install). REST uses PascalCase
+(`TenantOwnedSkipped`), GraphQL camelCase:
+
+| List | Meaning |
+|------|---------|
+| `tenantOwnedSkipped` | The tenant still holds the entity; the update left it untouched. `entityId` is its runtime id |
+| `tenantOwnedStaysDeleted` | The previous seed contained it, the tenant deleted it, the update does not recreate it. `entityId` is `null` |
+
+| Field | Meaning |
+|-------|---------|
+| `key` | The seed entity's identity: its `rtWellKnownName`, else its `rtId` |
+| `ckTypeId` | Construction-kit type |
+| `entityId` | Runtime id on the tenant, `null` for stays-deleted |
+| `wellKnownName` | Well-known name, when the entity has one |
+
+Identity only, **never attribute values** (tenant-owned entities may hold credentials). Both lists
+are counted in `entitiesSkipped`. They are not blanking: `blankedAttributes`, `allowBlanking` and the
+CLI's `--failOnBlanking` do not look at them. Additive, empty by default; a client that ignores them
+behaves as before.
+
 ## No credential text in `changes` (follow-up of AB#6316 review)
 
 The preview's per-entity `changes[].attributes[].oldValue` / `newValue` used to carry the raw text
@@ -64,4 +90,6 @@ of `applyUpdate` carries no `changes` list, only counts and `blankedAttributes`.
 `BlueprintsController` against a real MongoDB tenant (blueprint `BlankingFlowBp` 1.0.0 to 2.0.0): preview lists the
 blanked attributes value-free; apply without flags keeps the tenant values and reports exactly the preview's
 findings; apply with one confirmed pair blanks only that attribute; `allowBlanking` blanks all; no response
-carries a tenant value.
+carries a tenant value. `BlueprintUpdateTenantOwnedFlowTests` (blueprint `TenantOwnedFlowBp`) covers the
+tenant-owned lists: an edited tenant-owned entity is listed as skipped, a deleted one as stays-deleted, in
+preview and apply, without values.

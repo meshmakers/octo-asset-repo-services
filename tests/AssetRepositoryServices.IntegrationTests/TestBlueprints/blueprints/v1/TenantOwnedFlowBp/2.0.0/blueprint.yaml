@@ -1,0 +1,7 @@
+$schema: https://schemas.meshmakers.cloud/blueprint-meta.schema.json
+blueprintId: TenantOwnedFlowBp-2.0.0
+description: AB#6454 flow test 2.0.0 - two tenant-owned customers (rtBlueprintLocked false)
+ckModelDependencies:
+  - System-[2.5,3.0)
+  - AssetRepositoryIntegrationTest-[1.0,2.0)
+seedDataPath: seed-data/entities.yaml

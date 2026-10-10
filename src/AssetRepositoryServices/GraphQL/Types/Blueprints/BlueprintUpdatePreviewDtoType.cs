@@ -52,5 +52,13 @@ internal sealed class BlueprintUpdatePreviewDtoType : ObjectGraphType<BlueprintU
         Field<NonNullGraphType<ListGraphType<NonNullGraphType<BlueprintBlankedAttributeDtoType>>>>("blankedAttributes")
             .Description("Attributes whose non-empty tenant value the seed would blank (AB#6315). Without confirmation the update keeps them; confirm via allowBlanking / confirmedBlankings.")
             .Resolve(ctx => ctx.Source!.BlankedAttributes);
+
+        Field<NonNullGraphType<ListGraphType<NonNullGraphType<BlueprintTenantOwnedEntityDtoType>>>>("tenantOwnedSkipped")
+            .Description("Tenant-owned seed entities the update leaves untouched because the tenant still holds them (AB#6454). Identity only, no values.")
+            .Resolve(ctx => ctx.Source!.TenantOwnedSkipped);
+
+        Field<NonNullGraphType<ListGraphType<NonNullGraphType<BlueprintTenantOwnedEntityDtoType>>>>("tenantOwnedStaysDeleted")
+            .Description("Tenant-owned seed entities the tenant deleted and the update does not bring back (AB#6454). entityId is null. Identity only, no values.")
+            .Resolve(ctx => ctx.Source!.TenantOwnedStaysDeleted);
     }
 }

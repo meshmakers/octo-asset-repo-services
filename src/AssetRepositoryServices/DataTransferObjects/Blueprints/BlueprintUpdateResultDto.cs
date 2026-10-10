@@ -34,4 +34,16 @@ public class BlueprintUpdateResultDto
     ///     Nothing is silent.
     /// </summary>
     public List<BlueprintBlankedAttributeDto> BlankedAttributes { get; set; } = [];
+
+    /// <summary>
+    ///     Tenant-owned seed entities the update leaves untouched because the tenant still holds them
+    ///     (AB#6454, engine AB#6383). Identity only, never attribute values. Counted in the skipped total.
+    /// </summary>
+    public List<BlueprintTenantOwnedEntityDto> TenantOwnedSkipped { get; set; } = [];
+
+    /// <summary>
+    ///     Tenant-owned seed entities the tenant deleted and the update does not bring back (AB#6454).
+    ///     <c>EntityId</c> is <c>null</c>. Counted in the skipped total.
+    /// </summary>
+    public List<BlueprintTenantOwnedEntityDto> TenantOwnedStaysDeleted { get; set; } = [];
 }

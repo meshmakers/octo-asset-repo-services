@@ -55,4 +55,34 @@ public class BlueprintBlankingSchemaTests
         blanked.Fields.Find("currentValue").Should().BeNull();
         blanked.Fields.Find("incomingValue").Should().BeNull();
     }
+
+    /// <summary>AB#6454: the tenant-owned lists are additive output fields, identity only.</summary>
+    [Fact]
+    public void PreviewAndApplyResult_ExposeTheTenantOwnedLists_IdentityOnly()
+    {
+        foreach (var fields in new[]
+                 {
+                     new BlueprintUpdatePreviewDtoType().Fields,
+                     new BlueprintApplyResultDtoType().Fields
+                 })
+        {
+            fields.Find("tenantOwnedSkipped").Should().NotBeNull();
+            fields.Find("tenantOwnedStaysDeleted").Should().NotBeNull();
+        }
+
+        var entity = new BlueprintTenantOwnedEntityDtoType();
+        foreach (var name in new[] { "key", "ckTypeId", "entityId", "wellKnownName" })
+        {
+            entity.Fields.Find(name).Should().NotBeNull(name);
+        }
+
+        entity.Fields.Should().HaveCount(4, "identity only, never attribute values");
+        entity.Fields.Find("entityId")!.Type.Should().Be<StringGraphType>(); // nullable: null for stays-deleted
+    }
+
+    [Fact]
+    public void BlankedAttributeReason_DescribesResetToDefault()
+    {
+        new BlueprintBlankedAttributeDtoType().Fields.Find("reason")!.Description.Should().Contain("ResetToDefault");
+    }
 }
