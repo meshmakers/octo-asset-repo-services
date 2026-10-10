@@ -65,7 +65,11 @@ public class BlueprintUpdateBlankingFlowTests(BlueprintUpdateFlowFixture fixture
             company.IncomingSummary.Should().Be("empty string");
             var email = preview.BlankedAttributes.Single(b => b.AttributeName == "EMailAddress");
             email.Reason.Should().Be("SeedOmitted");
+            email.RtId.Should().Be(CustomerRtId);
+            email.CkTypeId.Should().Be(company.CkTypeId);
+            email.CurrentSummary.Should().Be($"string ({TenantEMail.Length} chars)");
             email.IncomingSummary.Should().Be("omitted");
+            preview.BlankedAttributes.Should().OnlyContain(b => !b.AppliedOnUpdate, "a preview applies nothing");
 
             // The preview changed nothing.
             (await ReadCustomerAsync(tenantId)).Should().Be((TenantCompany, TenantEMail));
