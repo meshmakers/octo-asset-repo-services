@@ -751,7 +751,7 @@ System.Reporting 3.0.0.
   `StragglerSweepInterval` (10 min) for tenants in `ReportingFilesSweepTracker`. A tenant stays on the timer
   for `StragglerWindow` (24 h) after its last finding (legacy data, failure, lease held elsewhere), or until
   System.Reporting 3.0.0+ is installed (`CkModel` ids), even through zero checks (in memory, per pod; the
-  next start re-checks). Kill switch `FilesMigration:SweepEnabled` (`OCTO_FilesMigration__SweepEnabled=false`).
+  next start re-checks). Switch `FilesMigration:SweepEnabled`, **off by default** (`OCTO_FilesMigration__SweepEnabled=true` to enable; Helm `services.assetRepository.filesMigration.sweepEnabled`). It is switched on per cluster in the rollout (AB#6183) after Reporting (AB#6176) and the consumers (AB#6181) read System.Files (risk R5).
 - **Pre-check (R4):** `FilesMigrationStatusService`, exposed as `GET system/v1/files/migration-status/{tenantId}`
   (`SystemAssetApiReadOnlyPolicy` **plus** in-controller check: token `tenant_id` = system tenant, user
   tokens need `AdminPanelManagement` — the report crosses tenant boundaries; a 500 carries no exception

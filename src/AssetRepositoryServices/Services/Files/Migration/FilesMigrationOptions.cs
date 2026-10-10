@@ -12,9 +12,11 @@ public class FilesMigrationOptions
     public const string SectionName = "FilesMigration";
 
     /// <summary>
-    ///     Kill switch of the sweep (tenant start and straggler timer). The pre-check endpoint keeps working.
+    ///     Switch of the sweep (tenant start and straggler timer); off by default. It is switched on per cluster in
+    ///     the rollout (AB#6183) once Reporting (AB#6176) and the consumers (AB#6181) read System.Files, so a
+    ///     deploy of this service alone never moves data (risk R5). The pre-check endpoint works either way.
     /// </summary>
-    public bool SweepEnabled { get; set; } = true;
+    public bool SweepEnabled { get; set; }
 
     /// <summary>
     ///     Interval of the straggler sweep for tenants whose last sweep found legacy data (default 10 min, Q3).

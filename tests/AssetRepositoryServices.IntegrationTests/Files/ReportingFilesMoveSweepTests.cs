@@ -340,6 +340,35 @@ public class ReportingFilesMoveSweepTests
     }
 
     [Fact]
+    public async Task SweepIsOffByDefault_AndASwitchedOffRunnerLeavesLegacyDataAlone()
+    {
+        // AB#6171 decision: a deploy of asset-repo alone never moves data; the rollout switches the sweep on.
+        new FilesMigrationOptions().SweepEnabled.Should().BeFalse();
+
+        var tree = await _fixture.SeedLegacyTreeAsync();
+        try
+        {
+            var legacy = _fixture.Collection(Legacy);
+            var before = await legacy.CountDocumentsAsync(FilterDefinition<BsonDocument>.Empty, cancellationToken: Ct);
+            var runner = new ReportingFilesSweepRunner(_fixture.GetService<ITenantMongoDatabaseProvider>(),
+                _fixture.Sweep, _fixture.Status, _fixture.Tracker,
+                new StaticOptionsMonitor(new FilesMigrationOptions()), NullLogger<ReportingFilesSweepRunner>.Instance);
+
+            (await runner.RunAtTenantStartAsync(TenantId, Ct)).Should().BeNull("the sweep is switched off");
+            await runner.RunStragglerSweepAsync(Ct);
+
+            (await legacy.CountDocumentsAsync(FilterDefinition<BsonDocument>.Empty, cancellationToken: Ct))
+                .Should().Be(before, "a switched-off sweep moves nothing");
+            (await legacy.CountDocumentsAsync(Builders<BsonDocument>.Filter.Eq("_id", tree.Root), cancellationToken: Ct))
+                .Should().Be(1);
+        }
+        finally
+        {
+            await _fixture.Sweep.SweepAsync(TenantId, "Test", Ct);
+        }
+    }
+
+    [Fact]
     public async Task TenantWithoutReportingData_IsANoOp_AndAMissingTargetModelBlocksTheMove()
     {
         // A database without any file data: nothing to do, nothing created.

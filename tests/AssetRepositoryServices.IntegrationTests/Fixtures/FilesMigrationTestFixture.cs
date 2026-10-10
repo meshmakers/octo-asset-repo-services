@@ -1,5 +1,6 @@
 using System.Text;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.Services.Files.Migration;
+using Microsoft.Extensions.DependencyInjection;
 using MongoDB.Bson;
 using MongoDB.Driver;
 using MongoDB.Driver.GridFS;
@@ -23,6 +24,12 @@ public class FilesMigrationTestFixture : FilesTestFixture
     public const string CustomerCkTypeId = "AssetRepositoryIntegrationTest/Customer";
 
     private IMongoDatabase? _database;
+
+    public FilesMigrationTestFixture()
+    {
+        // The sweep is off by default (AB#6171 decision); these tests exercise it, so they switch it on.
+        Services.PostConfigure<FilesMigrationOptions>(options => options.SweepEnabled = true);
+    }
 
     /// <summary>
     ///     The system tenant database (the tenant the tests run against).
