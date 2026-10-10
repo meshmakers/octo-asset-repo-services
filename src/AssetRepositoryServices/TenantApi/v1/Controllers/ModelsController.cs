@@ -174,13 +174,19 @@ public class ModelsController : ControllerBase
     /// </summary>
     /// <param name="importStrategy">The import strategy to use for the import</param>
     /// <param name="file">The file with the RT model definition</param>
-    /// <returns></returns>
+    /// <returns>
+    ///     The job id. For CK types whose data policy opted in with <c>ProtectBlueprintLocked</c> the job fails
+    ///     (nothing written) when the file would overwrite an entity that is locked by a blueprint, and strips the
+    ///     blueprint attributes (<c>RtBlueprintLocked</c>, <c>RtBlueprintSource</c>, <c>RtBlueprintAppliedAt</c>)
+    ///     from the file (AB#6392).
+    /// </returns>
     [HttpPost]
     [RequestSizeLimit(300_000_000)]
     [Route("ImportRt")]
     [Authorize(AssetRepositoryServiceConstants.TenantAssetApiReadWritePolicy)]
     [ProducesResponseType(typeof(TransferModelResponseDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(InternalServerErrorDto), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(OperationFailedErrorDto), StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(typeof(InternalServerErrorDto), StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> ImportRt([Required] ImportStrategyDto importStrategy, [Required] IFormFile file)
     {
@@ -198,8 +204,20 @@ public class ModelsController : ControllerBase
                 ImportStrategyDto.Upsert => ImportStrategy.Upsert,
                 _ => throw new ArgumentOutOfRangeException(nameof(importStrategy), importStrategy, null)
             };
+            // AB#6392: the import runs as a background job, so the caller is passed along; the job applies the
+            // blueprint-lock protection of opted-in CK types on their behalf. A caller without an identity is
+            // rejected here, never imported as if it were the system.
+            var callerSubjectId = GraphQL.Helpers.GetSecurityContext(HttpContext.User).SubjectId;
+            if (string.IsNullOrWhiteSpace(callerSubjectId))
+            {
+                return Unauthorized(new OperationFailedErrorDto("The caller identity is required to import runtime data"));
+            }
+
             var cacheKey = await AddFileToCache(tenantId, file);
-            var args = new ImportRtCommandRequest(tenantId, insertStrategy, cacheKey);
+            var args = new ImportRtCommandRequest(tenantId, insertStrategy, cacheKey)
+            {
+                InitiatedBySubjectId = callerSubjectId
+            };
             var r =
                 await _importRtCommandClient.GetResponse<JobCreatedResponse>(args);
             return Ok(new TransferModelResponseDto(r.JobId));
