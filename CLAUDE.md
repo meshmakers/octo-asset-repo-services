@@ -551,6 +551,32 @@ invocation types until the method runtime lands). **Schema export for frontend c
 "FullyQualifiedName~SchemaExportTests"` — writes the SDL of the integration-test tenant (all CK meta types plus the
 CK v2 test model's runtime types); the Studio's own `schema.graphql` stays an introspection of a real tenant.
 
+### Blueprint-locked entities: stable error contract (AB#6385)
+
+The engine write guard (`DataPermissionWriteGuard`, AB#6384; opt-in by `DataPolicy.ProtectBlueprintLocked`) refuses a
+change set that updates/deletes an entity with `RtBlueprintLocked = true` (or sets/changes the three blueprint
+attributes) of an opted-in type with an error `OperationMessage` of number **6384**
+(`RtBlueprintLockProtectionNames.ForbiddenMessageNumber`), location `{ckTypeId}@{rtId}`. This service maps it (`BlueprintLock/`):
+
+- `BlueprintLockError` extracts the offenders (`ckTypeId`, `rtId`, reason `EntityLocked` | `ProtectedAttributes`) from the
+  messages. The reason is derived from the engine message text ("managed by blueprints" = `ProtectedAttributes`); the
+  integration tests run against the real engine message and fail if the text drifts.
+- `ResolveConnectionContextExtensions.ValidateOperationResult` throws `BlueprintLockedException` (an
+  `AssetRepositoryException`), `HandleException` maps it (and a `RuntimeRepositoryException` carrying 6384) to the GraphQL
+  error **`BLUEPRINT_LOCKED`** (`Statics.GraphQlBlueprintLocked`) with `extensions.messageNumber`, `ckTypeId`, `rtId`,
+  `reason` and `items` (every refused entity). The whole mutation is rejected, so a batch with one locked entity writes nothing.
+- REST: `BlueprintLockedExceptionFilter` (registered for all MVC controllers) turns the same refusal (a
+  `RuntimeRepositoryException` / `BlueprintLockedException` that reaches the filter) into `403` `application/problem+json`
+  with `code = BLUEPRINT_LOCKED`. There is no REST endpoint that writes runtime entities directly; the filter is the
+  contract for any action that lets the refusal escape. `Models/ImportRt` starts a job and catches everything itself, so
+  an import rejection (6384, AB#6392) shows up in the job result, not as a 403.
+- Callers: only `IsSystem` sessions bypass the guard. A pipeline node with `Identity: ServiceAccount` runs as a user
+  (guarded); `Identity: System` and the blueprint services are exempt.
+- Tests: `tests/.../GraphQL/BlueprintLock/BlueprintLockErrorGraphQlTests.cs` (real engine guard behind the real mutations;
+  the policy table is supplied through the `IDataPermissionResolver` seam by `BlueprintLockGraphQlTestFixture` because the
+  System.Identity CK model is not part of the test tenant) and `tests/.../UnitTests/BlueprintLock/`.
+- User documentation: octo-documentation, `dataAccess/runtime/errorHandling.md` (#blueprint-locked-entities).
+
 ### Authentication
 The service supports dual authentication:
 - Cookie-based authentication for GraphQL Playground

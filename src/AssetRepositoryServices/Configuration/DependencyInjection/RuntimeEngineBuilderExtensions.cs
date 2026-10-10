@@ -5,6 +5,7 @@ using GraphQL;
 using GraphQL.Server.Transports.AspNetCore;
 using GraphQL.Types.Relay;
 using Meshmakers.Octo.Backend.AssetRepositoryServices;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.BlueprintLock;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.Configuration;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.Configuration.DependencyInjection.Options;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.Consumers;
@@ -198,7 +199,9 @@ public static class RuntimeEngineBuilderExtensions
                 });
         });
 
-        builder.Services.AddMvcCore().AddAuthorization();
+        // AB#6385: REST answers a blueprint-lock refusal with 403 problem details (code BLUEPRINT_LOCKED).
+        builder.Services.AddMvcCore(options => options.Filters.Add<BlueprintLockedExceptionFilter>())
+            .AddAuthorization();
 
         builder.Services.AddOctoApiVersioningAndDocumentation(options =>
         {

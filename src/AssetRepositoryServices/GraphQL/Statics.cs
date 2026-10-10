@@ -95,6 +95,13 @@ internal static class Statics
     public const string GraphQlAttributeNotQueryable = "ATTRIBUTE_NOT_QUERYABLE";
 
     /// <summary>
+    ///     AB#6385: a write touched a blueprint-locked entity (or the blueprint bookkeeping attributes) of a type whose
+    ///     data policy has <c>ProtectBlueprintLocked</c>. Extensions: <c>messageNumber</c> (6384), <c>ckTypeId</c>,
+    ///     <c>rtId</c>, <c>reason</c> and <c>items</c> (one entry per refused entity).
+    /// </summary>
+    public const string GraphQlBlueprintLocked = BlueprintLock.BlueprintLockError.Code;
+
+    /// <summary>
     ///     AB#5528: a secret was written while the service has no key ring (SecretEncryption) configured.
     /// </summary>
     public const string GraphQlSecretEncryptionNotConfigured = "SecretEncryptionNotConfigured";
