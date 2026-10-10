@@ -21,4 +21,13 @@ internal sealed class BlueprintUpdateRequestInputDto
 
     /// <summary>Per-entity conflict-resolution overrides.</summary>
     public List<BlueprintConflictResolutionInputDto>? ConflictResolutions { get; set; }
+
+    /// <summary>
+    /// AB#6315: confirms blanking of EVERY attribute listed by <c>previewUpdate.blankedAttributes</c>.
+    /// Default false: tenant values are kept and the result lists them.
+    /// </summary>
+    public bool AllowBlanking { get; set; }
+
+    /// <summary>AB#6315: confirms blanking for exactly these entity/attribute pairs.</summary>
+    public List<BlueprintBlankingConfirmationInputDto>? ConfirmedBlankings { get; set; }
 }

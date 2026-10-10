@@ -25,5 +25,11 @@ internal sealed class BlueprintUpdateRequestInputType : InputObjectGraphType<Blu
 
         Field<ListGraphType<NonNullGraphType<BlueprintConflictResolutionInputType>>>("conflictResolutions")
             .Description("Per-entity overrides for conflicts surfaced by previewUpdate.");
+
+        Field<BooleanGraphType>("allowBlanking")
+            .Description("Confirms that the update may blank every attribute listed in previewUpdate.blankedAttributes. Default false: tenant values are kept and the result lists them.");
+
+        Field<ListGraphType<NonNullGraphType<BlueprintBlankingConfirmationInputType>>>("confirmedBlankings")
+            .Description("Confirms blanking for exactly these entity/attribute pairs; everything else stays kept. Ignored when allowBlanking is true.");
     }
 }

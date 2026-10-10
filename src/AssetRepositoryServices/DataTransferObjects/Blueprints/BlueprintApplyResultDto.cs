@@ -25,4 +25,10 @@ public class BlueprintApplyResultDto
 
     /// <summary>Warnings raised during the operation.</summary>
     public List<string> Warnings { get; set; } = [];
+
+    /// <summary>
+    ///     Attributes a blueprint update would have blanked and what happened to each (AB#6315);
+    ///     empty for an install.
+    /// </summary>
+    public List<BlueprintBlankedAttributeDto> BlankedAttributes { get; set; } = [];
 }

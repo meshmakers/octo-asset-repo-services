@@ -48,6 +48,60 @@ public class BlueprintUpdatePreviewDto
     ///     list an operator reads before touching a production tenant (AB#5297, AB#5308).
     /// </summary>
     public List<BlueprintEntityChangeDto> Changes { get; set; } = [];
+
+    /// <summary>
+    ///     Attributes whose non-empty tenant value the seed would blank (AB#6315, incident AB#6310).
+    ///     Without explicit confirmation the update keeps them (<c>AppliedOnUpdate</c> is
+    ///     <c>false</c>). Descriptions only, never values.
+    /// </summary>
+    public List<BlueprintBlankedAttributeDto> BlankedAttributes { get; set; } = [];
+}
+
+/// <summary>
+///     One attribute whose non-empty tenant value a blueprint update would blank (AB#6315). Values
+///     are described by kind and size, never included - the attribute may hold credentials.
+/// </summary>
+public class BlueprintBlankedAttributeDto
+{
+    /// <summary>Runtime id of the entity.</summary>
+    public string RtId { get; set; } = string.Empty;
+
+    /// <summary>Construction-kit type of the entity.</summary>
+    public string CkTypeId { get; set; } = string.Empty;
+
+    /// <summary>Attribute name as stored.</summary>
+    public string AttributeName { get; set; } = string.Empty;
+
+    /// <summary>
+    ///     Why the seed counts as blanking: <c>SeedEmpty</c> (empty value, or a JSON text emptying a
+    ///     string the tenant filled) or <c>SeedOmitted</c> (attribute not declared by the seed).
+    /// </summary>
+    public string Reason { get; set; } = string.Empty;
+
+    /// <summary>What the tenant holds, e.g. <c>string (223 chars)</c>.</summary>
+    public string? CurrentSummary { get; set; }
+
+    /// <summary>What the seed carries, e.g. <c>string (110 chars)</c>, <c>empty string</c>, <c>omitted</c>.</summary>
+    public string? IncomingSummary { get; set; }
+
+    /// <summary>
+    ///     <c>false</c>: the update keeps the tenant value. <c>true</c>: the update blanked it (only on
+    ///     an apply result, only when confirmed). Always <c>false</c> in a preview.
+    /// </summary>
+    public bool AppliedOnUpdate { get; set; }
+}
+
+/// <summary>
+///     Explicit confirmation that one attribute of one entity may be blanked (AB#6315). Take the
+///     values from the preview's <c>BlankedAttributes</c>.
+/// </summary>
+public class BlueprintBlankingConfirmationDto
+{
+    /// <summary>Runtime id of the entity.</summary>
+    public string RtId { get; set; } = string.Empty;
+
+    /// <summary>Attribute name (case-insensitive).</summary>
+    public string AttributeName { get; set; } = string.Empty;
 }
 
 /// <summary>

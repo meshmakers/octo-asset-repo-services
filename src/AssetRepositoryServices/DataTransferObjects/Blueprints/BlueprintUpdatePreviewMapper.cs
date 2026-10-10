@@ -38,8 +38,57 @@ internal static class BlueprintUpdatePreviewMapper
                 SuggestedResolution = c.SuggestedResolution.ToString()
             }).ToList(),
             Warnings = preview.Warnings.ToList(),
-            Changes = preview.Changes.Select(ToDto).ToList()
+            Changes = preview.Changes.Select(ToDto).ToList(),
+            BlankedAttributes = ToDtos(preview.BlankedAttributes)
         };
+    }
+
+    /// <summary>
+    ///     AB#6315: projects the engine's apply result, including the blanking report.
+    /// </summary>
+    public static BlueprintUpdateResultDto ToDto(BlueprintUpdateResult result)
+    {
+        return new BlueprintUpdateResultDto
+        {
+            Success = result.Success,
+            EntitiesAdded = result.EntitiesAdded,
+            EntitiesUpdated = result.EntitiesUpdated,
+            EntitiesUnchanged = result.EntitiesUnchanged,
+            EntitiesDeleted = result.EntitiesDeleted,
+            EntitiesSkipped = result.EntitiesSkipped,
+            Warnings = result.Warnings.ToList(),
+            BlankedAttributes = ToDtos(result.BlankedAttributes)
+        };
+    }
+
+    /// <summary>
+    ///     AB#6315: the blanking report as DTOs. Descriptions only - the engine never hands values over.
+    /// </summary>
+    public static List<BlueprintBlankedAttributeDto> ToDtos(IEnumerable<BlueprintBlankedAttribute> blanked)
+    {
+        return blanked.Select(b => new BlueprintBlankedAttributeDto
+        {
+            RtId = b.RtId,
+            CkTypeId = b.CkTypeId,
+            AttributeName = b.AttributeName,
+            Reason = b.Reason,
+            CurrentSummary = b.CurrentSummary,
+            IncomingSummary = b.IncomingSummary,
+            AppliedOnUpdate = b.AppliedOnUpdate
+        }).ToList();
+    }
+
+    /// <summary>
+    ///     AB#6315: wire confirmation to engine option. Pairs with an empty id or attribute are
+    ///     dropped, never widened to "allow all".
+    /// </summary>
+    public static List<BlueprintBlankingConfirmation>? ToConfirmations(
+        IEnumerable<BlueprintBlankingConfirmationDto>? confirmations)
+    {
+        return confirmations?
+            .Where(c => !string.IsNullOrWhiteSpace(c.RtId) && !string.IsNullOrWhiteSpace(c.AttributeName))
+            .Select(c => new BlueprintBlankingConfirmation { RtId = c.RtId, AttributeName = c.AttributeName })
+            .ToList();
     }
 
     private static BlueprintEntityChangeDto ToDto(BlueprintEntityChange change)

@@ -356,10 +356,14 @@ public class BlueprintsController : ControllerBase
     /// </summary>
     /// <param name="request">Update request</param>
     /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>No content on success</returns>
+    /// <returns>
+    ///     The update result (AB#6315). It lists every attribute the seed would have blanked and
+    ///     whether the tenant value was kept (default) or blanked (explicit confirmation via
+    ///     <c>allowBlanking</c> / <c>confirmedBlankings</c>).
+    /// </returns>
     [HttpPost("updates/apply")]
     [Authorize(AssetRepositoryServiceConstants.TenantAssetApiReadWritePolicy)]
-    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(typeof(BlueprintUpdateResultDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(OperationFailedErrorDto), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(InternalServerErrorDto), StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> ApplyUpdate(
@@ -384,7 +388,9 @@ public class BlueprintsController : ControllerBase
 
             var options = new BlueprintUpdateOptions
             {
-                DryRun = request.DryRun
+                DryRun = request.DryRun,
+                AllowBlanking = request.AllowBlanking,
+                ConfirmedBlankings = BlueprintUpdatePreviewMapper.ToConfirmations(request.ConfirmedBlankings)
             };
 
             if (request.ConflictResolutions != null)
@@ -410,7 +416,7 @@ public class BlueprintsController : ControllerBase
                     string.Join(", ", result.Errors.Count > 0 ? result.Errors : ["Update failed"])));
             }
 
-            return NoContent();
+            return Ok(BlueprintUpdatePreviewMapper.ToDto(result));
         }
         catch (ArgumentException e)
         {

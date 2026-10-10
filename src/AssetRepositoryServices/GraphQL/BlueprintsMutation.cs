@@ -140,7 +140,11 @@ internal sealed class BlueprintsMutation : ObjectGraphType
 
             var options = new BlueprintUpdateOptions
             {
-                DryRun = input.DryRun
+                DryRun = input.DryRun,
+                AllowBlanking = input.AllowBlanking,
+                ConfirmedBlankings = BlueprintUpdatePreviewMapper.ToConfirmations(
+                    input.ConfirmedBlankings?.Select(c => new BlueprintBlankingConfirmationDto
+                        { RtId = c.RtId, AttributeName = c.AttributeName }))
             };
 
             if (input.ConflictResolutions is { Count: > 0 })
@@ -173,7 +177,8 @@ internal sealed class BlueprintsMutation : ObjectGraphType
                     : BlueprintApplicationMode.Update.ToString(),
                 SeedDataFilesApplied = result.EntitiesAdded + result.EntitiesUpdated,
                 LoadedCkModels = [],
-                Warnings = result.Warnings.ToList()
+                Warnings = result.Warnings.ToList(),
+                BlankedAttributes = BlueprintUpdatePreviewMapper.ToDtos(result.BlankedAttributes)
             };
         }
         catch (Exception e)

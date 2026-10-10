@@ -48,5 +48,9 @@ internal sealed class BlueprintUpdatePreviewDtoType : ObjectGraphType<BlueprintU
         Field<NonNullGraphType<ListGraphType<NonNullGraphType<BlueprintEntityChangeDtoType>>>>("changes")
             .Description("Attribute-level diff per entity counted in entitiesToUpdate - what the operator reads before applying.")
             .Resolve(ctx => ctx.Source!.Changes);
+
+        Field<NonNullGraphType<ListGraphType<NonNullGraphType<BlueprintBlankedAttributeDtoType>>>>("blankedAttributes")
+            .Description("Attributes whose non-empty tenant value the seed would blank (AB#6315). Without confirmation the update keeps them; confirm via allowBlanking / confirmedBlankings.")
+            .Resolve(ctx => ctx.Source!.BlankedAttributes);
     }
 }

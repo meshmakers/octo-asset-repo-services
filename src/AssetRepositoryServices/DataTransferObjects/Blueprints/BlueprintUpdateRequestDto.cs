@@ -24,4 +24,17 @@ public class BlueprintUpdateRequestDto
     ///     Conflict resolutions for specific entities
     /// </summary>
     public Dictionary<string, string>? ConflictResolutions { get; set; }
+
+    /// <summary>
+    ///     Explicit confirmation that the update may blank EVERY attribute listed in the preview's
+    ///     <c>BlankedAttributes</c> (AB#6315). Default <c>false</c>: tenant values are kept and the
+    ///     response lists them. Prefer <see cref="ConfirmedBlankings" /> to confirm single attributes.
+    /// </summary>
+    public bool AllowBlanking { get; set; }
+
+    /// <summary>
+    ///     Confirms blanking for exactly these entity/attribute pairs (AB#6315); everything else the
+    ///     preview lists stays kept. Ignored when <see cref="AllowBlanking" /> is true.
+    /// </summary>
+    public List<BlueprintBlankingConfirmationDto>? ConfirmedBlankings { get; set; }
 }

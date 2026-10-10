@@ -181,4 +181,76 @@ public class BlueprintUpdatePreviewMapperTests
 
         return record;
     }
+
+    [Fact]
+    public void ToDto_CarriesTheBlankedAttributesAsSummaries()
+    {
+        var preview = new BlueprintUpdatePreview
+        {
+            BlankedAttributes =
+            [
+                new BlueprintBlankedAttribute
+                {
+                    RtId = "67d4a2f0b2e4d8c3a1f00131",
+                    CkTypeId = "System.Communication/Adapter",
+                    AttributeName = "Configuration",
+                    Reason = "SeedOmitted",
+                    CurrentSummary = "string (223 chars)",
+                    IncomingSummary = "omitted"
+                }
+            ]
+        };
+
+        var dto = BlueprintUpdatePreviewMapper.ToDto(preview, "EdaIntegration-2.10.2");
+
+        var blanked = Assert.Single(dto.BlankedAttributes);
+        Assert.Equal("SeedOmitted", blanked.Reason);
+        Assert.Equal("omitted", blanked.IncomingSummary);
+        Assert.False(blanked.AppliedOnUpdate);
+    }
+
+    [Fact]
+    public void ToDto_Result_CarriesCountsWarningsAndTheBlankingReport()
+    {
+        var result = new BlueprintUpdateResult
+        {
+            Success = true,
+            EntitiesAdded = 1,
+            EntitiesUpdated = 2,
+            EntitiesUnchanged = 3,
+            EntitiesDeleted = 4,
+            EntitiesSkipped = 5,
+            Warnings = ["kept"],
+            BlankedAttributes =
+            [
+                new BlueprintBlankedAttribute
+                {
+                    RtId = "a", CkTypeId = "T", AttributeName = "X", Reason = "SeedEmpty", AppliedOnUpdate = true
+                }
+            ]
+        };
+
+        var dto = BlueprintUpdatePreviewMapper.ToDto(result);
+
+        Assert.True(dto.Success);
+        Assert.Equal([1, 2, 3, 4, 5],
+            new[] { dto.EntitiesAdded, dto.EntitiesUpdated, dto.EntitiesUnchanged, dto.EntitiesDeleted, dto.EntitiesSkipped });
+        Assert.Equal(["kept"], dto.Warnings);
+        Assert.True(Assert.Single(dto.BlankedAttributes).AppliedOnUpdate);
+    }
+
+    [Fact]
+    public void ToConfirmations_NullStaysNull_InvalidPairsAreDropped()
+    {
+        Assert.Null(BlueprintUpdatePreviewMapper.ToConfirmations(null));
+
+        var confirmations = BlueprintUpdatePreviewMapper.ToConfirmations(
+        [
+            new BlueprintBlankingConfirmationDto { RtId = "a", AttributeName = "X" },
+            new BlueprintBlankingConfirmationDto { RtId = "", AttributeName = "X" }
+        ]);
+
+        var pair = Assert.Single(confirmations!);
+        Assert.Equal(("a", "X"), (pair.RtId, pair.AttributeName));
+    }
 }

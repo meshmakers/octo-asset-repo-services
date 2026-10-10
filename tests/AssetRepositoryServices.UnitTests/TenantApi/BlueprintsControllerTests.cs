@@ -228,6 +228,114 @@ public class BlueprintsControllerTests
 
     #endregion
 
+    #region AB#6315 blanking preview and confirmation
+
+    private static BlueprintBlankedAttribute Blanked(bool applied) => new()
+    {
+        RtId = "67d4a2f0b2e4d8c3a1f00131",
+        CkTypeId = "System.Communication/Adapter",
+        AttributeName = "Configuration",
+        Reason = "SeedEmpty",
+        CurrentSummary = "string (223 chars)",
+        IncomingSummary = "string (110 chars)",
+        AppliedOnUpdate = applied
+    };
+
+    [Fact]
+    public async Task PreviewUpdate_ListsTheAttributesTheSeedWouldBlank_WithoutValues()
+    {
+        A.CallTo(() => _blueprintService.PreviewUpdateAsync(
+                TenantId, A<BlueprintId>._, A<BlueprintUpdateMode>._, A<CancellationToken>._))
+            .Returns(new BlueprintUpdatePreview { BlankedAttributes = [Blanked(applied: false)] });
+
+        var result = await _controller.PreviewUpdate(
+            new BlueprintUpdateRequestDto { TargetVersion = $"{BlueprintName}-2.10.2" }, Ct);
+
+        var dto = result.Should().BeOfType<OkObjectResult>().Subject
+            .Value.Should().BeOfType<BlueprintUpdatePreviewDto>().Subject;
+        var blanked = dto.BlankedAttributes.Should().ContainSingle().Subject;
+        blanked.RtId.Should().Be("67d4a2f0b2e4d8c3a1f00131");
+        blanked.AttributeName.Should().Be("Configuration");
+        blanked.Reason.Should().Be("SeedEmpty");
+        blanked.CurrentSummary.Should().Be("string (223 chars)");
+        blanked.IncomingSummary.Should().Be("string (110 chars)");
+        blanked.AppliedOnUpdate.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task ApplyUpdate_WithoutConfirmation_KeepsByDefault_AndReturnsTheKeptList()
+    {
+        BlueprintUpdateOptions? seen = null;
+        A.CallTo(() => _blueprintService.ApplyUpdateAsync(
+                TenantId, A<BlueprintId>._, A<BlueprintUpdateMode>._, A<BlueprintUpdateOptions?>._, A<CancellationToken>._))
+            .Invokes((string _, BlueprintId _, BlueprintUpdateMode _, BlueprintUpdateOptions? o, CancellationToken _) => seen = o)
+            .Returns(new BlueprintUpdateResult
+            {
+                Success = true,
+                EntitiesUpdated = 3,
+                BlankedAttributes = [Blanked(applied: false)]
+            });
+
+        // An old client: no blanking fields at all.
+        var result = await _controller.ApplyUpdate(
+            new BlueprintUpdateRequestDto { TargetVersion = $"{BlueprintName}-2.10.2" }, Ct);
+
+        seen.Should().NotBeNull();
+        seen!.AllowBlanking.Should().BeFalse();
+        seen.ConfirmedBlankings.Should().BeNull();
+        var dto = result.Should().BeOfType<OkObjectResult>().Subject
+            .Value.Should().BeOfType<BlueprintUpdateResultDto>().Subject;
+        dto.Success.Should().BeTrue();
+        dto.EntitiesUpdated.Should().Be(3);
+        dto.BlankedAttributes.Should().ContainSingle().Which.AppliedOnUpdate.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task ApplyUpdate_AllowBlanking_MapsToTheEngineOption()
+    {
+        BlueprintUpdateOptions? seen = null;
+        A.CallTo(() => _blueprintService.ApplyUpdateAsync(
+                TenantId, A<BlueprintId>._, A<BlueprintUpdateMode>._, A<BlueprintUpdateOptions?>._, A<CancellationToken>._))
+            .Invokes((string _, BlueprintId _, BlueprintUpdateMode _, BlueprintUpdateOptions? o, CancellationToken _) => seen = o)
+            .Returns(new BlueprintUpdateResult { Success = true, BlankedAttributes = [Blanked(applied: true)] });
+
+        var result = await _controller.ApplyUpdate(
+            new BlueprintUpdateRequestDto { TargetVersion = $"{BlueprintName}-2.10.2", AllowBlanking = true }, Ct);
+
+        seen!.AllowBlanking.Should().BeTrue();
+        result.Should().BeOfType<OkObjectResult>().Subject
+            .Value.Should().BeOfType<BlueprintUpdateResultDto>().Subject
+            .BlankedAttributes.Should().ContainSingle().Which.AppliedOnUpdate.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task ApplyUpdate_ConfirmedPairs_AreMappedExactly_AndEmptyOnesAreDroppedNotWidened()
+    {
+        BlueprintUpdateOptions? seen = null;
+        A.CallTo(() => _blueprintService.ApplyUpdateAsync(
+                TenantId, A<BlueprintId>._, A<BlueprintUpdateMode>._, A<BlueprintUpdateOptions?>._, A<CancellationToken>._))
+            .Invokes((string _, BlueprintId _, BlueprintUpdateMode _, BlueprintUpdateOptions? o, CancellationToken _) => seen = o)
+            .Returns(new BlueprintUpdateResult { Success = true });
+
+        await _controller.ApplyUpdate(new BlueprintUpdateRequestDto
+        {
+            TargetVersion = $"{BlueprintName}-2.10.2",
+            ConfirmedBlankings =
+            [
+                new BlueprintBlankingConfirmationDto { RtId = "67d4a2f0b2e4d8c3a1f00131", AttributeName = "Configuration" },
+                new BlueprintBlankingConfirmationDto { RtId = "", AttributeName = "Configuration" },
+                new BlueprintBlankingConfirmationDto { RtId = "67d4a2f0b2e4d8c3a1f00132", AttributeName = " " }
+            ]
+        }, Ct);
+
+        seen!.AllowBlanking.Should().BeFalse();
+        var pair = seen.ConfirmedBlankings.Should().ContainSingle().Subject;
+        pair.RtId.Should().Be("67d4a2f0b2e4d8c3a1f00131");
+        pair.AttributeName.Should().Be("Configuration");
+    }
+
+    #endregion
+
     [Fact]
     public async Task GetCurrent_ReturnsBadRequest_WhenRouteCarriesNoTenant()
     {

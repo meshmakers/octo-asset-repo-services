@@ -42,5 +42,9 @@ internal sealed class BlueprintApplyResultDtoType : ObjectGraphType<BlueprintApp
         Field<NonNullGraphType<ListGraphType<NonNullGraphType<StringGraphType>>>>("warnings")
             .Description("Non-blocking warnings produced during the apply.")
             .Resolve(ctx => ctx.Source!.Warnings);
+
+        Field<NonNullGraphType<ListGraphType<NonNullGraphType<BlueprintBlankedAttributeDtoType>>>>("blankedAttributes")
+            .Description("Update only (AB#6315): attributes the seed would have blanked and what happened to each (appliedOnUpdate false = tenant value kept). Empty for an install.")
+            .Resolve(ctx => ctx.Source!.BlankedAttributes);
     }
 }
