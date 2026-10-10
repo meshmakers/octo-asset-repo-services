@@ -57,3 +57,11 @@ like `currentSummary` / `incomingSummary`. A side without a value stays `null`. 
 their values for the operator's diff. Secret-valued and tenant-owned attributes were never in
 `changes` (the apply preserves them), and Secret members of records are redacted. The dry-run result
 of `applyUpdate` carries no `changes` list, only counts and `blankedAttributes`.
+
+## Tests
+
+`tests/AssetRepositoryServices.IntegrationTests/Tenant/BlueprintUpdateBlankingFlowTests.cs` drives
+`BlueprintsController` against a real MongoDB tenant (blueprint `BlankingFlowBp` 1.0.0 to 2.0.0): preview lists the
+blanked attributes value-free; apply without flags keeps the tenant values and reports exactly the preview's
+findings; apply with one confirmed pair blanks only that attribute; `allowBlanking` blanks all; no response
+carries a tenant value.

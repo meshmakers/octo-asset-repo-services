@@ -43,6 +43,11 @@
         <None Update="testData\sampleRtModel.yaml">
             <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
         </None>
+        <!-- AB#6315: blueprint catalog root of the blanking preview/apply flow test. -->
+        <Content Include="TestBlueprints/**/*.yaml">
+            <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+            <Pack>false</Pack>
+        </Content>
     </ItemGroup>
 
 </Project>
