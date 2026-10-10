@@ -1,6 +1,5 @@
 using Meshmakers.Octo.Runtime.Contracts;
 using Meshmakers.Octo.Runtime.Contracts.Repositories;
-using Meshmakers.Octo.Runtime.Contracts.Exchange;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Filters;
 
@@ -77,12 +76,6 @@ internal sealed class BlueprintLockedExceptionFilter : IExceptionFilter
                     }
 
                     break;
-                case ExchangeException { MessageNumber: BlueprintLockError.MessageNumber } exchangeException:
-                    var imported = BlueprintLockError.ParseImportOffenders(exchangeException.Message);
-                    return imported.Count > 0
-                        ? imported
-                        : [new BlueprintLockOffender(string.Empty, null, BlueprintLockReason.EntityLocked,
-                            exchangeException.Message)];
             }
         }
 

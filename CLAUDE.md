@@ -565,10 +565,11 @@ attributes) of an opted-in type with an error `OperationMessage` of number **638
   `AssetRepositoryException`), `HandleException` maps it (and a `RuntimeRepositoryException` carrying 6384) to the GraphQL
   error **`BLUEPRINT_LOCKED`** (`Statics.GraphQlBlueprintLocked`) with `extensions.messageNumber`, `ckTypeId`, `rtId`,
   `reason` and `items` (every refused entity). The whole mutation is rejected, so a batch with one locked entity writes nothing.
-- REST: `BlueprintLockedExceptionFilter` (registered for all MVC controllers) turns the same refusal - also an
-  `ExchangeException` with message number 6384 (AB#6392 import preflight) - into `403` `application/problem+json` with `code
-  = BLUEPRINT_LOCKED`. There is no REST endpoint that writes runtime entities directly; the filter is the contract for any
-  action that surfaces the refusal.
+- REST: `BlueprintLockedExceptionFilter` (registered for all MVC controllers) turns the same refusal (a
+  `RuntimeRepositoryException` / `BlueprintLockedException` that reaches the filter) into `403` `application/problem+json`
+  with `code = BLUEPRINT_LOCKED`. There is no REST endpoint that writes runtime entities directly; the filter is the
+  contract for any action that lets the refusal escape. `Models/ImportRt` starts a job and catches everything itself, so
+  an import rejection (6384, AB#6392) shows up in the job result, not as a 403.
 - Callers: only `IsSystem` sessions bypass the guard. A pipeline node with `Identity: ServiceAccount` runs as a user
   (guarded); `Identity: System` and the blueprint services are exempt.
 - Tests: `tests/.../GraphQL/BlueprintLock/BlueprintLockErrorGraphQlTests.cs` (real engine guard behind the real mutations;

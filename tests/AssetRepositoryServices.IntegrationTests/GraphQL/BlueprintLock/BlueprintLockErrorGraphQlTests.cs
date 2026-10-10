@@ -99,6 +99,61 @@ public class BlueprintLockErrorGraphQlTests
     }
 
     [Fact]
+    public async Task Update_SettingProtectedBlueprintAttribute_ReturnsProtectedAttributesReason()
+    {
+        // Pins the reason classification to the real engine message: the unit tests only use a copy of its wording.
+        var rtId = await CreateCustomerAsync("Protected_Attribute", locked: false);
+        var variables = JsonSerializer.Serialize(new
+        {
+            entities = new[]
+            {
+                new
+                {
+                    rtId,
+                    item = new
+                    {
+                        ckTypeId = CkTypeId,
+                        attributes = new[] { new { attributeName = "rtBlueprintLocked", value = (object)true } }
+                    }
+                }
+            }
+        });
+
+        var errors = await ExecuteForErrorsAsync(UpdateMutation, variables);
+
+        AssertBlueprintLocked(errors, rtId, "ProtectedAttributes");
+        (await FirstNameAsync(rtId)).Should().Be("Original");
+    }
+
+    [Fact]
+    public async Task Create_WithProtectedBlueprintAttribute_IsRefused()
+    {
+        var variables = JsonSerializer.Serialize(new
+        {
+            entities = new[]
+            {
+                new
+                {
+                    ckTypeId = CkTypeId,
+                    rtWellKnownName = $"BlueprintLock_Insert_{Guid.NewGuid():N}",
+                    attributes = new[]
+                    {
+                        new { attributeName = "firstName", value = (object)"Original" },
+                        new { attributeName = "rtBlueprintLocked", value = (object)true }
+                    }
+                }
+            }
+        });
+
+        var errors = await ExecuteForErrorsAsync(CreateMutation, variables);
+
+        var error = errors.Should().ContainSingle().Subject;
+        error.SelectToken("extensions.code")!.Value<string>().Should().Be("BLUEPRINT_LOCKED");
+        error.SelectToken("extensions.reason")!.Value<string>().Should().Be("ProtectedAttributes");
+        error.SelectToken("extensions.rtId")!.Value<string>().Should().NotBeNullOrEmpty("the engine already assigned the id of the refused insert");
+    }
+
+    [Fact]
     public async Task Batch_WithSeveralLockedEntities_ListsEveryOne()
     {
         var first = await CreateCustomerAsync("Batch_Locked_1", locked: true);

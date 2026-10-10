@@ -71,25 +71,6 @@ internal static class BlueprintLockError
         return true;
     }
 
-    /// <summary>
-    ///     Parses the offender list of an import rejection (<c>ExchangeException</c> with message number 6384, AB#6392), whose
-    ///     text ends with <c>Locked: {ckTypeId}@{rtId}; …</c>.
-    /// </summary>
-    public static IReadOnlyList<BlueprintLockOffender> ParseImportOffenders(string message)
-    {
-        const string marker = "Locked: ";
-        var index = message.LastIndexOf(marker, StringComparison.Ordinal);
-        if (index < 0)
-        {
-            return [];
-        }
-
-        return message[(index + marker.Length)..]
-            .Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .Select(location => ToOffender(location, BlueprintLockReason.EntityLocked, message))
-            .ToList();
-    }
-
     private static BlueprintLockOffender ToOffender(OperationMessage message)
     {
         var reason = message.MessageText.Contains(ProtectedAttributesMarker, StringComparison.Ordinal)
