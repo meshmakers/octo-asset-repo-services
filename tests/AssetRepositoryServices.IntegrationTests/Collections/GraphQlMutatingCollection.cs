@@ -12,3 +12,12 @@ public class GraphQlMutatingCollection : ICollectionFixture<GraphQlTestFixture>
 {
     public const string Name = "GraphQlMutating";
 }
+
+/// <summary>
+///     AB#6385: GraphQL against a tenant whose data policy opts <c>Customer</c> into the blueprint-lock protection.
+/// </summary>
+[CollectionDefinition(Name)]
+public class BlueprintLockCollection : ICollectionFixture<BlueprintLockGraphQlTestFixture>
+{
+    public const string Name = "BlueprintLock";
+}

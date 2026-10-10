@@ -2,6 +2,7 @@ using System.Diagnostics.CodeAnalysis;
 using GraphQL;
 using GraphQL.Builders;
 using Meshmakers.Common.Shared;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.BlueprintLock;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.RequestHandling;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
 using Meshmakers.Octo.ConstructionKit.Contracts;
@@ -82,6 +83,16 @@ internal static class ResolveConnectionContextExtensions
             // The message names the missing configuration only; it never carries a value.
             context.Errors.Add(new ExecutionError(secretEncryptionNotConfigured.Message, secretEncryptionNotConfigured)
                 { Code = Statics.GraphQlSecretEncryptionNotConfigured });
+        }
+        else if (exception is BlueprintLockedException blueprintLockedException)
+        {
+            context.Errors.Add(CreateBlueprintLockedError(blueprintLockedException));
+        }
+        else if (exception is RuntimeRepositoryException lockRepositoryException &&
+                 BlueprintLockError.TryCreateException(lockRepositoryException.OperationResult, out var lockException))
+        {
+            // Before the generic RuntimeRepositoryException branch: the same refusal, raised by ThrowIfOperationResultError.
+            context.Errors.Add(CreateBlueprintLockedError(lockException));
         }
         else if (exception is CkCacheException ckCacheException)
         {
@@ -178,6 +189,36 @@ internal static class ResolveConnectionContextExtensions
         }
 
         return null;
+    }
+
+    /// <summary>
+    ///     AB#6385: the stable blueprint-lock error — code <c>BLUEPRINT_LOCKED</c>, with the engine message number, the first
+    ///     offender's <c>ckTypeId</c>, <c>rtId</c> and <c>reason</c>, and <c>items</c> for every refused entity. The
+    ///     entity values are never part of it.
+    /// </summary>
+    internal static ExecutionError CreateBlueprintLockedError(BlueprintLockedException exception)
+    {
+        var first = exception.First;
+        return new ExecutionError(exception.Message, exception)
+        {
+            Code = Statics.GraphQlBlueprintLocked,
+            Extensions = new Dictionary<string, object?>
+            {
+                ["messageNumber"] = BlueprintLockError.MessageNumber,
+                ["ckTypeId"] = first.CkTypeId,
+                ["rtId"] = first.RtId,
+                ["reason"] = first.Reason.ToString(),
+                ["items"] = exception.Offenders
+                    .Select(o => new Dictionary<string, object?>
+                    {
+                        ["ckTypeId"] = o.CkTypeId,
+                        ["rtId"] = o.RtId,
+                        ["reason"] = o.Reason.ToString()
+                    })
+                    .ToList(),
+                [Statics.GraphQlDetails] = exception.Details
+            }
+        };
     }
 
     /// <summary>
@@ -288,6 +329,11 @@ internal static class ResolveConnectionContextExtensions
     {
         if (operationResult.HasErrors || operationResult.HasFatalErrors)
         {
+            if (BlueprintLockError.TryCreateException(operationResult, out var blueprintLockedException))
+            {
+                throw blueprintLockedException;
+            }
+
             throw AssetRepositoryException.OperationResultErrors(operationResult);
         }
     }
