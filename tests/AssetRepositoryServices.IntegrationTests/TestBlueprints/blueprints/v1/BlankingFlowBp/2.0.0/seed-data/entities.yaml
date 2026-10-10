@@ -1,0 +1,22 @@
+$schema: https://schemas.meshmakers.cloud/runtime-model.schema.json
+dependencies:
+  - AssetRepositoryIntegrationTest
+entities:
+  - rtId: 67000099aaaa1111bbbb0001
+    ckTypeId: AssetRepositoryIntegrationTest/Customer
+    rtWellKnownName: BlankingFlowCustomer
+    attributes:
+      - id: AssetRepositoryIntegrationTest/FirstName
+        value: Flow
+      - id: AssetRepositoryIntegrationTest/LastName
+        value: Customer
+      - id: AssetRepositoryIntegrationTest/Street
+        value: Seed Street 1
+      - id: AssetRepositoryIntegrationTest/PostalCode
+        value: 5020
+      - id: AssetRepositoryIntegrationTest/City
+        value: Salzburg
+      - id: AssetRepositoryIntegrationTest/Country
+        value: Austria
+      - id: AssetRepositoryIntegrationTest/CompanyName
+        value: ""

@@ -1,0 +1,7 @@
+$schema: https://schemas.meshmakers.cloud/blueprint-meta.schema.json
+blueprintId: BlankingFlowBp-1.0.0
+description: AB#6315 flow test v1 - customer with company name and e-mail
+ckModelDependencies:
+  - System-[2.5,3.0)
+  - AssetRepositoryIntegrationTest-[1.0,2.0)
+seedDataPath: seed-data/entities.yaml

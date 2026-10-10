@@ -19,6 +19,9 @@ tests/AssetRepositoryServices.IntegrationTests/
 │   └── AssetRepoFixture.cs                # System + Test Tenant setup
 ├── System/
 │   └── TenantContextTests.cs              # Tenant management tests
+├── Tenant/
+│   └── BlueprintUpdateBlankingFlowTests.cs # AB#6315: preview -> apply -> confirm flow of BlueprintsController
+│                                           # against a real tenant (TestBlueprints/BlankingFlowBp, own fixture)
 ├── GraphQL/
 │   ├── GraphQLTestHelper.cs               # Helper for GraphQL queries
 │   └── Queries/
