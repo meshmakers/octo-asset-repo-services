@@ -92,7 +92,7 @@ internal sealed class BlueprintsQuery : ObjectGraphType
             var catalogManager = ctx.RequestServices!.GetRequiredService<IBlueprintCatalogManager>();
             var result = await catalogManager.ListAsync(skip, take, cancellationToken: ctx.CancellationToken);
 
-            return await MapToListResponseAsync(catalogManager, result.Items, result.TotalCount, skip, take,
+            return MapToListResponse(catalogManager, result.Items, result.TotalCount, skip, take,
                 ctx.CancellationToken);
         }
         catch (Exception e)
@@ -113,7 +113,7 @@ internal sealed class BlueprintsQuery : ObjectGraphType
             var catalogManager = ctx.RequestServices!.GetRequiredService<IBlueprintCatalogManager>();
             var result = await catalogManager.SearchAsync(query, skip, take, cancellationToken: ctx.CancellationToken);
 
-            return await MapToListResponseAsync(catalogManager, result.Items, result.TotalCount, skip, take,
+            return MapToListResponse(catalogManager, result.Items, result.TotalCount, skip, take,
                 ctx.CancellationToken);
         }
         catch (Exception e)
@@ -259,30 +259,34 @@ internal sealed class BlueprintsQuery : ObjectGraphType
         }
     }
 
-    private static async Task<BlueprintListResponseDto> MapToListResponseAsync(
+    /// <summary>
+    /// Upper bound of concurrent manifest fetches per list/search response when dependencies are selected.
+    /// </summary>
+    internal const int MaxConcurrentManifestFetches = 8;
+
+    internal static BlueprintListResponseDto MapToListResponse(
         IBlueprintCatalogManager catalogManager,
         IEnumerable<BlueprintCatalogResultItem> items, int totalCount, int skip, int take,
         CancellationToken cancellationToken)
     {
-        // The catalog listing carries only id/description/catalog; the declared dependencies live in
-        // the full blueprint meta. Resolve it per (already-paged) item — TryGetAsync caches the parsed
-        // manifest per catalog, so this stays cheap for a page of results.
+        // The catalog listing carries only id/description/catalog; the declared dependencies live in the
+        // full blueprint manifest, which a catalog may have to fetch remotely (one HTTP GET per blueprint on
+        // GitHub catalogs, and GetAsync is not cached there). So the manifest is resolved lazily per item —
+        // only when blueprintDependencies / ckModelDependencies is selected (see BlueprintDtoType) — and
+        // with bounded parallelism shared by all items of this response (AB#6306).
+        var throttle = new SemaphoreSlim(MaxConcurrentManifestFetches);
         var dtos = new List<BlueprintDto>();
         foreach (var item in items)
         {
-            var meta = await catalogManager
-                .TryGetAsync(item.BlueprintId, new OperationResult(), cancellationToken: cancellationToken)
-                .ConfigureAwait(false);
-
-            dtos.Add(new BlueprintDto
+            var blueprintId = item.BlueprintId;
+            dtos.Add(new BlueprintListItem(() =>
+                LoadDependenciesAsync(catalogManager, blueprintId, throttle, cancellationToken))
             {
-                Id = item.BlueprintId.FullName,
-                Name = item.BlueprintId.Name,
-                Version = item.BlueprintId.Version.ToString(),
+                Id = blueprintId.FullName,
+                Name = blueprintId.Name,
+                Version = blueprintId.Version.ToString(),
                 Description = item.Description,
-                CatalogName = item.CatalogName,
-                BlueprintDependencies = meta?.BlueprintDependencies?.Select(d => d.FullName).ToList() ?? [],
-                CkModelDependencies = meta?.CkModelDependencies?.Select(d => d.FullName).ToList() ?? []
+                CatalogName = item.CatalogName
             });
         }
 
@@ -293,6 +297,29 @@ internal sealed class BlueprintsQuery : ObjectGraphType
             Skip = skip,
             Take = take
         };
+    }
+
+    private static async Task<BlueprintDependencies> LoadDependenciesAsync(
+        IBlueprintCatalogManager catalogManager, BlueprintId blueprintId, SemaphoreSlim throttle,
+        CancellationToken cancellationToken)
+    {
+        await throttle.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var meta = await catalogManager
+                .TryGetAsync(blueprintId, new OperationResult(), cancellationToken: cancellationToken)
+                .ConfigureAwait(false);
+
+            return meta == null
+                ? BlueprintDependencies.Empty
+                : new BlueprintDependencies(
+                    meta.BlueprintDependencies?.Select(d => d.FullName).ToList() ?? [],
+                    meta.CkModelDependencies?.Select(d => d.FullName).ToList() ?? []);
+        }
+        finally
+        {
+            throttle.Release();
+        }
     }
 
     private static BlueprintHistoryItemDto MapHistoryItem(TenantBlueprintInfo entry)

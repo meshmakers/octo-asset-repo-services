@@ -6,7 +6,9 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Blueprin
 /// <summary>
 /// GraphQL projection of <see cref="BlueprintDto"/>. Surfaces a single blueprint listing entry
 /// — fully qualified id, name, version, optional description and the originating catalog name.
-/// Returned by the <c>list</c> and <c>search</c> queries on the <c>blueprints</c> root.
+/// Returned by the <c>list</c> and <c>search</c> queries on the <c>blueprints</c> root. The dependency fields
+/// are resolved lazily (see <see cref="BlueprintListItem"/>), so listing does not touch the blueprint manifests
+/// unless a client selects them.
 /// </summary>
 // ReSharper disable once ClassNeverInstantiated.Global
 internal sealed class BlueprintDtoType : ObjectGraphType<BlueprintDto>
@@ -41,12 +43,16 @@ internal sealed class BlueprintDtoType : ObjectGraphType<BlueprintDto>
                 "Blueprint dependency id strings as declared in the blueprint's blueprintDependencies "
                 + "(e.g. \"MeshmakersAccounting-[1.0.0,)\"). Empty when none — use it to filter the "
                 + "catalog to add-ons that depend on a given base blueprint.")
-            .Resolve(ctx => ctx.Source!.BlueprintDependencies);
+            .ResolveAsync(async ctx => ctx.Source is BlueprintListItem item
+                ? (await item.GetDependenciesAsync().ConfigureAwait(false)).Blueprints
+                : ctx.Source!.BlueprintDependencies);
 
         Field<NonNullGraphType<ListGraphType<NonNullGraphType<StringGraphType>>>>("ckModelDependencies")
             .Description(
                 "CK model dependency id strings as declared in the blueprint's ckModelDependencies "
                 + "(e.g. \"Meshmakers.Accounting-[1.24.0,2.0)\"). Empty when none.")
-            .Resolve(ctx => ctx.Source!.CkModelDependencies);
+            .ResolveAsync(async ctx => ctx.Source is BlueprintListItem item
+                ? (await item.GetDependenciesAsync().ConfigureAwait(false)).CkModels
+                : ctx.Source!.CkModelDependencies);
     }
 }
