@@ -124,6 +124,9 @@ public sealed class CkModelLibraryStatusService : ICkModelLibraryStatusService
             }
         }
 
+        // One memo for the whole evaluation: shared dependencies are fetched once, not once per row.
+        var memo = new CatalogModelMemo();
+
         // Build merged view
         var items = new List<CkModelLibraryStatusItemDto>();
         var processedNames = new HashSet<string>();
@@ -131,7 +134,7 @@ public sealed class CkModelLibraryStatusService : ICkModelLibraryStatusService
         foreach (var inst in installedResult.Items)
         {
             processedNames.Add(inst.ModelId);
-            items.Add(await BuildInstalledItemAsync(inst, catalogByName, installedSystemVersions, cancellationToken));
+            items.Add(await BuildInstalledItemAsync(inst, catalogByName, installedSystemVersions, memo, cancellationToken));
         }
 
         // Add catalog-only models (not installed)
@@ -139,7 +142,7 @@ public sealed class CkModelLibraryStatusService : ICkModelLibraryStatusService
         {
             if (!processedNames.Contains(name))
             {
-                items.Add(await BuildCatalogOnlyItemAsync(name, cm, installedSystemVersions, cancellationToken));
+                items.Add(await BuildCatalogOnlyItemAsync(name, cm, installedSystemVersions, memo, cancellationToken));
             }
         }
 
@@ -194,21 +197,61 @@ public sealed class CkModelLibraryStatusService : ICkModelLibraryStatusService
     }
 
     /// <inheritdoc />
-    public async Task<(bool isCompatible, string? reason)> CheckSystemCompatibilityAsync(
+    public Task<(bool isCompatible, string? reason)> CheckSystemCompatibilityAsync(
         CkModelId catalogModelId,
         Dictionary<string, CkVersion> installedSystemVersions,
         HashSet<string> visited,
         List<string> unresolvedDependencies,
         CancellationToken cancellationToken)
     {
-        var operationResult = new OperationResult();
-        ConstructionKit.Contracts.DataTransferObjects.CkCompiledModelRoot? compiled;
-        try
+        return CheckSystemCompatibilityAsync(catalogModelId, installedSystemVersions, visited,
+            unresolvedDependencies, new CatalogModelMemo(), cancellationToken);
+    }
+
+    /// <summary>
+    ///     Per-evaluation memo of catalog lookups (AB#6330). One library-status call checks many rows whose
+    ///     dependency graphs share models (Basic, ...); a published model version is immutable, so each model
+    ///     is fetched at most once per call. The <c>visited</c> set stays per row on purpose — it prunes the
+    ///     walk and therefore decides the result of a row. Only "found" and "not published" are memoized;
+    ///     any other exception propagates to the row-level handler and is not remembered.
+    /// </summary>
+    private sealed class CatalogModelMemo
+    {
+        private readonly Dictionary<string, ConstructionKit.Contracts.DataTransferObjects.CkCompiledModelRoot?> _models = new();
+        private readonly HashSet<string> _notPublished = new();
+
+        public async Task<(bool found, ConstructionKit.Contracts.DataTransferObjects.CkCompiledModelRoot? model)>
+            GetAsync(ICatalogService catalogService, CkModelId modelId, CancellationToken cancellationToken)
         {
-            compiled = await _catalogService.GetAsync(catalogModelId, operationResult,
-                cancellationToken: cancellationToken);
+            var key = modelId.FullName;
+            if (_notPublished.Contains(key)) return (false, null);
+            if (_models.TryGetValue(key, out var cached)) return (true, cached);
+
+            try
+            {
+                var compiled = await catalogService.GetAsync(modelId, new OperationResult(),
+                    cancellationToken: cancellationToken);
+                _models[key] = compiled;
+                return (true, compiled);
+            }
+            catch (ModelCatalogException)
+            {
+                _notPublished.Add(key);
+                return (false, null);
+            }
         }
-        catch (ModelCatalogException)
+    }
+
+    private async Task<(bool isCompatible, string? reason)> CheckSystemCompatibilityAsync(
+        CkModelId catalogModelId,
+        Dictionary<string, CkVersion> installedSystemVersions,
+        HashSet<string> visited,
+        List<string> unresolvedDependencies,
+        CatalogModelMemo memo,
+        CancellationToken cancellationToken)
+    {
+        var (found, compiled) = await memo.GetAsync(_catalogService, catalogModelId, cancellationToken);
+        if (!found)
         {
             // The catalog graph is inconsistent: a model up the chain pinned a dependency
             // on a version that is not published in any registered catalog. Surface this
@@ -245,7 +288,7 @@ public sealed class CkModelLibraryStatusService : ICkModelLibraryStatusService
             else
             {
                 var (subCompat, subReason) = await CheckSystemCompatibilityAsync(
-                    dep, installedSystemVersions, visited, unresolvedDependencies, cancellationToken);
+                    dep, installedSystemVersions, visited, unresolvedDependencies, memo, cancellationToken);
                 if (!subCompat) return (false, subReason);
             }
         }
@@ -259,6 +302,7 @@ public sealed class CkModelLibraryStatusService : ICkModelLibraryStatusService
         Runtime.Contracts.MongoDb.Repositories.Entities.CkModel inst,
         Dictionary<string, CatalogResultItem> catalogByName,
         Dictionary<string, CkVersion> installedSystemVersions,
+        CatalogModelMemo memo,
         CancellationToken cancellationToken)
     {
         catalogByName.TryGetValue(inst.ModelId, out var catalog);
@@ -280,7 +324,7 @@ public sealed class CkModelLibraryStatusService : ICkModelLibraryStatusService
             {
                 (isCompatible, incompatibilityReason) = await CheckSystemCompatibilityAsync(
                     catalog.ModelId, installedSystemVersions, new HashSet<string>(),
-                    unresolvedDeps, cancellationToken);
+                    unresolvedDeps, memo, cancellationToken);
             }
 
             var hasInconsistency = unresolvedDeps.Count > 0;
@@ -328,6 +372,7 @@ public sealed class CkModelLibraryStatusService : ICkModelLibraryStatusService
         string name,
         CatalogResultItem cm,
         Dictionary<string, CkVersion> installedSystemVersions,
+        CatalogModelMemo memo,
         CancellationToken cancellationToken)
     {
         var isServiceManaged = IsSystemManaged(name);
@@ -341,7 +386,7 @@ public sealed class CkModelLibraryStatusService : ICkModelLibraryStatusService
             {
                 (isCompatible, incompatibilityReason) = await CheckSystemCompatibilityAsync(
                     cm.ModelId, installedSystemVersions, new HashSet<string>(),
-                    unresolvedDeps, cancellationToken);
+                    unresolvedDeps, memo, cancellationToken);
             }
 
             return new CkModelLibraryStatusItemDto
