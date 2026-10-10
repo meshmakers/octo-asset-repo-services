@@ -28,6 +28,9 @@ public class BlueprintUpdateBlankingFlowTests(BlueprintUpdateFlowFixture fixture
 {
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
+    /// <summary>Per-test timeout: a stuck call fails the test instead of hanging the CI job.</summary>
+    private const int TestTimeoutMs = 180_000;
+
     private const string V1 = "BlankingFlowBp-1.0.0";
     private const string V2 = "BlankingFlowBp-2.0.0";
     private const string CustomerRtId = "67000099aaaa1111bbbb0001";
@@ -43,9 +46,10 @@ public class BlueprintUpdateBlankingFlowTests(BlueprintUpdateFlowFixture fixture
     /// and reports exactly what the preview announced, a client that sends none of the new request fields
     /// is safe by default.
     /// </summary>
-    [Fact]
+    [Fact(Timeout = TestTimeoutMs)]
     public async Task PreviewThenApplyWithoutConfirmation_KeepsValuesAndReportsWhatThePreviewAnnounced()
     {
+        var ct = TestContext.Current.CancellationToken;
         var tenantId = await fixture.CreateTenantAsync("bf-keep");
         try
         {
@@ -53,7 +57,7 @@ public class BlueprintUpdateBlankingFlowTests(BlueprintUpdateFlowFixture fixture
             var controller = CreateController(tenantId);
 
             var preview = AssertOk<BlueprintUpdatePreviewDto>(await controller.PreviewUpdate(
-                new BlueprintUpdateRequestDto { TargetVersion = V2, UpdateMode = "Merge" }, Ct));
+                new BlueprintUpdateRequestDto { TargetVersion = V2, UpdateMode = "Merge" }, ct));
 
             preview.BlankedAttributes.Should().HaveCount(2);
             var company = preview.BlankedAttributes.Single(b => b.AttributeName == "CompanyName");
@@ -76,7 +80,7 @@ public class BlueprintUpdateBlankingFlowTests(BlueprintUpdateFlowFixture fixture
 
             // Apply with the request an old client sends: no allowBlanking, no confirmedBlankings.
             var result = AssertOk<BlueprintUpdateResultDto>(await controller.ApplyUpdate(
-                new BlueprintUpdateRequestDto { TargetVersion = V2, UpdateMode = "Merge" }, Ct));
+                new BlueprintUpdateRequestDto { TargetVersion = V2, UpdateMode = "Merge" }, ct));
 
             result.Success.Should().BeTrue();
             result.BlankedAttributes.Should().OnlyContain(b => !b.AppliedOnUpdate);
@@ -95,9 +99,10 @@ public class BlueprintUpdateBlankingFlowTests(BlueprintUpdateFlowFixture fixture
     /// Confirming exactly one entity/attribute pair blanks that value only; the other stays kept and is
     /// still reported as not applied.
     /// </summary>
-    [Fact]
+    [Fact(Timeout = TestTimeoutMs)]
     public async Task ApplyWithConfirmationForOnePair_BlanksOnlyThatAttribute()
     {
+        var ct = TestContext.Current.CancellationToken;
         var tenantId = await fixture.CreateTenantAsync("bf-pair");
         try
         {
@@ -105,7 +110,7 @@ public class BlueprintUpdateBlankingFlowTests(BlueprintUpdateFlowFixture fixture
             var controller = CreateController(tenantId);
 
             var preview = AssertOk<BlueprintUpdatePreviewDto>(await controller.PreviewUpdate(
-                new BlueprintUpdateRequestDto { TargetVersion = V2, UpdateMode = "Merge" }, Ct));
+                new BlueprintUpdateRequestDto { TargetVersion = V2, UpdateMode = "Merge" }, ct));
 
             var result = AssertOk<BlueprintUpdateResultDto>(await controller.ApplyUpdate(
                 new BlueprintUpdateRequestDto
@@ -113,7 +118,7 @@ public class BlueprintUpdateBlankingFlowTests(BlueprintUpdateFlowFixture fixture
                     TargetVersion = V2,
                     UpdateMode = "Merge",
                     ConfirmedBlankings = [new BlueprintBlankingConfirmationDto { RtId = CustomerRtId, AttributeName = "CompanyName" }]
-                }, Ct));
+                }, ct));
 
             result.Success.Should().BeTrue();
             Identity(result.BlankedAttributes).Should().BeEquivalentTo(Identity(preview.BlankedAttributes));
@@ -133,9 +138,10 @@ public class BlueprintUpdateBlankingFlowTests(BlueprintUpdateFlowFixture fixture
     /// <summary>
     /// allowBlanking confirms every listed attribute: both values are blanked and reported as applied.
     /// </summary>
-    [Fact]
+    [Fact(Timeout = TestTimeoutMs)]
     public async Task ApplyWithAllowBlanking_BlanksEveryListedAttribute()
     {
+        var ct = TestContext.Current.CancellationToken;
         var tenantId = await fixture.CreateTenantAsync("bf-all");
         try
         {
@@ -143,7 +149,7 @@ public class BlueprintUpdateBlankingFlowTests(BlueprintUpdateFlowFixture fixture
             var controller = CreateController(tenantId);
 
             var result = AssertOk<BlueprintUpdateResultDto>(await controller.ApplyUpdate(
-                new BlueprintUpdateRequestDto { TargetVersion = V2, UpdateMode = "Merge", AllowBlanking = true }, Ct));
+                new BlueprintUpdateRequestDto { TargetVersion = V2, UpdateMode = "Merge", AllowBlanking = true }, ct));
 
             result.Success.Should().BeTrue();
             result.BlankedAttributes.Should().HaveCount(2).And.OnlyContain(b => b.AppliedOnUpdate);
@@ -161,9 +167,10 @@ public class BlueprintUpdateBlankingFlowTests(BlueprintUpdateFlowFixture fixture
     /// <summary>
     /// Neither the preview nor the apply response carries the tenant's values, only kind and size.
     /// </summary>
-    [Fact]
+    [Fact(Timeout = TestTimeoutMs)]
     public async Task PreviewAndApplyResponses_NeverContainTheTenantValues()
     {
+        var ct = TestContext.Current.CancellationToken;
         var tenantId = await fixture.CreateTenantAsync("bf-novalue");
         try
         {
@@ -171,9 +178,9 @@ public class BlueprintUpdateBlankingFlowTests(BlueprintUpdateFlowFixture fixture
             var controller = CreateController(tenantId);
 
             var preview = AssertOk<BlueprintUpdatePreviewDto>(await controller.PreviewUpdate(
-                new BlueprintUpdateRequestDto { TargetVersion = V2, UpdateMode = "Merge" }, Ct));
+                new BlueprintUpdateRequestDto { TargetVersion = V2, UpdateMode = "Merge" }, ct));
             var result = AssertOk<BlueprintUpdateResultDto>(await controller.ApplyUpdate(
-                new BlueprintUpdateRequestDto { TargetVersion = V2, UpdateMode = "Merge", AllowBlanking = true }, Ct));
+                new BlueprintUpdateRequestDto { TargetVersion = V2, UpdateMode = "Merge", AllowBlanking = true }, ct));
 
             foreach (var json in new[] { JsonSerializer.Serialize(preview), JsonSerializer.Serialize(result) })
             {

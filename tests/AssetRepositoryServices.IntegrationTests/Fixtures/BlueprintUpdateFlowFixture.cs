@@ -23,6 +23,11 @@ public class BlueprintUpdateFlowFixture : AssetRepoFixture
         // (AddOctoAssetRepositoryServices). No second AddRuntimeEngine() here: it would put the in-memory
         // repository provider on top of the MongoDB one, and the blueprint service needs the real tenant repositories.
 
+        // AssetRepositoryServices replaces the engine's logging notifications with the event-hub bridge, which
+        // publishes to RabbitMQ. CI has no broker (a developer machine usually has one, which hides this), so a
+        // blueprint apply would wait forever. Tests do not need the notifications.
+        Services.Replace(ServiceDescriptor.Singleton<IBlueprintNotifications, NoOpBlueprintNotifications>());
+
         Services.RemoveAll<IBlueprintCatalog>();
         Services.AddTransient<IBlueprintCatalog, LocalFileSystemBlueprintCatalog>();
 
@@ -77,4 +82,18 @@ public class BlueprintUpdateFlowFixture : AssetRepoFixture
             // best-effort cleanup
         }
     }
+}
+
+/// <summary>
+/// Swallows blueprint notifications so the flow tests never depend on a message broker.
+/// </summary>
+internal sealed class NoOpBlueprintNotifications : IBlueprintNotifications
+{
+    public Task NotifyAppliedAsync(BlueprintAppliedNotification notification, CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+    public Task NotifyUpdatedAsync(BlueprintUpdatedNotification notification, CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+    public Task NotifyUninstalledAsync(BlueprintUninstalledNotification notification, CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+    public Task NotifyOperationFailedAsync(BlueprintOperationFailedNotification notification, CancellationToken cancellationToken = default) => Task.CompletedTask;
 }
