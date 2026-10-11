@@ -367,7 +367,11 @@ Files and folders are a platform capability, independent of Reporting. This serv
   `files.manage`, or an administrator's custom roles): then only the tenant policies decide, so a custom role
   can be granted write access without `FileManagement`. System contexts (migrations, sweep, blueprint apply) are
   never restricted. `GET capabilities` stays open to every caller with the API scope. Clients with a machine
-  token that carry no file role (e.g. adapters) need `FileViewer`/`FileManagement` on the client to use the API.
+  token that carry no file role — customer client-credentials clients and octo-cli `LogInClientCredentials` — get 403 on
+  every Files endpoint until the client is given `FileViewer`/`FileManagement` (`octo-cli AddClientToRole`).
+  The pipeline service accounts (`octo-pipeline-sa-*`) are granted `FileManagement` by identity; their file nodes
+  and the Reporting service use in-process sessions (Reporting: no security context = system) and do not go through
+  this REST API.
 - **Limits** (`FilesOptions`, section `Files`, env `OCTO_Files__…`): MaxUploadBytes 100 MB, ZipMaxFiles 1,000,
   ZipMaxBytes 500 MB, PreviewMaxBytes 20 MB (advisory). The ingress must accept more than MaxUploadBytes
   (octo-helm-core `ingress.proxyBodySize`, 110m). GraphQL multipart uploads get the same limit (+1 MB, set
