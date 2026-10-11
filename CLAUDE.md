@@ -318,18 +318,28 @@ Delete operations support multiple strategies via `DeleteOptions`:
 
 ### Platform file system (AB#6171)
 
-Files and folders are a platform capability, independent of Reporting. This service owns the
-**System.Files 1.0.0** CK model (`src/SystemFilesCkModel`, service-managed, depends on `System-[2.5,3.0)`):
+Files and folders are a platform capability, independent of Reporting. The **System.Files 1.0.0** CK model
+(source in octo-construction-kit-engine `src/SystemFilesCkModel`, package
+`Meshmakers.Octo.ConstructionKit.Models.System.Files` from the libs train, depends on `System-[2.5,3.0)`) is
+**installed by octo-platform-services** (service-managed, like System.UI), together with the default root
+`Files` (AB#6480). This service references the package for the generated types only and neither imports the model
+nor creates the root. Model content:
 `FolderRoot`, `Folder`, `FileSystemItem` (attribute `Content`, BinaryLinked), abstract `FileSystemEntity` /
 `FileSystemContainer`, all in `RtEntity_SystemFilesFileSystemEntity`; the tree is `System/ParentChild`
 (origin = child, target = parent).
 
-- **Tenant setup.** `DefaultConfigurationCreatorService.ImportCkModelAsync` imports the embedded model
-  (`AddCkModelSystemFilesV1`) into every tenant inside the setup transaction; `StartTenantAsync` ensures the
-  root `Files` (`FileSystemDefaults`, every start, never throws — a tenant whose System model is too old for
-  System.Files logs a warning instead of going `Failed`); `GetCkModelIds` (`System.Files-[1.0,2.0)`) lets
-  later minors migrate through the standard upgrade path. An import error throws and goes through the setup
-  retry store.
+- **Tenant setup (AB#6480).** `DefaultConfigurationCreatorService` has **no** `ImportCkModelAsync` override and
+  `StartTenantAsync` creates **no** default root: platform-services installs System.Files (engine descriptor, on
+  tenant resolve, downgrade guard) and ensures the root `Files` in its tenant setup (create, attach, restore,
+  full update, cold start). The order of the two services at a tenant start does not matter: this service needs
+  nothing of System.Files during its setup. `GetCkModelIds` (`System.Files-[1.0,2.0)`) stays so that later minors
+  migrate through the standard upgrade path; a tenant without System.Files is skipped there ("not installed").
+- **While the model is missing** (platform-services not yet through, or not deployed): the file API answers
+  `GET capabilities` with `available: false`, `reason: SYSTEM_FILES_MISSING`; the Reporting sweep
+  (`ReportingFilesSweepRunner`) does nothing for the tenant and the straggler timer retries. Nothing fails, nothing
+  waits for an asset-repo restart; once platform-services has installed the model and created the root, the file API
+  is available on the next request. An installation without platform-services (`platformServices.deploy: false`)
+  never gets System.Files and stays at `SYSTEM_FILES_MISSING`.
 - **Metadata = generic GraphQL** (decision Q1). `FileSystemMutationGuard` is called by the generic
   create/update/delete resolvers (typed and `runtimeEntities`) whenever a System.Files entity is written or a
   `System/ParentChild` association touches one: root creation needs the role `FileManagement`, root
@@ -387,8 +397,8 @@ Files and folders are a platform capability, independent of Reporting. This serv
   INCOMPLETE_SLICE (or a wrong hasNextPage) — name lookups and searches must not sort (skipped repro test).
 - Zip writes need synchronous IO for ZipArchive's small header records (Kestrel forbids it by default);
   the zip action allows it for its own response only.
-- Tests: `tests/AssetRepositoryServices.IntegrationTests/Files/*` (`FilesTestFixture` imports System.Files,
-  ensures the default root and has a switchable data-policy table).
+- Tests: `tests/AssetRepositoryServices.IntegrationTests/Files/*` (`FilesTestFixture` plays platform-services: it imports System.Files and creates the
+  default root, and has a switchable data-policy table).
 
 ### Important Naming Conventions
 - **Ck** prefix = Construction Kit (metadata/model definitions)
@@ -762,8 +772,8 @@ System.Reporting 3.0.0.
 - **Audit:** one document per sweep that wrote or failed in `FilesMigrationAudit` (before/after counts,
   moved per type, conflicts, association fields, stamps, errors, trigger, host). Deliberately **not**
   `System/MigrationHistory` — that collection drives the CK upgrade version detection.
-- **Triggers (Q3):** `DefaultConfigurationCreatorService.StartTenantAsync` (after the System.Files import and
-  the default root; never fails the start) and `ReportingFilesSweepBackgroundService` every
+- **Triggers (Q3):** `DefaultConfigurationCreatorService.StartTenantAsync` (never fails the start; does nothing
+  without System.Files) and `ReportingFilesSweepBackgroundService` every
   `StragglerSweepInterval` (10 min) for tenants in `ReportingFilesSweepTracker`. A tenant stays on the timer
   for `StragglerWindow` (24 h) after its last finding (legacy data, failure, lease held elsewhere), or until
   System.Reporting 3.0.0+ is installed (`CkModel` ids), even through zero checks (in memory, per pod; the

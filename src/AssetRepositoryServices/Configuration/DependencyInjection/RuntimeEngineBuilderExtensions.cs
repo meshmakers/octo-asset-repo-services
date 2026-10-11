@@ -381,11 +381,9 @@ public static class RuntimeEngineBuilderExtensions
         builder.Services.AddSingleton<IPipelineDefinitionSource, TenantPipelineDefinitionSource>();
         builder.Services.AddSingleton<SecretUsageScanner>();
 
-        // AB#6171: the platform file system. System.Files is embedded and imported into every tenant by
-        // the tenant setup (DefaultConfigurationCreatorService); the default root "Files" is seeded by a
-        // service migration.
-        builder.Services.AddCkModelSystemFilesV1();
-        builder.Services.AddSingleton<Meshmakers.Octo.Backend.AssetRepositoryServices.Services.Files.FileSystemDefaults>();
+        // AB#6171: the platform file system. AB#6480: the System.Files CK model (engine package) is installed into every
+        // tenant by platform-services (service-managed), together with the default root "Files"; this service only
+        // uses the generated types and registers no embedded model.
         builder.Services.AddSingleton<Meshmakers.Octo.Backend.AssetRepositoryServices.Services.Files.FileSystemService>();
         builder.Services.AddSingleton<Meshmakers.Octo.Backend.AssetRepositoryServices.Services.Files.FileSystemMutationGuard>();
         builder.Services.AddSingleton<Meshmakers.Octo.Backend.AssetRepositoryServices.Services.Files.FileZipService>();

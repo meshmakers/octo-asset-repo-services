@@ -47,9 +47,11 @@
         <PackageReference Include="Meshmakers.Octo.Runtime.Engine" Version="$(OctoCoreLibVersion)" />
         <PackageReference Include="Meshmakers.Octo.Runtime.Engine.MongoDb" Version="$(OctoCoreLibVersion)" />
         <PackageReference Include="Meshmakers.Octo.Runtime.Engine.CrateDb" Version="$(OctoCoreLibVersion)" />
+        <!-- System.Files CK model (platform file system): owned by octo-construction-kit-engine and published by the
+             libs train (AB#6480). Used for the generated types only - platform-services installs the model. -->
+        <PackageReference Include="Meshmakers.Octo.ConstructionKit.Models.System.Files" Version="$(OctoCoreLibVersion)" />
         <ProjectReference Include="..\..\tests\AssetRepositoryIntegrationTestCkModel\AssetRepositoryIntegrationTestCkModel.csproj" />
         <ProjectReference Include="..\AssetRepositoryServices.Resources\AssetRepositoryServices.Resources.csproj" />
-        <ProjectReference Include="..\SystemFilesCkModel\SystemFilesCkModel.csproj" />
     </ItemGroup>
 
     <ItemGroup>

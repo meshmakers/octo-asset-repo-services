@@ -31,13 +31,13 @@ internal class DefaultConfigurationCreatorService(
     ITenantSetupRetryStore tenantSetupRetryStore,
     ICkModelUpgradeService ckModelUpgradeService,
     IRuntimeRepositoryProvider runtimeRepositoryProvider,
-    Files.Migration.ReportingFilesSweepRunner reportingFilesSweepRunner,
-    Files.FileSystemDefaults fileSystemDefaults)
+    Files.Migration.ReportingFilesSweepRunner reportingFilesSweepRunner)
     : DefaultConfigurationCreatorServiceStandardized(logger, systemContext, createIdentityDataCommandClient,
         AssetRepositoryServiceConstants.AssetServiceIdentityDataVersionKey,
         AssetRepositoryServiceConstants.AssetServiceIdentityDataVersionValue,
-        null, // migrationService - the default file root is ensured at tenant start (FileSystemDefaults)
-        // AB#6171: CK data migrations of System.Files (GetCkModelIds) run through the standard upgrade path.
+        null, // migrationService
+        // AB#6171: CK data migrations of System.Files (GetCkModelIds) run through the standard upgrade path; a tenant
+        // without System.Files is skipped there (not installed).
         ckModelUpgradeService,
         runtimeRepositoryProvider,
         null, // serviceEnabledKey - the service is auto-enabled
@@ -56,38 +56,27 @@ internal class DefaultConfigurationCreatorService(
     }
 
     /// <summary>
-    ///     AB#6175: after the System.Files import and the service migrations, moves System.Reporting file data
-    ///     of the tenant to System.Files (idempotent sweep; no-op without legacy data). Never fails the start.
+    ///     AB#6175: after the service migrations, moves System.Reporting file data of the tenant to System.Files
+    ///     (idempotent sweep; no-op without legacy data and without System.Files). Never fails the start.
     /// </summary>
+    /// <remarks>
+    ///     AB#6480: System.Files is installed - and its default root <c>Files</c> created - by platform-services
+    ///     (service-managed CK model), no longer here. This service imports nothing for System.Files and creates no
+    ///     root at the tenant start; while the model is not installed the file API answers
+    ///     <c>available: false, reason: SYSTEM_FILES_MISSING</c> and the sweep skips the tenant (the straggler timer
+    ///     picks it up once the model is there).
+    /// </remarks>
     protected override async Task StartTenantAsync(string tenantId)
     {
         await base.StartTenantAsync(tenantId);
-        // AB#6171 D8: default root "Files"; logs and retries at the next start when System.Files is missing.
-        await fileSystemDefaults.EnsureDefaultRootAsync(tenantId);
         await reportingFilesSweepRunner.RunAtTenantStartAsync(tenantId);
-    }
-
-    /// <summary>
-    ///     Imports System.Files into every tenant (AB#6171 D2 = B'): the platform file system is available
-    ///     everywhere, without an enable step and independent of Reporting. Runs inside the setup
-    ///     transaction before the service migrations, so the file collection and its indexes exist before
-    ///     the default root is seeded. A failure throws and goes through the setup retry path.
-    /// </summary>
-    protected override async Task ImportCkModelAsync(IOctoAdminSession session, ITenantContext tenantContext)
-    {
-        OperationResult operationResult = new();
-        await tenantContext.ImportCkModelAsync(SystemFilesCkIds.CkModelId, operationResult);
-        if (operationResult.HasErrors || operationResult.HasFatalErrors)
-        {
-            throw InitializationException.ImportCkModelFailed(tenantContext.TenantId,
-                operationResult.GetMessages());
-        }
     }
 
     /// <inheritdoc />
     protected override IEnumerable<CkModelIdVersionRange> GetCkModelIds()
     {
-        // Any System.Files 1.x: later minors of the model migrate through the standard upgrade path.
+        // Any System.Files 1.x: later minors of the model migrate through the standard upgrade path (the model is
+        // installed by platform-services; a tenant that does not have it yet is skipped).
         return [new CkModelIdVersionRange($"{SystemFilesCkIds.CkModelId.Name}-[1.0,2.0)")];
     }
 

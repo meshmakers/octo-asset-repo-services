@@ -7,15 +7,19 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Fixtures;
 
 /// <summary>
-///     Fixture of the platform file system tests (AB#6171): the GraphQL fixture plus System.Files imported
-///     into the system tenant and the asset repository's service migrations run (default root "Files"),
-///     exactly as the tenant setup does it.
+///     Fixture of the platform file system tests (AB#6171): the GraphQL fixture plus System.Files installed into
+///     the system tenant and the default root "Files" created - what platform-services does in production
+///     (AB#6480: the asset repository itself installs nothing and creates no root). The embedded model is
+///     registered here only because the fixture plays the installer.
 /// </summary>
 // ReSharper disable once ClassNeverInstantiated.Global
 public class FilesTestFixture : GraphQlTestFixture
 {
     public FilesTestFixture()
     {
+        // The fixture plays platform-services (AB#6480): the asset repository does not register the embedded model.
+        Services.AddCkModelSystemFilesV1();
+
         // Last registration wins over the engine's TryAddSingleton: tests switch data policies on and off.
         Services.AddSingleton<Meshmakers.Octo.Runtime.Contracts.DataPermissions.IDataPermissionResolver>(Permissions);
     }
@@ -57,7 +61,7 @@ public class FilesTestFixture : GraphQlTestFixture
                                                 operationResult.GetMessages());
         }
 
-        await RunServiceMigrationsAsync();
+        await SeedDefaultRootAsync();
     }
 
     /// <summary>
@@ -82,11 +86,24 @@ public class FilesTestFixture : GraphQlTestFixture
     }
 
     /// <summary>
-    ///     Ensures the default root "Files" in the system tenant, as the tenant start does (idempotent).
+    ///     Ensures the default root "Files" in the system tenant, as platform-services' tenant setup does
+    ///     (idempotent): a <c>System.Files/FolderRoot</c> named and well-known-named "Files".
     /// </summary>
-    public async Task RunServiceMigrationsAsync()
+    public async Task SeedDefaultRootAsync()
     {
-        await GetService<FileSystemDefaults>().EnsureDefaultRootAsync(GetSystemContext());
+        var repository = GetSystemContext().GetTenantRepository();
+        using var session = repository.GetSession();
+        if (await FileSystem.FindRootAsync(repository, session, FileSystemConstants.DefaultRootWellKnownName) != null)
+        {
+            return;
+        }
+
+        var root = await repository.CreateTransientRtEntityAsync<RtFolderRoot>();
+        root.Name = FileSystemConstants.DefaultRootName;
+        root.RtWellKnownName = FileSystemConstants.DefaultRootWellKnownName;
+        session.StartTransaction();
+        await repository.InsertOneRtEntityAsync(session, root);
+        await session.CommitTransactionAsync();
     }
 }
 
