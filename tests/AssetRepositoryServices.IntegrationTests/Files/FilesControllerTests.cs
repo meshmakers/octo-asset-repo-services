@@ -521,7 +521,8 @@ public class FilesControllerTests
         }
 
         var controller = new FilesController(_fixture.GetService<IOctoService>(), _fixture.FileSystem,
-            _fixture.GetService<FileZipService>(), Options.Create(limits ?? new FilesOptions()),
+            _fixture.GetService<FileZipService>(), _fixture.GetService<FileSystemAccess>(),
+            Options.Create(limits ?? new FilesOptions()),
             _fixture.GetService<Meshmakers.Octo.ConstructionKit.Contracts.Services.ICkCacheService>(),
             Microsoft.Extensions.Logging.Abstractions.NullLogger<FilesController>.Instance)
         {

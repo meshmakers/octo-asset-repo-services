@@ -1,5 +1,6 @@
 using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.Runtime.Contracts;
+using Meshmakers.Octo.Runtime.Contracts.DataPermissions;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb.Repositories;
 using Meshmakers.Octo.Runtime.Contracts.RepositoryEntities;
 using Microsoft.Extensions.Options;
@@ -27,7 +28,10 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.Services.Files;
 ///     the engine's data-permission write guard decides per entity — a cascade that reaches an entry the
 ///     caller may not delete fails as a whole and leaves nothing behind.
 /// </summary>
-public class FileSystemMutationGuard(FileSystemService fileSystem, IOptions<FilesOptions> filesOptions)
+public class FileSystemMutationGuard(
+    FileSystemService fileSystem,
+    IOptions<FilesOptions> filesOptions,
+    FileSystemAccess access)
 {
     /// <summary>
     ///     Role required to create a folder root.
@@ -57,6 +61,8 @@ public class FileSystemMutationGuard(FileSystemService fileSystem, IOptions<File
         RtSecurityContext securityContext, IReadOnlyList<EntityUpdateInfo<RtEntity>> inserts,
         IReadOnlyList<AssociationUpdateInfo> associations)
     {
+        await EnsureWriteAccessAsync(repository, securityContext, inserts.Select(i => i.CkTypeId), associations)
+            .ConfigureAwait(false);
         using var unfiltered = repository.GetSession();
         var insertedIds = inserts.Where(i => i.RtEntity != null).Select(i => i.RtEntity!.RtId).ToHashSet();
         var namesPerParent = new Dictionary<RtEntityId, HashSet<string>>();
@@ -150,10 +156,24 @@ public class FileSystemMutationGuard(FileSystemService fileSystem, IOptions<File
         RtSecurityContext securityContext, IReadOnlyList<EntityUpdateInfo<RtEntity>> updates,
         IReadOnlyList<AssociationUpdateInfo> associations)
     {
+        await EnsureWriteAccessAsync(repository, securityContext, updates.Select(u => u.CkTypeId), associations)
+            .ConfigureAwait(false);
         using var unfiltered = repository.GetSession();
         await CheckExistingEntriesAsync(repository, session, unfiltered, securityContext, updates, associations,
             new HashSet<OctoObjectId>())
             .ConfigureAwait(false);
+    }
+
+    /// <summary>
+    ///     Up-front data-permission check of a delete (AB#6467): a caller without a Delete grant on the
+    ///     System.Files types in <paramref name="requested" /> is refused with FORBIDDEN before the cascade is
+    ///     expanded, so folder contents are neither walked nor named in an error.
+    /// </summary>
+    public async Task EnsureCanDeleteAsync(ITenantRepository repository, RtSecurityContext securityContext,
+        IEnumerable<RtEntityId> requested)
+    {
+        var types = requested.Select(r => r.CkTypeId).Where(FileSystemService.IsFileSystemType).Select(t => t!);
+        await access.EnsureAsync(repository, securityContext, RtDataAction.Delete, types).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -237,6 +257,19 @@ public class FileSystemMutationGuard(FileSystemService fileSystem, IOptions<File
     }
 
     // ---------------------------------------------------------------------------------------------
+
+    private async Task EnsureWriteAccessAsync(ITenantRepository repository, RtSecurityContext securityContext,
+        IEnumerable<RtCkId<CkTypeId>?> entityTypes, IEnumerable<AssociationUpdateInfo> associations)
+    {
+        var types = entityTypes
+            .Concat(associations.Where(TouchesFileSystem).Select(a => (RtCkId<CkTypeId>?)a.Origin.CkTypeId))
+            .Concat(associations.Where(TouchesFileSystem).Select(a => (RtCkId<CkTypeId>?)a.Target.CkTypeId))
+            .Where(FileSystemService.IsFileSystemType)
+            .Select(t => t!)
+            .ToList();
+        await access.EnsureAsync(repository, securityContext, RtDataAction.Write,
+            types.Count == 0 ? null : types).ConfigureAwait(false);
+    }
 
     private async Task CheckExistingEntriesAsync(ITenantRepository repository, IOctoSession session,
         IOctoSession unfiltered, RtSecurityContext securityContext,

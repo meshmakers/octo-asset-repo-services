@@ -330,8 +330,9 @@ public class FileSystemService
 
     /// <summary>
     ///     Replaces the content of an existing file (rtId, name and links stay). The engine's partial update
-    ///     does not upload linked binaries; a replace does (and deletes the previous GridFS file — outside the
-    ///     transaction, an engine limitation).
+    ///     does not upload linked binaries; a replace does. The engine stages the new bytes and writes them in the
+    ///     same transaction as the entity; the previous GridFS file is deleted after the commit (engine-mongodb
+    ///     PR #156, docs/linked-binaries-after-commit.md). The replace yields a new BinaryId.
     /// </summary>
     public async Task<FileSystemEntry> ReplaceContentAsync(ITenantRepository repository, IOctoSession session,
         IOctoSession unfilteredSession, FileSystemEntry existing, string contentType, Stream content)
@@ -341,8 +342,9 @@ public class FileSystemService
             throw FileSystemException.NotAFile(existing.Name);
         }
 
-        // The engine's partial update does not upload linked binaries; a replace does (and deletes the
-        // previous GridFS file). The stored document is carried over except for the content.
+        // The engine's partial update does not upload linked binaries; a replace does (new bytes in the same
+        // transaction, old bytes deleted after the commit). The stored document is carried over except for the
+        // content.
         var replacement = new RtEntity(existing.Id.CkTypeId, existing.Id.RtId)
         {
             RtWellKnownName = existing.Entity.RtWellKnownName,

@@ -338,7 +338,7 @@ Files and folders are a platform capability, independent of Reporting. This serv
   create/rename/move; every entry has at most one parent (a move must DELETE the current parent with the
   CREATE), roots never get one; `Files`, `ReportingAssets_*` and blueprint roots cannot be renamed/deleted; no
   folder moves below itself; the target folder must be visible to the caller. **Deleting a root/folder deletes
-  the whole subtree** (at most `MaxDeleteEntries`, default 2,000, per mutation — GridFS deletes are not part of
+  the whole subtree** (at most `MaxDeleteEntries`, default 2,000 until the index on `fs.files.metadata.rtEntityId` (AB#6538) has landed and been measured, then raised by measurement — 5,000 took 36.4 s of the 60 s transaction limit in the local E2E —, per mutation — GridFS deletes are not part of
   the transaction, so a cascade must finish well inside the transaction lifetime), System.Files entries are
   always erased (GridFS bytes included), and the cascade runs in the caller's session, so an entry the caller
   may not delete fails the whole mutation (FORBIDDEN, no rtIds named). Runtime-query row mutations
@@ -356,6 +356,22 @@ Files and folders are a platform capability, independent of Reporting. This serv
   (hidden = 404), writes through the engine's data-permission write guard (403 FORBIDDEN, message 4973).
   Problem details carry a stable `code` extension. Uploads are buffered to a temp file (the engine needs a
   seekable stream) while `MaxUploadBytes` is enforced; Kestrel's body limit is raised per request.
+- **Role model (AB#6467).** The API scope only opens the door; the file roles decide. Built-in baseline
+  (`FileSystemPermissionBaseline`, wired by `AddFileSystemPermissionBaseline` as a wrapper around the engine's
+  `IDataPermissionResolver`, only for tenants that have System.Files): **read** (list, download, stats, zip,
+  linked counts) needs `FileViewer` or `FileManagement`; **write and delete** (upload, replace, create/rename/move/
+  delete, root creation) needs `FileManagement`. Without a file role REST answers **403 FORBIDDEN** (checked up
+  front by `FileSystemAccess`, before any body is buffered or any entry looked up), GraphQL mutations fail with
+  `FORBIDDEN`, GraphQL reads return nothing (engine read filter). The baseline steps aside as soon as the tenant
+  has its own enforcing data policy targeting `System.Files/FileSystemEntity` (the `System.Identity.Bootstrap` seeds `files.read` /
+  `files.manage`, or an administrator's custom roles): then only the tenant policies decide, so a custom role
+  can be granted write access without `FileManagement`. System contexts (migrations, sweep, blueprint apply) are
+  never restricted. The baseline protects the **REST/GraphQL surface of asset-repo only**: the in-process pipeline engine (mesh adapter file nodes) is governed by the identity seeds (Bootstrap 1.6.0 policies), not by the baseline, so until a tenant has been re-seeded with 1.6.0 its pipelines are more permissive on System.Files than REST. The baseline steps aside only for an **enforcing** tenant rule on `System.Files/FileSystemEntity` (any actions: the engine denies the actions no rule grants); an AuditOnly rule or a rule on leaf types only keeps it active. `GET capabilities` stays open to every caller with the API scope **on purpose**: it only advertises limits and whether System.Files exists (Studio calls it before it knows the caller's roles to decide whether to show the Files page); it names no entry. GraphQL reads of a caller without a file role are filtered by the engine and return **0 rows, not an error** (a folder lookup returns no item); only REST and the mutations answer 403 FORBIDDEN. `GET stats` without `root` answers 400 INVALID_REQUEST. Clients with a machine
+  token that carry no file role — customer client-credentials clients and octo-cli `LogInClientCredentials` — get 403 on
+  every Files endpoint until the client is given `FileViewer`/`FileManagement` (`octo-cli AddClientToRole`).
+  The pipeline service accounts (`octo-pipeline-sa-*`) are granted `FileManagement` by identity; their file nodes
+  and the Reporting service use in-process sessions (Reporting: no security context = system) and do not go through
+  this REST API.
 - **Limits** (`FilesOptions`, section `Files`, env `OCTO_Files__…`): MaxUploadBytes 100 MB, ZipMaxFiles 1,000,
   ZipMaxBytes 500 MB, PreviewMaxBytes 20 MB (advisory). The ingress must accept more than MaxUploadBytes
   (octo-helm-core `ingress.proxyBodySize`, 110m). GraphQL multipart uploads get the same limit (+1 MB, set
