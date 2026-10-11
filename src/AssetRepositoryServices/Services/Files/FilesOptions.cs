@@ -36,7 +36,9 @@ public class FilesOptions
     /// <summary>
     ///     Largest number of entries one delete of a folder or root may remove (default 2,000). GridFS deletes
     ///     do not take part in the mutation transaction, so a cascade must finish well inside the transaction
-    ///     lifetime; larger trees are deleted subfolder by subfolder.
+    ///     lifetime: measured on the local E2E (stage 2), 5,000 entries took 36.4 s of the 60 s limit, too close.
+    ///     Stays 2,000 until the index on fs.files.metadata.rtEntityId (story AB#6538) has landed and been
+    ///     measured; the cap is raised by measurement after that. Larger trees are deleted subfolder by subfolder.
     /// </summary>
     public int MaxDeleteEntries { get; set; } = 2000;
 }

@@ -348,7 +348,7 @@ nor creates the root. Model content:
   create/rename/move; every entry has at most one parent (a move must DELETE the current parent with the
   CREATE), roots never get one; `Files`, `ReportingAssets_*` and blueprint roots cannot be renamed/deleted; no
   folder moves below itself; the target folder must be visible to the caller. **Deleting a root/folder deletes
-  the whole subtree** (at most `MaxDeleteEntries`, default 2,000, per mutation — GridFS deletes are not part of
+  the whole subtree** (at most `MaxDeleteEntries`, default 2,000 until the index on `fs.files.metadata.rtEntityId` (AB#6538) has landed and been measured, then raised by measurement — 5,000 took 36.4 s of the 60 s transaction limit in the local E2E —, per mutation — GridFS deletes are not part of
   the transaction, so a cascade must finish well inside the transaction lifetime), System.Files entries are
   always erased (GridFS bytes included), and the cascade runs in the caller's session, so an entry the caller
   may not delete fails the whole mutation (FORBIDDEN, no rtIds named). Runtime-query row mutations
@@ -366,6 +366,22 @@ nor creates the root. Model content:
   (hidden = 404), writes through the engine's data-permission write guard (403 FORBIDDEN, message 4973).
   Problem details carry a stable `code` extension. Uploads are buffered to a temp file (the engine needs a
   seekable stream) while `MaxUploadBytes` is enforced; Kestrel's body limit is raised per request.
+- **Role model (AB#6467).** The API scope only opens the door; the file roles decide. Built-in baseline
+  (`FileSystemPermissionBaseline`, wired by `AddFileSystemPermissionBaseline` as a wrapper around the engine's
+  `IDataPermissionResolver`, only for tenants that have System.Files): **read** (list, download, stats, zip,
+  linked counts) needs `FileViewer` or `FileManagement`; **write and delete** (upload, replace, create/rename/move/
+  delete, root creation) needs `FileManagement`. Without a file role REST answers **403 FORBIDDEN** (checked up
+  front by `FileSystemAccess`, before any body is buffered or any entry looked up), GraphQL mutations fail with
+  `FORBIDDEN`, GraphQL reads return nothing (engine read filter). The baseline steps aside as soon as the tenant
+  has its own enforcing data policy targeting `System.Files/FileSystemEntity` (the `System.Identity.Bootstrap` seeds `files.read` /
+  `files.manage`, or an administrator's custom roles): then only the tenant policies decide, so a custom role
+  can be granted write access without `FileManagement`. System contexts (migrations, sweep, blueprint apply) are
+  never restricted. The baseline protects the **REST/GraphQL surface of asset-repo only**: the in-process pipeline engine (mesh adapter file nodes) is governed by the identity seeds (Bootstrap 1.6.0 policies), not by the baseline, so until a tenant has been re-seeded with 1.6.0 its pipelines are more permissive on System.Files than REST. The baseline steps aside only for an **enforcing** tenant rule on `System.Files/FileSystemEntity` (any actions: the engine denies the actions no rule grants); an AuditOnly rule or a rule on leaf types only keeps it active. `GET capabilities` stays open to every caller with the API scope **on purpose**: it only advertises limits and whether System.Files exists (Studio calls it before it knows the caller's roles to decide whether to show the Files page); it names no entry. GraphQL reads of a caller without a file role are filtered by the engine and return **0 rows, not an error** (a folder lookup returns no item); only REST and the mutations answer 403 FORBIDDEN. `GET stats` without `root` answers 400 INVALID_REQUEST. Clients with a machine
+  token that carry no file role — customer client-credentials clients and octo-cli `LogInClientCredentials` — get 403 on
+  every Files endpoint until the client is given `FileViewer`/`FileManagement` (`octo-cli AddClientToRole`).
+  The pipeline service accounts (`octo-pipeline-sa-*`) are granted `FileManagement` by identity; their file nodes
+  and the Reporting service use in-process sessions (Reporting: no security context = system) and do not go through
+  this REST API.
 - **Limits** (`FilesOptions`, section `Files`, env `OCTO_Files__…`): MaxUploadBytes 100 MB, ZipMaxFiles 1,000,
   ZipMaxBytes 500 MB, PreviewMaxBytes 20 MB (advisory). The ingress must accept more than MaxUploadBytes
   (octo-helm-core `ingress.proxyBodySize`, 110m). GraphQL multipart uploads get the same limit (+1 MB, set
@@ -762,6 +778,23 @@ System.Reporting 3.0.0.
   for `StragglerWindow` (24 h) after its last finding (legacy data, failure, lease held elsewhere), or until
   System.Reporting 3.0.0+ is installed (`CkModel` ids), even through zero checks (in memory, per pod; the
   next start re-checks). Switch `FilesMigration:SweepEnabled`, **off by default** (`OCTO_FilesMigration__SweepEnabled=true` to enable; Helm `services.assetRepository.filesMigration.sweepEnabled`). It is switched on per cluster in the rollout (AB#6183) after Reporting (AB#6176) and the consumers (AB#6181) read System.Files (risk R5).
+- **Two-level control (AB#6473):** the sweep runs for a tenant only when `FilesMigration:SweepEnabled` is on **and**
+  the tenant is listed in `FilesMigration:SweepTenants` (list of tenant ids, **default empty**, exact and
+  case-insensitive; env `OCTO_FilesMigration__SweepTenants__0`, `__1`, …; Helm
+  `services.assetRepository.filesMigration.sweepTenants`). `SweepEnabled=true` with an empty list sweeps nothing.
+  The trigger is the tenant start (a `ClearCache` starts the tenant, `ReRunTenantSetup` does not) — so a rollout
+  operator names the tenants, enables the switch and restarts/clears the cache of exactly those. At every tenant
+  start of a tenant the sweep does not run for the runner logs **one line and touches no data** (no database lookup,
+  no legacy count — the start is awaited by the tenant setup and the count is an unindexed regex count on `fs.files`):
+  switch off → an info line (as before); switch on and tenant not listed → a **warning** (`nlog.config` defaults
+  `Meshmakers.*` to Warn and the chart sets `OCTO_LOG_LEVEL` only on request, so an info line is invisible on
+  staging/prod — that is why the former "sweep disabled" line was never seen). Whether the tenant holds legacy data
+  is answered on demand by the migration status. An id in `SweepTenants` that is no tenant right now is logged once per
+  process (at the first tenant start while the switch is on; the lookup tries the id as written and lower-case) as a
+  warning "not (yet) a tenant" and ignored — a tenant created later is still swept at its start. The straggler timer drops a
+  tenant that left the list. The state per tenant is part of the status report (`Sweep`: `Disabled`, `NotListed`,
+  `Pending`, `Done` with reason, switch, listed flag and the last audit record). The sweep itself is idempotent:
+  a second run for a listed tenant finds nothing and writes nothing.
 - **Pre-check (R4):** `FilesMigrationStatusService`, exposed as `GET system/v1/files/migration-status/{tenantId}`
   (`SystemAssetApiReadOnlyPolicy` **plus** in-controller check: token `tenant_id` = system tenant, user
   tokens need `AdminPanelManagement` — the report crosses tenant boundaries; a 500 carries no exception
@@ -777,7 +810,9 @@ System.Reporting 3.0.0.
   sweep never rewrites pipeline YAML — blueprint pipelines are fixed by the app blueprint release (S9),
   tenant-local ones by the runbook (S11).
 - Tests: `tests/AssetRepositoryServices.IntegrationTests/Files/ReportingFilesMoveSweepTests.cs`
-  (`FilesMigrationTestFixture` seeds legacy data raw, incl. real GridFS files).
+  (`FilesMigrationTestFixture` seeds legacy data raw, incl. real GridFS files; it lists the system tenant) and
+  `FilesSweepAllowListTests.cs` (two tenants with legacy data: empty list, one listed, switch off, second run,
+  unknown id, log levels).
 
 ### CK Model Catalog REST API
 

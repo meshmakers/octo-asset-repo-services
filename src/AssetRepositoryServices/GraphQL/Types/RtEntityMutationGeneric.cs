@@ -207,9 +207,15 @@ internal sealed class RtEntityMutationGeneric : RtMutationBase
             // AB#6171: deleting a file system root or folder deletes everything below it, and file system
             // entries are always erased so their GridFS bytes go with them. The cascade runs in the caller's
             // session: an entry the caller may not delete fails the whole mutation (no orphans).
-            var fileSystemIds = FileSystemMutationGuard.Applies(requested)
-                ? await arg.GetFileSystemMutationGuard().ExpandDeleteAsync(tenantRepository, requested)
-                : [];
+            IReadOnlyList<RtEntityId> fileSystemIds = [];
+            if (FileSystemMutationGuard.Applies(requested))
+            {
+                var guard = arg.GetFileSystemMutationGuard();
+                // AB#6467: a caller without the delete grant is refused before the cascade is expanded.
+                await guard.EnsureCanDeleteAsync(tenantRepository, Helpers.GetSecurityContext(arg.UserContext),
+                    requested);
+                fileSystemIds = await guard.ExpandDeleteAsync(tenantRepository, requested);
+            }
             var otherIds = requested.Where(id => !FileSystemService.IsFileSystemType(id.CkTypeId)).ToList();
 
             OperationResult operationResult = new();

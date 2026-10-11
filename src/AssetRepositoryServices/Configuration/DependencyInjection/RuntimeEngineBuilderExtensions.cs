@@ -387,6 +387,10 @@ public static class RuntimeEngineBuilderExtensions
         builder.Services.AddSingleton<Meshmakers.Octo.Backend.AssetRepositoryServices.Services.Files.FileSystemService>();
         builder.Services.AddSingleton<Meshmakers.Octo.Backend.AssetRepositoryServices.Services.Files.FileSystemMutationGuard>();
         builder.Services.AddSingleton<Meshmakers.Octo.Backend.AssetRepositoryServices.Services.Files.FileZipService>();
+        // AB#6467: built-in data permissions of the file system (read: FileViewer/FileManagement, write:
+        // FileManagement), until/unless the tenant carries its own policies for System.Files.
+        Meshmakers.Octo.Backend.AssetRepositoryServices.Services.Files.FileSystemPermissionBaselineServiceCollectionExtensions
+            .AddFileSystemPermissionBaseline(builder.Services);
         // AB#6175: move of System.Reporting file data to System.Files (sweep at tenant start + straggler timer).
         Meshmakers.Octo.Backend.AssetRepositoryServices.Services.Files.Migration.FilesMigrationServiceCollectionExtensions
             .AddReportingFilesMigration(builder.Services);

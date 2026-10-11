@@ -115,8 +115,17 @@ public sealed class TestDataPermissionResolver : Meshmakers.Octo.Runtime.Contrac
     public Meshmakers.Octo.Runtime.Contracts.DataPermissions.RtDataPolicyTable Table { get; set; } =
         Meshmakers.Octo.Runtime.Contracts.DataPermissions.RtDataPolicyTable.Empty;
 
+    /// <summary>
+    ///     True adds the built-in file system baseline (AB#6467) to <see cref="Table" />, like the production
+    ///     resolver does for a tenant with System.Files. Tests reset it in a finally block.
+    /// </summary>
+    public bool Baseline { get; set; }
+
     public Task<Meshmakers.Octo.Runtime.Contracts.DataPermissions.RtDataPolicyTable> GetPolicyTableAsync(
-        Meshmakers.Octo.Runtime.Contracts.Repositories.IRuntimeRepository runtimeRepository) => Task.FromResult(Table);
+        Meshmakers.Octo.Runtime.Contracts.Repositories.IRuntimeRepository runtimeRepository) =>
+        Task.FromResult(Baseline
+            ? Meshmakers.Octo.Backend.AssetRepositoryServices.Services.Files.FileSystemPermissionBaseline.Apply(Table)
+            : Table);
 
     public void Invalidate(string tenantId)
     {
