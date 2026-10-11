@@ -36,7 +36,7 @@ public class FilesSweepAllowListTests
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
     [Fact]
-    public async Task EmptyList_SweepsNothing_AndWarnsOncePerTenantWithLegacyData()
+    public async Task EmptyList_SweepsNothing_AndWarnsOncePerTenantStart()
     {
         await using var world = await TwoTenants.CreateAsync(_fixture, enabled: true, listed: []);
 
@@ -50,8 +50,9 @@ public class FilesSweepAllowListTests
 
         (await world.SnapshotAsync(world.A)).Should().Be(world.BeforeA, "no document of tenant A changed");
         (await world.SnapshotAsync(world.B)).Should().Be(world.BeforeB, "no document of tenant B changed");
-        world.Log.Lines(LogLevel.Warning).Should().HaveCount(2, "one line per tenant with legacy data")
+        world.Log.Lines(LogLevel.Warning).Should().HaveCount(2, "one line per tenant start")
             .And.OnlyContain(l => l.Contains("NOT swept") && l.Contains("FilesMigration:SweepTenants"));
+        world.Provider.Lookups.Should().Be(0, "a tenant that is not swept costs no database access");
         world.Log.Lines(LogLevel.Warning).Should().Contain(l => l.Contains(TenantA))
             .And.Contain(l => l.Contains(TenantB));
 
@@ -106,7 +107,9 @@ public class FilesSweepAllowListTests
 
         (await world.SnapshotAsync(world.A)).Should().Be(world.BeforeA);
         (await world.SnapshotAsync(world.B)).Should().Be(world.BeforeB);
-        world.Log.Lines(LogLevel.Warning).Should().HaveCount(2).And.OnlyContain(l => l.Contains("SweepEnabled=false"));
+        world.Log.Lines(LogLevel.Warning).Should().BeEmpty();
+        world.Log.Lines(LogLevel.Information).Should().HaveCount(2).And.OnlyContain(l => l.Contains("SweepEnabled=false"));
+        world.Provider.Lookups.Should().Be(0, "with the switch off no tenant is looked up and no legacy count runs");
         (await world.Status.GetStatusAsync(TenantA, Ct))!.Sweep.State.Should().Be(FilesMigrationSweepStates.Disabled);
     }
 
@@ -124,14 +127,19 @@ public class FilesSweepAllowListTests
     }
 
     [Fact]
-    public async Task TenantWithoutLegacyData_GetsAnInformationLine_NotAWarning()
+    public async Task SwitchOff_RunsNoLegacyCount_AndTheMigrationStatusAnswersOnDemand()
     {
-        await using var world = await TwoTenants.CreateAsync(_fixture, enabled: true, listed: [], seedB: false);
+        await using var world = await TwoTenants.CreateAsync(_fixture, enabled: false, listed: [], seedB: true);
 
-        await world.Runner.RunAtTenantStartAsync(TenantB, Ct);
+        for (var i = 0; i < 3; i++)
+        {
+            await world.Runner.RunAtTenantStartAsync(TenantB, Ct);
+        }
 
-        world.Log.Lines(LogLevel.Warning).Should().BeEmpty();
-        world.Log.Lines(LogLevel.Information).Should().ContainSingle(l => l.Contains(TenantB));
+        world.Provider.Lookups.Should().Be(0, "no database lookup, so no count");
+        var status = await world.Status.GetStatusAsync(TenantB, Ct); // on demand
+        status!.Legacy.IsZero.Should().BeFalse();
+        status.Sweep.State.Should().Be(FilesMigrationSweepStates.Disabled);
     }
 
     [Fact]
@@ -173,6 +181,7 @@ public class FilesSweepAllowListTests
     {
         public required IMongoDatabase A { get; init; }
         public required IMongoDatabase B { get; init; }
+        public required MapDatabaseProvider Provider { get; init; }
         public required ReportingFilesSweepRunner Runner { get; init; }
         public required FilesMigrationStatusService Status { get; init; }
         public required ReportingFilesSweepTracker Tracker { get; init; }
@@ -207,9 +216,10 @@ public class FilesSweepAllowListTests
             var status = new FilesMigrationStatusService(provider, tracker, options);
             var world = new TwoTenants
             {
-                A = a, B = b, Tracker = tracker, Status = status, Log = log,
+                A = a, B = b, Tracker = tracker, Status = status, Log = log, Provider = provider,
                 Runner = new ReportingFilesSweepRunner(provider, sweep, status, tracker, options, log)
             };
+            world.Provider.ResetLookups(); // the snapshots do not count
             world.BeforeA = await world.SnapshotAsync(a);
             world.BeforeB = await world.SnapshotAsync(b);
             return world;
@@ -297,8 +307,17 @@ public class FilesSweepAllowListTests
     private sealed class MapDatabaseProvider(IReadOnlyDictionary<string, IMongoDatabase> databases)
         : ITenantMongoDatabaseProvider
     {
-        public Task<IMongoDatabase?> TryGetDatabaseAsync(string tenantId) =>
-            Task.FromResult(databases.TryGetValue(tenantId, out var database) ? database : null);
+        private int _lookups;
+
+        public int Lookups => Volatile.Read(ref _lookups);
+
+        public void ResetLookups() => Volatile.Write(ref _lookups, 0);
+
+        public Task<IMongoDatabase?> TryGetDatabaseAsync(string tenantId)
+        {
+            Interlocked.Increment(ref _lookups);
+            return Task.FromResult(databases.TryGetValue(tenantId, out var database) ? database : null);
+        }
     }
 
     private sealed class StaticOptionsMonitor(FilesMigrationOptions value) : IOptionsMonitor<FilesMigrationOptions>

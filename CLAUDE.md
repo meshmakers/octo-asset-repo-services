@@ -758,12 +758,14 @@ System.Reporting 3.0.0.
   `services.assetRepository.filesMigration.sweepTenants`). `SweepEnabled=true` with an empty list sweeps nothing.
   The trigger is the tenant start (a `ClearCache` starts the tenant, `ReRunTenantSetup` does not) — so a rollout
   operator names the tenants, enables the switch and restarts/clears the cache of exactly those. At every tenant
-  start of a tenant the sweep does not run for (switch off or not listed) the runner does the read-only cheap
-  check and logs **one line**: a **warning** `… has legacy System.Reporting file data (…) and is NOT swept: <reason>`
-  when legacy data exists (warning, because `nlog.config` defaults `Meshmakers.*` to Warn and the chart sets
-  `OCTO_LOG_LEVEL` only on request — an info line is invisible on staging/prod, which is why the former
-  "sweep disabled" line was never seen), an info line otherwise. An id in `SweepTenants` that is no tenant is
-  logged once per process (at the first tenant start) as a warning and ignored. The straggler timer drops a
+  start of a tenant the sweep does not run for the runner logs **one line and touches no data** (no database lookup,
+  no legacy count — the start is awaited by the tenant setup and the count is an unindexed regex count on `fs.files`):
+  switch off → an info line (as before); switch on and tenant not listed → a **warning** (`nlog.config` defaults
+  `Meshmakers.*` to Warn and the chart sets `OCTO_LOG_LEVEL` only on request, so an info line is invisible on
+  staging/prod — that is why the former "sweep disabled" line was never seen). Whether the tenant holds legacy data
+  is answered on demand by the migration status. An id in `SweepTenants` that is no tenant right now is logged once per
+  process (at the first tenant start while the switch is on; the lookup tries the id as written and lower-case) as a
+  warning "not (yet) a tenant" and ignored — a tenant created later is still swept at its start. The straggler timer drops a
   tenant that left the list. The state per tenant is part of the status report (`Sweep`: `Disabled`, `NotListed`,
   `Pending`, `Done` with reason, switch, listed flag and the last audit record). The sweep itself is idempotent:
   a second run for a listed tenant finds nothing and writes nothing.

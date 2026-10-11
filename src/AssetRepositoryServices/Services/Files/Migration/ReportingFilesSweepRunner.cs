@@ -60,11 +60,14 @@ public class ReportingFilesSweepRunner
         CancellationToken cancellationToken = default)
     {
         var options = _options.CurrentValue;
-        await WarnAboutUnknownSweepTenantsOnceAsync(options).ConfigureAwait(false);
+        if (options.SweepEnabled)
+        {
+            await WarnAboutUnknownSweepTenantsOnceAsync(options).ConfigureAwait(false);
+        }
 
         if (!options.IsSweepAllowed(tenantId))
         {
-            return await LogSkippedAsync(tenantId, options, cancellationToken).ConfigureAwait(false);
+            return LogSkipped(tenantId, options);
         }
 
         try
@@ -128,58 +131,35 @@ public class ReportingFilesSweepRunner
     }
 
     /// <summary>
-    ///     One line per tenant start for a tenant the sweep does not run for (AB#6473): the global switch is off
-    ///     or the tenant is not in <see cref="FilesMigrationOptions.SweepTenants" />. The check is read-only. A
-    ///     tenant WITH legacy data gets a warning — the level asset-repo logs on staging and prod (nlog.config
-    ///     defaults Meshmakers.* to Warn; an info line is invisible there, which is why the old "disabled" line was
-    ///     never seen); a tenant without legacy data gets an information line.
+    ///     One line per tenant start for a tenant the sweep does not run for (AB#6473) and NO database access: the
+    ///     tenant start is awaited by the tenant setup, and a legacy count (an unindexed regex count on fs.files)
+    ///     per tenant per pod on the default path would be a regression (review of the PR). With the switch off
+    ///     the line is informational (as before); with the switch on and the tenant not listed it is a
+    ///     <b>warning</b> — the level asset-repo logs on staging and prod (nlog.config defaults Meshmakers.* to Warn,
+    ///     an info line is invisible there) and exactly the window in which the operator needs to see which tenants
+    ///     are skipped. Whether the tenant holds legacy data is not looked up here; the migration status answers that
+    ///     on demand (<c>GET system/v1/files/migration-status/{tenantId}</c>, field <c>sweep</c>).
     /// </summary>
-    private async Task<ReportingFilesSweepResult?> LogSkippedAsync(string tenantId, FilesMigrationOptions options,
-        CancellationToken cancellationToken)
+    private ReportingFilesSweepResult LogSkipped(string tenantId, FilesMigrationOptions options)
     {
-        var outcome = options.SweepEnabled
-            ? ReportingFilesSweepOutcome.NotListed
-            : ReportingFilesSweepOutcome.Disabled;
-        var reason = options.SweepEnabled
-            ? $"tenant is not in {FilesMigrationOptions.SectionName}:SweepTenants"
-            : $"{FilesMigrationOptions.SectionName}:SweepEnabled=false";
-        try
+        if (!options.SweepEnabled)
         {
-            var database = await _databaseProvider.TryGetDatabaseAsync(tenantId).ConfigureAwait(false);
-            if (database == null)
-            {
-                return null;
-            }
-
-            var counts = await ReportingFilesMoveSweep.CountLegacyAsync(database, cancellationToken)
-                .ConfigureAwait(false);
-            if (counts.IsZero)
-            {
-                _logger.LogInformation(
-                    "{Sweep}: tenant '{TenantId}' has no System.Reporting file data; sweep not running ({Reason})",
-                    ReportingFilesMigrationConstants.SweepName, tenantId, reason);
-            }
-            else
-            {
-                _logger.LogWarning(
-                    "{Sweep}: tenant '{TenantId}' has legacy System.Reporting file data ({Legacy}) and is NOT swept: {Reason}",
-                    ReportingFilesMigrationConstants.SweepName, tenantId, counts, reason);
-            }
-
-            return new ReportingFilesSweepResult { TenantId = tenantId, Outcome = outcome, Before = counts };
+            _logger.LogInformation("{Sweep}: disabled ({Section}:SweepEnabled=false); tenant '{TenantId}' not checked",
+                ReportingFilesMigrationConstants.SweepName, FilesMigrationOptions.SectionName, tenantId);
+            return new ReportingFilesSweepResult { TenantId = tenantId, Outcome = ReportingFilesSweepOutcome.Disabled };
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            _logger.LogWarning(ex,
-                "{Sweep}: tenant '{TenantId}' could not be checked for legacy file data; sweep not running ({Reason})",
-                ReportingFilesMigrationConstants.SweepName, tenantId, reason);
-            return null;
-        }
+
+        _logger.LogWarning(
+            "{Sweep}: tenant '{TenantId}' is NOT swept and not checked for legacy System.Reporting file data: it is not in " +
+            "{Section}:SweepTenants (see GET system/v1/files/migration-status/{TenantId} for its state)",
+            ReportingFilesMigrationConstants.SweepName, tenantId, FilesMigrationOptions.SectionName, tenantId);
+        return new ReportingFilesSweepResult { TenantId = tenantId, Outcome = ReportingFilesSweepOutcome.NotListed };
     }
 
     /// <summary>
-    ///     Once per process, at the first tenant start: warns about listed tenant ids that match no tenant
-    ///     (typos), and otherwise ignores them.
+    ///     Once per process, at the first tenant start while the switch is on (a system-tenant lookup per listed id, no data access): warns about
+    ///     listed tenant ids that match no tenant right now (typos, or a tenant that does not exist yet — a tenant
+    ///     created later is still swept at its start). Never runs while the switch is off.
     /// </summary>
     private async Task WarnAboutUnknownSweepTenantsOnceAsync(FilesMigrationOptions options)
     {
@@ -193,10 +173,14 @@ public class ReportingFilesSweepRunner
         {
             try
             {
-                if (await _databaseProvider.TryGetDatabaseAsync(listed).ConfigureAwait(false) == null)
+                // The list matches case-insensitively, the tenant lookup does not: try the id as written and lower-case.
+                var known = await _databaseProvider.TryGetDatabaseAsync(listed).ConfigureAwait(false) ??
+                            await _databaseProvider.TryGetDatabaseAsync(listed.ToLowerInvariant()).ConfigureAwait(false);
+                if (known == null)
                 {
                     _logger.LogWarning(
-                        "{Sweep}: {Section}:SweepTenants lists '{TenantId}', which is not a tenant of this installation; ignored",
+                        "{Sweep}: {Section}:SweepTenants lists '{TenantId}', which is not (yet) a tenant of this installation; " +
+                        "it is swept once a tenant with that id starts",
                         ReportingFilesMigrationConstants.SweepName, FilesMigrationOptions.SectionName, listed);
                 }
             }
