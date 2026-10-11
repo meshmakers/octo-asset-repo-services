@@ -412,6 +412,72 @@ public class FileSystemMutationGuardTests
     }
 
     [Fact]
+    public async Task Delete_DefaultCap_Is5000_5001IsRefused_5000IsDeleted()
+    {
+        new FilesOptions().MaxDeleteEntries.Should().Be(5000);
+
+        var root = await _helpers.CreateRootAsync();
+        var top = await _helpers.CreateFolderAsync(root, "Big");
+        await InsertFoldersAsync(top, 4999); // top + 4,999 = 5,000 entries
+        var guard = _fixture.GetService<FileSystemMutationGuard>();
+
+        var allowed = await guard.ExpandDeleteAsync(Repository, [top.Id], TestContext.Current.CancellationToken);
+        allowed.Should().HaveCount(5000);
+
+        await InsertFoldersAsync(top, 1); // 5,001
+        var expand = async () => await guard.ExpandDeleteAsync(Repository, [top.Id], TestContext.Current.CancellationToken);
+        (await expand.Should().ThrowAsync<FileSystemException>()).Which.Code.Should().Be(FileSystemErrorCodes.LimitExceeded);
+        using (var session = Repository.GetSession())
+        {
+            (await _fixture.FileSystem.FindByRtIdAsync(Repository, session, top.Id.RtId)).Should().NotBeNull(
+                "a refused delete removes nothing");
+        }
+    }
+
+    [Fact]
+    public async Task Delete_OfExactly5000Entries_RemovesThemAll()
+    {
+        var root = await _helpers.CreateRootAsync();
+        var top = await _helpers.CreateFolderAsync(root, "Big");
+        await InsertFoldersAsync(top, 4999);
+
+        var result = await RunAsync(Delete, new { rtEntityIds = new[] { Ref(top) } }, FilesTestFixture.FileManager);
+
+        result.Errors.Should().BeNullOrEmpty();
+        using var session = Repository.GetSession();
+        (await _fixture.FileSystem.FindByRtIdAsync(Repository, session, top.Id.RtId)).Should().BeNull();
+        (await _fixture.FileSystem.GetChildrenAsync(Repository, session, root.Id)).Should().BeEmpty();
+    }
+
+    private async Task InsertFoldersAsync(FileSystemEntry parent, int count)
+    {
+        const int batch = 500;
+        for (var done = 0; done < count; done += batch)
+        {
+            using var session = Repository.GetSession();
+            session.StartTransaction();
+            var inserts = new List<Meshmakers.Octo.Runtime.Contracts.EntityUpdateInfo<Meshmakers.Octo.Runtime.Contracts.RepositoryEntities.RtEntity>>();
+            var links = new List<Meshmakers.Octo.Runtime.Contracts.AssociationUpdateInfo>();
+            for (var i = 0; i < Math.Min(batch, count - done); i++)
+            {
+                var folder = await Repository.CreateTransientRtEntityAsync<
+                    Meshmakers.Octo.ConstructionKit.Models.System.Files.Generated.System.Files.v1.RtFolder>();
+                folder.Name = "f" + Guid.NewGuid().ToString("N");
+                inserts.Add(Meshmakers.Octo.Runtime.Contracts.EntityUpdateInfo<Meshmakers.Octo.Runtime.Contracts.RepositoryEntities.RtEntity>
+                    .CreateInsert(FileSystemService.FolderType, folder));
+                links.Add(Meshmakers.Octo.Runtime.Contracts.AssociationUpdateInfo.CreateInsert(
+                    new Meshmakers.Octo.ConstructionKit.Contracts.RtEntityId(FileSystemService.FolderType, folder.RtId),
+                    parent.Id, FileSystemService.ParentChildRole));
+            }
+
+            var op = new Meshmakers.Octo.ConstructionKit.Contracts.OperationResult();
+            await Repository.ApplyChangesAsync(session, inserts, links, op);
+            await session.CommitTransactionAsync();
+            op.HasErrors.Should().BeFalse(op.GetMessages());
+        }
+    }
+
+    [Fact]
     public void QueryRowMutations_CannotWriteFiles()
     {
         var act = () => FileSystemMutationGuard.EnsureNotInQueryMutation(
