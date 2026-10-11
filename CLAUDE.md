@@ -338,7 +338,7 @@ Files and folders are a platform capability, independent of Reporting. This serv
   create/rename/move; every entry has at most one parent (a move must DELETE the current parent with the
   CREATE), roots never get one; `Files`, `ReportingAssets_*` and blueprint roots cannot be renamed/deleted; no
   folder moves below itself; the target folder must be visible to the caller. **Deleting a root/folder deletes
-  the whole subtree** (at most `MaxDeleteEntries`, default 5,000 — measured: ~11-14 s of the 60 s transaction limit —, per mutation — GridFS deletes are not part of
+  the whole subtree** (at most `MaxDeleteEntries`, default 5,000 — measured: ~11-14 s of the 60 s transaction limit; the index on `fs.files.metadata.rtEntityId` follows with AB#6538 —, per mutation — GridFS deletes are not part of
   the transaction, so a cascade must finish well inside the transaction lifetime), System.Files entries are
   always erased (GridFS bytes included), and the cascade runs in the caller's session, so an entry the caller
   may not delete fails the whole mutation (FORBIDDEN, no rtIds named). Runtime-query row mutations
