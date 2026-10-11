@@ -354,7 +354,7 @@ public class ReportingFilesMoveSweepTests
                 _fixture.Sweep, _fixture.Status, _fixture.Tracker,
                 new StaticOptionsMonitor(new FilesMigrationOptions()), NullLogger<ReportingFilesSweepRunner>.Instance);
 
-            (await runner.RunAtTenantStartAsync(TenantId, Ct)).Should().BeNull("the sweep is switched off");
+            (await runner.RunAtTenantStartAsync(TenantId, Ct))!.Outcome.Should().Be(ReportingFilesSweepOutcome.Disabled);
             await runner.RunStragglerSweepAsync(Ct);
 
             (await legacy.CountDocumentsAsync(FilterDefinition<BsonDocument>.Empty, cancellationToken: Ct))

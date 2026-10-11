@@ -106,11 +106,39 @@ public class FilesMigrationStatusService
             ScannedCollections = scan.Collections,
             ScannedDocuments = scan.Documents,
             StragglerSweepPending = _tracker.IsPending(tenantId),
-            RecentSweeps = recent
+            RecentSweeps = recent,
+            Sweep = BuildSweepState(tenantId, options, legacy, recent)
         };
     }
 
     // ------------------------------------------------------------------------------------------------
+
+    private FilesMigrationSweepStateDto BuildSweepState(string tenantId, FilesMigrationOptions options,
+        ReportingFilesCounts legacy, IReadOnlyList<FilesMigrationAuditDto> recent)
+    {
+        var listed = options.IsTenantListed(tenantId);
+        var (state, reason) = (options.SweepEnabled, listed) switch
+        {
+            (false, _) => (FilesMigrationSweepStates.Disabled,
+                $"{FilesMigrationOptions.SectionName}:SweepEnabled is off; nothing is swept"),
+            (true, false) => (FilesMigrationSweepStates.NotListed,
+                $"{FilesMigrationOptions.SectionName}:SweepEnabled is on, but the tenant is not in " +
+                $"{FilesMigrationOptions.SectionName}:SweepTenants; its data is not touched"),
+            _ when !legacy.IsZero || _tracker.IsPending(tenantId) => (FilesMigrationSweepStates.Pending,
+                "the tenant is listed; legacy data is left or the tenant is on the straggler timer, " +
+                "the sweep runs at the next tenant start or timer tick"),
+            _ => (FilesMigrationSweepStates.Done, "the tenant is listed and has no legacy data left")
+        };
+
+        return new FilesMigrationSweepStateDto
+        {
+            State = state,
+            Reason = reason,
+            SweepEnabled = options.SweepEnabled,
+            TenantListed = listed,
+            LastSweep = recent.FirstOrDefault()
+        };
+    }
 
     /// <summary>
     ///     Legacy files and folders without a ParentChild association as origin (AB#4175 class). They move

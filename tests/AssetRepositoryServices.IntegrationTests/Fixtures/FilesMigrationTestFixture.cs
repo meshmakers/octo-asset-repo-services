@@ -27,8 +27,13 @@ public class FilesMigrationTestFixture : FilesTestFixture
 
     public FilesMigrationTestFixture()
     {
-        // The sweep is off by default (AB#6171 decision); these tests exercise it, so they switch it on.
-        Services.PostConfigure<FilesMigrationOptions>(options => options.SweepEnabled = true);
+        // The sweep is off by default (AB#6171 decision) and needs the tenant on the allow-list (AB#6473); these
+        // tests exercise it for the system tenant, so they switch it on and list that tenant.
+        Services.PostConfigure<FilesMigrationOptions>(options =>
+        {
+            options.SweepEnabled = true;
+            options.SweepTenants = [SystemTenantId];
+        });
     }
 
     /// <summary>
