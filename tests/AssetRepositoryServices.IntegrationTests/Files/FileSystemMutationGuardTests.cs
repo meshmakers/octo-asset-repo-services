@@ -412,19 +412,19 @@ public class FileSystemMutationGuardTests
     }
 
     [Fact]
-    public async Task Delete_DefaultCap_Is5000_5001IsRefused_5000IsDeleted()
+    public async Task Delete_DefaultCap_Is2000_2001IsRefused()
     {
-        new FilesOptions().MaxDeleteEntries.Should().Be(5000);
+        new FilesOptions().MaxDeleteEntries.Should().Be(2000);
 
         var root = await _helpers.CreateRootAsync();
         var top = await _helpers.CreateFolderAsync(root, "Big");
-        await InsertFoldersAsync(top, 4999); // top + 4,999 = 5,000 entries
+        await InsertFoldersAsync(top, 1999); // top + 1,999 = 2,000 entries
         var guard = _fixture.GetService<FileSystemMutationGuard>();
 
         var allowed = await guard.ExpandDeleteAsync(Repository, [top.Id], TestContext.Current.CancellationToken);
-        allowed.Should().HaveCount(5000);
+        allowed.Should().HaveCount(2000);
 
-        await InsertFoldersAsync(top, 1); // 5,001
+        await InsertFoldersAsync(top, 1); // 2,001
         var expand = async () => await guard.ExpandDeleteAsync(Repository, [top.Id], TestContext.Current.CancellationToken);
         (await expand.Should().ThrowAsync<FileSystemException>()).Which.Code.Should().Be(FileSystemErrorCodes.LimitExceeded);
         using (var session = Repository.GetSession())
@@ -435,11 +435,11 @@ public class FileSystemMutationGuardTests
     }
 
     [Fact]
-    public async Task Delete_OfExactly5000Entries_RemovesThemAll()
+    public async Task Delete_OfExactly2000Entries_RemovesThemAll()
     {
         var root = await _helpers.CreateRootAsync();
         var top = await _helpers.CreateFolderAsync(root, "Big");
-        await InsertFoldersAsync(top, 4999);
+        await InsertFoldersAsync(top, 1999);
 
         var result = await RunAsync(Delete, new { rtEntityIds = new[] { Ref(top) } }, FilesTestFixture.FileManager);
 

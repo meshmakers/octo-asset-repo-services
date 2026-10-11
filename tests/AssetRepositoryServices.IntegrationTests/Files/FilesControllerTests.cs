@@ -42,7 +42,7 @@ public class FilesControllerTests
         var result = (await controller.GetCapabilities()).Should().BeOfType<OkObjectResult>().Subject;
         var caps = result.Value.Should().BeOfType<FilesCapabilitiesDto>().Subject;
         caps.Available.Should().BeTrue();
-        caps.MaxDeleteEntries.Should().Be(5000);
+        caps.MaxDeleteEntries.Should().Be(2000);
         caps.MaxUploadBytes.Should().Be(100L * 1024 * 1024);
         caps.ZipMaxFiles.Should().Be(1000);
         caps.ZipMaxBytes.Should().Be(500L * 1024 * 1024);
