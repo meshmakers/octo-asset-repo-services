@@ -366,7 +366,7 @@ Files and folders are a platform capability, independent of Reporting. This serv
   has its own data policy targeting a `System.Files/*` type (the `System.Identity.Bootstrap` seeds `files.read` /
   `files.manage`, or an administrator's custom roles): then only the tenant policies decide, so a custom role
   can be granted write access without `FileManagement`. System contexts (migrations, sweep, blueprint apply) are
-  never restricted. `GET capabilities` stays open to every caller with the API scope. Clients with a machine
+  never restricted. `GET capabilities` stays open to every caller with the API scope **on purpose**: it only advertises limits and whether System.Files exists (Studio calls it before it knows the caller's roles to decide whether to show the Files page); it names no entry. GraphQL reads of a caller without a file role are filtered by the engine and return **0 rows, not an error** (a folder lookup returns no item); only REST and the mutations answer 403 FORBIDDEN. `GET stats` without `root` answers 400 INVALID_REQUEST. Clients with a machine
   token that carry no file role — customer client-credentials clients and octo-cli `LogInClientCredentials` — get 403 on
   every Files endpoint until the client is given `FileViewer`/`FileManagement` (`octo-cli AddClientToRole`).
   The pipeline service accounts (`octo-pipeline-sa-*`) are granted `FileManagement` by identity; their file nodes

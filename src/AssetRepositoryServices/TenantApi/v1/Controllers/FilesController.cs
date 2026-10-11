@@ -130,6 +130,12 @@ public class FilesController(
     {
         return ExecuteAsync(async (repository, session, unfiltered) =>
         {
+            if (string.IsNullOrWhiteSpace(root))
+            {
+                // Without a root the resolver threw ArgumentNullException (500); a missing parameter is a 400.
+                throw FileSystemException.InvalidRequest("The query parameter 'root' (well-known name of the folder root) is required.");
+            }
+
             var folder = await fileSystem.ResolveAsync(repository, session, root, path);
             return Ok(await fileSystem.GetStatsAsync(repository, session, unfiltered, folder,
                 HttpContext.RequestAborted));

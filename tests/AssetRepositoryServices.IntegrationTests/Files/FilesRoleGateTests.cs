@@ -177,6 +177,17 @@ public class FilesRoleGateTests : IAsyncLifetime
         }
     }
 
+    [Fact]
+    public async Task Stats_WithoutRoot_Is400_NotA500()
+    {
+        foreach (var root in new[] { null, "", "  " })
+        {
+            var result = (ObjectResult)await Create(Viewer).Controller.GetStatsByPath(root!, null);
+            result.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+            ((ProblemDetails)result.Value!).Extensions["code"].Should().Be(FileSystemErrorCodes.InvalidRequest);
+        }
+    }
+
     // ---- REST writes -------------------------------------------------------------------------------
 
     [Fact]
