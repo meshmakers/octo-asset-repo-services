@@ -332,14 +332,15 @@ internal static class ResolveConnectionContextExtensions
     }
 
     /// <summary>
-    ///     The file system rules of the generic mutations (AB#6171); stateless, so a fallback instance is used
-    ///     when the request has no service provider.
+    ///     The file system rules of the generic mutations (AB#6171). Resolved from the request services; there is no
+    ///     fallback instance, because a guard without <see cref="Services.Files.FileSystemAccess" /> would skip the
+    ///     up-front permission checks (AB#6467).
     /// </summary>
     internal static Services.Files.FileSystemMutationGuard GetFileSystemMutationGuard(this IResolveFieldContext context)
     {
-        return context.RequestServices?.GetService<Services.Files.FileSystemMutationGuard>()
-               ?? new Services.Files.FileSystemMutationGuard(new Services.Files.FileSystemService(),
-                   Microsoft.Extensions.Options.Options.Create(new Services.Files.FilesOptions()));
+        return context.RequestServices?.GetRequiredService<Services.Files.FileSystemMutationGuard>()
+               ?? throw new InvalidOperationException(
+                   "The file system mutation guard needs the request services of the GraphQL execution.");
     }
 
     internal static void ValidateOperationResult(OperationResult operationResult)

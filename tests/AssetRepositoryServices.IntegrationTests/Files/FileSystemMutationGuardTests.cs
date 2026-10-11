@@ -406,7 +406,8 @@ public class FileSystemMutationGuardTests
         await _helpers.UploadAsync(a, "2.txt", "2", FileConflictMode.Fail);
 
         var guard = new FileSystemMutationGuard(_fixture.FileSystem,
-            Microsoft.Extensions.Options.Options.Create(new FilesOptions { MaxDeleteEntries = 2 }));
+            Microsoft.Extensions.Options.Options.Create(new FilesOptions { MaxDeleteEntries = 2 }),
+            _fixture.GetService<FileSystemAccess>());
         var expand = async () => await guard.ExpandDeleteAsync(Repository, [a.Id], TestContext.Current.CancellationToken);
         (await expand.Should().ThrowAsync<FileSystemException>()).Which.Code.Should().Be(FileSystemErrorCodes.LimitExceeded);
     }

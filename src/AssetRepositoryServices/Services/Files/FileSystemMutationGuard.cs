@@ -31,7 +31,7 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.Services.Files;
 public class FileSystemMutationGuard(
     FileSystemService fileSystem,
     IOptions<FilesOptions> filesOptions,
-    FileSystemAccess? access = null)
+    FileSystemAccess access)
 {
     /// <summary>
     ///     Role required to create a folder root.
@@ -172,11 +172,6 @@ public class FileSystemMutationGuard(
     public async Task EnsureCanDeleteAsync(ITenantRepository repository, RtSecurityContext securityContext,
         IEnumerable<RtEntityId> requested)
     {
-        if (access == null)
-        {
-            return;
-        }
-
         var types = requested.Select(r => r.CkTypeId).Where(FileSystemService.IsFileSystemType).Select(t => t!);
         await access.EnsureAsync(repository, securityContext, RtDataAction.Delete, types).ConfigureAwait(false);
     }
@@ -266,11 +261,6 @@ public class FileSystemMutationGuard(
     private async Task EnsureWriteAccessAsync(ITenantRepository repository, RtSecurityContext securityContext,
         IEnumerable<RtCkId<CkTypeId>?> entityTypes, IEnumerable<AssociationUpdateInfo> associations)
     {
-        if (access == null)
-        {
-            return;
-        }
-
         var types = entityTypes
             .Concat(associations.Where(TouchesFileSystem).Select(a => (RtCkId<CkTypeId>?)a.Origin.CkTypeId))
             .Concat(associations.Where(TouchesFileSystem).Select(a => (RtCkId<CkTypeId>?)a.Target.CkTypeId))
