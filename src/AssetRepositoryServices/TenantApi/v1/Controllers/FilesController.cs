@@ -5,6 +5,7 @@ using Meshmakers.Octo.Backend.AssetRepositoryServices.Services;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.Services.Files;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
 using Meshmakers.Octo.Runtime.Contracts;
+using Meshmakers.Octo.Runtime.Contracts.DataPermissions;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb.Repositories;
 using Meshmakers.Octo.Services.Infrastructure;
 using Microsoft.AspNetCore.Authorization;
@@ -37,6 +38,7 @@ public class FilesController(
     IOctoService octoService,
     FileSystemService fileSystem,
     FileZipService zipService,
+    FileSystemAccess fileSystemAccess,
     IOptions<FilesOptions> filesOptions,
     ConstructionKit.Contracts.Services.ICkCacheService ckCacheService,
     ILogger<FilesController> logger) : ControllerBase
@@ -198,7 +200,7 @@ public class FilesController(
             }
 
             return await UploadAsync(repository, session, unfiltered, folder, name, mode, null, null);
-        });
+        }, RtDataAction.Write);
     }
 
     /// <summary>
@@ -227,7 +229,7 @@ public class FilesController(
                 ResolveContentType(file.Name), content);
             await session.CommitTransactionAsync();
             return Ok(FileSystemService.ToDto(replaced, replaced: true));
-        });
+        }, RtDataAction.Write);
     }
 
     /// <summary>
@@ -291,7 +293,7 @@ public class FilesController(
                 createFolders);
             return await StoreAsync(repository, session, unfiltered, folder, segments[^1], mode, root, folderPath,
                 content);
-        });
+        }, RtDataAction.Write);
     }
 
     /// <summary>
@@ -534,7 +536,8 @@ public class FilesController(
     ///     conflicts, parents) and maps file system errors to problem details.
     /// </summary>
     private async Task<IActionResult> ExecuteAsync(
-        Func<ITenantRepository, IOctoSession, IOctoSession, Task<IActionResult>> action)
+        Func<ITenantRepository, IOctoSession, IOctoSession, Task<IActionResult>> action,
+        RtDataAction access = RtDataAction.Read)
     {
         var tenantId = HttpContext.GetTenantId();
         if (string.IsNullOrEmpty(tenantId))
@@ -545,7 +548,10 @@ public class FilesController(
         try
         {
             var repository = await octoService.SystemContext.FindTenantRepositoryAsync(tenantId);
-            using var session = repository.GetSession(GraphQL.Helpers.GetSecurityContext(HttpContext.User));
+            var securityContext = GraphQL.Helpers.GetSecurityContext(HttpContext.User);
+            // AB#6467: no file role / data permission, no access — 403 before anything is read or buffered.
+            await fileSystemAccess.EnsureAsync(repository, securityContext, access);
+            using var session = repository.GetSession(securityContext);
             using var unfiltered = repository.GetSession();
             return await action(repository, session, unfiltered);
         }

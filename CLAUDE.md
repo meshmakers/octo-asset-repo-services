@@ -356,6 +356,18 @@ Files and folders are a platform capability, independent of Reporting. This serv
   (hidden = 404), writes through the engine's data-permission write guard (403 FORBIDDEN, message 4973).
   Problem details carry a stable `code` extension. Uploads are buffered to a temp file (the engine needs a
   seekable stream) while `MaxUploadBytes` is enforced; Kestrel's body limit is raised per request.
+- **Role model (AB#6467).** The API scope only opens the door; the file roles decide. Built-in baseline
+  (`FileSystemPermissionBaseline`, wired by `AddFileSystemPermissionBaseline` as a wrapper around the engine's
+  `IDataPermissionResolver`, only for tenants that have System.Files): **read** (list, download, stats, zip,
+  linked counts) needs `FileViewer` or `FileManagement`; **write and delete** (upload, replace, create/rename/move/
+  delete, root creation) needs `FileManagement`. Without a file role REST answers **403 FORBIDDEN** (checked up
+  front by `FileSystemAccess`, before any body is buffered or any entry looked up), GraphQL mutations fail with
+  `FORBIDDEN`, GraphQL reads return nothing (engine read filter). The baseline steps aside as soon as the tenant
+  has its own data policy targeting a `System.Files/*` type (the `System.Identity.Bootstrap` seeds `files.read` /
+  `files.manage`, or an administrator's custom roles): then only the tenant policies decide, so a custom role
+  can be granted write access without `FileManagement`. System contexts (migrations, sweep, blueprint apply) are
+  never restricted. `GET capabilities` stays open to every caller with the API scope. Clients with a machine
+  token that carry no file role (e.g. adapters) need `FileViewer`/`FileManagement` on the client to use the API.
 - **Limits** (`FilesOptions`, section `Files`, env `OCTO_Files__…`): MaxUploadBytes 100 MB, ZipMaxFiles 1,000,
   ZipMaxBytes 500 MB, PreviewMaxBytes 20 MB (advisory). The ingress must accept more than MaxUploadBytes
   (octo-helm-core `ingress.proxyBodySize`, 110m). GraphQL multipart uploads get the same limit (+1 MB, set
