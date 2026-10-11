@@ -2,7 +2,10 @@ using System.Text;
 using FluentAssertions;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Collections;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Fixtures;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.Services;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.Services.Files;
+using Meshmakers.Octo.Runtime.Contracts.MongoDb.Services;
+using Microsoft.Extensions.DependencyInjection;
 using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.ConstructionKit.Models.System.Files.Generated.System.Files.v1;
 using Meshmakers.Octo.Runtime.Contracts;
@@ -29,9 +32,10 @@ public class FileSystemServiceTests
     private ITenantRepository Repository => _fixture.GetSystemContext().GetTenantRepository();
 
     [Fact]
-    public async Task DefaultRoot_IsSeededOnce_EvenWhenMigrationsRunAgain()
+    public async Task DefaultRoot_SeededByTheFixtureTwice_IsOneRoot()
     {
-        await _fixture.RunServiceMigrationsAsync();
+        // The fixture plays platform-services, which creates the root idempotently (AB#6480).
+        await _fixture.SeedDefaultRootAsync();
 
         using var session = Repository.GetSession();
         var roots = await _fixture.FileSystem.GetRootsAsync(Repository, session);
@@ -40,12 +44,20 @@ public class FileSystemServiceTests
     }
 
     [Fact]
-    public async Task DefaultRoot_WithoutSystemFiles_DoesNotThrow()
+    public void AssetRepository_InstallsNoSystemFilesAndCreatesNoDefaultRoot()
     {
-        // The test tenant has no System.Files: the tenant start must log and go on, not fail the tenant.
-        var tenant = await _fixture.GetTestTenantContextAsync();
-        var ensured = await _fixture.GetService<FileSystemDefaults>().EnsureDefaultRootAsync(tenant);
-        ensured.Should().BeFalse();
+        // AB#6480: platform-services installs System.Files and creates the root "Files". The asset repository must
+        // not import the model, must not register it as service-managed and must not create the root at tenant start.
+        var declared = typeof(DefaultConfigurationCreatorService).GetMethod("ImportCkModelAsync",
+            global::System.Reflection.BindingFlags.Instance | global::System.Reflection.BindingFlags.NonPublic |
+            global::System.Reflection.BindingFlags.Public | global::System.Reflection.BindingFlags.DeclaredOnly);
+        declared.Should().BeNull("the tenant setup imports no CK model for the file system");
+
+        _fixture.Provider!.GetServices<IServiceManagedCkModelDescriptor>()
+            .Should().NotContain(d => d.CkModelId.Name == "System.Files");
+        typeof(FileSystemService).Assembly.GetType(
+                "Meshmakers.Octo.Backend.AssetRepositoryServices.Services.Files.FileSystemDefaults")
+            .Should().BeNull("the start-time default root creation is gone");
     }
 
     [Fact]
