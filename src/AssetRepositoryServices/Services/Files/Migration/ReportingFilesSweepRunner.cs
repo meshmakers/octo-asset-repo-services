@@ -33,6 +33,7 @@ public class ReportingFilesSweepRunner
     private readonly IOptionsMonitor<FilesMigrationOptions> _options;
     private readonly ILogger<ReportingFilesSweepRunner> _logger;
     private readonly ConcurrentDictionary<(string TenantId, ReportingFilesSweepOutcome Outcome), DateTime> _lastWarnings = new();
+    private int _unknownTenantsChecked;
 
     /// <summary>
     ///     Constructor.
@@ -52,16 +53,18 @@ public class ReportingFilesSweepRunner
     /// <summary>
     ///     Tenant start (after the System.Files import and the default root): one log line with the cheap
     ///     check; when legacy data is found, the lease holder logs the full pre-check report (counts, orphans,
-    ///     literal references) and moves the data.
+    ///     literal references) and moves the data. Only for a tenant the sweep is allowed for (global switch on
+    ///     and tenant listed, AB#6473); every other tenant gets one skip line and is not touched.
     /// </summary>
     public async Task<ReportingFilesSweepResult?> RunAtTenantStartAsync(string tenantId,
         CancellationToken cancellationToken = default)
     {
-        if (!_options.CurrentValue.SweepEnabled)
+        var options = _options.CurrentValue;
+        await WarnAboutUnknownSweepTenantsOnceAsync(options).ConfigureAwait(false);
+
+        if (!options.IsSweepAllowed(tenantId))
         {
-            _logger.LogInformation("{Sweep}: disabled ({Section}:SweepEnabled=false); tenant '{TenantId}' not checked",
-                ReportingFilesMigrationConstants.SweepName, FilesMigrationOptions.SectionName, tenantId);
-            return null;
+            return await LogSkippedAsync(tenantId, options, cancellationToken).ConfigureAwait(false);
         }
 
         try
@@ -100,6 +103,13 @@ public class ReportingFilesSweepRunner
         foreach (var tenantId in _tracker.GetPendingTenants())
         {
             cancellationToken.ThrowIfCancellationRequested();
+            if (!_options.CurrentValue.IsSweepAllowed(tenantId))
+            {
+                // Taken off the allow-list while on the timer: stop touching it.
+                _tracker.Clear(tenantId);
+                continue;
+            }
+
             try
             {
                 await RunCoreAsync(tenantId, StragglerTimerTrigger, logPreCheck: false, cancellationToken)
@@ -113,6 +123,87 @@ public class ReportingFilesSweepRunner
             {
                 _logger.LogError(ex, "{Sweep}: straggler sweep of tenant '{TenantId}' failed; retrying on the next interval",
                     ReportingFilesMigrationConstants.SweepName, tenantId);
+            }
+        }
+    }
+
+    /// <summary>
+    ///     One line per tenant start for a tenant the sweep does not run for (AB#6473): the global switch is off
+    ///     or the tenant is not in <see cref="FilesMigrationOptions.SweepTenants" />. The check is read-only. A
+    ///     tenant WITH legacy data gets a warning — the level asset-repo logs on staging and prod (nlog.config
+    ///     defaults Meshmakers.* to Warn; an info line is invisible there, which is why the old "disabled" line was
+    ///     never seen); a tenant without legacy data gets an information line.
+    /// </summary>
+    private async Task<ReportingFilesSweepResult?> LogSkippedAsync(string tenantId, FilesMigrationOptions options,
+        CancellationToken cancellationToken)
+    {
+        var outcome = options.SweepEnabled
+            ? ReportingFilesSweepOutcome.NotListed
+            : ReportingFilesSweepOutcome.Disabled;
+        var reason = options.SweepEnabled
+            ? $"tenant is not in {FilesMigrationOptions.SectionName}:SweepTenants"
+            : $"{FilesMigrationOptions.SectionName}:SweepEnabled=false";
+        try
+        {
+            var database = await _databaseProvider.TryGetDatabaseAsync(tenantId).ConfigureAwait(false);
+            if (database == null)
+            {
+                return null;
+            }
+
+            var counts = await ReportingFilesMoveSweep.CountLegacyAsync(database, cancellationToken)
+                .ConfigureAwait(false);
+            if (counts.IsZero)
+            {
+                _logger.LogInformation(
+                    "{Sweep}: tenant '{TenantId}' has no System.Reporting file data; sweep not running ({Reason})",
+                    ReportingFilesMigrationConstants.SweepName, tenantId, reason);
+            }
+            else
+            {
+                _logger.LogWarning(
+                    "{Sweep}: tenant '{TenantId}' has legacy System.Reporting file data ({Legacy}) and is NOT swept: {Reason}",
+                    ReportingFilesMigrationConstants.SweepName, tenantId, counts, reason);
+            }
+
+            return new ReportingFilesSweepResult { TenantId = tenantId, Outcome = outcome, Before = counts };
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogWarning(ex,
+                "{Sweep}: tenant '{TenantId}' could not be checked for legacy file data; sweep not running ({Reason})",
+                ReportingFilesMigrationConstants.SweepName, tenantId, reason);
+            return null;
+        }
+    }
+
+    /// <summary>
+    ///     Once per process, at the first tenant start: warns about listed tenant ids that match no tenant
+    ///     (typos), and otherwise ignores them.
+    /// </summary>
+    private async Task WarnAboutUnknownSweepTenantsOnceAsync(FilesMigrationOptions options)
+    {
+        if (Interlocked.Exchange(ref _unknownTenantsChecked, 1) == 1)
+        {
+            return;
+        }
+
+        foreach (var listed in options.SweepTenants.Where(t => !string.IsNullOrWhiteSpace(t))
+                     .Select(t => t.Trim()).Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            try
+            {
+                if (await _databaseProvider.TryGetDatabaseAsync(listed).ConfigureAwait(false) == null)
+                {
+                    _logger.LogWarning(
+                        "{Sweep}: {Section}:SweepTenants lists '{TenantId}', which is not a tenant of this installation; ignored",
+                        ReportingFilesMigrationConstants.SweepName, FilesMigrationOptions.SectionName, listed);
+                }
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _logger.LogWarning(ex, "{Sweep}: could not check whether '{TenantId}' of {Section}:SweepTenants exists",
+                    ReportingFilesMigrationConstants.SweepName, listed, FilesMigrationOptions.SectionName);
             }
         }
     }

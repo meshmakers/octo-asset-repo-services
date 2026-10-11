@@ -12,11 +12,34 @@ public class FilesMigrationOptions
     public const string SectionName = "FilesMigration";
 
     /// <summary>
-    ///     Switch of the sweep (tenant start and straggler timer); off by default. It is switched on per cluster in
+    ///     Global switch of the sweep (tenant start and straggler timer); off by default. Since AB#6473 it is only
+    ///     the first level: a tenant is swept only when it is also listed in <see cref="SweepTenants" />. It is switched on per cluster in
     ///     the rollout (AB#6183) once Reporting (AB#6176) and the consumers (AB#6181) read System.Files, so a
     ///     deploy of this service alone never moves data (risk R5). The pre-check endpoint works either way.
     /// </summary>
     public bool SweepEnabled { get; set; }
+
+    /// <summary>
+    ///     Tenant ids the sweep is allowed to run for (AB#6473; <c>OCTO_FilesMigration__SweepTenants__0</c>,
+    ///     <c>__1</c>, …). Evaluated on top of <see cref="SweepEnabled" />: a tenant is swept only when the
+    ///     global switch is on AND the tenant is listed. Empty (default) sweeps nothing, so switching
+    ///     <see cref="SweepEnabled" /> on never moves data of a tenant the rollout operator did not name.
+    ///     Matching is exact and case-insensitive.
+    /// </summary>
+    public string[] SweepTenants { get; set; } = [];
+
+    /// <summary>
+    ///     True when the tenant is in <see cref="SweepTenants" /> (exact, case-insensitive).
+    /// </summary>
+    public bool IsTenantListed(string tenantId)
+    {
+        return SweepTenants.Any(t => string.Equals(t?.Trim(), tenantId, StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>
+    ///     True when the sweep may run for the tenant: the global switch is on and the tenant is listed.
+    /// </summary>
+    public bool IsSweepAllowed(string tenantId) => SweepEnabled && IsTenantListed(tenantId);
 
     /// <summary>
     ///     Interval of the straggler sweep for tenants whose last sweep found legacy data (default 10 min, Q3).

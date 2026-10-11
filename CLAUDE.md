@@ -752,6 +752,21 @@ System.Reporting 3.0.0.
   for `StragglerWindow` (24 h) after its last finding (legacy data, failure, lease held elsewhere), or until
   System.Reporting 3.0.0+ is installed (`CkModel` ids), even through zero checks (in memory, per pod; the
   next start re-checks). Switch `FilesMigration:SweepEnabled`, **off by default** (`OCTO_FilesMigration__SweepEnabled=true` to enable; Helm `services.assetRepository.filesMigration.sweepEnabled`). It is switched on per cluster in the rollout (AB#6183) after Reporting (AB#6176) and the consumers (AB#6181) read System.Files (risk R5).
+- **Two-level control (AB#6473):** the sweep runs for a tenant only when `FilesMigration:SweepEnabled` is on **and**
+  the tenant is listed in `FilesMigration:SweepTenants` (list of tenant ids, **default empty**, exact and
+  case-insensitive; env `OCTO_FilesMigration__SweepTenants__0`, `__1`, …; Helm
+  `services.assetRepository.filesMigration.sweepTenants`). `SweepEnabled=true` with an empty list sweeps nothing.
+  The trigger is the tenant start (a `ClearCache` starts the tenant, `ReRunTenantSetup` does not) — so a rollout
+  operator names the tenants, enables the switch and restarts/clears the cache of exactly those. At every tenant
+  start of a tenant the sweep does not run for (switch off or not listed) the runner does the read-only cheap
+  check and logs **one line**: a **warning** `… has legacy System.Reporting file data (…) and is NOT swept: <reason>`
+  when legacy data exists (warning, because `nlog.config` defaults `Meshmakers.*` to Warn and the chart sets
+  `OCTO_LOG_LEVEL` only on request — an info line is invisible on staging/prod, which is why the former
+  "sweep disabled" line was never seen), an info line otherwise. An id in `SweepTenants` that is no tenant is
+  logged once per process (at the first tenant start) as a warning and ignored. The straggler timer drops a
+  tenant that left the list. The state per tenant is part of the status report (`Sweep`: `Disabled`, `NotListed`,
+  `Pending`, `Done` with reason, switch, listed flag and the last audit record). The sweep itself is idempotent:
+  a second run for a listed tenant finds nothing and writes nothing.
 - **Pre-check (R4):** `FilesMigrationStatusService`, exposed as `GET system/v1/files/migration-status/{tenantId}`
   (`SystemAssetApiReadOnlyPolicy` **plus** in-controller check: token `tenant_id` = system tenant, user
   tokens need `AdminPanelManagement` — the report crosses tenant boundaries; a 500 carries no exception
@@ -767,7 +782,9 @@ System.Reporting 3.0.0.
   sweep never rewrites pipeline YAML — blueprint pipelines are fixed by the app blueprint release (S9),
   tenant-local ones by the runbook (S11).
 - Tests: `tests/AssetRepositoryServices.IntegrationTests/Files/ReportingFilesMoveSweepTests.cs`
-  (`FilesMigrationTestFixture` seeds legacy data raw, incl. real GridFS files).
+  (`FilesMigrationTestFixture` seeds legacy data raw, incl. real GridFS files; it lists the system tenant) and
+  `FilesSweepAllowListTests.cs` (two tenants with legacy data: empty list, one listed, switch off, second run,
+  unknown id, log levels).
 
 ### CK Model Catalog REST API
 

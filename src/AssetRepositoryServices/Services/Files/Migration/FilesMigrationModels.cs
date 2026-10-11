@@ -94,6 +94,11 @@ public enum ReportingFilesSweepOutcome
     Disabled,
 
     /// <summary>
+    ///     The sweep is on, but the tenant is not in <see cref="FilesMigrationOptions.SweepTenants" /> (AB#6473).
+    /// </summary>
+    NotListed,
+
+    /// <summary>
     ///     Another pod holds the tenant's sweep lease; this run skipped.
     /// </summary>
     LeaseHeld,
@@ -363,4 +368,61 @@ public sealed class FilesMigrationStatusDto
     ///     The latest audit records of the sweep, newest first.
     /// </summary>
     public required IReadOnlyList<FilesMigrationAuditDto> RecentSweeps { get; init; }
+
+    /// <summary>
+    ///     Whether the sweep is allowed to run for this tenant and where it stands (AB#6473).
+    /// </summary>
+    public required FilesMigrationSweepStateDto Sweep { get; init; }
+}
+
+/// <summary>
+///     Sweep state of one tenant (AB#6473): the two-level control (global switch + tenant allow-list) and the
+///     result so far.
+/// </summary>
+public sealed class FilesMigrationSweepStateDto
+{
+    /// <summary>
+    ///     <c>Disabled</c> (global switch off), <c>NotListed</c> (switch on, tenant not in
+    ///     <c>FilesMigration:SweepTenants</c>), <c>Pending</c> (allowed; legacy data left or the tenant is on the
+    ///     straggler timer) or <c>Done</c> (allowed; no legacy data left, counts in <see cref="LastSweep" />).
+    /// </summary>
+    public required string State { get; init; }
+
+    /// <summary>
+    ///     Why the tenant is in that state, in words.
+    /// </summary>
+    public required string Reason { get; init; }
+
+    /// <summary>
+    ///     <c>FilesMigration:SweepEnabled</c> as this instance sees it.
+    /// </summary>
+    public bool SweepEnabled { get; init; }
+
+    /// <summary>
+    ///     The tenant is in <c>FilesMigration:SweepTenants</c> (exact, case-insensitive).
+    /// </summary>
+    public bool TenantListed { get; init; }
+
+    /// <summary>
+    ///     The latest audit record (counts of the last sweep that wrote or failed); null when none exists.
+    /// </summary>
+    public FilesMigrationAuditDto? LastSweep { get; init; }
+}
+
+/// <summary>
+///     Values of <see cref="FilesMigrationSweepStateDto.State" />.
+/// </summary>
+public static class FilesMigrationSweepStates
+{
+    /// <summary>Global switch off.</summary>
+    public const string Disabled = "Disabled";
+
+    /// <summary>Switch on, tenant not listed.</summary>
+    public const string NotListed = "NotListed";
+
+    /// <summary>Allowed, legacy data left or on the straggler timer.</summary>
+    public const string Pending = "Pending";
+
+    /// <summary>Allowed, nothing left to move.</summary>
+    public const string Done = "Done";
 }
