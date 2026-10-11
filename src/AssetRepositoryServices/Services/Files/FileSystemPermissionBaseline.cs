@@ -19,9 +19,9 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.Services.Files;
 ///         <item>a caller with neither role is denied (REST answers 403 FORBIDDEN, GraphQL reads return nothing,
 ///         GraphQL mutations fail with FORBIDDEN).</item>
 ///     </list>
-///     The baseline is not a second policy source: as soon as the tenant has its own data policy that targets a
-///     System.Files type (the blueprint seeds, or an administrator's custom roles and permissions), the tenant
-///     policies alone decide and the baseline steps aside. System contexts (migrations, the sweep, blueprint
+///     The baseline is not a second policy source: as soon as the tenant has its own ENFORCING data policy that targets
+///     System.Files/FileSystemEntity (the blueprint seeds, or an administrator's custom roles and permissions), the
+///     tenant policies alone decide and the baseline steps aside (see <see cref="TargetsFileSystem" />). System contexts (migrations, the sweep, blueprint
 ///     apply) are never restricted.
 /// </summary>
 public static class FileSystemPermissionBaseline
@@ -76,12 +76,17 @@ public static class FileSystemPermissionBaseline
     }
 
     /// <summary>
-    ///     True when any rule targets a System.Files type.
+    ///     True when the tenant has an ENFORCING rule that targets the base type <c>System.Files/FileSystemEntity</c>
+    ///     (derived types inherit it, so the rule protects folder roots, folders and files alike). Only then do the
+    ///     tenant policies alone decide: the engine protects per type, and a type that an enforcing rule targets is
+    ///     denied for every action no rule grants, so a policy covering only some actions is safe. Not enough, and the
+    ///     baseline therefore stays active: an AuditOnly rule (the engine ignores it when enforcing) and a rule that
+    ///     targets only leaf types (it would leave the other types open).
     /// </summary>
     public static bool TargetsFileSystem(RtDataPolicyTable table)
     {
-        return table.AllTargetCkTypeIds.Any(t => t.StartsWith(FileSystemConstants.ModelName + "/",
-            StringComparison.Ordinal));
+        return table.Rules.Any(r => !r.AuditOnly && r.TargetCkTypeIds.Contains(
+            RtDataPermissionCkTypeHelper.CanonicalCkTypeId(FileSystemConstants.FileSystemEntityCkTypeId)));
     }
 }
 

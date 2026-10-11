@@ -330,6 +330,21 @@ public class FilesRoleGateTests : IAsyncLifetime
         var tenantOwn = BlueprintLikeTable("ContentEditor");
         FileSystemPermissionBaseline.Apply(tenantOwn).Should().BeSameAs(tenantOwn);
 
+        // an AuditOnly rule is ignored when enforcing, a leaf-only rule leaves the other types open: the baseline stays
+        var auditOnly = new RtDataPolicyTable([new RtDataPolicyRule("files.audit",
+            new HashSet<string> { FileSystemConstants.FileSystemEntityCkTypeId },
+            [RtDataAction.Read, RtDataAction.Write, RtDataAction.Delete], false, true, new HashSet<string> { "X" })]);
+        FileSystemPermissionBaseline.Apply(auditOnly).Rules.Should().HaveCount(3, "AuditOnly does not replace the baseline");
+        var leafOnly = new RtDataPolicyTable([new RtDataPolicyRule("files.leaf",
+            new HashSet<string> { FileSystemConstants.FileSystemItemCkTypeId },
+            [RtDataAction.Read, RtDataAction.Write, RtDataAction.Delete], false, false, new HashSet<string> { "X" })]);
+        FileSystemPermissionBaseline.Apply(leafOnly).Rules.Should().HaveCount(3, "a leaf-only rule does not replace the baseline");
+        // an enforcing rule on the base type with only some actions replaces it (the engine denies the other actions)
+        var readOnlyBase = new RtDataPolicyTable([new RtDataPolicyRule("files.read",
+            new HashSet<string> { FileSystemConstants.FileSystemEntityCkTypeId },
+            [RtDataAction.Read], false, false, new HashSet<string> { "X" })]);
+        FileSystemPermissionBaseline.Apply(readOnlyBase).Should().BeSameAs(readOnlyBase);
+
         // a policy on identity types does not count as a file policy
         var identityOnly = IdentityAdministrationOnlyTable();
         FileSystemPermissionBaseline.Apply(identityOnly).Rules.Should().HaveCount(identityOnly.Rules.Count + 2);
