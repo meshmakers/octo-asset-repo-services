@@ -1,6 +1,18 @@
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.Services.Files;
 
 /// <summary>
+///     How the Files routes treat a user token issued for another tenant than the route tenant (AB#6579).
+/// </summary>
+public enum FilesTenantGuardMode
+{
+    /// <summary>Refuse with 403 FORBIDDEN (default).</summary>
+    Enforce,
+
+    /// <summary>Only log the mismatch and let the request pass (operational fallback, no release needed).</summary>
+    LogOnly
+}
+
+/// <summary>
 ///     Per-cluster limits of the platform file system (AB#6171 S2, configuration section <c>Files</c>,
 ///     environment variables <c>OCTO_Files__…</c>). The defaults are the accepted platform limits.
 /// </summary>
@@ -41,4 +53,12 @@ public class FilesOptions
     ///     measured; the cap is raised by measurement after that. Larger trees are deleted subfolder by subfolder.
     /// </summary>
     public int MaxDeleteEntries { get; set; } = 2000;
+
+    /// <summary>
+    ///     Interim tenant guard of the Files routes (AB#6579, <c>OCTO_Files__TenantGuard</c>): <c>Enforce</c>
+    ///     (default) answers 403 to a user token issued for another tenant, <c>LogOnly</c> only logs it. Parsed leniently
+    ///     (see <c>FileSystemAccess.ParseMode</c>): an invalid value means Enforce.
+    ///     Obsolete once the platform-wide user-token enforcement (AB#5054) is armed.
+    /// </summary>
+    public string TenantGuard { get; set; } = nameof(FilesTenantGuardMode.Enforce);
 }

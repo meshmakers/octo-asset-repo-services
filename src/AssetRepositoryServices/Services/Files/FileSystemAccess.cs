@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.Observability;
 using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.ConstructionKit.Contracts.Services;
@@ -37,6 +38,87 @@ public class FileSystemAccess(
             "Files API access denied (403): tenant '{TenantId}', account '{Account}', action '{Action}'. " +
             "Grant the role FileManagement (write) or FileViewer (read) to the account",
             tenantId, account, actionName);
+    }
+
+    /// <summary>
+    ///     Lenient parsing of <c>OCTO_Files__TenantGuard</c>: anything but a defined mode name means Enforce
+    ///     (fail closed), with a warning, so a typo never opens the guard and never stops the service.
+    /// </summary>
+    internal FilesTenantGuardMode ParseMode(string? configured)
+    {
+        if (string.IsNullOrWhiteSpace(configured))
+        {
+            return FilesTenantGuardMode.Enforce;
+        }
+
+        if (Enum.TryParse<FilesTenantGuardMode>(configured.Trim(), true, out var mode) &&
+            Enum.IsDefined(mode))
+        {
+            return mode;
+        }
+
+        logger.LogWarning(
+            "Invalid Files:TenantGuard value '{Value}' (expected Enforce or LogOnly); using Enforce (AB#6579)",
+            configured);
+        return FilesTenantGuardMode.Enforce;
+    }
+
+    /// <summary>
+    ///     Interim tenant guard of the Files routes (AB#6579). The platform tenant gate for user tokens is
+    ///     LogOnly in asset-repo (AB#5054), so a user token issued for tenant A would otherwise reach
+    ///     <c>/B/v1/files/...</c>, with its role names evaluated against B's policy table. Throws
+    ///     <see cref="FileSystemException" /> (403 FORBIDDEN) for such a token.
+    /// </summary>
+    /// <remarks>
+    ///     Mirrors the decision of <c>TenantAuthorizationMiddleware</c> (octo-common-services) for user tokens,
+    ///     with the same preconditions, so exactly the callers the middleware would deny under Enforce are
+    ///     refused: only a bearer-authenticated principal with a user subject (<c>sub</c> / NameIdentifier) is
+    ///     checked, and its <c>tenant_id</c> claim must equal the route tenant (case-insensitive). Not touched
+    ///     (as in the middleware): client-credentials / service tokens (no subject; governed by the service
+    ///     token enforcement, AB#5032), cookie principals, and requests without a bearer header. There is
+    ///     <b>no parent-tenant exemption</b>: the middleware grants the parent rule (AB#5060) only on endpoints marked
+    ///     <c>IAllowParentTenantAdministration</c> and gives a parent no data routes of its child, so a parent-tenant
+    ///     token is refused here exactly as it will be under the platform-wide Enforce. Removed when Enforce is armed platform-wide.
+    /// </remarks>
+    public void EnsureTenantMatch(HttpContext httpContext, string routeTenantId, string? configuredMode = null)
+    {
+        var mode = ParseMode(configuredMode);
+        var user = httpContext.User;
+        if (!httpContext.Request.Headers.Authorization.ToString().StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase) ||
+            user.Identity is not { IsAuthenticated: true, AuthenticationType: { } authType } ||
+            !authType.Equals("Bearer", StringComparison.OrdinalIgnoreCase) ||
+            !user.HasClaim(c => c.Type == "sub" || c.Type == ClaimTypes.NameIdentifier))
+        {
+            return;
+        }
+
+        var tokenTenantId = user.FindFirstValue("tenant_id");
+        if (!string.IsNullOrEmpty(tokenTenantId) &&
+            string.Equals(tokenTenantId, routeTenantId, StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        var account = user.FindFirstValue("sub") ?? user.FindFirstValue(ClaimTypes.NameIdentifier) ?? "unknown";
+        var clientId = user.FindFirstValue("client_id") ?? "<none>";
+        var tokenTenant = string.IsNullOrEmpty(tokenTenantId) ? "<none>" : tokenTenantId;
+        if (mode == FilesTenantGuardMode.LogOnly)
+        {
+            logger.LogWarning(
+                "Files tenant_mismatch (LogOnly, request allowed): user token of account '{Account}' (client " +
+                "'{ClientId}') was issued for tenant '{TokenTenantId}' but addresses tenant '{TenantId}' (AB#6579)",
+                account, clientId, tokenTenant, routeTenantId);
+            return;
+        }
+
+        FilesAccessMetrics.RecordTenantMismatch();
+        logger.LogWarning(
+            "Files API access denied (403) tenant_mismatch: user token of account '{Account}' (client " +
+            "'{ClientId}') was issued for tenant '{TokenTenantId}' but addresses tenant '{TenantId}' (AB#6579)",
+            account, clientId, tokenTenant, routeTenantId);
+        throw FileSystemException.Forbidden(
+            $"Access to the files of tenant '{routeTenantId}' is denied: the token was issued for another " +
+            "tenant. Sign in to the tenant to access its files.");
     }
 
     /// <summary>

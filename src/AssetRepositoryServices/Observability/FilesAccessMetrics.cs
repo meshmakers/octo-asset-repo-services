@@ -29,6 +29,9 @@ internal static class FilesAccessMetrics
     /// <summary>Label value for delete.</summary>
     public const string ActionDelete = "delete";
 
+    /// <summary>Label value for a user token issued for another tenant than the route tenant (AB#6579).</summary>
+    public const string ActionTenantMismatch = "tenant_mismatch";
+
     private static readonly Meter Meter = new(CkModelObservabilityMetrics.MeterName, "1.0.0");
 
     private static readonly Counter<long> AccessDenied = Meter.CreateCounter<long>(
@@ -42,4 +45,12 @@ internal static class FilesAccessMetrics
             new KeyValuePair<string, object?>("tenant_id", tenantId),
             new KeyValuePair<string, object?>("account", account),
             new KeyValuePair<string, object?>("action", action));
+
+    /// <summary>
+    ///     Counts one tenant-mismatch refusal (AB#6579). Carries only the <c>action</c> label: tenant and account
+    ///     come from an unauthenticated-by-us route / foreign token and would make the cardinality attacker
+    ///     controlled; they are in the warning log line instead.
+    /// </summary>
+    public static void RecordTenantMismatch() =>
+        AccessDenied.Add(1, new KeyValuePair<string, object?>("action", ActionTenantMismatch));
 }

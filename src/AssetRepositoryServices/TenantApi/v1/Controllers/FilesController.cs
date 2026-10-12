@@ -61,6 +61,15 @@ public class FilesController(
         var available = false;
         if (!string.IsNullOrEmpty(tenantId))
         {
+            try
+            {
+                fileSystemAccess.EnsureTenantMatch(HttpContext, tenantId, Limits.TenantGuard); // AB#6579
+            }
+            catch (FileSystemException e)
+            {
+                return Problem(e);
+            }
+
             await octoService.SystemContext.FindTenantRepositoryAsync(tenantId);
             available = ckCacheService.TryGetRtCkType(tenantId, FileSystemService.FileType, out _);
         }
@@ -553,6 +562,8 @@ public class FilesController(
 
         try
         {
+            // AB#6579: interim tenant guard, before the tenant is even looked up.
+            fileSystemAccess.EnsureTenantMatch(HttpContext, tenantId, Limits.TenantGuard);
             var repository = await octoService.SystemContext.FindTenantRepositoryAsync(tenantId);
             var securityContext = GraphQL.Helpers.GetSecurityContext(HttpContext.User);
             // AB#6467: no file role / data permission, no access — 403 before anything is read or buffered.

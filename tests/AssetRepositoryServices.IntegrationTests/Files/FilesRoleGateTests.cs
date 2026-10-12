@@ -456,6 +456,146 @@ public class FilesRoleGateTests : IAsyncLifetime
             new HashSet<string> { "UserManagement" })
     ]);
 
+    // ---- Interim tenant guard (AB#6579) ----------------------------------------------------------
+
+    private static ClaimsPrincipal BearerUser(string? tenantId, bool withSubject = true, params string[] roles)
+    {
+        var claims = new List<Claim>();
+        if (withSubject)
+        {
+            claims.Add(new Claim("sub", "tenant-guard-user"));
+        }
+        else
+        {
+            claims.Add(new Claim("client_id", "tenant-guard-client"));
+        }
+
+        if (tenantId != null)
+        {
+            claims.Add(new Claim("tenant_id", tenantId));
+        }
+
+        claims.AddRange(roles.Select(r => new Claim(ClaimTypes.Role, r)));
+        return new ClaimsPrincipal(new ClaimsIdentity(claims, "Bearer"));
+    }
+
+    private async Task<IActionResult> CallWithBearer(ClaimsPrincipal user, Func<FilesController, Task<IActionResult>> call,
+        string mode = "Enforce")
+    {
+        var (controller, http) = Create(user, mode: mode);
+
+        http.Request.Headers.Authorization = "Bearer test-token-not-real";
+        return await call(controller);
+    }
+
+    [Fact]
+    public async Task TenantGuard_UserTokenOfAnotherTenant_Gets403_OnStatsAndCapabilities()
+    {
+        var root = await _helpers.CreateRootAsync();
+        var wkn = root.Entity.RtWellKnownName!;
+        var foreign = BearerUser("some-other-tenant", true, "FileViewer", "FileManagement");
+
+        AssertForbidden(await CallWithBearer(foreign, c => c.GetStatsByPath(wkn, null)));
+        AssertForbidden(await CallWithBearer(foreign, c => c.GetCapabilities()));
+        AssertForbidden(await CallWithBearer(foreign, c => c.DownloadByPath(wkn, "x.txt")));
+        // A bearer user token without any tenant_id claim is refused as well (as the middleware under Enforce).
+        AssertForbidden(await CallWithBearer(BearerUser(null, true, "FileViewer"),
+            c => c.GetStatsByPath(wkn, null)));
+    }
+
+    [Fact]
+    public async Task TenantGuard_ParentSiblingAndChildTokens_AreAllRefused()
+    {
+        // No parent exemption (as under the platform Enforce): only the exact tenant is accepted.
+        var root = await _helpers.CreateRootAsync();
+        var wkn = root.Entity.RtWellKnownName!;
+        foreach (var other in new[] { "parent-x", "sibling-y", "child-x" })
+        {
+            var user = BearerUser(other, true, "FileViewer", "FileManagement");
+            AssertForbidden(await CallWithBearer(user, c => c.GetStatsByPath(wkn, null)));
+            AssertForbidden(await CallWithBearer(user, c => c.GetCapabilities()));
+        }
+    }
+
+    [Fact]
+    public async Task TenantGuard_ForeignToken_IsRefusedOnWriteRoutes_AndWritesNothing()
+    {
+        var root = await _helpers.CreateRootAsync();
+        var wkn = root.Entity.RtWellKnownName!;
+        var foreign = BearerUser("some-other-tenant", true, "FileManagement");
+
+        var (controller, http) = Create(foreign, "payload");
+        http.Request.Headers.Authorization = "Bearer test-token-not-real";
+        AssertForbidden(await controller.UploadByPath(wkn, "foreign.txt", null, false));
+
+        // Same tenant: the identical upload works, proving the 403 above came from the guard.
+        var (okController, okHttp) = Create(BearerUser(_fixture.GetSystemContext().TenantId, true, "FileManagement"),
+            "payload");
+        okHttp.Request.Headers.Authorization = "Bearer test-token-not-real";
+        Status(await okController.UploadByPath(wkn, "own.txt", null, false)).Should().BeLessThan(300);
+        Status(await Download(Manager, wkn, "foreign.txt")).Should().Be(StatusCodes.Status404NotFound);
+        AssertForbidden(await CallWithBearer(foreign, c => c.DownloadByPath(wkn, "own.txt")));
+    }
+
+    [Theory]
+    [InlineData("nonsense")]
+    [InlineData("5")]
+    [InlineData("")]
+    [InlineData(null)]
+    public async Task TenantGuard_InvalidConfiguredMode_FallsBackToEnforce(string? configured)
+    {
+        var root = await _helpers.CreateRootAsync();
+        var foreign = BearerUser("some-other-tenant", true, "FileViewer");
+        AssertForbidden(await CallWithBearer(foreign, c => c.GetStatsByPath(root.Entity.RtWellKnownName!, null),
+            configured!));
+    }
+
+    [Fact]
+    public async Task TenantGuard_LogOnlyMode_LetsAForeignTenantTokenPass()
+    {
+        var root = await _helpers.CreateRootAsync();
+        var foreign = BearerUser("some-other-tenant", true, "FileViewer");
+        (await CallWithBearer(foreign, c => c.GetStatsByPath(root.Entity.RtWellKnownName!, null),
+            "LogOnly")).Should().BeOfType<OkObjectResult>();
+        (await CallWithBearer(foreign, c => c.GetCapabilities(), "LogOnly"))
+            .Should().BeOfType<OkObjectResult>();
+    }
+
+    [Fact]
+    public async Task TenantGuard_SameTenantUserToken_StillWorks_CaseInsensitive()
+    {
+        var root = await _helpers.CreateRootAsync();
+        var wkn = root.Entity.RtWellKnownName!;
+        var tenantId = _fixture.GetSystemContext().TenantId;
+
+        foreach (var tenant in new[] { tenantId, tenantId.ToUpperInvariant() })
+        {
+            var user = BearerUser(tenant, true, "FileViewer");
+            (await CallWithBearer(user, c => c.GetStatsByPath(wkn, null))).Should().BeOfType<OkObjectResult>();
+            (await CallWithBearer(user, c => c.GetCapabilities())).Should().BeOfType<OkObjectResult>();
+        }
+    }
+
+    [Fact]
+    public async Task TenantGuard_ServiceTokenWithoutSubject_AndCookiePrincipal_AreNotAffected()
+    {
+        var root = await _helpers.CreateRootAsync();
+        var wkn = root.Entity.RtWellKnownName!;
+
+        // Client-credentials token (no user subject) of another tenant: governed by the service-token
+        // enforcement, not by this guard; the file roles still decide.
+        var service = BearerUser("some-other-tenant", false, "FileViewer");
+        (await CallWithBearer(service, c => c.GetStatsByPath(wkn, null))).Should().BeOfType<OkObjectResult>();
+        (await CallWithBearer(service, c => c.GetCapabilities())).Should().BeOfType<OkObjectResult>();
+
+        // Cookie principal (other authentication type, no bearer header): not touched.
+        (await Stats(Viewer, wkn, null)).Should().BeOfType<OkObjectResult>();
+        var cookie = new ClaimsPrincipal(new ClaimsIdentity(
+            [new Claim("sub", "c"), new Claim("tenant_id", "other"), new Claim(ClaimTypes.Role, "FileViewer")],
+            "Identity.Application"));
+        (await CallWithBearer(cookie, c => c.GetStatsByPath(wkn, null))).Should().BeOfType<OkObjectResult>();
+    }
+
     private static void AssertForbidden(IActionResult result)
     {
         var problem = result.Should().BeOfType<ObjectResult>().Subject;
@@ -521,7 +661,8 @@ public class FilesRoleGateTests : IAsyncLifetime
         return await reader.ReadToEndAsync(TestContext.Current.CancellationToken);
     }
 
-    private (FilesController Controller, DefaultHttpContext Http) Create(ClaimsPrincipal user, string? body = null)
+    private (FilesController Controller, DefaultHttpContext Http) Create(ClaimsPrincipal user, string? body = null,
+        string mode = "Enforce")
     {
         var http = new DefaultHttpContext { User = user, RequestServices = _fixture.Provider! };
         http.Request.RouteValues["tenantId"] = _fixture.GetSystemContext().TenantId;
@@ -535,7 +676,7 @@ public class FilesRoleGateTests : IAsyncLifetime
 
         var controller = new FilesController(_fixture.GetService<IOctoService>(), _fixture.FileSystem,
             _fixture.GetService<FileZipService>(), _fixture.GetService<FileSystemAccess>(),
-            Options.Create(new FilesOptions()),
+            Options.Create(new FilesOptions { TenantGuard = mode }),
             _fixture.GetService<Meshmakers.Octo.ConstructionKit.Contracts.Services.ICkCacheService>(),
             Microsoft.Extensions.Logging.Abstractions.NullLogger<FilesController>.Instance)
         {
