@@ -397,6 +397,12 @@ nor creates the root. Model content:
   INCOMPLETE_SLICE (or a wrong hasNextPage) — name lookups and searches must not sort (skipped repro test).
 - Zip writes need synchronous IO for ZipArchive's small header records (Kestrel forbids it by default);
   the zip action allows it for its own response only.
+- **Denials are observable (AB#6575).** Every Files API 403 from the up-front gate (`FileSystemAccess.EnsureAsync`: REST
+  read/write and the GraphQL mutation guard incl. delete) and from the controller's engine data-permission denial increments the
+  counter `octo.files.access_denied` (meter `Meshmakers.Octo.AssetRepository`, attributes `tenant_id`, `account` = subject id /
+  client id, `action` = read|write|delete) and logs a warning with the same fields. Fault-only, so the `account` label stays small;
+  no tokens or secrets. The Dash0 rule (meshmakers-infrastructure) fires on this counter; fix = grant FileManagement / FileViewer.
+  Not yet covered: GraphQL mutations denied by the engine itself (`TranslateForbiddenAsync`), which have no tenant/account at hand.
 - Tests: `tests/AssetRepositoryServices.IntegrationTests/Files/*` (`FilesTestFixture` plays platform-services: it imports System.Files and creates the
   default root, and has a switchable data-policy table).
 
