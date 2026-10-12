@@ -559,7 +559,9 @@ public class ReportingFilesMoveSweepTests
         ObjectId binaryId)
     {
         var controller = new LargeBinariesController(_fixture.GetService<IOctoService>(), resolver,
-            _fixture.GetService<ICkCacheService>());
+            _fixture.GetService<ICkCacheService>(),
+            Microsoft.Extensions.Options.Options.Create(new FilesOptions()),
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<LargeBinariesController>.Instance);
         var httpContext = new DefaultHttpContext { User = user };
         httpContext.Request.RouteValues["tenantId"] = TenantId;
         controller.ControllerContext = new ControllerContext { HttpContext = httpContext };

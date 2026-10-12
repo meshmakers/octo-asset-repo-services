@@ -321,6 +321,8 @@ public static class RuntimeEngineBuilderExtensions
             .AddDataLoader() // Add required services for DataLoader support
             .AddUserContextBuilder<TenantUserContextBuilder>()
             .AddGraphTypes() // Add all IGraphType implementors in assembly
+            // AB#6624: first, so a refused request never opens a session or a transaction.
+            .AddDocumentListener<FilesTenantGuardListener>()
             .AddDocumentListener<OctoSessionListener>()
             .AddDocumentListener<MutationScopeListener>()
             .AddDocumentListener<MongoStatsListener>()

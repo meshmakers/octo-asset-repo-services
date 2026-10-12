@@ -44,24 +44,7 @@ public class FileSystemAccess(
     ///     Lenient parsing of <c>OCTO_Files__TenantGuard</c>: anything but a defined mode name means Enforce
     ///     (fail closed), with a warning, so a typo never opens the guard and never stops the service.
     /// </summary>
-    internal FilesTenantGuardMode ParseMode(string? configured)
-    {
-        if (string.IsNullOrWhiteSpace(configured))
-        {
-            return FilesTenantGuardMode.Enforce;
-        }
-
-        if (Enum.TryParse<FilesTenantGuardMode>(configured.Trim(), true, out var mode) &&
-            Enum.IsDefined(mode))
-        {
-            return mode;
-        }
-
-        logger.LogWarning(
-            "Invalid Files:TenantGuard value '{Value}' (expected Enforce or LogOnly); using Enforce (AB#6579)",
-            configured);
-        return FilesTenantGuardMode.Enforce;
-    }
+    internal FilesTenantGuardMode ParseMode(string? configured) => FilesTenantGuard.ParseMode(logger, configured);
 
     /// <summary>
     ///     Interim tenant guard of the Files routes (AB#6579). The platform tenant gate for user tokens is
@@ -82,43 +65,18 @@ public class FileSystemAccess(
     /// </remarks>
     public void EnsureTenantMatch(HttpContext httpContext, string routeTenantId, string? configuredMode = null)
     {
-        var mode = ParseMode(configuredMode);
-        var user = httpContext.User;
-        if (!httpContext.Request.Headers.Authorization.ToString().StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase) ||
-            user.Identity is not { IsAuthenticated: true, AuthenticationType: { } authType } ||
-            !authType.Equals("Bearer", StringComparison.OrdinalIgnoreCase) ||
-            !user.HasClaim(c => c.Type == "sub" || c.Type == ClaimTypes.NameIdentifier))
+        // REST keeps the middleware's precondition of a bearer header (a cookie principal has none).
+        if (!httpContext.Request.Headers.Authorization.ToString().StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
         {
             return;
         }
 
-        var tokenTenantId = user.FindFirstValue("tenant_id");
-        if (!string.IsNullOrEmpty(tokenTenantId) &&
-            string.Equals(tokenTenantId, routeTenantId, StringComparison.OrdinalIgnoreCase))
+        var mismatch = FilesTenantGuard.FindMismatch(httpContext.User, routeTenantId);
+        if (mismatch != null && FilesTenantGuard.ShouldRefuse(logger, mismatch, routeTenantId,
+                ParseMode(configuredMode), "REST"))
         {
-            return;
+            throw FileSystemException.Forbidden(FilesTenantGuard.RefusalMessage(routeTenantId));
         }
-
-        var account = user.FindFirstValue("sub") ?? user.FindFirstValue(ClaimTypes.NameIdentifier) ?? "unknown";
-        var clientId = user.FindFirstValue("client_id") ?? "<none>";
-        var tokenTenant = string.IsNullOrEmpty(tokenTenantId) ? "<none>" : tokenTenantId;
-        if (mode == FilesTenantGuardMode.LogOnly)
-        {
-            logger.LogWarning(
-                "Files tenant_mismatch (LogOnly, request allowed): user token of account '{Account}' (client " +
-                "'{ClientId}') was issued for tenant '{TokenTenantId}' but addresses tenant '{TenantId}' (AB#6579)",
-                account, clientId, tokenTenant, routeTenantId);
-            return;
-        }
-
-        FilesAccessMetrics.RecordTenantMismatch();
-        logger.LogWarning(
-            "Files API access denied (403) tenant_mismatch: user token of account '{Account}' (client " +
-            "'{ClientId}') was issued for tenant '{TokenTenantId}' but addresses tenant '{TenantId}' (AB#6579)",
-            account, clientId, tokenTenant, routeTenantId);
-        throw FileSystemException.Forbidden(
-            $"Access to the files of tenant '{routeTenantId}' is denied: the token was issued for another " +
-            "tenant. Sign in to the tenant to access its files.");
     }
 
     /// <summary>
