@@ -99,7 +99,8 @@ public class StreamDataFixture : AssetRepoFixture
         // observable (StreamData:Coverage:CacheTtlSeconds is what production tunes).
         Services.Configure<ArchiveCoverageOptions>(o => o.CacheTtlSeconds = 1);
 
-        Services.AddSingleton(new CrateDbTestConnectionString(CrateDbConnectionString));
+        Services.AddSingleton(new CrateDbTestConnectionString(GetServiceConnectionString(CrateDbConnectionString)));
+        ConfigureStreamDataServices(Services);
         Services.AddStreamDataDatabase<TestStreamDataConfiguration>();
 
         // Mirrors Program.cs: register the descriptor so EnsureStreamDataCkModelImportedAsync
@@ -146,6 +147,38 @@ public class StreamDataFixture : AssetRepoFixture
         // Initialize GraphQL execution infrastructure
         _documentExecuter = Provider?.GetRequiredService<IDocumentExecuter<OctoSchema>>();
         _serializer = Provider?.GetRequiredService<IGraphQLTextSerializer>();
+    }
+
+    /// <summary>
+    /// The connection string the stream data services under test use. A derived fixture may add
+    /// driver settings (a command timeout, for instance); <see cref="CrateDbConnectionString"/>, which
+    /// the tests' own helper connections use, stays as it is.
+    /// </summary>
+    protected virtual string GetServiceConnectionString(string connectionString) => connectionString;
+
+    /// <summary>
+    /// Environment variable that sends every recompute of the fixture through slices of that many
+    /// rows — the production variable of <c>StreamData:Recompute:SliceTargetRows</c>. The fixture has
+    /// no <c>IConfiguration</c> that would bind it, so it reads the variable itself. Meant for one
+    /// extra local run of the stream data tests with a tiny value (AB#6283): the results of every
+    /// existing recompute test must not depend on how the copy and the sweep are cut.
+    /// </summary>
+    public const string SliceTargetRowsVariable = "OCTO_STREAMDATA__RECOMPUTE__SLICETARGETROWS";
+
+    /// <summary>
+    /// Called before the stream data stack is registered, for a derived fixture that runs it with
+    /// other options than the defaults. The base applies <see cref="SliceTargetRowsVariable"/>; a
+    /// derived fixture calls it first, so that its own values win.
+    /// </summary>
+    protected virtual void ConfigureStreamDataServices(IServiceCollection services)
+    {
+        var raw = Environment.GetEnvironmentVariable(SliceTargetRowsVariable);
+        if (int.TryParse(raw, global::System.Globalization.NumberStyles.Integer,
+                global::System.Globalization.CultureInfo.InvariantCulture, out var sliceTargetRows)
+            && sliceTargetRows > 0)
+        {
+            services.Configure<CrateRecomputeOptions>(o => o.SliceTargetRows = sliceTargetRows);
+        }
     }
 
     /// <summary>
