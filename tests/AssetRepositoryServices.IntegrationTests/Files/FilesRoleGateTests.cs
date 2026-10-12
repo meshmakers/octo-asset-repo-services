@@ -596,6 +596,227 @@ public class FilesRoleGateTests : IAsyncLifetime
         (await CallWithBearer(cookie, c => c.GetStatsByPath(wkn, null))).Should().BeOfType<OkObjectResult>();
     }
 
+    // ---- Interim tenant guard on GraphQL and largeBinaries (AB#6624) ----------------------------------
+
+    private const string ForbiddenCode = "FORBIDDEN";
+
+    private const string GenericFolders = """
+        query { runtime { runtimeEntities(ckId: "System.Files/Folder") { totalCount } } }
+        """;
+
+    private const string GenericFoldersByVariable = """
+        query ($ck: String) { runtime { runtimeEntities(ckId: $ck) { totalCount } } }
+        """;
+
+    private const string TypedFoldersViaFragment = """
+        query { runtime { ...F } } fragment F on RuntimeModelQuery { systemFilesFolder { totalCount } }
+        """;
+
+    private const string GenericCreate = """
+        mutation ($ck: RtCkTypeId!) {
+          runtime { runtimeEntities { create(entities: [{ckTypeId: $ck, attributes: [{attributeName: "name", value: "x"}]}]) { rtId } } }
+        }
+        """;
+
+    private const string NonFilesQuery = "query { constructionKit { models { totalCount } } }";
+
+    private IDisposable SetGuardMode(string? mode)
+    {
+        var options = _fixture.GetService<IOptions<FilesOptions>>().Value;
+        var previous = options.TenantGuard;
+        options.TenantGuard = mode!;
+        return new RestoreMode(options, previous);
+    }
+
+    private sealed class RestoreMode(FilesOptions options, string previous) : IDisposable
+    {
+        public void Dispose() => options.TenantGuard = previous;
+    }
+
+    private (global::System.Diagnostics.Metrics.MeterListener Listener, global::System.Collections.Concurrent.ConcurrentBag<Dictionary<string, object?>> Seen) ListenForDenials()
+    {
+        var seen = new global::System.Collections.Concurrent.ConcurrentBag<Dictionary<string, object?>>();
+        var listener = new global::System.Diagnostics.Metrics.MeterListener();
+        listener.InstrumentPublished = (instrument, l) =>
+        {
+            if (instrument.Name == Meshmakers.Octo.Backend.AssetRepositoryServices.Observability.FilesAccessMetrics.AccessDeniedMetricName)
+            {
+                l.EnableMeasurementEvents(instrument);
+            }
+        };
+        listener.SetMeasurementEventCallback<long>((_, _, tags, _) =>
+            seen.Add(tags.ToArray().ToDictionary(t => t.Key, t => t.Value)));
+        listener.Start();
+        return (listener, seen);
+    }
+
+    [Fact]
+    public async Task TenantGuardGraphQl_ForeignToken_IsRefused_OnQueriesAndGenericEntities()
+    {
+        var root = await _helpers.CreateRootAsync();
+        var folder = await _helpers.CreateFolderAsync(root, "A");
+        var foreign = BearerUser("some-other-tenant", true, "FileViewer", "FileManagement");
+        var (listener, seen) = ListenForDenials();
+        using var _ = listener;
+
+        ErrorCode(await Run(FolderChildren, new { rtId = Id(folder) }, foreign)).Should().Be(ForbiddenCode);
+        ErrorCode(await Run(GenericFolders, new { }, foreign)).Should().Be(ForbiddenCode);
+        ErrorCode(await Run(GenericFoldersByVariable, new { ck = "System.Files/Folder" }, foreign)).Should().Be(ForbiddenCode);
+        ErrorCode(await Run(TypedFoldersViaFragment, new { }, foreign)).Should().Be(ForbiddenCode);
+
+        // The whole request is refused: no data at all, not even a partial result.
+        var refused = await Run(GenericFolders, new { }, foreign);
+        refused.Data.Should().BeNull();
+
+        // The same documents work for the same tenant (the 403s above came from the guard).
+        var own = BearerUser(_fixture.GetSystemContext().TenantId, true, "FileViewer", "FileManagement");
+        (await Run(FolderChildren, new { rtId = Id(folder) }, own)).Errors.Should().BeNullOrEmpty();
+        (await Run(GenericFolders, new { }, own)).Errors.Should().BeNullOrEmpty();
+        (await Run(TypedFoldersViaFragment, new { }, own)).Errors.Should().BeNullOrEmpty();
+
+        // One counter increment per refusal, with the action label only (no tenant / account label).
+        seen.Should().HaveCount(5);
+        seen.Should().OnlyContain(t => t.Count == 1 && (string?)t["action"] == "tenant_mismatch");
+    }
+
+    [Fact]
+    public async Task TenantGuardGraphQl_ForeignToken_IsRefused_OnEveryMutation_AndWritesNothing()
+    {
+        var root = await _helpers.CreateRootAsync();
+        var folder = await _helpers.CreateFolderAsync(root, "F");
+        var file = await _helpers.UploadAsync(folder, "f.txt", "f", FileConflictMode.Fail);
+        var sub = await _helpers.CreateFolderAsync(folder, "Sub");
+        var target = await _helpers.CreateFolderAsync(root, "T");
+        var foreign = BearerUser("some-other-tenant", true, "FileViewer", "FileManagement");
+
+        ErrorCode(await Run(CreateRoot, new { name = "R", wellKnownName = "Gq" + Guid.NewGuid().ToString("N")[..6] }, foreign))
+            .Should().Be(ForbiddenCode);
+        ErrorCode(await Run(CreateFolder, FolderVars("New", folder), foreign)).Should().Be(ForbiddenCode);
+        ErrorCode(await Run(RenameItem, new { rtId = Id(file), name = "renamed.txt" }, foreign)).Should().Be(ForbiddenCode);
+        ErrorCode(await Run(RenameFolder, new { rtId = Id(sub), name = "Renamed" }, foreign)).Should().Be(ForbiddenCode);
+        ErrorCode(await Run(MoveItem, MoveVars(file, folder, target), foreign)).Should().Be(ForbiddenCode);
+        ErrorCode(await Run(MoveFolder, MoveVars(sub, folder, target), foreign)).Should().Be(ForbiddenCode);
+        ErrorCode(await Run(Delete, new { rtEntityIds = new[] { Ref(file) } }, foreign)).Should().Be(ForbiddenCode);
+        ErrorCode(await Run(Delete, new { rtEntityIds = new[] { Ref(folder) } }, foreign)).Should().Be(ForbiddenCode);
+        ErrorCode(await Run(GenericCreate, new { ck = "System.Files/Folder" }, foreign)).Should().Be(ForbiddenCode);
+
+        using var session = Repository.GetSession();
+        (await _fixture.FileSystem.GetChildrenAsync(Repository, session, folder.Id)).Select(c => c.Name)
+            .Should().BeEquivalentTo("f.txt", "Sub");
+        (await _fixture.FileSystem.GetChildrenAsync(Repository, session, target.Id)).Should().BeEmpty();
+
+        // The same tenant's token still writes.
+        var own = BearerUser(_fixture.GetSystemContext().TenantId, true, "FileManagement");
+        (await Run(CreateFolder, FolderVars("New", folder), own)).Errors.Should().BeNullOrEmpty();
+        (await Run(RenameItem, new { rtId = Id(file), name = "renamed.txt" }, own)).Errors.Should().BeNullOrEmpty();
+    }
+
+    [Fact]
+    public async Task TenantGuardGraphQl_NonFilesOperations_AreUnchangedForForeignTokens()
+    {
+        // meshmakers-app / octo-cli read other data of a tenant with a cross-tenant token: must keep working.
+        var foreign = BearerUser("some-other-tenant", true, "FileViewer", "FileManagement");
+        var result = await Run(NonFilesQuery, new { }, foreign);
+        result.Errors.Should().BeNullOrEmpty();
+        result.Data.Should().NotBeNull();
+
+        var introspection = await Run("query { __typename }", new { }, foreign);
+        introspection.Errors.Should().BeNullOrEmpty();
+    }
+
+    [Fact]
+    public async Task TenantGuardGraphQl_ServiceTokenAndCookiePrincipal_AreNotAffected()
+    {
+        var root = await _helpers.CreateRootAsync();
+        var folder = await _helpers.CreateFolderAsync(root, "A");
+        var service = BearerUser("some-other-tenant", false, "FileViewer");
+        (await Run(FolderChildren, new { rtId = Id(folder) }, service)).Errors.Should().BeNullOrEmpty();
+
+        var cookie = new ClaimsPrincipal(new ClaimsIdentity(
+            [new Claim("sub", "c"), new Claim("tenant_id", "other"), new Claim(ClaimTypes.Role, "FileViewer")],
+            "Identity.Application"));
+        (await Run(FolderChildren, new { rtId = Id(folder) }, cookie)).Errors.Should().BeNullOrEmpty();
+
+        // Tokens of the route tenant, compared case-insensitively.
+        var tenantId = _fixture.GetSystemContext().TenantId;
+        (await Run(FolderChildren, new { rtId = Id(folder) }, BearerUser(tenantId.ToUpperInvariant(), true, "FileViewer")))
+            .Errors.Should().BeNullOrEmpty();
+    }
+
+    [Fact]
+    public async Task TenantGuardGraphQl_LogOnly_LetsTheForeignTokenPass_InvalidValueMeansEnforce()
+    {
+        var root = await _helpers.CreateRootAsync();
+        var folder = await _helpers.CreateFolderAsync(root, "A");
+        var foreign = BearerUser("some-other-tenant", true, "FileViewer", "FileManagement");
+        var (listener, seen) = ListenForDenials();
+        using var _ = listener;
+
+        using (SetGuardMode("LogOnly"))
+        {
+            (await Run(FolderChildren, new { rtId = Id(folder) }, foreign)).Errors.Should().BeNullOrEmpty();
+            (await Run(CreateFolder, FolderVars("LogOnly", folder), foreign)).Errors.Should().BeNullOrEmpty();
+        }
+
+        seen.Should().BeEmpty("LogOnly logs but does not count a refusal");
+
+        foreach (var invalid in new[] { "nonsense", "5", "", null })
+        {
+            using (SetGuardMode(invalid))
+            {
+                ErrorCode(await Run(FolderChildren, new { rtId = Id(folder) }, foreign)).Should().Be(ForbiddenCode);
+            }
+        }
+    }
+
+    private LargeBinariesController BinariesController(ClaimsPrincipal user)
+    {
+        var http = new DefaultHttpContext { User = user, RequestServices = _fixture.Provider! };
+        http.Request.RouteValues["tenantId"] = _fixture.GetSystemContext().TenantId;
+        http.Request.Headers.Authorization = "Bearer test-token-not-real";
+        return new LargeBinariesController(_fixture.GetService<IOctoService>(),
+            _fixture.GetService<IDataPermissionResolver>(),
+            _fixture.GetService<Meshmakers.Octo.ConstructionKit.Contracts.Services.ICkCacheService>(),
+            _fixture.GetService<IOptions<FilesOptions>>(),
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<LargeBinariesController>.Instance)
+        {
+            ControllerContext = new ControllerContext { HttpContext = http }
+        };
+    }
+
+    [Fact]
+    public async Task TenantGuardLargeBinaries_ForeignToken_CannotDownloadAFilesBinary()
+    {
+        var root = await _helpers.CreateRootAsync();
+        var item = await _helpers.UploadAsync(root, "secret.txt", "classified", FileConflictMode.Fail);
+        var binaryId = item.Content!.BinaryId!.Value.ToString();
+        var foreign = BearerUser("some-other-tenant", true, "FileViewer", "FileManagement");
+        var (listener, seen) = ListenForDenials();
+        using var _ = listener;
+
+        var refused = await BinariesController(foreign).Get(binaryId);
+        refused.Should().BeOfType<ObjectResult>().Which.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
+        seen.Should().ContainSingle().Which.Should().BeEquivalentTo(
+            new Dictionary<string, object?> { ["action"] = "tenant_mismatch" });
+
+        var own = BearerUser(_fixture.GetSystemContext().TenantId, true, "FileViewer");
+        var ok = await BinariesController(own).Get(binaryId);
+        ok.Should().BeOfType<FileStreamResult>();
+        await ((FileStreamResult)ok).FileStream.DisposeAsync();
+
+        // Service tokens are not governed by this guard.
+        var service = await BinariesController(BearerUser("some-other-tenant", false, "FileViewer")).Get(binaryId);
+        service.Should().BeOfType<FileStreamResult>();
+        await ((FileStreamResult)service).FileStream.DisposeAsync();
+
+        using (SetGuardMode("LogOnly"))
+        {
+            var logOnly = await BinariesController(foreign).Get(binaryId);
+            logOnly.Should().BeOfType<FileStreamResult>();
+            await ((FileStreamResult)logOnly).FileStream.DisposeAsync();
+        }
+    }
+
     private static void AssertForbidden(IActionResult result)
     {
         var problem = result.Should().BeOfType<ObjectResult>().Subject;

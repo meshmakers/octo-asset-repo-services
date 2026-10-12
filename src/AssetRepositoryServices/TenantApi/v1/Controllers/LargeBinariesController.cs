@@ -9,6 +9,7 @@ using Meshmakers.Octo.Services.Infrastructure;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Options;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.TenantApi.v1.Controllers;
 
@@ -27,6 +28,8 @@ public class LargeBinariesController : ControllerBase
     private readonly IOctoService _octoService;
     private readonly Runtime.Contracts.DataPermissions.IDataPermissionResolver _dataPermissionResolver;
     private readonly ConstructionKit.Contracts.Services.ICkCacheService _ckCacheService;
+    private readonly IOptions<FilesOptions> _filesOptions;
+    private readonly ILogger<LargeBinariesController> _logger;
 
     /// <summary>
     ///     Constructor
@@ -34,10 +37,16 @@ public class LargeBinariesController : ControllerBase
     /// <param name="octoService">Octo service for tenant management</param>
     /// <param name="dataPermissionResolver">Resolver of the tenant's data-policy table (AB#4985)</param>
     /// <param name="ckCacheService">Construction kit cache</param>
+    /// <param name="filesOptions">Files options (interim tenant guard mode, AB#6624)</param>
+    /// <param name="logger">Logger</param>
     public LargeBinariesController(IOctoService octoService,
         Runtime.Contracts.DataPermissions.IDataPermissionResolver dataPermissionResolver,
-        ConstructionKit.Contracts.Services.ICkCacheService ckCacheService)
+        ConstructionKit.Contracts.Services.ICkCacheService ckCacheService,
+        IOptions<FilesOptions> filesOptions,
+        ILogger<LargeBinariesController> logger)
     {
+        _filesOptions = filesOptions;
+        _logger = logger;
         _octoService = octoService;
         _dataPermissionResolver = dataPermissionResolver;
         _ckCacheService = ckCacheService;
@@ -82,6 +91,19 @@ public class LargeBinariesController : ControllerBase
 
             using var session = await tenantRepository.GetSessionAsync().ConfigureAwait(false);
             session.StartTransaction();
+
+            // AB#6624: a user token issued for another tenant must not download the bytes of a System.Files
+            // binary (interim tenant guard, same decision and switch as the Files REST routes and GraphQL).
+            var tenantMismatch = FilesTenantGuard.FindMismatch(HttpContext.User, tenantId);
+            if (tenantMismatch != null &&
+                await IsFilesBinaryAsync(tenantRepository, session, OctoObjectId.Parse(largeBinaryId))
+                    .ConfigureAwait(false) &&
+                FilesTenantGuard.ShouldRefuse(_logger, tenantMismatch, tenantId,
+                    FilesTenantGuard.ParseMode(_logger, _filesOptions.Value.TenantGuard), "largeBinaries"))
+            {
+                return StatusCode(StatusCodes.Status403Forbidden,
+                    new ErrorResponse { ErrorMessage = FilesTenantGuard.RefusalMessage(tenantId) });
+            }
 
             // AB#4985 (K1): a binary download is gated by the data permissions of its owning entity —
             // the entity id is stamped on the binary at upload time. Denied/foreign-owned answers 404
@@ -133,6 +155,18 @@ public class LargeBinariesController : ControllerBase
         {
             return StatusCode(StatusCodes.Status500InternalServerError, new InternalServerErrorDto(ex.Message));
         }
+    }
+
+    /// <summary>
+    ///     True when the binary is owned by a System.Files entity (AB#6624). Ownerless and missing binaries are not.
+    /// </summary>
+    private static async Task<bool> IsFilesBinaryAsync(
+        Runtime.Contracts.MongoDb.Repositories.ITenantRepository tenantRepository,
+        Runtime.Contracts.IOctoSession session, OctoObjectId largeBinaryId)
+    {
+        var info = await tenantRepository.GetLargeBinaryInfoAsync(session, largeBinaryId).ConfigureAwait(false);
+        return info?.RtEntityId != null &&
+               FileSystemService.IsFileSystemType(info.RtEntityId.Value.CkTypeId);
     }
 
     /// <summary>

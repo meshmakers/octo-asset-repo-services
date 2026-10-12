@@ -296,7 +296,9 @@ public class FilesControllerTests
         var http = NewHttpContext(FilesTestFixture.PlainUser);
         var controller = new LargeBinariesController(_fixture.GetService<IOctoService>(),
             _fixture.GetService<IDataPermissionResolver>(),
-            _fixture.GetService<Meshmakers.Octo.ConstructionKit.Contracts.Services.ICkCacheService>())
+            _fixture.GetService<Meshmakers.Octo.ConstructionKit.Contracts.Services.ICkCacheService>(),
+            Microsoft.Extensions.Options.Options.Create(new FilesOptions()),
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<LargeBinariesController>.Instance)
         {
             ControllerContext = new ControllerContext { HttpContext = http }
         };
@@ -437,6 +439,8 @@ public class FilesControllerTests
         var user = new global::System.Security.Claims.ClaimsPrincipal(new global::System.Security.Claims.ClaimsIdentity(
         [
             new global::System.Security.Claims.Claim("sub", "6aa19643e21296d4d2f39a4c"),
+            // A real user token carries the tenant it was issued for (the AB#6624 guard refuses one without).
+            new global::System.Security.Claims.Claim("tenant_id", _fixture.GetSystemContext().TenantId),
             new global::System.Security.Claims.Claim("name", "xt_octosystem_someone@example.org"),
             new global::System.Security.Claims.Claim("preferred_username", "xt_octosystem_someone@example.org"),
             new global::System.Security.Claims.Claim(global::System.Security.Claims.ClaimTypes.Name, "xt_octosystem_someone@example.org")
