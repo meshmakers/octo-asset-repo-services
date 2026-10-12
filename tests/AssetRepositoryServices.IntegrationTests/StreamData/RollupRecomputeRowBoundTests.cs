@@ -3,8 +3,9 @@ using FluentAssertions;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Collections;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Fixtures;
 using Meshmakers.Octo.ConstructionKit.Contracts;
-using Meshmakers.Octo.Runtime.Contracts.MongoDb.Services;
 using Meshmakers.Octo.Runtime.Contracts.StreamData;
+using Meshmakers.Octo.Runtime.Engine.CrateDb;
+using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.StreamData;
@@ -142,15 +143,24 @@ public class RollupRecomputeRowBoundTests(RowBoundStreamDataFixture fixture, ITe
         var liveOfOtherSeries = await CountAsync(table, 3, secondStart, secondEnd, b);
         liveOfOtherSeries.Should().Be(10);
 
-        // A fresh executor — what a restarted service is — recomputes a range that has nothing to
-        // do with any of this.
+        // An executor that knows nothing of what this process did before — what a restarted service
+        // is — recomputes a range that has nothing to do with any of this. (An executor resolved
+        // through the tenant context shares the process's state, in which this rollup's pointer
+        // entries count as checked.)
         var tenant = await _builder.TenantAsync();
-        var repository = fixture.GetService<IStreamDataRepositoryFactory>().Create(
-            tenant.TenantId, tenant.GetArchiveRuntimeStore(), tenant.GetRollupArchiveRuntimeStore(),
-            tenant.GetArchiveRecomputeStateStore());
+        var freshExecutor = new CrateDbArchiveRecomputeExecutor(
+            tenant.TenantId,
+            fixture.GetService<IStreamDataDatabaseClient>(),
+            fixture.GetService<IStreamDataDatabaseManagementClient>(),
+            tenant.GetArchiveRuntimeStore(),
+            numberOfShards: 1,
+            numberOfReplicas: 0,
+            NullLogger.Instance,
+            tenant.GetRollupArchiveRuntimeStore(),
+            RowBoundStreamDataFixture.SliceTargetRows);
         var sourceSnapshot = (await tenant.GetArchiveRuntimeStore().GetAsync(ladder.Source))!;
         var rollupSnapshot = await _builder.LoadRollupAsync(ladder.Rollup);
-        await ((IArchiveRecomputeExecutor)repository).ExecuteAsync(
+        await freshExecutor.ExecuteAsync(
             sourceSnapshot, rollupSnapshot, Anchor.AddHours(40), Anchor.AddHours(42), null,
             TestContext.Current.CancellationToken);
         await _builder.RefreshAsync(ladder.Rollup);
@@ -168,6 +178,69 @@ public class RollupRecomputeRowBoundTests(RowBoundStreamDataFixture fixture, ITe
         var buckets = await _builder.ReadBucketsAsync(ladder.Rollup, seriesRtId: b);
         buckets.Where(x => x.WindowStart < firstEnd && x.WindowStart >= Anchor)
             .Select(x => x.Value).Distinct().Should().Equal(ExpectedSum(1));
+    }
+
+    /// <summary>
+    /// The service resolves a new tenant context — and with it a new stream data repository and a
+    /// new executor — for every request and every orchestrator tick. What a recompute keeps "per
+    /// process" must survive that: after its first use the staging table is neither dropped nor
+    /// created again by a small recompute.
+    /// </summary>
+    [Fact]
+    public async Task ASecondSmallRecompute_ThroughANewTenantContext_IssuesNoDdlOnTheStagingTable()
+    {
+        fixture.OutputHelper = output;
+        var source = await _builder.CreateRawArchiveAsync("RowBoundStateSource");
+        var series = OctoObjectId.GenerateNewId();
+        await _builder.InsertPointsAsync(source, series,
+            Enumerable.Range(0, 8).Select(h => (Anchor.AddHours(h).AddMinutes(10), 1d)));
+        var rollup = await _builder.CreateRollupAsync(
+            "RowBoundStateRollup", [new RollupSourceReference(source)], TimeSpan.FromHours(1));
+        await _builder.ActivateAsync(rollup);
+
+        // Each call resolves the tenant context anew, as a request does.
+        var first = await RecomputeThroughANewTenantContextAsync(rollup, Anchor, Anchor.AddHours(4));
+        var afterFirst = await StagingDdlAsync(rollup, sinceMs: 0);
+        // The statement log is a ring shared by the whole test run: ask for what came later instead
+        // of comparing two readings of it.
+        var mark = await _builder.ScalarLongAsync("SELECT CURRENT_TIMESTAMP::bigint");
+        var second = await RecomputeThroughANewTenantContextAsync(rollup, Anchor.AddHours(4), Anchor.AddHours(8));
+        var third = await RecomputeThroughANewTenantContextAsync(rollup, Anchor, Anchor.AddHours(8));
+        var later = await StagingDdlAsync(rollup, mark);
+
+        first.State.Should().Be(RecomputeJobState.Completed, first.ErrorReason);
+        second.State.Should().Be(RecomputeJobState.Completed, second.ErrorReason);
+        third.State.Should().Be(RecomputeJobState.Completed, third.ErrorReason);
+        afterFirst.Should().HaveCount(2, "the first use drops whatever is there and creates the table: {0}", string.Join(" | ", afterFirst));
+        later.Should().BeEmpty("a recompute of a few rows empties the kept table and issues no DDL on it");
+        (await _builder.ReadBucketsAsync(rollup, seriesRtId: series)).Select(b => b.Value)
+            .Should().Equal(Enumerable.Repeat<double?>(1d, 8));
+    }
+
+    private async Task<RecomputeJobSnapshot> RecomputeThroughANewTenantContextAsync(
+        OctoObjectId rollup, DateTime from, DateTime to)
+    {
+        var systemContext = fixture.GetSystemContext();
+        var tenant = await systemContext.FindTenantContextAsync(systemContext.TenantId);
+        var job = await tenant.GetRecomputeOrchestrator()!.RecomputeArchiveAsync(
+            rollup, from, to, null, RecomputeTrigger.Manual, TestContext.Current.CancellationToken);
+        await _builder.RefreshAsync(rollup);
+        await _builder.ExecuteSqlAsync($"REFRESH TABLE {_builder.GenMapTable(rollup)}");
+        return job;
+    }
+
+    /// <summary>
+    /// The CREATE / DROP statements CrateDB has logged for the rollup's staging table, in order
+    /// (<c>sys.jobs_log</c>, which keeps the last 10,000 statements of the node).
+    /// </summary>
+    private async Task<IReadOnlyList<string>> StagingDdlAsync(OctoObjectId rollup, long sinceMs)
+    {
+        var rows = await _builder.RowsAsync(
+            "SELECT stmt FROM sys.jobs_log " +
+            $"WHERE stmt LIKE '%archive_{rollup}__rc%' AND (stmt LIKE 'CREATE TABLE%' OR stmt LIKE 'DROP TABLE%') " +
+            $"AND started >= {sinceMs.ToString(CultureInfo.InvariantCulture)} " +
+            "ORDER BY started");
+        return rows.Select(r => ((string)r["stmt"]!).Split(' ', 4)[0] + " " + ((string)r["stmt"]!).Split(' ', 4)[1]).ToList();
     }
 
     // ── ladder + helpers ──────────────────────────────────────────────────────────────────────
