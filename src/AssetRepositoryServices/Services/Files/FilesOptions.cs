@@ -56,8 +56,9 @@ public class FilesOptions
 
     /// <summary>
     ///     Interim tenant guard of the Files routes (AB#6579, <c>OCTO_Files__TenantGuard</c>): <c>Enforce</c>
-    ///     (default) answers 403 to a user token issued for another tenant, <c>LogOnly</c> only logs it.
+    ///     (default) answers 403 to a user token issued for another tenant, <c>LogOnly</c> only logs it. Parsed leniently
+    ///     (see <c>FileSystemAccess.ParseMode</c>): an invalid value means Enforce.
     ///     Obsolete once the platform-wide user-token enforcement (AB#5054) is armed.
     /// </summary>
-    public FilesTenantGuardMode TenantGuard { get; set; } = FilesTenantGuardMode.Enforce;
+    public string TenantGuard { get; set; } = nameof(FilesTenantGuardMode.Enforce);
 }

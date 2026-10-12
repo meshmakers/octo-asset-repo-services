@@ -45,4 +45,12 @@ internal static class FilesAccessMetrics
             new KeyValuePair<string, object?>("tenant_id", tenantId),
             new KeyValuePair<string, object?>("account", account),
             new KeyValuePair<string, object?>("action", action));
+
+    /// <summary>
+    ///     Counts one tenant-mismatch refusal (AB#6579). Carries only the <c>action</c> label: tenant and account
+    ///     come from an unauthenticated-by-us route / foreign token and would make the cardinality attacker
+    ///     controlled; they are in the warning log line instead.
+    /// </summary>
+    public static void RecordTenantMismatch() =>
+        AccessDenied.Add(1, new KeyValuePair<string, object?>("action", ActionTenantMismatch));
 }

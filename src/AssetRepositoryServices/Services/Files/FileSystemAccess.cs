@@ -3,7 +3,6 @@ using Meshmakers.Octo.Backend.AssetRepositoryServices.Observability;
 using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.ConstructionKit.Contracts.Services;
 using Meshmakers.Octo.Runtime.Contracts;
-using Meshmakers.Octo.Services.Infrastructure.Services;
 using Meshmakers.Octo.Runtime.Contracts.DataPermissions;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb.Repositories;
 
@@ -42,6 +41,29 @@ public class FileSystemAccess(
     }
 
     /// <summary>
+    ///     Lenient parsing of <c>OCTO_Files__TenantGuard</c>: anything but a defined mode name means Enforce
+    ///     (fail closed), with a warning, so a typo never opens the guard and never stops the service.
+    /// </summary>
+    internal FilesTenantGuardMode ParseMode(string? configured)
+    {
+        if (string.IsNullOrWhiteSpace(configured))
+        {
+            return FilesTenantGuardMode.Enforce;
+        }
+
+        if (Enum.TryParse<FilesTenantGuardMode>(configured.Trim(), true, out var mode) &&
+            Enum.IsDefined(mode))
+        {
+            return mode;
+        }
+
+        logger.LogWarning(
+            "Invalid Files:TenantGuard value '{Value}' (expected Enforce or LogOnly); using Enforce (AB#6579)",
+            configured);
+        return FilesTenantGuardMode.Enforce;
+    }
+
+    /// <summary>
     ///     Interim tenant guard of the Files routes (AB#6579). The platform tenant gate for user tokens is
     ///     LogOnly in asset-repo (AB#5054), so a user token issued for tenant A would otherwise reach
     ///     <c>/B/v1/files/...</c>, with its role names evaluated against B's policy table. Throws
@@ -53,14 +75,14 @@ public class FileSystemAccess(
     ///     refused: only a bearer-authenticated principal with a user subject (<c>sub</c> / NameIdentifier) is
     ///     checked, and its <c>tenant_id</c> claim must equal the route tenant (case-insensitive). Not touched
     ///     (as in the middleware): client-credentials / service tokens (no subject; governed by the service
-    ///     token enforcement, AB#5032), cookie principals, and requests without a bearer header. A user token of a
-    ///     <b>parent</b> tenant may address a child tenant (parent rule, resolved by the shared
-    ///     <c>ITenantHierarchyReader</c> like the middleware does); child to parent, siblings and unrelated
-    ///     tenants are refused. Removed when Enforce is armed platform-wide.
+    ///     token enforcement, AB#5032), cookie principals, and requests without a bearer header. There is
+    ///     <b>no parent-tenant exemption</b>: the middleware grants the parent rule (AB#5060) only on endpoints marked
+    ///     <c>IAllowParentTenantAdministration</c> and gives a parent no data routes of its child, so a parent-tenant
+    ///     token is refused here exactly as it will be under the platform-wide Enforce. Removed when Enforce is armed platform-wide.
     /// </remarks>
-    public async Task EnsureTenantMatchAsync(HttpContext httpContext, string routeTenantId,
-        FilesTenantGuardMode mode = FilesTenantGuardMode.Enforce)
+    public void EnsureTenantMatch(HttpContext httpContext, string routeTenantId, string? configuredMode = null)
     {
+        var mode = ParseMode(configuredMode);
         var user = httpContext.User;
         if (!httpContext.Request.Headers.Authorization.ToString().StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase) ||
             user.Identity is not { IsAuthenticated: true, AuthenticationType: { } authType } ||
@@ -77,21 +99,7 @@ public class FileSystemAccess(
             return;
         }
 
-        // Parent-tenant rule (AB#5060 / AB#5708), same resolution as the middleware: a user of a parent tenant
-        // may address its child tenant (ITenantHierarchyReader, one level; the system tenant covers the whole
-        // estate). Not resolvable (reader not registered) means closed. Never the other way round.
         var account = user.FindFirstValue("sub") ?? user.FindFirstValue(ClaimTypes.NameIdentifier) ?? "unknown";
-        if (!string.IsNullOrEmpty(tokenTenantId) &&
-            httpContext.RequestServices?.GetService<ITenantHierarchyReader>() is { } hierarchy &&
-            await hierarchy.IsChildTenantAsync(tokenTenantId, routeTenantId).ConfigureAwait(false))
-        {
-            logger.LogInformation(
-                "Files API: user token of account '{Account}' issued for tenant '{TokenTenantId}' addresses its " +
-                "child tenant '{TenantId}'; allowed by the parent-tenant rule (AB#6579)",
-                account, tokenTenantId, routeTenantId);
-            return;
-        }
-
         var clientId = user.FindFirstValue("client_id") ?? "<none>";
         var tokenTenant = string.IsNullOrEmpty(tokenTenantId) ? "<none>" : tokenTenantId;
         if (mode == FilesTenantGuardMode.LogOnly)
@@ -103,7 +111,7 @@ public class FileSystemAccess(
             return;
         }
 
-        FilesAccessMetrics.RecordAccessDenied(routeTenantId, account, FilesAccessMetrics.ActionTenantMismatch);
+        FilesAccessMetrics.RecordTenantMismatch();
         logger.LogWarning(
             "Files API access denied (403) tenant_mismatch: user token of account '{Account}' (client " +
             "'{ClientId}') was issued for tenant '{TokenTenantId}' but addresses tenant '{TenantId}' (AB#6579)",
