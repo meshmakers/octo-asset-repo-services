@@ -29,6 +29,9 @@ internal static class FilesAccessMetrics
     /// <summary>Label value for delete.</summary>
     public const string ActionDelete = "delete";
 
+    /// <summary>Label value for a user token issued for another tenant than the route tenant (AB#6579).</summary>
+    public const string ActionTenantMismatch = "tenant_mismatch";
+
     private static readonly Meter Meter = new(CkModelObservabilityMetrics.MeterName, "1.0.0");
 
     private static readonly Counter<long> AccessDenied = Meter.CreateCounter<long>(
