@@ -12,7 +12,7 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.Services.Files.Migrati
 ///         data exists, and only on the pod that holds the tenant's sweep lease.
 ///     </para>
 /// </summary>
-public class ReportingFilesSweepRunner
+public class ReportingFilesSweepRunner : IDisposable
 {
     /// <summary>
     ///     Trigger name of the run at tenant start.
@@ -33,6 +33,8 @@ public class ReportingFilesSweepRunner
     private readonly IOptionsMonitor<FilesMigrationOptions> _options;
     private readonly ILogger<ReportingFilesSweepRunner> _logger;
     private readonly ConcurrentDictionary<(string TenantId, ReportingFilesSweepOutcome Outcome), DateTime> _lastWarnings = new();
+    private readonly CancellationTokenSource _shutdown = new();
+    private readonly ConcurrentDictionary<string, Task> _preCheckTasks = new(StringComparer.Ordinal);
     private int _unknownTenantsChecked;
 
     /// <summary>
@@ -231,15 +233,16 @@ public class ReportingFilesSweepRunner
             }
             else
             {
-                // The pre-check scans every entity collection; it runs once per tenant (lease holder) and only
-                // when there is something to move — the moment its list matters.
-                var status = await _statusService.GetStatusAsync(tenantId, cancellationToken).ConfigureAwait(false);
-                if (status != null && !status.Legacy.IsZero)
-                {
-                    LogPreCheck(status);
-                }
-
                 result = await _sweep.SweepAsync(tenantId, trigger, cancellationToken, lease).ConfigureAwait(false);
+
+                // The pre-check scans every entity collection (3 min 8 s on a 1.3 million document tenant, AB#6554).
+                // It only feeds the log report — the sweep finds root conflicts itself and fails closed — so it runs
+                // in the background after the move and must not hold the tenant setup. Lease holder only; what it
+                // reports is whatever legacy data is left after the move.
+                if (result.Outcome != ReportingFilesSweepOutcome.NothingToDo)
+                {
+                    StartPreCheckInBackground(tenantId);
+                }
             }
         }
         else
@@ -277,6 +280,71 @@ public class ReportingFilesSweepRunner
         }
 
         return result;
+    }
+
+    /// <summary>
+    ///     Starts the read-only pre-check scan without awaiting it (AB#6554); one scan per tenant at a time.
+    ///     It runs on its own token (not the tenant start's, which ends with the setup) that is cancelled when
+    ///     the runner is disposed at shutdown. Never throws.
+    /// </summary>
+    private void StartPreCheckInBackground(string tenantId)
+    {
+        if (!_tracker.TryBeginPreCheck(tenantId))
+        {
+            _logger.LogDebug("{Sweep}: pre-check scan of tenant '{TenantId}' is already running",
+                ReportingFilesMigrationConstants.SweepName, tenantId);
+            return;
+        }
+
+        _logger.LogInformation("{Sweep}: pre-check scan of tenant '{TenantId}' started in the background",
+            ReportingFilesMigrationConstants.SweepName, tenantId);
+        var token = _shutdown.Token;
+        var task = Task.Run(async () =>
+        {
+            try
+            {
+                var status = await _statusService.GetStatusAsync(tenantId, token).ConfigureAwait(false);
+                if (status != null && !status.Legacy.IsZero)
+                {
+                    LogPreCheck(status);
+                }
+
+                _tracker.CompletePreCheck(tenantId, true);
+            }
+            catch (Exception ex)
+            {
+                _tracker.CompletePreCheck(tenantId, false);
+                if (ex is OperationCanceledException && token.IsCancellationRequested)
+                {
+                    _logger.LogInformation("{Sweep}: pre-check scan of tenant '{TenantId}' cancelled at shutdown",
+                        ReportingFilesMigrationConstants.SweepName, tenantId);
+                }
+                else
+                {
+                    _logger.LogWarning(ex, "{Sweep}: pre-check scan of tenant '{TenantId}' failed; the move is not affected",
+                        ReportingFilesMigrationConstants.SweepName, tenantId);
+                }
+            }
+        }, CancellationToken.None);
+        _preCheckTasks[tenantId] = task;
+        _ = task.ContinueWith(t => _preCheckTasks.TryRemove(new KeyValuePair<string, Task>(tenantId, t)),
+            TaskScheduler.Default);
+    }
+
+    /// <summary>
+    ///     Test hook: waits until the background pre-check scans started so far have finished.
+    /// </summary>
+    internal Task WaitForPreChecksAsync()
+    {
+        return Task.WhenAll(_preCheckTasks.Values.ToArray());
+    }
+
+    /// <inheritdoc />
+    public void Dispose()
+    {
+        _shutdown.Cancel();
+        _shutdown.Dispose();
+        GC.SuppressFinalize(this);
     }
 
     private async Task OnQuietAsync(string tenantId, MongoDB.Driver.IMongoDatabase database,

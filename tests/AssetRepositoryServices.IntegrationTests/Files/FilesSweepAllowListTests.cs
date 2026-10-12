@@ -127,6 +127,64 @@ public class FilesSweepAllowListTests
     }
 
     [Fact]
+    public async Task PreCheck_RunsInTheBackgroundAfterTheMove_OnlyForTheSweptTenant_AndIsObservable()
+    {
+        await using var world = await TwoTenants.CreateAsync(_fixture, enabled: true, listed: [TenantA]);
+
+        var a = await world.Runner.RunAtTenantStartAsync(TenantA, Ct);
+        var b = await world.Runner.RunAtTenantStartAsync(TenantB, Ct);
+        a!.Outcome.Should().Be(ReportingFilesSweepOutcome.Moved, string.Join("; ", a.Errors));
+        b!.Outcome.Should().Be(ReportingFilesSweepOutcome.NotListed);
+
+        await world.Runner.WaitForPreChecksAsync();
+
+        world.Log.Lines(LogLevel.Information).Count(l => l.Contains("pre-check scan") && l.Contains("started in the background"))
+            .Should().Be(1, "one scan, for the swept tenant only");
+        (await world.Status.GetStatusAsync(TenantA, Ct))!.Sweep.PreCheck.Should().Be(FilesMigrationPreCheckStates.Scanned);
+        var statusB = await world.Status.GetStatusAsync(TenantB, Ct);
+        statusB!.Sweep.PreCheck.Should().Be(FilesMigrationPreCheckStates.None, "an unlisted tenant pays no scan cost");
+
+        // A second tenant start finds nothing to do and starts no further scan.
+        (await world.Runner.RunAtTenantStartAsync(TenantA, Ct))!.Outcome.Should().Be(ReportingFilesSweepOutcome.NothingToDo);
+        world.Log.Lines(LogLevel.Information).Count(l => l.Contains("started in the background")).Should().Be(1);
+    }
+
+    [Fact]
+    public async Task RootConflict_BlocksTheMove_WithoutTheStartWaitingForThePreCheck()
+    {
+        await using var world = await TwoTenants.CreateAsync(_fixture, enabled: true, listed: [TenantA]);
+        var legacyRoot = await world.A.GetCollection<BsonDocument>(Legacy)
+            .Find(Builders<BsonDocument>.Filter.Eq("ckTypeId", ReportingFilesMigrationConstants.LegacyFolderRootCkTypeId))
+            .FirstAsync(Ct);
+        await world.A.GetCollection<BsonDocument>(FileSystemConstants.EntityCollectionName).InsertOneAsync(
+            TwoTenants.Entity(ObjectId.GenerateNewId(), FileSystemConstants.FolderRootCkTypeId, "other",
+                legacyRoot["rtWellKnownName"].AsString.ToUpperInvariant()), cancellationToken: Ct);
+
+        var result = await world.Runner.RunAtTenantStartAsync(TenantA, Ct);
+
+        result!.Outcome.Should().Be(ReportingFilesSweepOutcome.RootConflict, "the sweep finds the conflict itself, fail-closed");
+        (await world.CountAsync(world.A, Legacy, FilterDefinition<BsonDocument>.Empty)).Should().BeGreaterThan(0,
+            "nothing moved");
+        await world.Runner.WaitForPreChecksAsync();
+        (await world.Status.GetStatusAsync(TenantA, Ct))!.Sweep.PreCheck.Should().Be(FilesMigrationPreCheckStates.Scanned);
+    }
+
+    [Fact]
+    public void Tracker_AllowsOnePreCheckPerTenantAtATime()
+    {
+        var tracker = new ReportingFilesSweepTracker();
+        tracker.TryBeginPreCheck(TenantA).Should().BeTrue();
+        tracker.TryBeginPreCheck(TenantA).Should().BeFalse("a scan of this tenant is running");
+        tracker.TryBeginPreCheck(TenantB).Should().BeTrue("other tenants are independent");
+        tracker.GetPreCheck(TenantA)!.State.Should().Be(FilesMigrationPreCheckStates.Scanning);
+
+        tracker.CompletePreCheck(TenantA, false);
+        tracker.GetPreCheck(TenantA)!.State.Should().Be(FilesMigrationPreCheckStates.Failed);
+        tracker.GetPreCheck(TenantA)!.FinishedUtc.Should().NotBeNull();
+        tracker.TryBeginPreCheck(TenantA).Should().BeTrue("a finished scan can be repeated");
+    }
+
+    [Fact]
     public async Task SwitchOff_RunsNoLegacyCount_AndTheMigrationStatusAnswersOnDemand()
     {
         await using var world = await TwoTenants.CreateAsync(_fixture, enabled: false, listed: [], seedB: true);
@@ -251,7 +309,7 @@ public class FilesSweepAllowListTests
             ], cancellationToken: Ct);
         }
 
-        private static BsonDocument Entity(ObjectId id, string ckTypeId, string name, string? wellKnownName)
+        internal static BsonDocument Entity(ObjectId id, string ckTypeId, string name, string? wellKnownName)
         {
             var document = new BsonDocument
             {
@@ -299,6 +357,8 @@ public class FilesSweepAllowListTests
 
         public async ValueTask DisposeAsync()
         {
+            await Runner.WaitForPreChecksAsync();
+            Runner.Dispose();
             await A.Client.DropDatabaseAsync(A.DatabaseNamespace.DatabaseName);
             await B.Client.DropDatabaseAsync(B.DatabaseNamespace.DatabaseName);
         }
