@@ -479,10 +479,34 @@ public class FilesRoleGateTests : IAsyncLifetime
         return new ClaimsPrincipal(new ClaimsIdentity(claims, "Bearer"));
     }
 
+    private sealed class FakeHierarchy(params (string Parent, string Child)[] pairs)
+        : Meshmakers.Octo.Services.Infrastructure.Services.ITenantHierarchyReader
+    {
+        public Task<bool> IsChildTenantAsync(string parentTenantId, string tenantId) =>
+            Task.FromResult(pairs.Any(p =>
+                string.Equals(p.Parent, parentTenantId, StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(p.Child, tenantId, StringComparison.OrdinalIgnoreCase)));
+    }
+
+    private sealed class ProviderWithHierarchy(IServiceProvider inner,
+        Meshmakers.Octo.Services.Infrastructure.Services.ITenantHierarchyReader hierarchy) : IServiceProvider
+    {
+        public object? GetService(Type serviceType) =>
+            serviceType == typeof(Meshmakers.Octo.Services.Infrastructure.Services.ITenantHierarchyReader)
+                ? hierarchy
+                : inner.GetService(serviceType);
+    }
+
     private async Task<IActionResult> CallWithBearer(ClaimsPrincipal user, Func<FilesController, Task<IActionResult>> call,
-        FilesTenantGuardMode mode = FilesTenantGuardMode.Enforce)
+        FilesTenantGuardMode mode = FilesTenantGuardMode.Enforce,
+        Meshmakers.Octo.Services.Infrastructure.Services.ITenantHierarchyReader? hierarchy = null)
     {
         var (controller, http) = Create(user, mode: mode);
+        if (hierarchy != null)
+        {
+            http.RequestServices = new ProviderWithHierarchy(_fixture.Provider!, hierarchy);
+        }
+
         http.Request.Headers.Authorization = "Bearer test-token-not-real";
         return await call(controller);
     }
@@ -500,6 +524,29 @@ public class FilesRoleGateTests : IAsyncLifetime
         // A bearer user token without any tenant_id claim is refused as well (as the middleware under Enforce).
         AssertForbidden(await CallWithBearer(BearerUser(null, true, "FileViewer"),
             c => c.GetStatsByPath(wkn, null)));
+    }
+
+    [Fact]
+    public async Task TenantGuard_ParentTenantToken_MayAddressChild_ButNotSiblingOrChildToParent()
+    {
+        var root = await _helpers.CreateRootAsync();
+        var wkn = root.Entity.RtWellKnownName!;
+        var routeTenant = _fixture.GetSystemContext().TenantId;
+        // Registry: "parent-x" is the parent of the route tenant; the route tenant is the parent of "child-x".
+        var hierarchy = new FakeHierarchy(("parent-x", routeTenant), (routeTenant, "child-x"));
+
+        var parent = BearerUser("parent-x", true, "FileViewer");
+        (await CallWithBearer(parent, c => c.GetStatsByPath(wkn, null), hierarchy: hierarchy))
+            .Should().BeOfType<OkObjectResult>();
+        (await CallWithBearer(parent, c => c.GetCapabilities(), hierarchy: hierarchy))
+            .Should().BeOfType<OkObjectResult>();
+
+        foreach (var other in new[] { "sibling-y", "child-x" }) // unrelated / sibling, and child token on parent route
+        {
+            var user = BearerUser(other, true, "FileViewer");
+            AssertForbidden(await CallWithBearer(user, c => c.GetStatsByPath(wkn, null), hierarchy: hierarchy));
+            AssertForbidden(await CallWithBearer(user, c => c.GetCapabilities(), hierarchy: hierarchy));
+        }
     }
 
     [Fact]

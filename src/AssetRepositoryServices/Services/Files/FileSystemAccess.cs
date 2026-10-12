@@ -3,6 +3,7 @@ using Meshmakers.Octo.Backend.AssetRepositoryServices.Observability;
 using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.ConstructionKit.Contracts.Services;
 using Meshmakers.Octo.Runtime.Contracts;
+using Meshmakers.Octo.Services.Infrastructure.Services;
 using Meshmakers.Octo.Runtime.Contracts.DataPermissions;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb.Repositories;
 
@@ -52,11 +53,12 @@ public class FileSystemAccess(
     ///     refused: only a bearer-authenticated principal with a user subject (<c>sub</c> / NameIdentifier) is
     ///     checked, and its <c>tenant_id</c> claim must equal the route tenant (case-insensitive). Not touched
     ///     (as in the middleware): client-credentials / service tokens (no subject; governed by the service
-    ///     token enforcement, AB#5032), cookie principals, and requests without a bearer header. There is no
-    ///     parent-tenant exemption: the Files routes are data routes (the parent rule of AB#5060 is opt-in per
-    ///     endpoint and Files does not opt in). Removed when Enforce is armed platform-wide.
+    ///     token enforcement, AB#5032), cookie principals, and requests without a bearer header. A user token of a
+    ///     <b>parent</b> tenant may address a child tenant (parent rule, resolved by the shared
+    ///     <c>ITenantHierarchyReader</c> like the middleware does); child to parent, siblings and unrelated
+    ///     tenants are refused. Removed when Enforce is armed platform-wide.
     /// </remarks>
-    public void EnsureTenantMatch(HttpContext httpContext, string routeTenantId,
+    public async Task EnsureTenantMatchAsync(HttpContext httpContext, string routeTenantId,
         FilesTenantGuardMode mode = FilesTenantGuardMode.Enforce)
     {
         var user = httpContext.User;
@@ -75,7 +77,21 @@ public class FileSystemAccess(
             return;
         }
 
+        // Parent-tenant rule (AB#5060 / AB#5708), same resolution as the middleware: a user of a parent tenant
+        // may address its child tenant (ITenantHierarchyReader, one level; the system tenant covers the whole
+        // estate). Not resolvable (reader not registered) means closed. Never the other way round.
         var account = user.FindFirstValue("sub") ?? user.FindFirstValue(ClaimTypes.NameIdentifier) ?? "unknown";
+        if (!string.IsNullOrEmpty(tokenTenantId) &&
+            httpContext.RequestServices?.GetService<ITenantHierarchyReader>() is { } hierarchy &&
+            await hierarchy.IsChildTenantAsync(tokenTenantId, routeTenantId).ConfigureAwait(false))
+        {
+            logger.LogInformation(
+                "Files API: user token of account '{Account}' issued for tenant '{TokenTenantId}' addresses its " +
+                "child tenant '{TenantId}'; allowed by the parent-tenant rule (AB#6579)",
+                account, tokenTenantId, routeTenantId);
+            return;
+        }
+
         var clientId = user.FindFirstValue("client_id") ?? "<none>";
         var tokenTenant = string.IsNullOrEmpty(tokenTenantId) ? "<none>" : tokenTenantId;
         if (mode == FilesTenantGuardMode.LogOnly)
