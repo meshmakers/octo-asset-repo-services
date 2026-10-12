@@ -567,6 +567,8 @@ public class FilesController(
         }
         catch (Exception e) when (FileSystemService.IsDataPermissionDenial(e))
         {
+            // AB#6575: the engine's per-entity denial after the up-front gate is a 403 as well.
+            fileSystemAccess.RecordDenied(tenantId, GraphQL.Helpers.GetSecurityContext(HttpContext.User), access);
             return Problem(FileSystemException.Forbidden("Access denied by data permissions."));
         }
         catch (Runtime.Contracts.MongoDb.EntityNotFoundException)

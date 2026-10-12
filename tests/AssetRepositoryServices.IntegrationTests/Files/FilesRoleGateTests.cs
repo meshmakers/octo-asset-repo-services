@@ -291,6 +291,53 @@ public class FilesRoleGateTests : IAsyncLifetime
             .Should().BeEmpty("a caller without a file role does not see the entries (engine read filter)");
     }
 
+    // ---- AB#6575: refused requests are visible -------------------------------------------------------
+
+    [Fact]
+    public async Task Denials_AreCounted_WithTenantAccountAndAction_AndAllowedCallsAreNot()
+    {
+        var root = await _helpers.CreateRootAsync();
+        var wkn = root.Entity.RtWellKnownName!;
+        var folder = await _helpers.CreateFolderAsync(root, "Sig");
+        var file = await _helpers.UploadAsync(folder, "s.txt", "s", FileConflictMode.Fail);
+        var suffix = Guid.NewGuid().ToString("N")[..8];
+        var viewer = FilesTestFixture.CreateUser("sig-viewer-" + suffix, "FileViewer");
+        var nobody = FilesTestFixture.CreateUser("sig-nobody-" + suffix, "ReportingManagement");
+        var manager = FilesTestFixture.CreateUser("sig-manager-" + suffix, "FileManagement");
+
+        var seen = new global::System.Collections.Concurrent.ConcurrentBag<(long Value, Dictionary<string, object?> Tags)>();
+        using var listener = new global::System.Diagnostics.Metrics.MeterListener();
+        listener.InstrumentPublished = (instrument, l) =>
+        {
+            if (instrument.Name == Meshmakers.Octo.Backend.AssetRepositoryServices.Observability.FilesAccessMetrics.AccessDeniedMetricName)
+            {
+                l.EnableMeasurementEvents(instrument);
+            }
+        };
+        listener.SetMeasurementEventCallback<long>((_, value, tags, _) =>
+            seen.Add((value, tags.ToArray().ToDictionary(t => t.Key, t => t.Value))));
+        listener.Start();
+
+        AssertForbidden(await Download(nobody, wkn, "Sig/s.txt"));                       // read
+        AssertForbidden(await Upload(viewer, wkn, "Sig/new.txt", "x"));                  // write
+        ErrorCode(await Run(Delete, new { rtEntityIds = new[] { Ref(file) } }, viewer)) // delete
+            .Should().Be(FileSystemErrorCodes.Forbidden);
+
+        // allowed calls and a plain 404 do not count
+        (await Download(viewer, wkn, "Sig/s.txt")).Should().BeOfType<FileStreamResult>();
+        (await Upload(manager, wkn, "Sig/ok.txt", "x")).Should().Match<IActionResult>(r => Status(r) == 201);
+        (await Download(manager, wkn, "Sig/missing.txt")).Should().Match<IActionResult>(r => Status(r) == 404);
+
+        var mine = seen.Where(m => ((string?)m.Tags["account"])?.EndsWith(suffix, StringComparison.Ordinal) == true).ToList();
+        mine.Should().OnlyContain(m => m.Value == 1 && (string?)m.Tags["tenant_id"] == Repository.TenantId);
+        mine.Select(m => ((string?)m.Tags["account"], (string?)m.Tags["action"])).Should().BeEquivalentTo(new[]
+        {
+            ("sig-nobody-" + suffix, "read"),
+            ("sig-viewer-" + suffix, "write"),
+            ("sig-viewer-" + suffix, "delete")
+        });
+    }
+
     // ---- tenant policies replace the baseline -------------------------------------------------------
 
     [Fact]
