@@ -407,6 +407,41 @@ public sealed class FilesMigrationSweepStateDto
     ///     The latest audit record (counts of the last sweep that wrote or failed); null when none exists.
     /// </summary>
     public FilesMigrationAuditDto? LastSweep { get; init; }
+
+    /// <summary>
+    ///     State of the pre-check scan (AB#6554) on the instance that answers: <c>None</c> (no scan ran since the
+    ///     start, e.g. nothing to do or another instance holds the lease), <c>Scanning</c>, <c>Scanned</c> or
+    ///     <c>Failed</c>. The scan runs in the background after the move; the report is logged once it finishes.
+    /// </summary>
+    public string PreCheck { get; init; } = FilesMigrationPreCheckStates.None;
+
+    /// <summary>
+    ///     Start of the last pre-check scan on this instance; null when none ran.
+    /// </summary>
+    public DateTime? PreCheckStartedUtc { get; init; }
+
+    /// <summary>
+    ///     End of the last pre-check scan on this instance; null while it runs or when none ran.
+    /// </summary>
+    public DateTime? PreCheckFinishedUtc { get; init; }
+}
+
+/// <summary>
+///     Values of <see cref="FilesMigrationSweepStateDto.PreCheck" />.
+/// </summary>
+public static class FilesMigrationPreCheckStates
+{
+    /// <summary>No scan ran on this instance since the start.</summary>
+    public const string None = "None";
+
+    /// <summary>The scan runs in the background.</summary>
+    public const string Scanning = "Scanning";
+
+    /// <summary>The scan finished and its report was logged.</summary>
+    public const string Scanned = "Scanned";
+
+    /// <summary>The scan failed; see the log. The move is not affected.</summary>
+    public const string Failed = "Failed";
 }
 
 /// <summary>

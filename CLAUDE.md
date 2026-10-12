@@ -806,7 +806,14 @@ System.Reporting 3.0.0.
   `rtBlueprintSource` and field paths. The scan reads raw BSON (secondary-preferred) and searches the UTF-8
   bytes, so it is schema-free; scans are serialized per pod and cut off after `ScanTimeout` (5 min,
   `LiteralScanComplete = false`). At tenant start only the lease holder scans, and only when the cheap
-  check found legacy data. Not scanned: GridFS contents, CK collections, `RtAssociation`, binary values. The
+  check found legacy data. **The scan runs in the background after the move (AB#6554)**: on a 1.3 million document
+  tenant it took 3 min 8 s inline and held the tenant setup. `RunAtTenantStartAsync` now returns once the move is done;
+  the report line ("pre-check tenant …") is logged when the scan finishes and lists what is left after the move. The
+  sweep finds root conflicts itself and fails closed, so the move never waits for the scan. One scan per tenant at a
+  time per pod; the scan token is cancelled at shutdown. `Sweep.PreCheck` in the status shows `None` / `Scanning` /
+  `Scanned` / `Failed` (with `PreCheckStartedUtc` / `PreCheckFinishedUtc`), per instance. Runbook (AB#6183): after
+  restarting a listed tenant, watch `Sweep.State` for the move and `Sweep.PreCheck` for the report; the setup
+  duration no longer grows with the tenant size. Not scanned: GridFS contents, CK collections, `RtAssociation`, binary values. The
   sweep never rewrites pipeline YAML — blueprint pipelines are fixed by the app blueprint release (S9),
   tenant-local ones by the runbook (S11).
 - Tests: `tests/AssetRepositoryServices.IntegrationTests/Files/ReportingFilesMoveSweepTests.cs`

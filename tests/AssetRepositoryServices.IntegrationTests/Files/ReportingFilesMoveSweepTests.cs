@@ -427,6 +427,7 @@ public class ReportingFilesMoveSweepTests
         await _fixture.SeedLegacyTreeAsync();
         var moved = await _fixture.Runner.RunAtTenantStartAsync(TenantId, Ct);
         moved!.Outcome.Should().Be(ReportingFilesSweepOutcome.Moved, string.Join("; ", moved.Errors));
+        await _fixture.Runner.WaitForPreChecksAsync(); // AB#6554: the scan runs in the background after the move
         _fixture.Status.LiteralScanCount.Should().Be(scansBefore + 1);
     }
 

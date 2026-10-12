@@ -130,8 +130,12 @@ public class FilesMigrationStatusService
             _ => (FilesMigrationSweepStates.Done, "the tenant is listed and has no legacy data left")
         };
 
+        var preCheck = _tracker.GetPreCheck(tenantId);
         return new FilesMigrationSweepStateDto
         {
+            PreCheck = preCheck?.State ?? FilesMigrationPreCheckStates.None,
+            PreCheckStartedUtc = preCheck?.StartedUtc,
+            PreCheckFinishedUtc = preCheck?.FinishedUtc,
             State = state,
             Reason = reason,
             SweepEnabled = options.SweepEnabled,

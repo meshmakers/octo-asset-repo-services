@@ -12,6 +12,54 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.Services.Files.Migrati
 public class ReportingFilesSweepTracker
 {
     private readonly ConcurrentDictionary<string, DateTime> _lastFinding = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, ReportingFilesPreCheckInfo> _preChecks = new(StringComparer.Ordinal);
+
+    /// <summary>
+    ///     Marks the background pre-check scan of the tenant as started (AB#6554). False when a scan of this
+    ///     tenant is already running on this instance — a repeated tenant start must not start a second scan.
+    /// </summary>
+    public bool TryBeginPreCheck(string tenantId)
+    {
+        var started = new ReportingFilesPreCheckInfo(FilesMigrationPreCheckStates.Scanning, DateTime.UtcNow, null);
+        while (true)
+        {
+            if (_preChecks.TryGetValue(tenantId, out var current))
+            {
+                if (current.State == FilesMigrationPreCheckStates.Scanning)
+                {
+                    return false;
+                }
+
+                if (_preChecks.TryUpdate(tenantId, started, current))
+                {
+                    return true;
+                }
+            }
+            else if (_preChecks.TryAdd(tenantId, started))
+            {
+                return true;
+            }
+        }
+    }
+
+    /// <summary>
+    ///     Records the end of the background pre-check scan of the tenant.
+    /// </summary>
+    public void CompletePreCheck(string tenantId, bool succeeded)
+    {
+        var startedUtc = _preChecks.TryGetValue(tenantId, out var current) ? current.StartedUtc : DateTime.UtcNow;
+        _preChecks[tenantId] = new ReportingFilesPreCheckInfo(
+            succeeded ? FilesMigrationPreCheckStates.Scanned : FilesMigrationPreCheckStates.Failed, startedUtc,
+            DateTime.UtcNow);
+    }
+
+    /// <summary>
+    ///     State of the background pre-check scan of the tenant on this instance; null when none ran since the start.
+    /// </summary>
+    public ReportingFilesPreCheckInfo? GetPreCheck(string tenantId)
+    {
+        return _preChecks.TryGetValue(tenantId, out var info) ? info : null;
+    }
 
     /// <summary>
     ///     Records a finding now: the tenant is (again) on the timer for the whole window.
@@ -72,3 +120,11 @@ public class ReportingFilesSweepTracker
         return _lastFinding.Keys.ToList();
     }
 }
+
+/// <summary>
+///     State of the background pre-check scan of one tenant (AB#6554).
+/// </summary>
+/// <param name="State">One of <see cref="FilesMigrationPreCheckStates" />.</param>
+/// <param name="StartedUtc">Start of the scan.</param>
+/// <param name="FinishedUtc">End of the scan; null while it runs.</param>
+public sealed record ReportingFilesPreCheckInfo(string State, DateTime StartedUtc, DateTime? FinishedUtc);
