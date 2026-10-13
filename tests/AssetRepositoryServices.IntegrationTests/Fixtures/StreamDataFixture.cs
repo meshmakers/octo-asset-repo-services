@@ -84,7 +84,7 @@ public class StreamDataFixture : AssetRepoFixture
         // One CrateDB cluster for the whole test process (AB#5118). Isolation between the
         // stream-data collections comes from the schema — TenantSchema.SchemaName derives it from
         // the fixture's GUID-suffixed system tenant id — not from a container of its own.
-        CrateDbConnectionString = await SharedCrateDbContainer.GetConnectionStringAsync();
+        CrateDbConnectionString = await GetCrateDbConnectionStringAsync();
 
         // Flip the instance-level kill switch BEFORE registering the stream data stack — the
         // tenant context refuses to enable stream data if `StreamData:Enabled` is false at
@@ -148,6 +148,14 @@ public class StreamDataFixture : AssetRepoFixture
         _documentExecuter = Provider?.GetRequiredService<IDocumentExecuter<OctoSchema>>();
         _serializer = Provider?.GetRequiredService<IGraphQLTextSerializer>();
     }
+
+    /// <summary>
+    /// The CrateDB the fixture runs against: the process-wide single-node container. A derived
+    /// fixture that needs another topology (a table with a replica copy needs a second node) starts
+    /// its own and returns its connection string.
+    /// </summary>
+    protected virtual Task<string> GetCrateDbConnectionStringAsync() =>
+        SharedCrateDbContainer.GetConnectionStringAsync();
 
     /// <summary>
     /// The connection string the stream data services under test use. A derived fixture may add
