@@ -15,6 +15,8 @@ tests/AssetRepositoryServices.IntegrationTests/
 │   ├── SharedMongoDbContainer.cs          # One MongoDB Testcontainer per test process
 │   ├── SharedCrateDbContainer.cs          # One CrateDB Testcontainer per test process
 │   ├── SharedContainerLifetime.cs         # Assembly fixture stopping both after the last collection
+│   ├── CrateDbTestCluster.cs              # Two-node CrateDB cluster for tables with a replica copy (AB#6647)
+│   ├── ReplicatedStreamDataFixture.cs     # StreamDataFixture on that cluster, 1 shard + 1 replica
 │   ├── DatabaseFixture.cs                 # Binds a fixture to the shared MongoDB container
 │   └── AssetRepoFixture.cs                # System + Test Tenant setup
 ├── System/
@@ -140,6 +142,15 @@ the stream-data collections:
 - Fixtures isolate themselves on those shared servers **by name**, not by server: each fixture
   instance has its own GUID-suffixed `SystemDatabaseName`, `SystemTenantId` (which also becomes its
   CrateDB schema) and `TestTenantId`
+- **One exception: the `StreamDataReplicated` collection** (AB#6647) starts a CrateDB cluster of its
+  own - `CrateDbTestCluster`, two nodes of the same image on a Docker network of their own, 512 MB
+  heap each (measured: about 0.6 GiB resident per node, formed in 5-6 s) - because a table only
+  gets a replica copy on a second node, and CrateDB before 5.10.12 loses deterministic column
+  defaults on the replica copy only. `ReplicatedStreamDataFixture` creates every archive table
+  with one shard and one replica; it stops the cluster and removes the network when the collection
+  is done. Put a test there only when it needs the replica copy; assert the replica is assigned
+  (`sys.shards`) before the write and read the result several times on every node - a read is
+  served by either copy
 - MongoDB uses a replica set for transaction support
 - Container names are GUID-suffixed per `dotnet test` run, so concurrent runs on the same Docker
   host get their own pair of containers rather than colliding
