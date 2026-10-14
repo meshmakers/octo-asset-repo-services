@@ -44,6 +44,12 @@ internal sealed class CkModelDtoType : ObjectGraphType<CkModelDto>
             .Description("Declared range and floor per direct dependency of a range-retaining model; null for " +
                          "classic models (see dependencies for the exact pins).")
             .Resolve(ctx => (ctx.Source as CkV2CkModelDto)?.DependencyRanges);
+        // AB#6674: additive, nullable; existing documents and selections are unaffected.
+        Field<StringGraphType>("resolveFailedReason")
+            .Description("Why the model is ResolveFailed: plain English text naming models, versions, ranges and pins " +
+                         "(for example 'Unmet dependency: System-[2.5,3.0) (floor 2.5.0): installed System-2.4.0'). " +
+                         "Only set while modelState is ResolveFailed, null otherwise. For display only - do not parse.")
+            .Resolve(ctx => (ctx.Source as CkV2CkModelDto)?.ResolveFailedReason);
 
         Connection<CkTypeDtoType>("Types")
             .Argument<StringGraphType>(Statics.CkIdArg, "Returns the construction kit type with the given id.")
@@ -328,7 +334,10 @@ internal sealed class CkModelDtoType : ObjectGraphType<CkModelDto>
             Id = model.Id,
             CkLanguage = model.CkLanguage,
             MinEngineVersion = model.MinEngineVersion,
-            DependencyRanges = model.DependencyRanges
+            DependencyRanges = model.DependencyRanges,
+            ResolveFailedReason = model.ModelState == ConstructionKit.Contracts.DataTransferObjects.ModelState.ResolveFailed
+                ? model.ResolveFailedReason
+                : null
         };
     }
 }
