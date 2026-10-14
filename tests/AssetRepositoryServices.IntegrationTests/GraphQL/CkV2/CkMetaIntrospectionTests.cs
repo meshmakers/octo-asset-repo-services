@@ -188,7 +188,12 @@ public class CkMetaIntrospectionTests
         var testModel = models["AssetRepositoryIntegrationTest"];
         testModel["ckLanguage"]!.Value<int>().Should().Be(2);
         testModel["minEngineVersion"]!.Value<string>().Should().NotBeNullOrWhiteSpace();
-        testModel["dependencyRanges"]!.Type.Should().Be(JTokenType.Null, "the test model is not range-retaining");
+        // Range retention is the compiler default (AB#6675): the test model carries the ranges it declares.
+        var ranges = testModel["dependencyRanges"]!;
+        ranges.Type.Should().Be(JTokenType.Array, "the test model is range-retaining by default");
+        ranges.Should().NotBeEmpty();
+        ranges.Select(r => r["range"]!.Value<string>()!).Should().Contain(r => r.StartsWith("System-[", StringComparison.Ordinal));
+        ranges.Should().OnlyContain(r => !string.IsNullOrWhiteSpace(r["floor"]!.Value<string>()));
 
         var system = models["System"];
         system["ckLanguage"]!.Value<int>().Should().Be(1, "a v1 model reports the default");
