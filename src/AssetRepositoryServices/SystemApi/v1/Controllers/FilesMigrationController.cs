@@ -21,8 +21,6 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.SystemApi.v1.Controlle
 [ApiVersion("1.0")]
 public class FilesMigrationController : ControllerBase
 {
-    private const string TenantIdClaimType = "tenant_id";
-
     private readonly FilesMigrationStatusService _statusService;
     private readonly ISystemContext _systemContext;
     private readonly ILogger<FilesMigrationController> _logger;
@@ -89,16 +87,6 @@ public class FilesMigrationController : ControllerBase
     /// </summary>
     internal bool IsSystemAdministrator(ClaimsPrincipal user)
     {
-        var tokenTenantId = user.FindFirstValue(TenantIdClaimType);
-        if (string.IsNullOrEmpty(tokenTenantId) ||
-            tokenTenantId.NormalizeString() != _systemContext.TenantId.NormalizeString())
-        {
-            return false;
-        }
-
-        var isUserToken = user.FindFirst("sub") != null || user.FindFirst(ClaimTypes.NameIdentifier) != null;
-        return !isUserToken ||
-               user.Identities.SelectMany(i => i.FindAll(i.RoleClaimType).Concat(i.FindAll("role")))
-                   .Any(c => c.Value == CommonConstants.AdminPanelManagementRole);
+        return SystemAdministratorGuard.IsSystemAdministrator(user, _systemContext);
     }
 }
