@@ -8,6 +8,7 @@ using Meshmakers.Octo.Communication.Contracts;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
 using MongoDB.Bson;
 using MongoDB.Driver;
@@ -40,10 +41,21 @@ public class GridFsOrphanSweepTests
 
     private FilesOrphanSweepController CreateController(ClaimsPrincipal user) =>
         new(_fixture.GetService<IGridFsOrphanSweepService>(), _fixture.GetSystemContext(),
-            NullLogger<FilesOrphanSweepController>.Instance)
+            NullLogger<FilesOrphanSweepController>.Instance, new HostLifetimeStub())
         {
             ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext { User = user } }
         };
+
+    private sealed class HostLifetimeStub : IHostApplicationLifetime
+    {
+        public CancellationToken ApplicationStarted => CancellationToken.None;
+        public CancellationToken ApplicationStopping => CancellationToken.None;
+        public CancellationToken ApplicationStopped => CancellationToken.None;
+
+        public void StopApplication()
+        {
+        }
+    }
 
     private ClaimsPrincipal SystemAdmin() => new(new ClaimsIdentity(
     [

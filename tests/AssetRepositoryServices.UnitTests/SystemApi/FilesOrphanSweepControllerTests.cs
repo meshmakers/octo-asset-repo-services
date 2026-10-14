@@ -8,6 +8,7 @@ using Meshmakers.Octo.Runtime.Contracts.MongoDb;
 using Meshmakers.Octo.Runtime.Engine.MongoDb.Repositories.MongoDb;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
@@ -23,14 +24,17 @@ public class FilesOrphanSweepControllerTests
     private const string Tenant = "customer";
 
     private readonly IGridFsOrphanSweepService _service = A.Fake<IGridFsOrphanSweepService>();
+    private readonly IHostApplicationLifetime _lifetime = A.Fake<IHostApplicationLifetime>();
+    private readonly CancellationTokenSource _stopping = new();
     private readonly FilesOrphanSweepController _controller;
 
     public FilesOrphanSweepControllerTests()
     {
         var systemContext = A.Fake<ISystemContext>();
         A.CallTo(() => systemContext.TenantId).Returns(SystemTenantId);
+        A.CallTo(() => _lifetime.ApplicationStopping).Returns(_stopping.Token);
         _controller = new FilesOrphanSweepController(_service, systemContext,
-            NullLogger<FilesOrphanSweepController>.Instance)
+            NullLogger<FilesOrphanSweepController>.Instance, _lifetime)
         {
             ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() }
         };
@@ -127,6 +131,39 @@ public class FilesOrphanSweepControllerTests
 
         result.Should().BeOfType<OkObjectResult>().Which.Value.Should().BeOfType<GridFsOrphanSweepReportDto>()
             .Which.Mode.Should().Be("remove");
+    }
+
+    [Fact]
+    public async Task Remove_DoesNotPropagateRequestCancellation_ButIsBoundToApplicationShutdown()
+    {
+        using var requestAborted = new CancellationTokenSource();
+        await requestAborted.CancelAsync();
+        CancellationToken received = default;
+        A.CallTo(() => _service.SweepAsync(Tenant, true, A<TimeSpan>._, A<CancellationToken>._))
+            .Invokes((string _, bool _, TimeSpan _, CancellationToken ct) => received = ct)
+            .Returns(Report(removed: true));
+
+        var result = await _controller.SweepOrphans(Tenant, remove: true, cancellationToken: requestAborted.Token);
+
+        result.Should().BeOfType<OkObjectResult>();
+        received.IsCancellationRequested.Should().BeFalse("a client timeout must not abort a removal");
+        received.Should().NotBe(requestAborted.Token);
+        await _stopping.CancelAsync();
+        received.IsCancellationRequested.Should().BeTrue("application shutdown still stops the removal");
+    }
+
+    [Fact]
+    public async Task DryRun_PropagatesRequestCancellation()
+    {
+        using var requestAborted = new CancellationTokenSource();
+        CancellationToken received = default;
+        A.CallTo(() => _service.SweepAsync(Tenant, false, A<TimeSpan>._, A<CancellationToken>._))
+            .Invokes((string _, bool _, TimeSpan _, CancellationToken ct) => received = ct)
+            .Returns(Report());
+
+        await _controller.SweepOrphans(Tenant, remove: false, cancellationToken: requestAborted.Token);
+
+        received.Should().Be(requestAborted.Token);
     }
 
     [Theory]

@@ -55,6 +55,9 @@ repeat; a second run finds nothing.
 3. **Remove** only after the review: `POST .../orphan-sweep/{tenantId}?remove=true` (default grace period 24 h).
 4. **Verify** with a second dry run: `orphanFiles` is 0.
 
+A `remove=true` run continues after the client or a proxy disconnects (it is stopped only by service shutdown); the
+result is then in the log counts. A dry run is cancelled with the request.
+
 Tenant by tenant, one at a time; the scan reads `fs.files` and the entity collections of the tenant once, so run
 it for a very large tenant in a quiet window.
 
