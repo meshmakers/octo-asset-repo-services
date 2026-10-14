@@ -18,6 +18,9 @@ internal sealed class CkV2CkModelDto : CkModelDto
 
     /// <summary>Declared range + floor per direct dependency of a range-retaining model; <c>null</c> otherwise.</summary>
     public IReadOnlyList<CkModelDependency>? DependencyRanges { get; init; }
+
+    /// <summary>AB#6674: why the model is ResolveFailed (plain text, display only); <c>null</c> otherwise.</summary>
+    public string? ResolveFailedReason { get; init; }
 }
 
 /// <summary>

@@ -195,6 +195,25 @@ public class CkMetaIntrospectionTests
         system["minEngineVersion"]!.Type.Should().Be(JTokenType.Null);
     }
 
+    // AB#6674: the new field is additive and nullable; a healthy model reports null, existing selections are unaffected.
+    [Fact]
+    public async Task Models_ExposeResolveFailedReason_NullForHealthyModels()
+    {
+        var withField = await ExecuteAsync("""
+            query { constructionKit { models(first: 100) { items { id { name } modelState resolveFailedReason } } } }
+            """);
+        var withoutField = await ExecuteAsync("""
+            query { constructionKit { models(first: 100) { items { id { name } modelState } } } }
+            """);
+
+        var items = withField.SelectTokens("data.constructionKit.models.items[*]").ToList();
+        items.Should().NotBeEmpty();
+        items.Should().OnlyContain(m => m["resolveFailedReason"]!.Type == JTokenType.Null,
+            "no model of the test tenant is ResolveFailed");
+        withoutField.SelectTokens("data.constructionKit.models.items[*]").Should().HaveCount(items.Count,
+            "queries that do not select the field keep working");
+    }
+
     [Fact]
     public async Task Schema_HasNoMethodRuntime()
     {

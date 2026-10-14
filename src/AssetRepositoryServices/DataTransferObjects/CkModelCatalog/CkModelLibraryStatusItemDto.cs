@@ -22,6 +22,12 @@ public class CkModelLibraryStatusItemDto
     public string? ModelState { get; set; }
 
     /// <summary>
+    ///     AB#6674: why the installed model is <c>ResolveFailed</c> - plain English text naming models, versions, ranges
+    ///     and pins; <c>null</c> when the model is not failed or not installed. For display only, never parse it.
+    /// </summary>
+    public string? ResolveFailedReason { get; set; }
+
+    /// <summary>
     ///     Dependencies of the installed model (fullName format)
     /// </summary>
     public List<string> Dependencies { get; set; } = [];

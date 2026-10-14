@@ -336,6 +336,7 @@ public sealed class CkModelLibraryStatusService : ICkModelLibraryStatusService
                 Name = inst.ModelId,
                 InstalledVersion = inst.Id.Version.ToString(),
                 ModelState = modelState,
+                ResolveFailedReason = isResolveFailed ? inst.ResolveFailedReason : null,
                 Dependencies = dependencies,
                 CatalogVersion = catalog?.ModelId.Version.ToString(),
                 HasUpdate = hasUpdate,
@@ -356,6 +357,10 @@ public sealed class CkModelLibraryStatusService : ICkModelLibraryStatusService
                 Name = inst.ModelId,
                 InstalledVersion = inst.Id.Version.ToString(),
                 ModelState = modelState,
+                ResolveFailedReason = inst.ModelState ==
+                                      ConstructionKit.Contracts.DataTransferObjects.ModelState.ResolveFailed
+                    ? inst.ResolveFailedReason
+                    : null,
                 Dependencies = dependencies,
                 CatalogVersion = catalog?.ModelId.Version.ToString(),
                 CatalogName = catalog?.CatalogName,
