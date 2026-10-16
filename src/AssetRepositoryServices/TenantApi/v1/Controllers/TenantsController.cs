@@ -23,6 +23,12 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.TenantApi.v1.Controlle
 ///     REST Controller for tenant-scoped child tenant management.
 ///     Each tenant can manage its own child tenants through this API.
 /// </summary>
+/// <remarks>
+///     AB#4497: the actions that create, attach, detach, clear, delete or re-run the setup of a child tenant need the
+///     tenant role <c>TenantManagement</c> of the caller in addition to the <c>octo_api</c> scope
+///     (<see cref="AssetRepositoryServiceConstants.TenantAdministrationPolicy" />, <c>403</c> otherwise). Reads,
+///     <c>clearCache</c> and <c>recomputeDisplayNames</c> keep the scope-only policies.
+/// </remarks>
 [Authorize(AuthenticationSchemes = OidcConstants.AuthenticationSchemes.AuthorizationHeaderBearer)]
 [Route("{tenantId:tenantId}/v{version:apiVersion}/[controller]")]
 [ApiController]
@@ -406,7 +412,7 @@ public class TenantsController : ControllerBase
     /// <param name="databaseName">Name of the database</param>
     /// <param name="blueprintId">Optional blueprint ID to apply</param>
     [HttpPost]
-    [Authorize(AssetRepositoryServiceConstants.TenantAssetApiReadWritePolicy)]
+    [Authorize(AssetRepositoryServiceConstants.TenantAdministrationPolicy)]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(typeof(OperationFailedErrorDto), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(OperationFailedErrorDto), StatusCodes.Status409Conflict)]
@@ -522,7 +528,7 @@ public class TenantsController : ControllerBase
     /// <param name="childTenantId">ID of the child tenant</param>
     /// <param name="databaseName">Name of the database (must exist)</param>
     [HttpPost("attach")]
-    [Authorize(AssetRepositoryServiceConstants.TenantAssetApiReadWritePolicy)]
+    [Authorize(AssetRepositoryServiceConstants.TenantAdministrationPolicy)]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(typeof(OperationFailedErrorDto), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(OperationFailedErrorDto), StatusCodes.Status409Conflict)]
@@ -590,7 +596,7 @@ public class TenantsController : ControllerBase
     /// </summary>
     /// <param name="childTenantId">ID of the child tenant</param>
     [HttpPost("detach")]
-    [Authorize(AssetRepositoryServiceConstants.TenantAssetApiReadWritePolicy)]
+    [Authorize(AssetRepositoryServiceConstants.TenantAdministrationPolicy)]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(typeof(OperationFailedErrorDto), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
@@ -664,7 +670,7 @@ public class TenantsController : ControllerBase
     /// </summary>
     /// <param name="childTenantId">ID of the child tenant</param>
     [HttpPut("clear")]
-    [Authorize(AssetRepositoryServiceConstants.TenantAssetApiReadWritePolicy)]
+    [Authorize(AssetRepositoryServiceConstants.TenantAdministrationPolicy)]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(OperationFailedErrorDto), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(InternalServerErrorDto), StatusCodes.Status500InternalServerError)]
@@ -784,7 +790,7 @@ public class TenantsController : ControllerBase
     /// </summary>
     /// <param name="childTenantId">ID of the child tenant</param>
     [HttpDelete]
-    [Authorize(AssetRepositoryServiceConstants.TenantAssetApiReadWritePolicy)]
+    [Authorize(AssetRepositoryServiceConstants.TenantAdministrationPolicy)]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(OperationFailedErrorDto), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
@@ -991,7 +997,7 @@ public class TenantsController : ControllerBase
     /// </summary>
     /// <param name="childTenantId">ID of the child tenant</param>
     [HttpPost("rerunSetup")]
-    [Authorize(AssetRepositoryServiceConstants.TenantAssetApiReadWritePolicy)]
+    [Authorize(AssetRepositoryServiceConstants.TenantAdministrationPolicy)]
     [ProducesResponseType(typeof(TenantLifecycleDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(typeof(InternalServerErrorDto), StatusCodes.Status500InternalServerError)]
