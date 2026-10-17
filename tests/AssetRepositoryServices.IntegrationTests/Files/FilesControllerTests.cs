@@ -214,6 +214,42 @@ public class FilesControllerTests
     }
 
     [Fact]
+    public async Task ExistingDuplicateFolders_AnswerAmbiguousPath_WithWarning_AndRefuseUploads()
+    {
+        // AB#6477: duplicates created before the name locks (seeded past the guard through the repository)
+        // must keep answering AMBIGUOUS_PATH with a warning - no automatic merge, no crash.
+        var root = await _helpers.CreateRootAsync();
+        var wkn = root.Entity.RtWellKnownName!;
+        var first = await _helpers.CreateFolderAsync(root, "Dup");
+        var second = await _helpers.CreateFolderAsync(root, "Dup");
+        first.Id.Should().NotBe(second.Id);
+
+        // Path resolution (download) -> 409 AMBIGUOUS_PATH + warning
+        var log = new ListLogger();
+        var (download, _) = Create(FilesTestFixture.PlainUser, logger: log);
+        var resolved = (ObjectResult)await download.DownloadByPath(wkn, "Dup/a.txt");
+        resolved.StatusCode.Should().Be(StatusCodes.Status409Conflict);
+        Code(resolved).Should().Be(FileSystemErrorCodes.AmbiguousPath);
+        log.Warnings.Should().ContainSingle(w => w.Contains("Duplicate sibling names") && w.Contains("Dup"));
+
+        // New upload into that path (also with createFolders) -> refused, nothing created or merged
+        foreach (var createFolders in new[] { false, true })
+        {
+            var uploadLog = new ListLogger();
+            var (upload, _) = Create(FilesTestFixture.PlainUser, "x"u8.ToArray(), "text/plain", logger: uploadLog);
+            var refused = (ObjectResult)await upload.UploadByPath(wkn, "Dup/new.txt", createFolders: createFolders);
+            refused.StatusCode.Should().Be(StatusCodes.Status409Conflict);
+            Code(refused).Should().Be(FileSystemErrorCodes.AmbiguousPath);
+            uploadLog.Warnings.Should().ContainSingle(w => w.Contains("Duplicate sibling names"));
+        }
+
+        using var session = Repository.GetSession();
+        (await _fixture.FileSystem.GetChildrenByNameAsync(Repository, session, root.Id, "Dup")).Should().HaveCount(2);
+        (await _fixture.FileSystem.GetChildrenAsync(Repository, session, first.Id)).Should().BeEmpty();
+        (await _fixture.FileSystem.GetChildrenAsync(Repository, session, second.Id)).Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task UploadByPath_ParallelSameFileNameWithConflictFail_OneWins()
     {
         var root = await _helpers.CreateRootAsync();
@@ -565,7 +601,8 @@ public class FilesControllerTests
     }
 
     private (FilesController Controller, DefaultHttpContext Http) Create(ClaimsPrincipal user, byte[]? body = null,
-        string? contentType = null, FilesOptions? limits = null)
+        string? contentType = null, FilesOptions? limits = null,
+        Microsoft.Extensions.Logging.ILogger<FilesController>? logger = null)
     {
         var http = NewHttpContext(user);
         if (body != null)
@@ -579,7 +616,7 @@ public class FilesControllerTests
             _fixture.GetService<FileZipService>(), _fixture.GetService<FileSystemAccess>(),
             Options.Create(limits ?? new FilesOptions()),
             _fixture.GetService<Meshmakers.Octo.ConstructionKit.Contracts.Services.ICkCacheService>(),
-            Microsoft.Extensions.Logging.Abstractions.NullLogger<FilesController>.Instance)
+            logger ?? Microsoft.Extensions.Logging.Abstractions.NullLogger<FilesController>.Instance)
         {
             ControllerContext = new ControllerContext { HttpContext = http }
         };
@@ -602,6 +639,30 @@ public class FilesControllerTests
         await stream.CopyToAsync(memory);
         return memory.ToArray();
     }
+
+    private sealed class ListLogger : Microsoft.Extensions.Logging.ILogger<FilesController>
+    {
+        private readonly List<string> _warnings = [];
+
+        public IReadOnlyList<string> Warnings
+        {
+            get { lock (_warnings) { return _warnings.ToList(); } }
+        }
+
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+        public bool IsEnabled(Microsoft.Extensions.Logging.LogLevel logLevel) => true;
+
+        public void Log<TState>(Microsoft.Extensions.Logging.LogLevel logLevel, Microsoft.Extensions.Logging.EventId eventId,
+            TState state, Exception? exception, Func<TState, Exception?, string> formatter)
+        {
+            if (logLevel == Microsoft.Extensions.Logging.LogLevel.Warning)
+            {
+                lock (_warnings) { _warnings.Add(formatter(state, exception)); }
+            }
+        }
+    }
+
 }
 
 /// <summary>Kestrel's switch for synchronous IO (off by default).</summary>
