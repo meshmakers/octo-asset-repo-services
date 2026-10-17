@@ -19,6 +19,8 @@
             <PrivateAssets>all</PrivateAssets>
             <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
         </PackageReference>
+        <!-- AB#6832: drives requests through the real tenant gate in-process (TenantGatePipelineTests). -->
+        <PackageReference Include="Microsoft.AspNetCore.TestHost" Version="10.0.13" />
         <PackageReference Include="FakeItEasy" Version="9.0.1" />
         <PackageReference Include="FluentAssertions" Version="8.10.0" />
     </ItemGroup>
