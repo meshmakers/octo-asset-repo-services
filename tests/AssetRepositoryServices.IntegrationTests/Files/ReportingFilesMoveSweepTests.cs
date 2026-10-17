@@ -321,14 +321,14 @@ public class ReportingFilesMoveSweepTests
             {
                 ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext { User = SystemAdmin() } }
             };
-            var ok = await controller.GetMigrationStatus(TenantId, Ct);
+            var ok = await controller.GetMigrationStatus(TenantId, cancellationToken: Ct);
             ok.Should().BeOfType<OkObjectResult>().Which.Value.Should().BeOfType<FilesMigrationStatusDto>()
                 .Which.LiteralReferenceCount.Should().Be(2);
-            (await controller.GetMigrationStatus("does-not-exist-" + Guid.NewGuid().ToString("N"), Ct))
+            (await controller.GetMigrationStatus("does-not-exist-" + Guid.NewGuid().ToString("N"), cancellationToken: Ct))
                 .Should().BeOfType<NotFoundObjectResult>();
 
             controller.ControllerContext.HttpContext.User = FilesTestFixture.CreateUser("someone", "AdminPanelManagement");
-            (await controller.GetMigrationStatus(TenantId, Ct)).Should().BeOfType<ForbidResult>(
+            (await controller.GetMigrationStatus(TenantId, cancellationToken: Ct)).Should().BeOfType<ForbidResult>(
                 "a token of another tenant must not read other tenants' reports");
         }
         finally
@@ -429,6 +429,94 @@ public class ReportingFilesMoveSweepTests
         moved!.Outcome.Should().Be(ReportingFilesSweepOutcome.Moved, string.Join("; ", moved.Errors));
         await _fixture.Runner.WaitForPreChecksAsync(); // AB#6554: the scan runs in the background after the move
         _fixture.Status.LiteralScanCount.Should().Be(scansBefore + 1);
+    }
+
+    [Fact]
+    public async Task LightStatus_ReadsStoredState_WithoutScanning_AndShowsTheScanningState()
+    {
+        // AB#6860 / AB#6554: the full report is a scan of every entity collection (minutes on a large tenant,
+        // 504 behind the proxy); the light mode answers from stored state only.
+        await _fixture.Sweep.SweepAsync(TenantId, "Test", Ct);
+        await _fixture.SeedLegacyTreeAsync();
+        var scansBefore = _fixture.Status.LiteralScanCount;
+
+        var before = await _fixture.Status.GetStatusAsync(TenantId, FilesMigrationStatusMode.Light, Ct);
+
+        before.Should().NotBeNull();
+        before!.Mode.Should().Be(FilesMigrationStatusModes.Light);
+        before.Legacy.FileSystemItems.Should().Be(3);
+        before.Legacy.FileStamps.Should().Be(3);
+        before.TargetModelReady.Should().BeTrue();
+        before.Sweep.State.Should().Be(FilesMigrationSweepStates.Pending);
+        before.LiteralScanComplete.Should().BeFalse("the literal scan did not run");
+        before.ScannedDocuments.Should().Be(0);
+        before.LiteralReferences.Should().BeEmpty();
+        before.Orphans.Should().BeEmpty();
+        _fixture.Status.LiteralScanCount.Should().Be(scansBefore, "the light mode never scans");
+
+        // The sweep audit is readable without a scan: outcome, counters, no conflicts or errors.
+        await _fixture.Sweep.SweepAsync(TenantId, "Test", Ct);
+        var after = await _fixture.Status.GetStatusAsync(TenantId, FilesMigrationStatusMode.Light, Ct);
+        after!.Legacy.IsZero.Should().BeTrue();
+        after.RecentSweeps.Should().NotBeEmpty();
+        var audit = after.Sweep.LastSweep!;
+        audit.Outcome.Should().Be(nameof(ReportingFilesSweepOutcome.Moved));
+        audit.EntitiesMoved.Should().Be(5);
+        audit.StampsUpdated.Should().Be(3);
+        audit.AssociationFieldsUpdated.Should().Be(7);
+        audit.Conflicts.Should().BeEmpty();
+        audit.Errors.Should().BeEmpty();
+        _fixture.Status.LiteralScanCount.Should().Be(scansBefore);
+
+        // A running pre-check scan is observable: Sweep.PreCheck = Scanning while the call returns at once.
+        _fixture.Tracker.TryBeginPreCheck(TenantId).Should().BeTrue();
+        try
+        {
+            var scanning = await _fixture.Status.GetStatusAsync(TenantId, FilesMigrationStatusMode.Light, Ct);
+            scanning!.Sweep.PreCheck.Should().Be(FilesMigrationPreCheckStates.Scanning);
+            scanning.Sweep.PreCheckStartedUtc.Should().NotBeNull();
+            scanning.Sweep.PreCheckFinishedUtc.Should().BeNull();
+        }
+        finally
+        {
+            _fixture.Tracker.CompletePreCheck(TenantId, true);
+        }
+
+        (await _fixture.Status.GetStatusAsync(TenantId, FilesMigrationStatusMode.Light, Ct))!.Sweep.PreCheck
+            .Should().Be(FilesMigrationPreCheckStates.Scanned);
+        (await _fixture.Status.GetStatusAsync("does-not-exist-" + Guid.NewGuid().ToString("N"),
+            FilesMigrationStatusMode.Light, Ct)).Should().BeNull();
+    }
+
+    [Fact]
+    public async Task LightStatus_Endpoint_KeepsTheAuthRule_AndTheFullModeStaysTheDefault()
+    {
+        await _fixture.Sweep.SweepAsync(TenantId, "Test", Ct);
+        await _fixture.SeedLegacyTreeAsync();
+        var scansBefore = _fixture.Status.LiteralScanCount;
+        var controller = new FilesMigrationController(_fixture.Status, _fixture.GetSystemContext(),
+            NullLogger<FilesMigrationController>.Instance)
+        {
+            ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext { User = SystemAdmin() } }
+        };
+
+        var light = await controller.GetMigrationStatus(TenantId, FilesMigrationStatusMode.Light, Ct);
+        light.Should().BeOfType<OkObjectResult>().Which.Value.Should().BeOfType<FilesMigrationStatusDto>()
+            .Which.Mode.Should().Be(FilesMigrationStatusModes.Light);
+        _fixture.Status.LiteralScanCount.Should().Be(scansBefore);
+
+        var full = await controller.GetMigrationStatus(TenantId, cancellationToken: Ct);
+        full.Should().BeOfType<OkObjectResult>().Which.Value.Should().BeOfType<FilesMigrationStatusDto>()
+            .Which.Mode.Should().Be(FilesMigrationStatusModes.Full);
+        _fixture.Status.LiteralScanCount.Should().Be(scansBefore + 1);
+
+        (await controller.GetMigrationStatus("does-not-exist-" + Guid.NewGuid().ToString("N"),
+            FilesMigrationStatusMode.Light, Ct)).Should().BeOfType<NotFoundObjectResult>();
+        controller.ControllerContext.HttpContext.User = FilesTestFixture.CreateUser("someone", "AdminPanelManagement");
+        (await controller.GetMigrationStatus(TenantId, FilesMigrationStatusMode.Light, Ct))
+            .Should().BeOfType<ForbidResult>("the light mode crosses tenant boundaries like the full report");
+
+        await _fixture.Sweep.SweepAsync(TenantId, "Test", Ct);
     }
 
     [Fact]

@@ -822,6 +822,7 @@ System.Reporting 3.0.0.
   `Pending`, `Done` with reason, switch, listed flag and the last audit record). The sweep itself is idempotent:
   a second run for a listed tenant finds nothing and writes nothing.
 - **Pre-check (R4):** `FilesMigrationStatusService`, exposed as `GET system/v1/files/migration-status/{tenantId}`
+  (`?mode=Full`, default; `?mode=Light` since AB#6860, see below)
   (`SystemAssetApiReadOnlyPolicy` **plus** in-controller check: token `tenant_id` = system tenant, user
   tokens need `AdminPanelManagement` — the report crosses tenant boundaries; a 500 carries no exception
   text). Legacy counts, other types in the legacy collection, root conflicts, System.Files counts, orphans
@@ -842,6 +843,18 @@ System.Reporting 3.0.0.
   duration no longer grows with the tenant size. Not scanned: GridFS contents, CK collections, `RtAssociation`, binary values. The
   sweep never rewrites pipeline YAML — blueprint pipelines are fixed by the app blueprint release (S9),
   tenant-local ones by the runbook (S11).
+- **Light status (AB#6860, AB#6554):** the full report is a scan of every entity collection (189 s locally, 300 s on
+  prod-2 sbeg) and runs into the 180 s ingress limit (504). `GET system/v1/files/migration-status/{tenantId}?mode=Light`
+  answers from stored state only: `legacy` counts, System.Files counts, other legacy types, root conflicts,
+  `recentSweeps` (audit: outcome, entities moved, association fields, stamps, conflicts, errors) and `sweep`
+  (`State` Disabled/NotListed/Pending/Done, `LastSweep`, `PreCheck` None/Scanning/Scanned/Failed with start/finish
+  times). It runs no orphan search and no literal scan and never waits for a running scan, so `Sweep.PreCheck =
+  Scanning` is observable while the first sweep of a tenant scans. In `Light` the response has `mode = "Light"`,
+  `orphanCount = 0`, empty `orphans`/`literalReferences`, `literalScanComplete = false`, `scannedDocuments = 0`
+  (not computed, not "none found"). Same auth as the full mode (system tenant, 403 otherwise); an unknown mode
+  value is a 400. Runbook: read the audit and the counters with `?mode=Light`, use the default only when the orphan
+  list or the literal references are needed (and not through a proxy with a short timeout). Follow-up outside this
+  repo: an octo-cli / octo-mcp flag for the mode.
 - Tests: `tests/AssetRepositoryServices.IntegrationTests/Files/ReportingFilesMoveSweepTests.cs`
   (`FilesMigrationTestFixture` seeds legacy data raw, incl. real GridFS files; it lists the system tenant) and
   `FilesSweepAllowListTests.cs` (two tenants with legacy data: empty list, one listed, switch off, second run,

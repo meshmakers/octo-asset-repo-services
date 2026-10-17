@@ -61,9 +61,20 @@ public class FilesMigrationStatusService
     public long LiteralScanCount => Interlocked.Read(ref _literalScans);
 
     /// <summary>
-    ///     Builds the report, or returns null when the tenant does not exist.
+    ///     Builds the full report (scan of every entity collection), or returns null when the tenant does not exist.
     /// </summary>
-    public async Task<FilesMigrationStatusDto?> GetStatusAsync(string tenantId,
+    public Task<FilesMigrationStatusDto?> GetStatusAsync(string tenantId, CancellationToken cancellationToken = default)
+    {
+        return GetStatusAsync(tenantId, FilesMigrationStatusMode.Full, cancellationToken);
+    }
+
+    /// <summary>
+    ///     Builds the report, or returns null when the tenant does not exist. <see cref="FilesMigrationStatusMode.Light" />
+    ///     (AB#6860) skips the two expensive parts — the orphan search and the literal reference scan — and answers
+    ///     from stored state only: legacy and System.Files counts, root conflicts, the audit records and the sweep
+    ///     state including the pre-check state (<c>Sweep.PreCheck</c>, AB#6554). It neither waits for nor starts a scan.
+    /// </summary>
+    public async Task<FilesMigrationStatusDto?> GetStatusAsync(string tenantId, FilesMigrationStatusMode mode,
         CancellationToken cancellationToken = default)
     {
         var database = await _databaseProvider.TryGetDatabaseAsync(tenantId).ConfigureAwait(false);
@@ -79,19 +90,25 @@ public class FilesMigrationStatusService
         var target = targetReady
             ? await ReportingFilesMoveSweep.CountTargetAsync(database, cancellationToken).ConfigureAwait(false)
             : ReportingFilesMigrationConstants.TargetTypeIds.ToDictionary(t => t, _ => 0L);
-        var (orphanCount, orphans) = await FindOrphansAsync(database, Math.Max(0, options.MaxReportedOrphans),
-            cancellationToken).ConfigureAwait(false);
+        var light = mode == FilesMigrationStatusMode.Light;
+        var (orphanCount, orphans) = light
+            ? (0L, (IReadOnlyList<string>)[])
+            : await FindOrphansAsync(database, Math.Max(0, options.MaxReportedOrphans), cancellationToken)
+                .ConfigureAwait(false);
         var otherTypes = await ReportingFilesMoveSweep.CountOtherLegacyTypesAsync(database, cancellationToken)
             .ConfigureAwait(false);
         var rootConflicts = targetReady
             ? await ReportingFilesMoveSweep.FindRootConflictsAsync(database, cancellationToken).ConfigureAwait(false)
             : [];
-        var scan = await ScanSerializedAsync(database, options, cancellationToken).ConfigureAwait(false);
+        var scan = light
+            ? new ScanResult(0, [], 0, 0, false)
+            : await ScanSerializedAsync(database, options, cancellationToken).ConfigureAwait(false);
         var recent = await ReadRecentSweepsAsync(database, cancellationToken).ConfigureAwait(false);
 
         return new FilesMigrationStatusDto
         {
             TenantId = tenantId,
+            Mode = light ? FilesMigrationStatusModes.Light : FilesMigrationStatusModes.Full,
             CheckedAt = DateTime.UtcNow,
             Legacy = legacy,
             TargetModelReady = targetReady,
