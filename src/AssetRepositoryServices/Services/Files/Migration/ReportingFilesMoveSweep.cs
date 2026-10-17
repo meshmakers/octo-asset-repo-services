@@ -14,7 +14,8 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.Services.Files.Migrati
 ///             GridFS stamps — all zero means no write at all (steady state, also after System.Reporting 3.0.0);</item>
 ///         <item>per-tenant lease (<see cref="TenantSweepLease" />): only one pod works, the others skip;</item>
 ///         <item>preconditions: System.Files is imported (target collection with its CK indexes) and no legacy
-///             folder root has the well-known name of an existing System.Files root (else: abort, audit);</item>
+///             folder root has the well-known name of an existing System.Files root that is not empty
+///             (else: abort, audit); an EMPTY root of that name is taken over (AB#6883, audit "merged");</item>
 ///         <item>entities, batched, one transaction per batch: <c>replaceOne</c> upsert by <c>_id</c> into
 ///             <c>RtEntity_SystemFilesFileSystemEntity</c> with the rewritten <c>ckTypeId</c>, delete from the
 ///             source; an rtId that already exists in the target is never replaced (a stale writer re-wrote a
@@ -115,8 +116,8 @@ public class ReportingFilesMoveSweep
                 }
             }
 
-            result.RootConflicts.AddRange(await FindRootConflictsAsync(database, cancellationToken)
-                .ConfigureAwait(false));
+            var rootAnalysis = await AnalyzeRootsAsync(database, cancellationToken).ConfigureAwait(false);
+            result.RootConflicts.AddRange(rootAnalysis.Conflicts);
             if (result.RootConflicts.Count > 0)
             {
                 // Logged (rate-limited) by the runner; audited once per distinct conflict set.
@@ -129,6 +130,10 @@ public class ReportingFilesMoveSweep
 
             _logger.LogInformation("{Sweep}: tenant '{TenantId}' before: {Before}",
                 ReportingFilesMigrationConstants.SweepName, tenantId, result.Before);
+
+            // AB#6883: legacy roots whose well-known name equals an EMPTY System.Files root are taken over by it
+            // (children are re-pointed, the legacy root is parked) before the entities move.
+            await MergeEmptyRootsAsync(database, rootAnalysis.Merges, result, cancellationToken).ConfigureAwait(false);
 
             var verified = await MoveEntitiesAsync(database, lease, result, cancellationToken).ConfigureAwait(false);
             if (verified)
@@ -292,19 +297,32 @@ public class ReportingFilesMoveSweep
 
     /// <summary>
     ///     Legacy folder roots whose well-known name (case-insensitive, like path resolution) equals the
-    ///     well-known name of a different System.Files root — moving them would create a duplicate root.
+    ///     well-known name of a different System.Files root that is NOT empty or diverges from the legacy root —
+    ///     moving them would create a duplicate root or hide existing data. A root that is empty (AB#6883) is
+    ///     not a conflict: the sweep merges into it (see <see cref="AnalyzeRootsAsync" />).
     /// </summary>
     public static async Task<IReadOnlyList<string>> FindRootConflictsAsync(IMongoDatabase database,
+        CancellationToken cancellationToken) =>
+        (await AnalyzeRootsAsync(database, cancellationToken).ConfigureAwait(false)).Conflicts;
+
+    /// <summary>
+    ///     Classifies every legacy folder root that meets a System.Files root of the same well-known name:
+    ///     <b>merge</b> when the System.Files root is empty (no child outside the legacy tree) and carries no
+    ///     attribute the legacy root does not have (AB#6883), otherwise <b>conflict</b>. The same rtId on both
+    ///     sides is classified the same way (a blueprint created the root with the legacy rtId).
+    /// </summary>
+    internal static async Task<RootAnalysis> AnalyzeRootsAsync(IMongoDatabase database,
         CancellationToken cancellationToken)
     {
-        var projection = Builders<BsonDocument>.Projection.Include("_id").Include("rtWellKnownName");
+        var projection = Builders<BsonDocument>.Projection.Include("_id").Include("rtWellKnownName")
+            .Include("attributes");
         var legacyRoots = await database.GetCollection<BsonDocument>(ReportingFilesMigrationConstants.LegacyEntityCollectionName)
             .Find(Builders<BsonDocument>.Filter.Eq("ckTypeId", ReportingFilesMigrationConstants.LegacyFolderRootCkTypeId) &
                   Builders<BsonDocument>.Filter.Type("rtWellKnownName", BsonType.String))
             .Project(projection).ToListAsync(cancellationToken).ConfigureAwait(false);
         if (legacyRoots.Count == 0)
         {
-            return [];
+            return new RootAnalysis([], []);
         }
 
         var targetRoots = await database.GetCollection<BsonDocument>(FileSystemConstants.EntityCollectionName)
@@ -312,23 +330,66 @@ public class ReportingFilesMoveSweep
                   Builders<BsonDocument>.Filter.Type("rtWellKnownName", BsonType.String))
             .Project(projection).ToListAsync(cancellationToken).ConfigureAwait(false);
 
+        var associations = database.GetCollection<BsonDocument>(ReportingFilesMigrationConstants.AssociationCollectionName);
         var conflicts = new List<string>();
+        var merges = new List<RootMerge>();
         foreach (var legacy in legacyRoots)
         {
             var name = legacy["rtWellKnownName"].AsString;
+            // Case-insensitive twin; an exact same-rtId twin (blueprint seeded the legacy rtId) counts as well.
             var existing = targetRoots.FirstOrDefault(t =>
-                t["_id"] != legacy["_id"] &&
                 string.Equals(t["rtWellKnownName"].AsString, name, StringComparison.OrdinalIgnoreCase));
-            if (existing != null)
+            if (existing == null)
             {
-                conflicts.Add(
-                    $"{ReportingFilesMigrationConstants.LegacyFolderRootCkTypeId}@{legacy["_id"]} '{name}' collides with " +
-                    $"{FileSystemConstants.FolderRootCkTypeId}@{existing["_id"]} '{existing["rtWellKnownName"].AsString}'");
+                continue;
+            }
+
+            var description =
+                $"{ReportingFilesMigrationConstants.LegacyFolderRootCkTypeId}@{legacy["_id"]} '{name}' collides with " +
+                $"{FileSystemConstants.FolderRootCkTypeId}@{existing["_id"]} '{existing["rtWellKnownName"].AsString}'";
+
+            // Children of the System.Files root that do not come from the legacy tree about to be moved.
+            var foreignChildren = await associations.CountDocumentsAsync(
+                Builders<BsonDocument>.Filter.Eq("associationRoleId", FileSystemConstants.ParentChildRoleId) &
+                Builders<BsonDocument>.Filter.Eq("targetRtId", existing["_id"]) &
+                Builders<BsonDocument>.Filter.Nin("originCkTypeId", ReportingFilesMigrationConstants.LegacyTypeIds),
+                cancellationToken: cancellationToken).ConfigureAwait(false);
+            var isEmpty = foreignChildren == 0 && !HasForeignAttributes(existing, legacy);
+            if (isEmpty)
+            {
+                merges.Add(new RootMerge((ObjectId)legacy["_id"], (ObjectId)existing["_id"], name, description));
+            }
+            else
+            {
+                conflicts.Add(description);
             }
         }
 
-        return conflicts;
+        return new RootAnalysis(conflicts, merges);
     }
+
+    /// <summary>
+    ///     True when the System.Files root carries an attribute the legacy root does not have (the seed of a
+    ///     root is its <c>name</c>): the roots diverge, taking it over could hide settings.
+    /// </summary>
+    private static bool HasForeignAttributes(BsonDocument target, BsonDocument legacy)
+    {
+        var targetAttributes = target.GetValue("attributes", new BsonDocument()) as BsonDocument ?? [];
+        var legacyAttributes = legacy.GetValue("attributes", new BsonDocument()) as BsonDocument ?? [];
+        return targetAttributes.Names.Any(n =>
+            !string.Equals(n, "name", StringComparison.Ordinal) && !legacyAttributes.Contains(n) &&
+            !targetAttributes[n].IsBsonNull);
+    }
+
+    /// <summary>
+    ///     Result of <see cref="AnalyzeRootsAsync" />.
+    /// </summary>
+    internal sealed record RootAnalysis(IReadOnlyList<string> Conflicts, IReadOnlyList<RootMerge> Merges);
+
+    /// <summary>
+    ///     A legacy root to be taken over by an empty System.Files root of the same well-known name.
+    /// </summary>
+    internal sealed record RootMerge(ObjectId LegacyRtId, ObjectId TargetRtId, string Name, string Description);
 
     /// <summary>
     ///     True when System.Reporting 3.0.0 or later is installed (the file types are gone, no writer can
@@ -362,6 +423,81 @@ public class ReportingFilesMoveSweep
     // ------------------------------------------------------------------------------------------------
     // Steps
     // ------------------------------------------------------------------------------------------------
+
+    /// <summary>
+    ///     AB#6883: takes over empty System.Files roots. Per merge: all associations of the legacy root (children
+    ///     and links) are re-pointed to the System.Files root, then the legacy root document is parked in
+    ///     <see cref="ReportingFilesMigrationConstants.ConflictCollectionName" /> (rule "merged") and removed from the
+    ///     legacy collection; the legacy children then move under the existing root with the normal batches.
+    ///     Re-pointing comes first and the legacy origin type of the re-pointed children keeps the target "empty" for
+    ///     the analysis, so a crash between the two steps is repaired by the next sweep.
+    /// </summary>
+    private async Task MergeEmptyRootsAsync(IMongoDatabase database, IReadOnlyList<RootMerge> merges,
+        ReportingFilesSweepResult result, CancellationToken cancellationToken)
+    {
+        if (merges.Count == 0)
+        {
+            return;
+        }
+
+        var associations = database.GetCollection<BsonDocument>(ReportingFilesMigrationConstants.AssociationCollectionName);
+        var source = database.GetCollection<BsonDocument>(ReportingFilesMigrationConstants.LegacyEntityCollectionName);
+        if (!await CollectionExistsAsync(database, ReportingFilesMigrationConstants.ConflictCollectionName,
+                cancellationToken).ConfigureAwait(false))
+        {
+            try
+            {
+                await database.CreateCollectionAsync(ReportingFilesMigrationConstants.ConflictCollectionName,
+                    cancellationToken: cancellationToken).ConfigureAwait(false);
+            }
+            catch (MongoCommandException ex) when (ex.CodeName == "NamespaceExists")
+            {
+                // Created concurrently.
+            }
+        }
+
+        var conflictCollection = database.GetCollection<BsonDocument>(ReportingFilesMigrationConstants.ConflictCollectionName);
+        foreach (var merge in merges)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (merge.LegacyRtId != merge.TargetRtId)
+            {
+                // Same rtId: the associations already point to the right entity.
+                await associations.UpdateManyAsync(
+                    Builders<BsonDocument>.Filter.Eq("targetRtId", merge.LegacyRtId) &
+                    Builders<BsonDocument>.Filter.Eq("targetCkTypeId", ReportingFilesMigrationConstants.LegacyFolderRootCkTypeId),
+                    Builders<BsonDocument>.Update.Set("targetRtId", merge.TargetRtId),
+                    cancellationToken: cancellationToken).ConfigureAwait(false);
+                await associations.UpdateManyAsync(
+                    Builders<BsonDocument>.Filter.Eq("originRtId", merge.LegacyRtId) &
+                    Builders<BsonDocument>.Filter.Eq("originCkTypeId", ReportingFilesMigrationConstants.LegacyFolderRootCkTypeId),
+                    Builders<BsonDocument>.Update.Set("originRtId", merge.TargetRtId),
+                    cancellationToken: cancellationToken).ConfigureAwait(false);
+            }
+
+            var legacyDocument = await source.Find(Builders<BsonDocument>.Filter.Eq("_id", merge.LegacyRtId))
+                .FirstOrDefaultAsync(cancellationToken).ConfigureAwait(false);
+            if (legacyDocument != null)
+            {
+                await conflictCollection.InsertOneAsync(new BsonDocument
+                {
+                    { "_id", ObjectId.GenerateNewId() },
+                    { "rtId", merge.LegacyRtId },
+                    { "detectedAt", DateTime.UtcNow },
+                    { "rule", $"merged into the empty {FileSystemConstants.FolderRootCkTypeId}@{merge.TargetRtId}" },
+                    { "document", legacyDocument }
+                }, cancellationToken: cancellationToken).ConfigureAwait(false);
+                await source.DeleteOneAsync(Builders<BsonDocument>.Filter.Eq("_id", merge.LegacyRtId),
+                    cancellationToken).ConfigureAwait(false);
+            }
+
+            result.RootsMerged.Add(merge.Description);
+            _logger.LogInformation(
+                "{Sweep}: tenant '{TenantId}' merged legacy root {LegacyRtId} '{Name}' into the empty System.Files root {TargetRtId}",
+                ReportingFilesMigrationConstants.SweepName, result.TenantId, merge.LegacyRtId, merge.Name,
+                merge.TargetRtId);
+        }
+    }
 
     /// <summary>
     ///     Moves the legacy entities in batches, one transaction per batch, and verifies each batch in the
@@ -608,6 +744,7 @@ public class ReportingFilesMoveSweep
                 { "associationTargetsUpdated", result.AssociationTargetsUpdated },
                 { "stampsUpdated", result.StampsUpdated },
                 { "conflicts", new BsonArray(result.Conflicts) },
+                { "merged", new BsonArray(result.RootsMerged) },
                 { "errors", errors },
                 { "durationMs", result.DurationMs }
             };

@@ -104,7 +104,8 @@ public enum ReportingFilesSweepOutcome
     LeaseHeld,
 
     /// <summary>
-    ///     A legacy folder root has the well-known name of an existing System.Files root (e.g. "Files"); the
+    ///     A legacy folder root has the well-known name of an existing System.Files root that is not empty (e.g.
+    ///     "Files" with content) or diverges from it (AB#6883: empty roots are merged); the
     ///     move is aborted for the tenant instead of creating a duplicate root.
     /// </summary>
     RootConflict
@@ -165,6 +166,12 @@ public sealed class ReportingFilesSweepResult
     ///     Legacy folder roots whose well-known name collides with an existing System.Files root.
     /// </summary>
     public List<string> RootConflicts { get; } = [];
+
+    /// <summary>
+    ///     Legacy folder roots taken over by an empty System.Files root of the same well-known name (AB#6883): the
+    ///     legacy children moved under the existing root, the legacy root was parked. Not a conflict.
+    /// </summary>
+    public List<string> RootsMerged { get; } = [];
 
     /// <summary>
     ///     Errors (count mismatches, exceptions).
@@ -274,6 +281,11 @@ public sealed class FilesMigrationAuditDto
     ///     Legacy documents parked because their rtId already existed in System.Files.
     /// </summary>
     public IReadOnlyList<string> Conflicts { get; init; } = [];
+
+    /// <summary>
+    ///     Legacy roots taken over by an empty System.Files root of the same well-known name (AB#6883).
+    /// </summary>
+    public IReadOnlyList<string> Merged { get; init; } = [];
 
     /// <summary>
     ///     Errors of the run.
