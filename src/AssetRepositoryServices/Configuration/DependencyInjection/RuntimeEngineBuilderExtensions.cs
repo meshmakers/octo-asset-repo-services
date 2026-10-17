@@ -150,56 +150,7 @@ public static class RuntimeEngineBuilderExtensions
             .AddJwtBearer();
 
 
-        builder.Services.AddAuthorization(options =>
-        {
-            options.AddPolicy(AssetRepositoryServiceConstants.AuthenticatedUserPolicyGraphApi, policy =>
-            {
-                policy.AddAuthenticationSchemes(JwtBearerDefaults.AuthenticationScheme,
-                    CookieAuthenticationDefaults.AuthenticationScheme);
-                policy.RequireAuthenticatedUser();
-            });
-
-            options.AddPolicy(AssetRepositoryServiceConstants.AuthenticatedUserPolicy,
-                policy => { policy.RequireAuthenticatedUser(); });
-
-            options.AddPolicy(AssetRepositoryServiceConstants.SystemAssetApiReadOnlyPolicy,
-                authorizationPolicyBuilder =>
-                {
-                    authorizationPolicyBuilder.RequireClaim(InfrastructureCommon.ClaimScope,
-                        CommonConstants.OctoApiFullAccess,
-                        CommonConstants.OctoApiReadOnly);
-                });
-
-            options.AddPolicy(AssetRepositoryServiceConstants.SystemAssetApiReadWritePolicy,
-                authorizationPolicyBuilder =>
-                {
-                    authorizationPolicyBuilder.RequireClaim(InfrastructureCommon.ClaimScope,
-                        CommonConstants.OctoApiFullAccess);
-                });
-
-            options.AddPolicy(AssetRepositoryServiceConstants.TenantAssetApiReadWritePolicy,
-                authorizationPolicyBuilder =>
-                {
-                    authorizationPolicyBuilder.RequireClaim(InfrastructureCommon.ClaimScope,
-                        CommonConstants.OctoApiFullAccess);
-                });
-
-            options.AddPolicy(AssetRepositoryServiceConstants.TenantAssetApiReadOnlyPolicy,
-                authorizationPolicyBuilder =>
-                {
-                    authorizationPolicyBuilder.RequireClaim(InfrastructureCommon.ClaimScope,
-                        CommonConstants.OctoApiFullAccess,
-                        CommonConstants.OctoApiReadOnly);
-                });
-
-            options.AddPolicy(AssetRepositoryServiceConstants.DataModelManagementPolicy,
-                authorizationPolicyBuilder =>
-                {
-                    authorizationPolicyBuilder.RequireClaim(InfrastructureCommon.ClaimScope,
-                        CommonConstants.OctoApiFullAccess,
-                        CommonConstants.OctoApiDataModelManagement);
-                });
-        });
+        builder.Services.AddAuthorization(options => options.AddAssetRepositoryPolicies());
 
         // AB#6385: REST answers a blueprint-lock refusal with 403 problem details (code BLUEPRINT_LOCKED).
         builder.Services.AddMvcCore(options => options.Filters.Add<BlueprintLockedExceptionFilter>())
@@ -239,6 +190,10 @@ public static class RuntimeEngineBuilderExtensions
                 },
                 {
                     AssetRepositoryServiceConstants.TenantAssetApiReadWritePolicy,
+                    new List<string> { CommonConstants.OctoApiFullAccess }
+                },
+                {
+                    AssetRepositoryServiceConstants.TenantAdministrationPolicy,
                     new List<string> { CommonConstants.OctoApiFullAccess }
                 },
                 {

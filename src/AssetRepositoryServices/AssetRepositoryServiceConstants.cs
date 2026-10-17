@@ -12,6 +12,11 @@ public static class AssetRepositoryServiceConstants
 
     internal const string TenantAssetApiReadOnlyPolicy = "TenantAssetApiReadOnlyPolicy";
     internal const string TenantAssetApiReadWritePolicy = "TenantAssetApiReadWritePolicy";
+    /// <summary>
+    ///     Tenant administration (AB#4497): create, attach, detach, clear, delete, rerunSetup of child tenants.
+    ///     Full-access scope plus the tenant role <c>TenantManagement</c>.
+    /// </summary>
+    internal const string TenantAdministrationPolicy = "TenantAdministrationPolicy";
     internal const string DataModelManagementPolicy = "DataModelManagementPolicy";
 
 
