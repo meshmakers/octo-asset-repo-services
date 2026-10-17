@@ -37,6 +37,7 @@ types:
         allowSelf: true
       execution:
         timeoutSeconds: 5
+        handler: pipeline
     - methodId: ResetPassword-2
       description: "Version 2 with only optional parameters and a String result."
       parameters:
@@ -45,6 +46,8 @@ types:
         valueType: String
       authorization:
         roles: [ AccessTestAdmin ]
+      execution:
+        handler: service
     - methodId: Touch-1
       description: "Parameterless instance method."
       authorization:
