@@ -32,7 +32,8 @@ public class UpgradeCheckResponseDto
     public bool MigrationPathAvailable { get; set; }
 
     /// <summary>
-    ///     Whether the migration contains breaking changes
+    ///     Whether the migration of the model itself contains breaking changes. Does not cover installed dependents,
+    ///     see <see cref="IsBlocked" />.
     /// </summary>
     public bool HasBreakingChanges { get; set; }
 
@@ -40,4 +41,15 @@ public class UpgradeCheckResponseDto
     ///     Error message if the upgrade check failed, null otherwise
     /// </summary>
     public string? ErrorMessage { get; set; }
+
+    /// <summary>
+    ///     AB#6868 (tenant upgrade guard, read-only): true when importing the target version would break an installed
+    ///     model. Optional: older clients ignore it.
+    /// </summary>
+    public bool IsBlocked { get; set; }
+
+    /// <summary>
+    ///     AB#6868: the installed models the target version would break; empty when not blocked.
+    /// </summary>
+    public List<CkUpgradeBlockerDto> Blockers { get; set; } = [];
 }

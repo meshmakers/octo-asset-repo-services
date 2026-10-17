@@ -43,7 +43,8 @@ public class CkModelLibraryStatusItemDto
     public bool HasUpdate { get; set; }
 
     /// <summary>
-    ///     Whether the model needs action (ResolveFailed or HasUpdate)
+    ///     Whether the model needs action (ResolveFailed or HasUpdate). <c>false</c> for a blocked row
+    ///     (<see cref="IsBlocked" />), so clients that predate the guard do not offer the update.
     /// </summary>
     public bool NeedsAction { get; set; }
 
@@ -87,4 +88,26 @@ public class CkModelLibraryStatusItemDto
     ///     <see cref="UnresolvedDependencies"/> so the UI does not have to compute it.
     /// </summary>
     public bool HasCatalogInconsistency { get; set; }
+
+    /// <summary>
+    ///     AB#6868 (tenant upgrade guard, read-only): true when importing the offered catalog version
+    ///     (<see cref="CatalogVersion" />) would break an installed model, for example because it is exact-pinned to the
+    ///     version the update replaces. A blocked row keeps <see cref="HasUpdate" /> <c>true</c> and has
+    ///     <see cref="NeedsAction" /> <c>false</c>. Never set for service-managed rows, rows without an update and
+    ///     catalog-only rows. Optional: older clients ignore it.
+    /// </summary>
+    public bool IsBlocked { get; set; }
+
+    /// <summary>
+    ///     AB#6868: why the row is blocked, one entry per installed model and pin the update would break; empty when
+    ///     <see cref="IsBlocked" /> is <c>false</c>.
+    /// </summary>
+    public List<CkUpgradeBlockerDto> Blockers { get; set; } = [];
+
+    /// <summary>
+    ///     AB#6868: true when the installed model declares dependency ranges (range-retaining, CK language 2), so
+    ///     operators can see which installed models are still exact-pinned without database access (F2.6, AB#6708).
+    ///     <c>false</c> for exact-pinned classic models and for catalog-only rows.
+    /// </summary>
+    public bool IsRangeRetaining { get; set; }
 }

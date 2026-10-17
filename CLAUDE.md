@@ -967,11 +967,39 @@ batch tree correction works on the typed model id, never on the display strings 
 `ICkModelLibraryStatusService.GetInstalledModelVersionsAsync` (highest `Available` version per name).
 `CkModelLibraryStatusService.CheckSystemCompatibilityAsync` still compares service-managed versions exactly.
 
+#### Tenant upgrade guard in LibraryStatus and CheckUpgrade (CK v2 F2.5, AB#6868)
+
+`GET {tenantId}/v1/models/LibraryStatus` and `POST {tenantId}/v1/models/CheckUpgrade` report, **read-only**, which installed
+models an offered update would break (nothing is enforced yet; enforcement is AB#6870). The service
+`CkModelLibraryStatusService` calls `ITenantContext.EvaluateCkUpdateAsync` (engine-mongodb, AB#6867) with the compiled
+catalog model of the offered version and the versions the catalogs offer; the guard reads the tenant database only.
+
+- **LibraryStatus item** (`CkModelLibraryStatusItemDto`, all members optional for old clients): `isBlocked`, `blockers[]`
+  (`CkUpgradeBlockerDto`: `dependent`, `update`, `kind`, `subject`, `code`, `message`, `dependentIsInUpdateSet`,
+  `suggestedDependentUpdate`, `resolveHint`) and `isRangeRetaining` (installed model has `dependencyRanges`). A blocked row keeps
+  `hasUpdate = true` and gets `needsAction = false` (so a client that predates the guard, for example octo-cli `FixAll`, skips it;
+  the `ModelsNeedingActionCount` excludes it). The guard runs only for an installed, non-service-managed row with an update that is
+  otherwise importable (compatible with the installed System models, no catalog inconsistency); catalog-only rows are never
+  blocked. A guard failure for one row lands in that row's existing error state (`isCompatible = false`), never a 500.
+- **Each row is judged individually** against the current installed state (conservative); a batch of several updates is not
+  considered. Cost: one guard evaluation (one tenant model read) per updatable row, also in the observability sweep.
+- **`resolveHint` is proven, not guessed**: when the guard suggests a newer catalog version of the blocking dependent
+  (`suggestedDependentUpdate`, for example `EnergyCommunity.Registration-2.10.0`), the service evaluates the combined update set
+  (offered model + that version) and keeps the suggestion (hint `update EnergyCommunity.Registration to 2.10.0 first`) only if no
+  blocker for that dependent remains; otherwise both stay `null`. Only the newest offered version is tried.
+- **CheckUpgrade** adds `isBlocked` and `blockers[]` to `UpgradeCheckResponseDto`; `hasBreakingChanges` stays the model's own
+  migration verdict (it said "no breaking changes" for Registration 2.8.0 to 2.10.0 on staging-1 while dependents were the problem).
+  The endpoint stays under `TenantAssetApiReadOnlyPolicy`: no job, no write. A guard failure is a 500 here (not a silent "not blocked").
+- `message` is English and names the dependent (`EnergyCommunity.Registration 2.8.0 would break: exact pin Basic-2.4.0: Basic-2.5.0
+  replaces it`); clients that localize render `code`, `dependent`, `update` and `subject`. `kind` is a string and may gain values.
+- Tests: `CkModelLibraryStatusUpgradeGuardTests` (sbeg case, additive update, proven hint, error isolation, `isRangeRetaining`),
+  `ModelsControllerCheckUpgradeTests` (blockers, read-only policy, no job, additive DTO shape / old payloads).
+
 | `POST` | `{tenantId}/v1/models/CheckUpgrade` | ReadOnly | Pre-flight check for migration impact |
 
 **Request body:** Same as ImportFromCatalog (`catalogName` + `modelId`).
 
-**Response:** `UpgradeCheckResponseDto` with: `modelName`, `installedVersion`, `targetVersion`, `upgradeNeeded`, `migrationPathAvailable`, `hasBreakingChanges`, `errorMessage`.
+**Response:** `UpgradeCheckResponseDto` with: `modelName`, `installedVersion`, `targetVersion`, `upgradeNeeded`, `migrationPathAvailable`, `hasBreakingChanges`, `errorMessage`, plus `isBlocked` and `blockers[]` (tenant upgrade guard, AB#6868, see above).
 
 ### Authorization: Data Model Management
 
