@@ -15,7 +15,7 @@ using Xunit;
 namespace AssetRepositoryServices.UnitTests.Configuration;
 
 /// <summary>
-///     AB#4497 — creating, attaching, detaching, clearing, deleting and re-running the setup of a child tenant
+///     AB#4497 — creating, attaching, detaching, clearing, clearing the cache of, deleting, re-running the setup of and recomputing display names of a child tenant
 ///     needs the tenant role <c>TenantManagement</c> on top of the <c>octo_api</c> scope; callers without the role get
 ///     <c>403</c>. Each action is checked with the policy it actually carries, evaluated by the real authorization
 ///     service with the production policy registration.
@@ -29,7 +29,9 @@ public class TenantAdministrationAuthorizationTests
         nameof(TenantsController.Detach),
         nameof(TenantsController.Clear),
         nameof(TenantsController.Delete),
-        nameof(TenantsController.ReRunSetup)
+        nameof(TenantsController.ReRunSetup),
+        nameof(TenantsController.ClearCache),
+        nameof(TenantsController.RecomputeDisplayNames)
     ];
 
     private static ClaimsPrincipal Caller(string? scope, params string[] roles)
@@ -113,15 +115,6 @@ public class TenantAdministrationAuthorizationTests
             ], "Bearer", "name", "role"));
 
         (await Allows(AssetRepositoryServiceConstants.TenantAdministrationPolicy, user)).Should().BeTrue();
-    }
-
-    /// <summary>Not part of AB#4497: these keep their previous policy (listed as an open question).</summary>
-    [Theory]
-    [InlineData(nameof(TenantsController.ClearCache))]
-    [InlineData(nameof(TenantsController.RecomputeDisplayNames))]
-    public void OtherWriteActions_KeepTheScopeOnlyPolicy(string action)
-    {
-        PolicyOf(action).Should().Be(AssetRepositoryServiceConstants.TenantAssetApiReadWritePolicy);
     }
 
     /// <summary>

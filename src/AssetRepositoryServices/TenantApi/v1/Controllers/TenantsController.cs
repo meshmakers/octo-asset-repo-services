@@ -24,10 +24,9 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.TenantApi.v1.Controlle
 ///     Each tenant can manage its own child tenants through this API.
 /// </summary>
 /// <remarks>
-///     AB#4497: the actions that create, attach, detach, clear, delete or re-run the setup of a child tenant need the
-///     tenant role <c>TenantManagement</c> of the caller in addition to the <c>octo_api</c> scope
-///     (<see cref="AssetRepositoryServiceConstants.TenantAdministrationPolicy" />, <c>403</c> otherwise). Reads,
-///     <c>clearCache</c> and <c>recomputeDisplayNames</c> keep the scope-only policies.
+///     AB#4497: the actions that create, attach, detach, clear, clear the cache of, delete, re-run the setup of or recompute the
+///     display names of a child tenant need the tenant role <c>TenantManagement</c> of the caller in addition to the <c>octo_api</c> scope
+///     (<see cref="AssetRepositoryServiceConstants.TenantAdministrationPolicy" />, <c>403</c> otherwise). Only the reads keep the scope-only policy.
 /// </remarks>
 [Authorize(AuthenticationSchemes = OidcConstants.AuthenticationSchemes.AuthorizationHeaderBearer)]
 [Route("{tenantId:tenantId}/v{version:apiVersion}/[controller]")]
@@ -707,7 +706,7 @@ public class TenantsController : ControllerBase
     /// </summary>
     /// <param name="childTenantId">ID of the child tenant</param>
     [HttpPut("clearCache")]
-    [Authorize(AssetRepositoryServiceConstants.TenantAssetApiReadWritePolicy)]
+    [Authorize(AssetRepositoryServiceConstants.TenantAdministrationPolicy)]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(OperationFailedErrorDto), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(InternalServerErrorDto), StatusCodes.Status500InternalServerError)]
@@ -741,7 +740,7 @@ public class TenantsController : ControllerBase
     /// <param name="ckTypeId">Optional CK type id to restrict the recompute to; all rule-bearing types when omitted</param>
     /// <returns>The enqueued sweep keys (fully versioned CK type ids)</returns>
     [HttpPut("recomputeDisplayNames")]
-    [Authorize(AssetRepositoryServiceConstants.TenantAssetApiReadWritePolicy)]
+    [Authorize(AssetRepositoryServiceConstants.TenantAdministrationPolicy)]
     [ProducesResponseType(typeof(IReadOnlyList<string>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(OperationFailedErrorDto), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
