@@ -152,5 +152,9 @@ internal sealed class CkMethodExecutionDtoType : ObjectGraphType<CkMethodExecuti
             .Description("Effective timeout (declared value, otherwise 15).")
             .Resolve(ctx => ctx.Source.TimeoutSeconds ?? CkMethodExecutionDto.DefaultTimeoutSeconds);
         Field<NonNullGraphType<BooleanGraphType>>("idempotent").Resolve(ctx => ctx.Source.Idempotent);
+        Field<NonNullGraphType<StringGraphType>>("handler")
+            .Description("Effective handler kind (AB#6878): 'service' (default when undeclared) or 'pipeline' " +
+                         "(the call is routed to a deployed pipeline by the gateway, AB#6879).")
+            .Resolve(ctx => CkMethodHandlers.Effective(ctx.Source.Handler));
     }
 }
