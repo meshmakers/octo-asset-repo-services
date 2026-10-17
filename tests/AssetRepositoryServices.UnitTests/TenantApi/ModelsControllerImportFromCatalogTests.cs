@@ -13,6 +13,7 @@ using Meshmakers.Octo.ConstructionKit.Contracts.Services;
 using Meshmakers.Octo.Services.Contracts.DistributionEventHub.Commands;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Logging;
 using Xunit;
 
 namespace AssetRepositoryServices.UnitTests.TenantApi;
@@ -57,7 +58,8 @@ public class ModelsControllerImportFromCatalogTests
             A.Fake<Meshmakers.Octo.Runtime.Contracts.MongoDb.ISystemContext>(),
             A.Fake<Meshmakers.Octo.Runtime.Contracts.CkModelMigrations.ICkModelUpgradeService>(),
             A.Fake<Meshmakers.Octo.Runtime.Contracts.CkModelMigrations.ICkModelMigrationService>(),
-            _libraryStatusService);
+            _libraryStatusService,
+            A.Fake<ILogger<ModelsController>>());
 
         // Set up HttpContext with tenant ID via request route values
         var httpContext = new DefaultHttpContext();
