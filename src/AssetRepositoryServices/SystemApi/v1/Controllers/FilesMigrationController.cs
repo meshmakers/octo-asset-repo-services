@@ -41,8 +41,10 @@ public class FilesMigrationController : ControllerBase
     ///     Pre-check report of the file data migration of one tenant: legacy System.Reporting file entities per
     ///     type, legacy association type fields and GridFS stamps, orphans without a parent, every entity outside
     ///     the file collections that names a System.Reporting file type literally (pipelines, policies, queries,
-    ///     UI elements, …) with its blueprint source, and the latest sweep audit records. Read-only; scans every
-    ///     entity collection of the tenant.
+    ///     UI elements, …) with its blueprint source, and the latest sweep audit records. Read-only. The default
+    ///     (<c>mode=Full</c>) scans every entity collection of the tenant and can take minutes on a large tenant
+    ///     (longer than the 180 s ingress limit); <c>mode=Light</c> (AB#6860) answers from stored state in
+    ///     seconds — counts, audit records, sweep state and pre-check state — without orphans and literal references.
     /// </summary>
     /// <remarks>
     ///     The report crosses tenant boundaries, so besides the system read scope the caller must be signed in to
@@ -50,14 +52,18 @@ public class FilesMigrationController : ControllerBase
     ///     <c>AdminPanelManagement</c>.
     /// </remarks>
     /// <param name="tenantId">The tenant to check.</param>
+    /// <param name="mode"><c>Full</c> (default) or <c>Light</c> (no scan; stored state only).</param>
     /// <param name="cancellationToken">Cancellation token</param>
     [HttpGet("migration-status/{tenantId}")]
     [Authorize(AssetRepositoryServiceConstants.SystemAssetApiReadOnlyPolicy)]
     [ProducesResponseType(typeof(FilesMigrationStatusDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(typeof(NotFoundErrorDto), StatusCodes.Status404NotFound)]
     [ProducesResponseType(typeof(InternalServerErrorDto), StatusCodes.Status500InternalServerError)]
-    public async Task<IActionResult> GetMigrationStatus(string tenantId, CancellationToken cancellationToken = default)
+    public async Task<IActionResult> GetMigrationStatus(string tenantId,
+        [FromQuery] FilesMigrationStatusMode mode = FilesMigrationStatusMode.Full,
+        CancellationToken cancellationToken = default)
     {
         if (!IsSystemAdministrator(User))
         {
@@ -66,7 +72,7 @@ public class FilesMigrationController : ControllerBase
 
         try
         {
-            var status = await _statusService.GetStatusAsync(tenantId, cancellationToken);
+            var status = await _statusService.GetStatusAsync(tenantId, mode, cancellationToken);
             if (status == null)
             {
                 return NotFound(new NotFoundErrorDto($"Tenant '{tenantId}' not found"));

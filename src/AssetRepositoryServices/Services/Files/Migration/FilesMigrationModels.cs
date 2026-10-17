@@ -304,6 +304,13 @@ public sealed class FilesMigrationStatusDto
     public required string TenantId { get; init; }
 
     /// <summary>
+    ///     <c>Full</c> (default; scans every entity collection) or <c>Light</c> (AB#6860; stored state only).
+    ///     In <c>Light</c> the orphan fields and the literal reference fields are empty/zero and
+    ///     <see cref="LiteralScanComplete" /> is false, because those parts were not computed.
+    /// </summary>
+    public string Mode { get; init; } = FilesMigrationStatusModes.Full;
+
+    /// <summary>
     ///     When the report was built (UTC).
     /// </summary>
     public DateTime CheckedAt { get; init; }
@@ -385,6 +392,30 @@ public sealed class FilesMigrationStatusDto
     ///     Whether the sweep is allowed to run for this tenant and where it stands (AB#6473).
     /// </summary>
     public required FilesMigrationSweepStateDto Sweep { get; init; }
+}
+
+/// <summary>
+///     How much of the pre-check report is computed (AB#6860).
+/// </summary>
+public enum FilesMigrationStatusMode
+{
+    /// <summary>All parts, including the orphan search and the literal reference scan of every entity collection.</summary>
+    Full,
+
+    /// <summary>Stored state only: counts, root conflicts, audit records, sweep and pre-check state; no scan.</summary>
+    Light
+}
+
+/// <summary>
+///     Values of <see cref="FilesMigrationStatusDto.Mode" />.
+/// </summary>
+public static class FilesMigrationStatusModes
+{
+    /// <summary>Full report.</summary>
+    public const string Full = "Full";
+
+    /// <summary>Light report.</summary>
+    public const string Light = "Light";
 }
 
 /// <summary>
