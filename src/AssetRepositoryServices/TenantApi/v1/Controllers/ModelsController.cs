@@ -3,6 +3,7 @@ using Asp.Versioning;
 using Duende.IdentityModel;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.DataTransferObjects.CkModelCatalog;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.Services;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.UpgradeGuard;
 using Meshmakers.Octo.Common.DistributionEventHub.Services;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects.ApiErrors;
@@ -18,6 +19,7 @@ using Meshmakers.Octo.Runtime.Contracts.Repositories.Query;
 using Meshmakers.Octo.Services.Contracts.DistributionEventHub.Commands;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Logging;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.TenantApi.v1.Controllers;
 
@@ -39,6 +41,7 @@ public class ModelsController : ControllerBase
     private readonly ICommandClient<ImportCkBatchCommandRequest> _importCkBatchCommandClient;
     private readonly ICommandClient<ImportRtCommandRequest> _importRtCommandClient;
     private readonly ICkModelLibraryStatusService _libraryStatusService;
+    private readonly ILogger<ModelsController> _logger;
     private readonly ICkModelMigrationService _migrationService;
     private readonly ISystemContext _systemContext;
     private readonly ICkModelUpgradeService _upgradeService;
@@ -58,6 +61,7 @@ public class ModelsController : ControllerBase
     /// <param name="upgradeService">CK model upgrade service for pre-flight checks</param>
     /// <param name="migrationService">CK model migration service for migration history</param>
     /// <param name="libraryStatusService">CK model library status service (AB#5432)</param>
+    /// <param name="logger">Logger (audit line of a forced breaking update, AB#6870)</param>
     public ModelsController(IDistributedCacheService distributedCache,
         ICommandClient<ExportRtByQueryCommandRequest> exportRtByQueryCommandClient,
         ICommandClient<ExportRtByDeepGraphCommandRequest> exportRtByDeepGraphCommandClient,
@@ -69,7 +73,8 @@ public class ModelsController : ControllerBase
         ISystemContext systemContext,
         ICkModelUpgradeService upgradeService,
         ICkModelMigrationService migrationService,
-        ICkModelLibraryStatusService libraryStatusService)
+        ICkModelLibraryStatusService libraryStatusService,
+        ILogger<ModelsController> logger)
     {
         _distributedCache = distributedCache;
         _exportRtByQueryCommandClient = exportRtByQueryCommandClient;
@@ -83,6 +88,7 @@ public class ModelsController : ControllerBase
         _upgradeService = upgradeService;
         _migrationService = migrationService;
         _libraryStatusService = libraryStatusService;
+        _logger = logger;
     }
 
     // POST: {tenantId}/v1/Models/ExportRtByQuery
@@ -273,6 +279,12 @@ public class ModelsController : ControllerBase
     // POST: {tenantId}/v1/Models/ImportFromCatalog
     /// <summary>
     ///     Imports a construction kit model directly from a catalog
+    ///     <para>
+    ///         Tenant upgrade guard (CK v2 F2.5, AB#6870): when the model would break an installed model the request is
+    ///         refused with <c>409 CK_UPGRADE_BLOCKED</c> (problem details with the structured blockers); no job is
+    ///         queued and nothing is written. <c>ForceBreakingUpdate = true</c> imports anyway and logs the blockers and
+    ///         the caller at WARN.
+    ///     </para>
     /// </summary>
     /// <param name="request">The catalog name and model ID to import</param>
     /// <returns>A job ID for tracking the async import operation</returns>
@@ -281,6 +293,7 @@ public class ModelsController : ControllerBase
     [Authorize(AssetRepositoryServiceConstants.DataModelManagementPolicy)]
     [ProducesResponseType(typeof(TransferModelResponseDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(OperationFailedErrorDto), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(typeof(InternalServerErrorDto), StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> ImportFromCatalog([FromBody] ImportFromCatalogRequestDto request)
@@ -329,6 +342,13 @@ public class ModelsController : ControllerBase
             {
                 return BadRequest(new OperationFailedErrorDto(
                     $"Import blocked: {incompatibilityReason}"));
+            }
+
+            // AB#6870: tenant upgrade guard - before anything is cached or queued.
+            var refusal = await EnforceUpgradeGuardAsync(tenantId, [ckModelId], request.ForceBreakingUpdate);
+            if (refusal != null)
+            {
+                return refusal;
             }
 
             // Serialize the compiled model to JSON and cache it
@@ -407,7 +427,19 @@ public class ModelsController : ControllerBase
                 compiledModel.ModelId, DependencyRequirement.Exact(compiledModel.ModelId), compiledModel,
                 tenantContext, installedVersions, resolved, cancellationToken);
 
-            return Ok(new DependencyResolutionResponseDto { RootModel = rootItem });
+            // AB#6870: the preview agrees with the refusal of the import - the flattened import set of the tree is
+            // judged by the same tenant upgrade guard (read-only).
+            var importSet = new List<string>();
+            CollectModelsToImport(rootItem, importSet, new HashSet<string>());
+            var blockers = await _libraryStatusService.EvaluateUpdateSetBlockersAsync(tenantId,
+                importSet.Select(id => new CkModelId(id)).ToList(), cancellationToken);
+
+            return Ok(new DependencyResolutionResponseDto
+            {
+                RootModel = rootItem,
+                IsBlocked = blockers.Count > 0,
+                Blockers = blockers.ToList()
+            });
         }
         catch (InvalidOperationException e)
         {
@@ -603,10 +635,17 @@ public class ModelsController : ControllerBase
                 CorrectTreeActions(tree.RootModel, importVersionByName);
             }
 
+            // AB#6870: the whole import set is judged together by the tenant upgrade guard (read-only), so the preview
+            // agrees with the refusal of ImportFromCatalogBatch.
+            var blockers = await _libraryStatusService.EvaluateUpdateSetBlockersAsync(tenantId,
+                allModelsToImport.Select(id => new CkModelId(id)).ToList(), cancellationToken);
+
             return Ok(new BatchDependencyResolutionResponseDto
             {
                 ModelsToImport = allModelsToImport,
-                DependencyTrees = dependencyTrees
+                DependencyTrees = dependencyTrees,
+                IsBlocked = blockers.Count > 0,
+                Blockers = blockers.ToList()
             });
         }
         catch (Exception ex)
@@ -620,6 +659,12 @@ public class ModelsController : ControllerBase
     ///     Imports multiple CK models from a catalog in dependency order.
     ///     All models are cached upfront, then submitted as a single sequential batch job
     ///     to prevent race conditions during parallel dependency resolution.
+    ///     <para>
+    ///         Tenant upgrade guard (CK v2 F2.5, AB#6870): the whole set is judged together before anything is cached or
+    ///         queued. A set that would break an installed model is refused <b>as a whole</b> with
+    ///         <c>409 CK_UPGRADE_BLOCKED</c> (no partial import); <c>ForceBreakingUpdate = true</c> imports anyway and
+    ///         logs the blockers and the caller at WARN.
+    ///     </para>
     /// </summary>
     /// <param name="request">Catalog name and ordered list of model IDs</param>
     /// <returns>Single job ID for tracking the entire batch import</returns>
@@ -628,6 +673,7 @@ public class ModelsController : ControllerBase
     [Authorize(AssetRepositoryServiceConstants.DataModelManagementPolicy)]
     [ProducesResponseType(typeof(BatchImportResponseDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(OperationFailedErrorDto), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
     [ProducesResponseType(typeof(InternalServerErrorDto), StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> ImportFromCatalogBatch(
         [FromBody] ImportFromCatalogBatchRequestDto request)
@@ -661,11 +707,9 @@ public class ModelsController : ControllerBase
                 }
             }
 
-            // Cache all models upfront, then submit a single batch job that imports
-            // them sequentially. This prevents race conditions where parallel Hangfire
-            // jobs try to resolve dependencies against models still in "Importing" state.
-            var cacheKeys = new List<string>();
-
+            // Load every model first, judge the whole set with the tenant upgrade guard (AB#6870), and only then
+            // cache and queue: a refused set leaves nothing behind (no cache entry, no job, no partial import).
+            var compiledModels = new List<CkCompiledModelRoot>();
             foreach (var modelId in request.ModelIds)
             {
                 var ckModelId = new CkModelId(modelId);
@@ -679,6 +723,22 @@ public class ModelsController : ControllerBase
                         $"Model '{modelId}' not found in catalog '{request.CatalogName}'"));
                 }
 
+                compiledModels.Add(compiledModel);
+            }
+
+            var refusal = await EnforceUpgradeGuardAsync(tenantId,
+                compiledModels.Select(m => m.ModelId).ToList(), request.ForceBreakingUpdate);
+            if (refusal != null)
+            {
+                return refusal;
+            }
+
+            // Cache all models upfront, then submit a single batch job that imports
+            // them sequentially. This prevents race conditions where parallel Hangfire
+            // jobs try to resolve dependencies against models still in "Importing" state.
+            var cacheKeys = new List<string>();
+            foreach (var compiledModel in compiledModels)
+            {
                 var cacheKey = await SerializeModelToCache(tenantId, compiledModel);
                 cacheKeys.Add(cacheKey);
             }
@@ -763,6 +823,49 @@ public class ModelsController : ControllerBase
         {
             return StatusCode(StatusCodes.Status500InternalServerError, new InternalServerErrorDto(ex.Message));
         }
+    }
+
+    /// <summary>
+    ///     Tenant upgrade guard enforcement (AB#6870): judges <paramref name="updateSet" /> as one set against the
+    ///     tenant. Returns <c>null</c> when the import may proceed (nothing breaks, or the caller forced it - then the
+    ///     blockers and the caller are logged at WARN), otherwise the <c>409 CK_UPGRADE_BLOCKED</c> result. A guard
+    ///     failure propagates (the import fails closed, it is not silently allowed).
+    /// </summary>
+    private async Task<IActionResult?> EnforceUpgradeGuardAsync(string tenantId, IReadOnlyList<CkModelId> updateSet,
+        bool forceBreakingUpdate)
+    {
+        var blockers = await _libraryStatusService.EvaluateUpdateSetBlockersAsync(tenantId, updateSet,
+            HttpContext.RequestAborted);
+        if (blockers.Count == 0)
+        {
+            return null;
+        }
+
+        var requested = updateSet.Select(m => m.FullName).ToList();
+        if (forceBreakingUpdate)
+        {
+            _logger.LogWarning(
+                "Forced breaking CK update on tenant {TenantId} by {Caller}: importing {UpdateSet} breaks {BlockerCount} installed model(s): {Blockers}",
+                tenantId, GetCallerDescription(), string.Join(", ", requested), blockers.Count,
+                string.Join("; ", blockers.Select(b => $"{b.Dependent} [{b.Kind} {b.Subject}] by {b.Update}")));
+            return null;
+        }
+
+        return CkUpgradeBlockedError.CreateResult(requested, blockers.ToList());
+    }
+
+    private string GetCallerDescription()
+    {
+        var user = HttpContext.User;
+        var subject = user.FindFirst(JwtClaimTypes.Subject)?.Value;
+        var clientId = user.FindFirst(JwtClaimTypes.ClientId)?.Value;
+        var name = user.FindFirst(JwtClaimTypes.Name)?.Value ?? user.Identity?.Name;
+
+        var parts = new List<string>();
+        if (!string.IsNullOrEmpty(subject)) parts.Add($"sub={subject}");
+        if (!string.IsNullOrEmpty(clientId)) parts.Add($"client_id={clientId}");
+        if (!string.IsNullOrEmpty(name)) parts.Add($"name={name}");
+        return parts.Count > 0 ? string.Join(" ", parts) : "unknown caller";
     }
 
     private static void CollectModelsToImport(DependencyResolutionItemDto item, List<string> result,

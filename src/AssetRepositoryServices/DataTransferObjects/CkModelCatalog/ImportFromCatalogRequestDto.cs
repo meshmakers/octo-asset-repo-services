@@ -18,4 +18,12 @@ public class ImportFromCatalogRequestDto
     /// </summary>
     [Required]
     public string ModelId { get; set; } = string.Empty;
+
+    /// <summary>
+    ///     Tenant upgrade guard override (AB#6870). When <c>false</c> (default) an import that would break an installed
+    ///     model is refused with HTTP 409 <c>CK_UPGRADE_BLOCKED</c>; nothing is imported. <c>true</c> imports anyway and
+    ///     logs the blockers and the caller at WARN. Ignored by the read-only endpoints (ResolveDependencies,
+    ///     CheckUpgrade). Requests of clients that predate the member behave as <c>false</c>.
+    /// </summary>
+    public bool ForceBreakingUpdate { get; set; }
 }
