@@ -2,6 +2,7 @@ using Meshmakers.Octo.Backend.AssetRepositoryServices.DataTransferObjects.CkMode
 using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.ConstructionKit.Contracts.Services;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb;
+using Meshmakers.Octo.Runtime.Contracts.MongoDb.UpgradeGuard;
 using Meshmakers.Octo.Runtime.Contracts.Repositories.Query;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.Services;
@@ -29,6 +30,15 @@ public interface ICkModelLibraryStatusService
     ///     reach the tenant at all still throws — the caller decides what that means.
     /// </summary>
     Task<CkModelLibraryStatusResponseDto> GetLibraryStatusAsync(string tenantId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    ///     Tenant upgrade guard for one candidate (CheckUpgrade, AB#6868): which installed models would importing
+    ///     <paramref name="candidate" /> break? Read-only - delegates to <c>ITenantContext.EvaluateCkUpdateAsync</c>
+    ///     (AB#6867), which writes nothing and starts no job. Empty when nothing would break, when the candidate is not
+    ///     installed or is service-managed, or when it is not published in a catalog. A failure propagates.
+    /// </summary>
+    Task<IReadOnlyList<CkUpgradeBlockerDto>> EvaluateUpgradeBlockersAsync(string tenantId, CkModelId candidate,
         CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -127,6 +137,9 @@ public sealed class CkModelLibraryStatusService : ICkModelLibraryStatusService
         // One memo for the whole evaluation: shared dependencies are fetched once, not once per row.
         var memo = new CatalogModelMemo();
 
+        // Versions the catalogs offer: lets the upgrade guard suggest a newer version of a blocking dependent.
+        var availableVersions = catalogModels.Select(m => m.ModelId).ToList();
+
         // Build merged view
         var items = new List<CkModelLibraryStatusItemDto>();
         var processedNames = new HashSet<string>();
@@ -134,7 +147,8 @@ public sealed class CkModelLibraryStatusService : ICkModelLibraryStatusService
         foreach (var inst in installedResult.Items)
         {
             processedNames.Add(inst.ModelId);
-            items.Add(await BuildInstalledItemAsync(inst, catalogByName, installedSystemVersions, memo, cancellationToken));
+            items.Add(await BuildInstalledItemAsync(inst, catalogByName, installedSystemVersions, tenantContext,
+                availableVersions, memo, cancellationToken));
         }
 
         // Add catalog-only models (not installed)
@@ -153,6 +167,88 @@ public sealed class CkModelLibraryStatusService : ICkModelLibraryStatusService
             ModelsWithCatalogInconsistencyCount = items.Count(i => i.HasCatalogInconsistency)
         };
     }
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<CkUpgradeBlockerDto>> EvaluateUpgradeBlockersAsync(string tenantId,
+        CkModelId candidate, CancellationToken cancellationToken = default)
+    {
+        var tenantContext = await _systemContext.FindTenantContextAsync(tenantId);
+        var catalogResult = await _catalogService.ListAsync(0, ModelPageSize, cancellationToken: cancellationToken);
+        var availableVersions = catalogResult.ModelResultItems.Select(m => m.ModelId).ToList();
+
+        return await EvaluateBlockersAsync(tenantContext, candidate, availableVersions, new CatalogModelMemo(),
+            cancellationToken);
+    }
+
+    /// <summary>
+    ///     Runs the tenant upgrade guard for one candidate and maps the blockers. A suggested newer version of a blocking
+    ///     dependent is only passed on as a <see cref="CkUpgradeBlockerDto.ResolveHint" /> when it is <b>proven</b>
+    ///     against the combined update set (AB#6867 left this to the caller): the candidate plus the suggested compiled
+    ///     dependent are evaluated together, and the hint stays only if no blocker for that dependent remains.
+    ///     Judged individually against the current installed state (conservative); a batch of several updates is not
+    ///     considered here.
+    /// </summary>
+    private async Task<List<CkUpgradeBlockerDto>> EvaluateBlockersAsync(ITenantContext tenantContext,
+        CkModelId candidate, IReadOnlyCollection<CkModelId> availableVersions, CatalogModelMemo memo,
+        CancellationToken cancellationToken)
+    {
+        var (found, compiled) = await memo.GetAsync(_catalogService, candidate, cancellationToken);
+        if (!found || compiled == null)
+        {
+            return [];
+        }
+
+        var result = await tenantContext.EvaluateCkUpdateAsync([compiled], availableVersions, cancellationToken);
+        if (!result.IsBlocked)
+        {
+            return [];
+        }
+
+        var blockers = new List<CkUpgradeBlockerDto>();
+        foreach (var blocker in result.Blockers)
+        {
+            var dto = ToDto(blocker);
+            if (blocker.SuggestedDependentUpdate is { } suggestion &&
+                await IsSuggestionProvenAsync(tenantContext, compiled, blocker, suggestion, availableVersions, memo,
+                    cancellationToken))
+            {
+                dto.SuggestedDependentUpdate = suggestion.FullName;
+                dto.ResolveHint = $"update {suggestion.Name} to {suggestion.Version} first";
+            }
+
+            blockers.Add(dto);
+        }
+
+        return blockers;
+    }
+
+    private async Task<bool> IsSuggestionProvenAsync(ITenantContext tenantContext,
+        ConstructionKit.Contracts.DataTransferObjects.CkCompiledModelRoot candidate,
+        CkUpgradeBlocker blocker, CkModelId suggestion, IReadOnlyCollection<CkModelId> availableVersions,
+        CatalogModelMemo memo, CancellationToken cancellationToken)
+    {
+        var (found, suggested) = await memo.GetAsync(_catalogService, suggestion, cancellationToken);
+        if (!found || suggested == null)
+        {
+            return false;
+        }
+
+        var combined = await tenantContext.EvaluateCkUpdateAsync([candidate, suggested], availableVersions,
+            cancellationToken);
+        return !combined.Blockers.Any(b =>
+            string.Equals(b.Dependent.Name, blocker.Dependent.Name, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static CkUpgradeBlockerDto ToDto(CkUpgradeBlocker blocker) => new()
+    {
+        Dependent = blocker.Dependent.FullName,
+        Update = blocker.Update.FullName,
+        Kind = blocker.Kind.ToString(),
+        Subject = blocker.Subject,
+        Code = blocker.Code,
+        Message = $"{blocker.Dependent.Name} {blocker.Dependent.Version} would break: {blocker.Message}",
+        DependentIsInUpdateSet = blocker.DependentIsInUpdateSet
+    };
 
     /// <inheritdoc />
     public async Task<Dictionary<string, CkVersion>> GetInstalledSystemVersionsAsync(ITenantContext tenantContext)
@@ -302,6 +398,8 @@ public sealed class CkModelLibraryStatusService : ICkModelLibraryStatusService
         Runtime.Contracts.MongoDb.Repositories.Entities.CkModel inst,
         Dictionary<string, CatalogResultItem> catalogByName,
         Dictionary<string, CkVersion> installedSystemVersions,
+        ITenantContext tenantContext,
+        IReadOnlyCollection<CkModelId> availableVersions,
         CatalogModelMemo memo,
         CancellationToken cancellationToken)
     {
@@ -328,8 +426,20 @@ public sealed class CkModelLibraryStatusService : ICkModelLibraryStatusService
             }
 
             var hasInconsistency = unresolvedDeps.Count > 0;
+
+            // AB#6868: tenant upgrade guard (read-only). Only an offered update that is otherwise importable can be
+            // blocked; a blocked row keeps HasUpdate and loses NeedsAction, so a client that predates the guard
+            // (octo-cli FixAll) skips it.
+            var blockers = new List<CkUpgradeBlockerDto>();
+            if (hasUpdate && isCompatible && !hasInconsistency)
+            {
+                blockers = await EvaluateBlockersAsync(tenantContext, catalog!.ModelId, availableVersions, memo,
+                    cancellationToken);
+            }
+
+            var isBlocked = blockers.Count > 0;
             var needsAction = (isResolveFailed || hasUpdate) && !isServiceManaged
-                                                            && isCompatible && !hasInconsistency;
+                                                            && isCompatible && !hasInconsistency && !isBlocked;
 
             return new CkModelLibraryStatusItemDto
             {
@@ -347,7 +457,10 @@ public sealed class CkModelLibraryStatusService : ICkModelLibraryStatusService
                 IsCompatible = isCompatible,
                 IncompatibilityReason = incompatibilityReason,
                 UnresolvedDependencies = unresolvedDeps,
-                HasCatalogInconsistency = hasInconsistency
+                HasCatalogInconsistency = hasInconsistency,
+                IsBlocked = isBlocked,
+                Blockers = blockers,
+                IsRangeRetaining = inst.DependencyRanges is { Length: > 0 }
             };
         }
         catch (Exception ex)

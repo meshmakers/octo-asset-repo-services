@@ -421,7 +421,8 @@ public class ModelsController : ControllerBase
 
     // POST: {tenantId}/v1/Models/CheckUpgrade
     /// <summary>
-    ///     Pre-flight check to determine if importing a CK model will trigger migrations
+    ///     Pre-flight check to determine if importing a CK model will trigger migrations and, read-only (AB#6868),
+    ///     which installed models it would break (<c>isBlocked</c> / <c>blockers</c>)
     /// </summary>
     /// <param name="request">The catalog name and model ID to check</param>
     /// <param name="cancellationToken">Cancellation token</param>
@@ -467,6 +468,10 @@ public class ModelsController : ControllerBase
             var upgradeInfo = await _upgradeService.CheckUpgradeNeededAsync(
                 tenantId, ckModelId.Name, ckModelId.Version.ToString(), cancellationToken);
 
+            // AB#6868: read-only tenant upgrade guard - which installed models would the target version break?
+            var blockers = await _libraryStatusService.EvaluateUpgradeBlockersAsync(tenantId, ckModelId,
+                cancellationToken);
+
             return Ok(new UpgradeCheckResponseDto
             {
                 ModelName = upgradeInfo.CkModelName,
@@ -475,7 +480,9 @@ public class ModelsController : ControllerBase
                 UpgradeNeeded = upgradeInfo.UpgradeNeeded,
                 MigrationPathAvailable = upgradeInfo.MigrationPathAvailable,
                 HasBreakingChanges = upgradeInfo.HasBreakingChanges,
-                ErrorMessage = upgradeInfo.ErrorMessage
+                ErrorMessage = upgradeInfo.ErrorMessage,
+                IsBlocked = blockers.Count > 0,
+                Blockers = blockers.ToList()
             });
         }
         catch (InvalidOperationException e)
