@@ -433,6 +433,9 @@ public class FilesMigrationStatusService
             Conflicts = r.GetValue("conflicts", new BsonArray()) is BsonArray conflicts
                 ? conflicts.Select(c => c.ToString() ?? string.Empty).ToList()
                 : [],
+            Merged = r.GetValue("merged", new BsonArray()) is BsonArray merged
+                ? merged.Select(c => c.ToString() ?? string.Empty).ToList()
+                : [],
             Errors = r.GetValue("errors", new BsonArray()) is BsonArray errors
                 ? errors.Select(e => e.ToString() ?? string.Empty).ToList()
                 : []

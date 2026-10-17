@@ -782,9 +782,21 @@ System.Reporting 3.0.0.
 - **Lease:** per-tenant `findOneAndUpdate` lease in `FilesMigrationLease` (`TenantSweepLease`, expiry
   `LeaseDuration` 5 min, renewed per batch). Every pod runs the start hook; only the holder scans and moves,
   the others skip at debug level (`LeaseHeld`).
-- **Root conflict:** a legacy `FolderRoot` whose well-known name equals (case-insensitive) an existing
-  System.Files root (e.g. `Files`) aborts the move for the tenant (`RootConflict`, error log rate-limited,
-  one audit record per distinct conflict set).
+- **Root merge / root conflict (AB#6883):** a legacy `FolderRoot` whose well-known name equals (case-insensitive) an
+  existing System.Files root is classified before anything is written (`AnalyzeRootsAsync`). The System.Files root is
+  **empty** when no `System/ParentChild` association with a non-legacy origin type points at it and it carries no
+  attribute besides `name` (or an attribute the legacy root has too). Reporting 3.0.0 creates the four
+  `ReportingAssets_*` roots at tenant start (AB#6863) and blueprints create roots such as `Documents` (also with
+  the legacy rtId) before the sweep runs: an **empty** root is **taken over** — `MergeEmptyRootsAsync` re-points the
+  associations of the legacy root (both directions) to the existing root, parks the legacy root document in
+  `FilesMigrationConflicts` (rule "merged into …") and removes it from the legacy collection; the legacy children
+  then move under the existing root with the normal batches. The sweep result lists them in `RootsMerged`, the audit
+  record in `merged` (not in `conflicts`), the status report in `RecentSweeps[].Merged`; no duplicate root arises. A
+  **non-empty or divergent** root (children, foreign attributes — e.g. the default root `Files` with content) still
+  aborts the whole tenant with `RootConflict` before any root is taken over or any entity moves (error log
+  rate-limited, one audit record per distinct conflict set). The merge is crash-safe: children re-pointed to the root
+  keep their legacy origin type until the type rewrite, so a repeated sweep still sees the root as empty and finishes
+  the job. `FindRootConflictsAsync` (used by the status report) returns only real conflicts.
 - **Move:** batches (`BatchSize` 500) in one transaction each — `replaceOne` upsert by `_id` into the
   System.Files collection with the rewritten `ckTypeId`, delete from the source, each batch verified
   afterwards. An rtId that already exists in System.Files (stale writer re-wrote a moved entity) is **never
@@ -843,7 +855,7 @@ System.Reporting 3.0.0.
   sweep never rewrites pipeline YAML — blueprint pipelines are fixed by the app blueprint release (S9),
   tenant-local ones by the runbook (S11).
 - Tests: `tests/AssetRepositoryServices.IntegrationTests/Files/ReportingFilesMoveSweepTests.cs`
-  (`FilesMigrationTestFixture` seeds legacy data raw, incl. real GridFS files; it lists the system tenant) and
+  (`FilesMigrationTestFixture` seeds legacy data raw, incl. real GridFS files; it lists the system tenant; AB#6883: empty roots of the four `ReportingAssets_*` names and `Documents` are merged with a new and with the legacy rtId, non-empty/divergent roots still abort without a partial move, an interrupted merge is finished) and
   `FilesSweepAllowListTests.cs` (two tenants with legacy data: empty list, one listed, switch off, second run,
   unknown id, log levels).
 

@@ -1,4 +1,5 @@
 using System.Text;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.Services.Files;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.Services.Files.Migration;
 using Microsoft.Extensions.DependencyInjection;
 using MongoDB.Bson;
@@ -152,6 +153,61 @@ public class FilesMigrationTestFixture : FilesTestFixture
         document.Add("rtDisplayDescription", BsonNull.Value);
         document.Add("rtVersion", 0);
         await Collection(ReportingFilesMigrationConstants.LegacyEntityCollectionName).InsertOneAsync(document);
+    }
+
+    /// <summary>
+    ///     Inserts a System.Files <c>FolderRoot</c> raw (as platform-services, Reporting 3.x or a blueprint would
+    ///     have created it before the sweep ran, AB#6883); <paramref name="rtId" /> null = a new id.
+    /// </summary>
+    public async Task<ObjectId> InsertTargetRootAsync(string wellKnownName, ObjectId? rtId = null,
+        BsonDocument? extraAttributes = null)
+    {
+        var id = rtId ?? ObjectId.GenerateNewId();
+        var now = DateTime.UtcNow;
+        var attributes = new BsonDocument("name", wellKnownName);
+        if (extraAttributes != null)
+        {
+            attributes.AddRange(extraAttributes);
+        }
+
+        await Collection(FileSystemConstants.EntityCollectionName).InsertOneAsync(new BsonDocument
+        {
+            { "_id", id },
+            { "_t", "RtEntity" },
+            { "attributes", attributes },
+            { "rtCreationDateTime", now },
+            { "rtChangedDateTime", now },
+            { "ckTypeId", FileSystemConstants.FolderRootCkTypeId },
+            { "rtWellKnownName", wellKnownName },
+            { "rtDisplayName", BsonNull.Value },
+            { "rtDisplayDescription", BsonNull.Value },
+            { "rtVersion", 0 }
+        });
+        return id;
+    }
+
+    /// <summary>
+    ///     Inserts a System.Files <c>Folder</c> raw under <paramref name="parent" /> (a root that is not empty).
+    /// </summary>
+    public async Task<(ObjectId Folder, ObjectId Association)> InsertTargetFolderAsync(string name, ObjectId parent)
+    {
+        var id = ObjectId.GenerateNewId();
+        var now = DateTime.UtcNow;
+        await Collection(FileSystemConstants.EntityCollectionName).InsertOneAsync(new BsonDocument
+        {
+            { "_id", id },
+            { "_t", "RtEntity" },
+            { "attributes", new BsonDocument("name", name) },
+            { "rtCreationDateTime", now },
+            { "rtChangedDateTime", now },
+            { "ckTypeId", FileSystemConstants.FolderCkTypeId },
+            { "rtDisplayName", BsonNull.Value },
+            { "rtDisplayDescription", BsonNull.Value },
+            { "rtVersion", 0 }
+        });
+        var association = await InsertAssociationAsync(id, FileSystemConstants.FolderCkTypeId, parent,
+            FileSystemConstants.FolderRootCkTypeId, FileSystemConstants.ParentChildRoleId);
+        return (id, association);
     }
 
     public async Task<ObjectId> InsertAssociationAsync(ObjectId originRtId, string originCkTypeId,

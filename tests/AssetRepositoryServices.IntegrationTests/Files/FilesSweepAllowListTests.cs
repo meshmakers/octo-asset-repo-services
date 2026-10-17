@@ -156,9 +156,22 @@ public class FilesSweepAllowListTests
         var legacyRoot = await world.A.GetCollection<BsonDocument>(Legacy)
             .Find(Builders<BsonDocument>.Filter.Eq("ckTypeId", ReportingFilesMigrationConstants.LegacyFolderRootCkTypeId))
             .FirstAsync(Ct);
-        await world.A.GetCollection<BsonDocument>(FileSystemConstants.EntityCollectionName).InsertOneAsync(
-            TwoTenants.Entity(ObjectId.GenerateNewId(), FileSystemConstants.FolderRootCkTypeId, "other",
-                legacyRoot["rtWellKnownName"].AsString.ToUpperInvariant()), cancellationToken: Ct);
+        // AB#6883: an EMPTY root of the same name is merged, so the colliding root has to hold a folder.
+        var existingRoot = ObjectId.GenerateNewId();
+        var existingFolder = ObjectId.GenerateNewId();
+        await world.A.GetCollection<BsonDocument>(FileSystemConstants.EntityCollectionName).InsertManyAsync(
+        [
+            TwoTenants.Entity(existingRoot, FileSystemConstants.FolderRootCkTypeId, "other",
+                legacyRoot["rtWellKnownName"].AsString.ToUpperInvariant()),
+            TwoTenants.Entity(existingFolder, FileSystemConstants.FolderCkTypeId, "occupant", null)
+        ], cancellationToken: Ct);
+        await world.A.GetCollection<BsonDocument>(Associations).InsertOneAsync(new BsonDocument
+        {
+            { "_id", ObjectId.GenerateNewId() }, { "attributes", new BsonDocument() },
+            { "originRtId", existingFolder }, { "originCkTypeId", FileSystemConstants.FolderCkTypeId },
+            { "targetRtId", existingRoot }, { "targetCkTypeId", FileSystemConstants.FolderRootCkTypeId },
+            { "associationRoleId", FileSystemConstants.ParentChildRoleId }
+        }, cancellationToken: Ct);
 
         var result = await world.Runner.RunAtTenantStartAsync(TenantA, Ct);
 

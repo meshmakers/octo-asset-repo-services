@@ -504,6 +504,9 @@ public class ReportingFilesMoveSweepTests
         var tree = await _fixture.SeedLegacyTreeAsync();
         var clash = await _fixture.InsertLegacyEntityAsync(ReportingFilesMigrationConstants.LegacyFolderRootCkTypeId,
             "files", "files");
+        // AB#6883: an EMPTY root of the same name is merged; the default root has to hold something to collide.
+        var defaultRoot = await FindDefaultRootAsync();
+        var (occupant, occupantLink) = await _fixture.InsertTargetFolderAsync("occupant", defaultRoot);
         var derivedId = ObjectId.GenerateNewId();
         await _fixture.Collection(Legacy).InsertOneAsync(new BsonDocument
         {
@@ -534,9 +537,194 @@ public class ReportingFilesMoveSweepTests
         finally
         {
             await _fixture.Collection(Legacy).DeleteManyAsync(Builders<BsonDocument>.Filter.In("_id", new[] { clash, derivedId }), Ct);
+            await _fixture.Collection(Target).DeleteOneAsync(Builders<BsonDocument>.Filter.Eq("_id", occupant), Ct);
+            await _fixture.Collection(Associations).DeleteOneAsync(Builders<BsonDocument>.Filter.Eq("_id", occupantLink), Ct);
         }
 
         (await _fixture.Sweep.SweepAsync(TenantId, "Test", Ct)).Outcome.Should().Be(ReportingFilesSweepOutcome.Moved);
+    }
+
+    // ------------------------------------------------------------------------------------------------
+    // AB#6883: empty System.Files roots of the same well-known name are taken over, others still conflict
+    // ------------------------------------------------------------------------------------------------
+
+    private static readonly string[] WellKnownRootNames =
+    [
+        "ReportingAssets_SharedDataSources", "ReportingAssets_Reports", "ReportingAssets_Definitions",
+        "ReportingAssets_Resources", "Documents"
+    ];
+
+    private async Task<ObjectId> FindDefaultRootAsync() =>
+        (await _fixture.Collection(Target).Find(Builders<BsonDocument>.Filter.Eq("rtWellKnownName",
+            FileSystemConstants.DefaultRootWellKnownName)).FirstAsync(Ct))["_id"].AsObjectId;
+
+    private async Task<List<(string Name, ObjectId LegacyRoot, ObjectId Item, ObjectId TargetRoot)>> SeedRootPairsAsync(
+        bool sameRtId = false)
+    {
+        var pairs = new List<(string, ObjectId, ObjectId, ObjectId)>();
+        foreach (var name in WellKnownRootNames)
+        {
+            var legacyRoot = await _fixture.InsertLegacyEntityAsync(
+                ReportingFilesMigrationConstants.LegacyFolderRootCkTypeId, name, name);
+            var (item, _) = await _fixture.InsertLegacyItemAsync(name + ".txt", "legacy " + name, legacyRoot,
+                ReportingFilesMigrationConstants.LegacyFolderRootCkTypeId);
+            var targetRoot = await _fixture.InsertTargetRootAsync(name, sameRtId ? legacyRoot : null);
+            pairs.Add((name, legacyRoot, item, targetRoot));
+        }
+
+        return pairs;
+    }
+
+    private async Task CleanUpAsync(IEnumerable<(string Name, ObjectId LegacyRoot, ObjectId Item, ObjectId TargetRoot)> pairs)
+    {
+        var ids = pairs.SelectMany(p => new[] { p.LegacyRoot, p.Item, p.TargetRoot }).Distinct().ToList();
+        await _fixture.Collection(Legacy).DeleteManyAsync(Builders<BsonDocument>.Filter.In("_id", ids), Ct);
+        await _fixture.Collection(Target).DeleteManyAsync(Builders<BsonDocument>.Filter.In("_id", ids), Ct);
+        await _fixture.Collection(Associations).DeleteManyAsync(Builders<BsonDocument>.Filter.Or(
+            Builders<BsonDocument>.Filter.In("originRtId", ids), Builders<BsonDocument>.Filter.In("targetRtId", ids)), Ct);
+        await _fixture.Collection(ReportingFilesMigrationConstants.ConflictCollectionName)
+            .DeleteManyAsync(Builders<BsonDocument>.Filter.In("rtId", ids), Ct);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task EmptySystemFilesRootsOfTheSameName_AreTakenOver_NoRootConflict_AuditSaysMerged(bool sameRtId)
+    {
+        var pairs = await SeedRootPairsAsync(sameRtId);
+        try
+        {
+            var auditBefore = await _fixture.Collection(Audit).CountDocumentsAsync(FilterDefinition<BsonDocument>.Empty,
+                cancellationToken: Ct);
+
+            var result = await _fixture.Sweep.SweepAsync(TenantId, "Test", Ct);
+
+            result.Outcome.Should().Be(ReportingFilesSweepOutcome.Moved, string.Join("; ", result.Errors));
+            result.RootConflicts.Should().BeEmpty();
+            result.Conflicts.Should().BeEmpty("a merged root is not a rtId conflict");
+            result.RootsMerged.Should().HaveCount(WellKnownRootNames.Length);
+
+            foreach (var (name, legacyRoot, item, targetRoot) in pairs)
+            {
+                // Exactly one root of that name remains: the pre-existing one.
+                var roots = await _fixture.Collection(Target).Find(Builders<BsonDocument>.Filter.Eq("ckTypeId",
+                        FileSystemConstants.FolderRootCkTypeId) & Builders<BsonDocument>.Filter.Eq("rtWellKnownName", name))
+                    .ToListAsync(Ct);
+                roots.Should().ContainSingle().Which["_id"].AsObjectId.Should().Be(targetRoot);
+                (await _fixture.Collection(Legacy).CountDocumentsAsync(Builders<BsonDocument>.Filter.Eq("_id", legacyRoot),
+                    cancellationToken: Ct)).Should().Be(0);
+
+                // The legacy file now lives under the existing root.
+                (await _fixture.Collection(Target).CountDocumentsAsync(Builders<BsonDocument>.Filter.Eq("_id", item),
+                    cancellationToken: Ct)).Should().Be(1);
+                var parent = await _fixture.Collection(Associations).Find(
+                    Builders<BsonDocument>.Filter.Eq("originRtId", item) &
+                    Builders<BsonDocument>.Filter.Eq("associationRoleId", FileSystemConstants.ParentChildRoleId)).SingleAsync(Ct);
+                parent["targetRtId"].AsObjectId.Should().Be(targetRoot);
+                parent["targetCkTypeId"].AsString.Should().Be(FileSystemConstants.FolderRootCkTypeId);
+                parent["originCkTypeId"].AsString.Should().Be(FileSystemConstants.FileSystemItemCkTypeId);
+            }
+
+            var audit = await _fixture.Collection(Audit).Find(FilterDefinition<BsonDocument>.Empty)
+                .Sort(Builders<BsonDocument>.Sort.Descending("executedAt")).FirstAsync(Ct);
+            (await _fixture.Collection(Audit).CountDocumentsAsync(FilterDefinition<BsonDocument>.Empty,
+                cancellationToken: Ct)).Should().Be(auditBefore + 1);
+            audit["outcome"].AsString.Should().Be(nameof(ReportingFilesSweepOutcome.Moved));
+            audit["merged"].AsBsonArray.Should().HaveCount(WellKnownRootNames.Length);
+            audit["conflicts"].AsBsonArray.Should().BeEmpty();
+
+            // The status report lists the merge in the recent sweeps.
+            var status = await _fixture.Status.GetStatusAsync(TenantId, Ct);
+            status!.RootConflicts.Should().BeEmpty();
+            status.RecentSweeps[0].Merged.Should().HaveCount(WellKnownRootNames.Length);
+
+            // Idempotent: nothing left, nothing written.
+            (await _fixture.Sweep.SweepAsync(TenantId, "Test", Ct)).Outcome.Should().Be(ReportingFilesSweepOutcome.NothingToDo);
+            (await _fixture.Collection(Audit).CountDocumentsAsync(FilterDefinition<BsonDocument>.Empty,
+                cancellationToken: Ct)).Should().Be(auditBefore + 1);
+        }
+        finally
+        {
+            await CleanUpAsync(pairs);
+        }
+    }
+
+    [Fact]
+    public async Task NonEmptyOrDivergentSystemFilesRoot_StillAbortsWithRootConflict_NoPartialMove()
+    {
+        var pairs = await SeedRootPairsAsync();
+        // One of five roots is not empty (a folder below it), and another one diverges (foreign attribute).
+        var occupied = pairs[0].TargetRoot;
+        var (folder, folderLink) = await _fixture.InsertTargetFolderAsync("keep", occupied);
+        var divergentName = "Divergent" + Guid.NewGuid().ToString("N")[..6];
+        var divergentLegacy = await _fixture.InsertLegacyEntityAsync(
+            ReportingFilesMigrationConstants.LegacyFolderRootCkTypeId, divergentName, divergentName);
+        var divergentTarget = await _fixture.InsertTargetRootAsync(divergentName,
+            extraAttributes: new BsonDocument("colour", "red"));
+        try
+        {
+            var result = await _fixture.Sweep.SweepAsync(TenantId, "Test", Ct);
+
+            result.Outcome.Should().Be(ReportingFilesSweepOutcome.RootConflict);
+            result.RootConflicts.Should().HaveCount(2);
+            result.RootsMerged.Should().BeEmpty("the abort happens before any root is taken over");
+            result.TotalEntitiesMoved.Should().Be(0);
+
+            // No partial move: every legacy root and item is still in the legacy collection, the parent links untouched.
+            foreach (var (_, legacyRoot, item, _) in pairs)
+            {
+                (await _fixture.Collection(Legacy).CountDocumentsAsync(
+                    Builders<BsonDocument>.Filter.In("_id", new[] { legacyRoot, item }), cancellationToken: Ct)).Should().Be(2);
+            }
+
+            (await _fixture.Collection(Associations).CountDocumentsAsync(
+                Builders<BsonDocument>.Filter.In("targetRtId", pairs.Select(p => p.TargetRoot)), cancellationToken: Ct))
+                .Should().Be(1, "only the unrelated occupant folder points at an existing System.Files root");
+
+            // Remove the two offenders: the very same tenant is then swept and the remaining roots are merged.
+            await _fixture.Collection(Legacy).DeleteOneAsync(Builders<BsonDocument>.Filter.Eq("_id", divergentLegacy), Ct);
+            await _fixture.Collection(Target).DeleteManyAsync(
+                Builders<BsonDocument>.Filter.In("_id", new[] { divergentTarget, folder }), Ct);
+            await _fixture.Collection(Associations).DeleteOneAsync(Builders<BsonDocument>.Filter.Eq("_id", folderLink), Ct);
+
+            var second = await _fixture.Sweep.SweepAsync(TenantId, "Test", Ct);
+            second.Outcome.Should().Be(ReportingFilesSweepOutcome.Moved, string.Join("; ", second.Errors));
+            second.RootsMerged.Should().HaveCount(WellKnownRootNames.Length);
+        }
+        finally
+        {
+            await _fixture.Collection(Legacy).DeleteOneAsync(Builders<BsonDocument>.Filter.Eq("_id", divergentLegacy), Ct);
+            await _fixture.Collection(Target).DeleteManyAsync(
+                Builders<BsonDocument>.Filter.In("_id", new[] { divergentTarget, folder }), Ct);
+            await _fixture.Collection(Associations).DeleteOneAsync(Builders<BsonDocument>.Filter.Eq("_id", folderLink), Ct);
+            await CleanUpAsync(pairs);
+        }
+    }
+
+    [Fact]
+    public async Task InterruptedMerge_ChildrenAlreadyRepointed_IsFinishedByTheNextSweep()
+    {
+        var pairs = await SeedRootPairsAsync();
+        var (name, legacyRoot, item, targetRoot) = pairs[2];
+        // Simulate a crash after the re-pointing and before the legacy root was parked.
+        await _fixture.Collection(Associations).UpdateManyAsync(Builders<BsonDocument>.Filter.Eq("targetRtId", legacyRoot),
+            Builders<BsonDocument>.Update.Set("targetRtId", targetRoot), cancellationToken: Ct);
+        try
+        {
+            var result = await _fixture.Sweep.SweepAsync(TenantId, "Test", Ct);
+
+            result.Outcome.Should().Be(ReportingFilesSweepOutcome.Moved, string.Join("; ", result.Errors));
+            result.RootConflicts.Should().BeEmpty(name + ": legacy children under the target are not 'content'");
+            (await _fixture.Collection(Legacy).CountDocumentsAsync(Builders<BsonDocument>.Filter.Eq("_id", legacyRoot),
+                cancellationToken: Ct)).Should().Be(0);
+            (await _fixture.Collection(Associations).Find(Builders<BsonDocument>.Filter.Eq("originRtId", item) &
+                Builders<BsonDocument>.Filter.Eq("associationRoleId", FileSystemConstants.ParentChildRoleId))
+                .SingleAsync(Ct))["targetRtId"].AsObjectId.Should().Be(targetRoot);
+        }
+        finally
+        {
+            await CleanUpAsync(pairs);
+        }
     }
 
     [Fact]
