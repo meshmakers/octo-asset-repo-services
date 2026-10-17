@@ -184,6 +184,57 @@ public class FilesControllerTests
     }
 
     [Fact]
+    public async Task UploadByPath_ParallelIntoANewFolder_CreatesExactlyOneFolder()
+    {
+        // AB#6477: 40 PUTs with createFolders into a folder that does not exist yet, 8 workers, 20 rounds.
+        var root = await _helpers.CreateRootAsync();
+        var wkn = root.Entity.RtWellKnownName!;
+
+        for (var round = 0; round < 20; round++)
+        {
+            var folder = $"New{round}/Sub";
+            var statuses = new global::System.Collections.Concurrent.ConcurrentBag<int?>();
+            await Parallel.ForEachAsync(Enumerable.Range(0, 40), new ParallelOptions { MaxDegreeOfParallelism = 8 },
+                async (i, _) =>
+                {
+                    var (controller, _) = Create(FilesTestFixture.PlainUser, "x"u8.ToArray(), "text/plain");
+                    var result = (ObjectResult)await controller.UploadByPath(wkn, $"{folder}/d{i}.txt",
+                        createFolders: true);
+                    statuses.Add(result.StatusCode);
+                });
+
+            statuses.Should().OnlyContain(s => s == StatusCodes.Status201Created, $"round {round}");
+            using var session = Repository.GetSession();
+            var top = await _fixture.FileSystem.GetChildrenByNameAsync(Repository, session, root.Id, $"New{round}");
+            top.Should().ContainSingle($"round {round}");
+            var sub = await _fixture.FileSystem.GetChildrenByNameAsync(Repository, session, top[0].Id, "Sub");
+            sub.Should().ContainSingle($"round {round}");
+            (await _fixture.FileSystem.GetChildrenAsync(Repository, session, sub[0].Id)).Should().HaveCount(40);
+        }
+    }
+
+    [Fact]
+    public async Task UploadByPath_ParallelSameFileNameWithConflictFail_OneWins()
+    {
+        var root = await _helpers.CreateRootAsync();
+        var folder = await _helpers.CreateFolderAsync(root, "F");
+        var statuses = new global::System.Collections.Concurrent.ConcurrentBag<int?>();
+        await Parallel.ForEachAsync(Enumerable.Range(0, 8), new ParallelOptions { MaxDegreeOfParallelism = 8 },
+            async (_, _) =>
+            {
+                var (controller, _) = Create(FilesTestFixture.PlainUser, "x"u8.ToArray(), "text/plain");
+                statuses.Add(((ObjectResult)await controller.UploadByPath(root.Entity.RtWellKnownName!, "F/same.txt"))
+                    .StatusCode);
+            });
+
+        statuses.Count(s => s == StatusCodes.Status201Created).Should().Be(1);
+        statuses.Count(s => s == StatusCodes.Status409Conflict).Should().Be(7);
+        using var session = Repository.GetSession();
+        (await _fixture.FileSystem.GetChildrenByNameAsync(Repository, session, folder.Id, "same.txt"))
+            .Should().ContainSingle();
+    }
+
+    [Fact]
     public async Task ByRtId_UploadIntoFolder_Download_Replace()
     {
         var root = await _helpers.CreateRootAsync();

@@ -26,6 +26,11 @@ public class FileSystemService
 
     private const int OriginBatchSize = 200;
 
+    /// <summary>
+    ///     AB#6477: sibling-name locks that close the check-then-insert window of folder and file creation.
+    /// </summary>
+    public FileSystemNameLocks NameLocks { get; } = new();
+
     internal static readonly RtCkId<CkTypeId> FolderRootType = new(FileSystemConstants.FolderRootCkTypeId);
     internal static readonly RtCkId<CkTypeId> FolderType = new(FileSystemConstants.FolderCkTypeId);
     internal static readonly RtCkId<CkTypeId> FileType = new(FileSystemConstants.FileSystemItemCkTypeId);
@@ -410,6 +415,41 @@ public class FileSystemService
 
         return await FindByRtIdAsync(repository, session, folder.RtId).ConfigureAwait(false)
                ?? new FileSystemEntry(folder, FileSystemEntryKind.Folder);
+    }
+
+    /// <summary>
+    ///     AB#6477: lock key of the first folder of <paramref name="folderPath" /> that does not exist yet below
+    ///     <paramref name="root" /> (parent + name), or null when the whole path exists (or cannot be walked).
+    ///     Everything deeper is created below that new folder, which no other writer can see before commit.
+    /// </summary>
+    public async Task<string?> FindFirstMissingFolderKeyAsync(ITenantRepository repository, IOctoSession session,
+        string root, string? folderPath)
+    {
+        var current = await FindRootAsync(repository, session, root).ConfigureAwait(false);
+        if (current == null)
+        {
+            return null;
+        }
+
+        foreach (var segment in FileSystemNames.SplitPath(folderPath))
+        {
+            var matches = await GetChildrenByNameAsync(repository, session, current.Id, segment).ConfigureAwait(false);
+            if (matches.Count == 0)
+            {
+                return FileSystemNameLocks.KeyOf(current.Id.RtId, segment);
+            }
+
+            var next = matches.FirstOrDefault(m => string.Equals(m.Name, segment, StringComparison.Ordinal)) ??
+                       matches[0];
+            if (matches.Count > 1 || !next.IsContainer)
+            {
+                return null; // the real walk reports AMBIGUOUS_PATH / NOT_A_FOLDER
+            }
+
+            current = next;
+        }
+
+        return null;
     }
 
     /// <summary>
