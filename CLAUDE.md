@@ -694,35 +694,54 @@ Three pieces make it work now, and each fails silently on its own:
 |---|---|---|
 | `Configuration/ConfigureJwtBearerOptions.cs` | `TokenValidationParameters.AuthenticationType = "Bearer"` | 🔴 The silent-no-op trap above. Extracted from the former inline `AddJwtBearer(options => …)` delegate — which also removed a `builder.Services.BuildServiceProvider()` call — so the settings are unit-testable and match how identity, bot, communication-controller, MCP and AI services do it. |
 | `Configuration/DependencyInjection/RuntimeEngineBuilderExtensions.cs` | `ConfigureOptions<ConfigureJwtBearerOptions>()`, and `AddJwtBearer()` **without an argument** | 🔴 The options factory runs configurators in registration order. A delegate on `AddJwtBearer` runs last, and an assignment `options.TokenValidationParameters = new …` there discards the label again — compiling, and with the configurator's own unit test still green. octo-ai-services shipped a release in exactly that state (AB#5051 → AB#5056). |
-| `Program.cs` | `AddOctoTenantAuthorization(o => o.UserTokenEnforcement = LogOnly)` **before** `AddOctoTenantAuthorization(builder.Configuration)` | The user path is armed in stages, see below. Registered in that order so configuration still wins. |
+| `Program.cs` | `AddOctoTenantAuthorization(o => o.UserTokenEnforcement = LogOnly)` **before** `AddOctoTenantAuthorization(builder.Configuration)` | The user path is armed in stages, see below. Registered in that order so configuration still wins; pinned against the real `Program.cs` source (AB#6832). |
 
 `tests/AssetRepositoryServices.UnitTests/Configuration/TenantAuthorizationWiringTests.cs` pins all
 three, including a source-level guard that no second configurator of the bearer scheme appears —
-because a test of the configurator class alone provably proves nothing here.
+because a test of the configurator class alone provably proves nothing here. The registration order of
+`Program.cs` itself is pinned in `ProgramTenantGatePinTests` (AB#6832), and `TenantGatePipelineTests` proves the
+refusal end to end.
 
 #### Tenant enforcement for user tokens is staged (AB#5054)
 
 `TenantAuthorizationOptions.UserTokenEnforcement` (`Disabled` does not exist; `LogOnly` | `Enforce`,
 platform default `Enforce`) is set to **`LogOnly`** in this service's `Program.cs`, i.e. no request
 outcome changes and every access an enforcing run would refuse is logged with subject, client id and
-both tenants. Flip an environment with `OCTO_TENANTAUTHORIZATION__USERTOKENENFORCEMENT=Enforce` once
-that log is clean.
+both tenants (`... This would be denied with UserTokenEnforcement=Enforce (AB#5054)`).
 
-🔴 **There is a known cross-tenant caller on this path, so do not arm it blind.** `meshmakers-app`
-queries this service's GraphQL endpoint with the **user's own** token against a *different* tenant's
-route in two places on its startup path: `available-tenants.service.ts` walks the root tenant and its
-children to discover the tenant topology, and `tenant-provisioning.service.ts` probes candidate
-tenants for the landing guard. Both anticipate a 403 and degrade — but the degradation is
-user-visible: when the *root* query is refused, `topologyKnown()` stays false and a bare `/` visit
-lands on `/no-tenant?reason=unresolved` for every user whose token tenant is not the root tenant.
-That app is in production, so `Enforce` here needs the app to re-mint per tenant (or use the RFC 8693
-exchange it already has for its tenant switch) first.
+**The flip is configuration-only; the rollback is LogOnly (AB#6728).** The code default is registered
+**before** `AddOctoTenantAuthorization(builder.Configuration)`, and `Program.cs` reads
+`AddEnvironmentVariables("OCTO_")`, so `OCTO_TENANTAUTHORIZATION__USERTOKENENFORCEMENT=Enforce` (section
+`TenantAuthorization:UserTokenEnforcement`, set from the chart value) wins without a code change or a
+release. Rollback = set the value to `LogOnly` again. With `Enforce`, a bearer user token whose `tenant_id`
+differs from the route tenant (or has none) gets **403** with the JSON body `{"message": ...}` and neither the
+GraphQL resolver nor the controller action runs. Not covered by the gate: SignalR hubs (not in this service),
+routes without a tenant segment, `[AllowAnonymous]` endpoints, cookie principals and requests without a bearer
+header. No endpoint of this service carries `IAllowParentTenantAdministration`, and none may: the marker would
+give a parent tenant the data of its children.
 
-Not affected: the Studio re-mints its token per tenant and blocks the mismatch client-side
-(`authorize.guard.ts` → `switchTenant`), and octo-cli/SDK derive the URL tenant and the `acr_values`
-from the same context value. Child-tenant admin operations on `TenantsController` pass the child in a
-**query parameter** on the caller's own route, so the gate never sees them — this service has no
-route where `{tenantId}` is a foreign subject.
+Tests (AB#6832, `tests/AssetRepositoryServices.UnitTests/Configuration/`):
+`TenantGatePipelineTests` drives requests through the real `UseOctoTenantAuthorization()` pipeline and the real
+`{tenantId:tenantId}` route constraint (in-process `TestServer`; only the Bearer-labelled authentication handler
+and a one-field GraphQL schema / one-action controller are stand-ins) for GraphQL `tenants/{tenantId}/graphQl` and a
+REST route `{tenantId}/v1/...`: foreign tenant 403 and handler not run, matching tenant passes, missing
+`tenant_id` 403, and the LogOnly code default lets the same foreign request through. `ProgramTenantGatePinTests`
+pins the registration order in the real `Program.cs` source, the pipeline order, that `Enforce` wins from the
+configuration section and from the real environment variable name, and that no endpoint carries the
+parent-tenant marker.
+
+**Known cross-tenant callers (inventory, AB#6728, Dash0 LogOnly warnings of test-2 and staging-1).** They decide
+when an environment may flip, not the code:
+
+| Caller | Finding | Outcome |
+|---|---|---|
+| `octo-cli` / SDK | Calls with the context's root-tenant token against `-tid <tenant>` routes; most of the LogOnly volume | No exemption: authenticates per target tenant, AB#6836 (gates the test-2 flip) |
+| Refinery Studio | Sends a token of one tenant to another tenant's route in some paths | No exemption: Studio bug AB#6731, to be released before staging-1 / prod flips |
+| `energy-community-app` | User tokens of tenants `energytest`/`eegroider`/`mrotest` against the host tenant's GraphQL | Open owner decision (Frigg/Sol); recommendation: no exemption, the app obtains a token for the host tenant |
+| `meshmakers-app` | Topology and capability probes with the user's token against the root tenant's route; **not seen** on test-2 or staging-1 | No exemption unless its need is evidenced; the app already degrades on a 403 |
+
+Child-tenant admin operations on `TenantsController` pass the child in a **query parameter** on the caller's own
+route, so the gate never sees them: this service has no route where `{tenantId}` is a foreign subject.
 
 #### Tenant enforcement for service tokens (AB#5032 / AB#5047)
 
