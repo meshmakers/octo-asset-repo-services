@@ -303,11 +303,31 @@ public class FilesController(
             // Buffer (and enforce the limit) first, then create missing folders and the file in one
             // transaction, so a refused upload leaves no empty folders behind.
             await using var content = await BufferRequestBodyAsync();
-            session.StartTransaction();
-            var folder = await fileSystem.ResolveFolderAsync(repository, session, unfiltered, root, folderPath,
-                createFolders);
-            return await StoreAsync(repository, session, unfiltered, folder, segments[^1], mode, root, folderPath,
-                content);
+            try
+            {
+                if (createFolders)
+                {
+                    // AB#6477: parallel uploads into a folder that does not exist yet would each create it. The
+                    // writer of the first missing folder holds its name lock from before the transaction starts
+                    // (so its snapshot sees the predecessor's folder) until after the commit.
+                    var missingKey = await fileSystem.FindFirstMissingFolderKeyAsync(repository, session, root,
+                        folderPath);
+                    if (missingKey != null)
+                    {
+                        await fileSystem.NameLocks.AcquireAsync(session, [missingKey]);
+                    }
+                }
+
+                session.StartTransaction();
+                var folder = await fileSystem.ResolveFolderAsync(repository, session, unfiltered, root, folderPath,
+                    createFolders);
+                return await StoreAsync(repository, session, unfiltered, folder, segments[^1], mode, root,
+                    folderPath, content);
+            }
+            finally
+            {
+                fileSystem.NameLocks.Release(session);
+            }
         }, RtDataAction.Write);
     }
 
@@ -406,14 +426,24 @@ public class FilesController(
     {
         FileSystemNames.Validate(name);
         await using var content = await BufferRequestBodyAsync();
-        session.StartTransaction();
-        return await StoreAsync(repository, session, unfiltered, folder, name, mode, root, folderPath, content);
+        try
+        {
+            session.StartTransaction();
+            return await StoreAsync(repository, session, unfiltered, folder, name, mode, root, folderPath, content);
+        }
+        finally
+        {
+            fileSystem.NameLocks.Release(session);
+        }
     }
 
     private async Task<IActionResult> StoreAsync(ITenantRepository repository, IOctoSession session,
         IOctoSession unfiltered, FileSystemEntry folder, string name, FileConflictMode mode, string? root,
         string? folderPath, Stream content)
     {
+        // AB#6477: two uploads of the same new name must not both pass the free-name check (the caller releases
+        // the lock after the commit).
+        await fileSystem.NameLocks.AcquireAsync(session, [FileSystemNameLocks.KeyOf(folder.Id.RtId, name)]);
         var (entry, replaced) = await fileSystem.UploadAsync(repository, session, unfiltered, folder, name,
             ResolveContentType(name), content, mode);
         await session.CommitTransactionAsync();
@@ -601,6 +631,12 @@ public class FilesController(
 
     private ObjectResult Problem(FileSystemException exception)
     {
+        if (exception.Code == FileSystemErrorCodes.AmbiguousPath)
+        {
+            // AB#6477: reports tenants that still hold duplicate sibling names from before the name locks.
+            logger.LogWarning("Duplicate sibling names under {Path} ({Code})", exception.Message, exception.Code);
+        }
+
         var problem = new ProblemDetails
         {
             Status = exception.StatusCode,

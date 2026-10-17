@@ -12,14 +12,17 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.RequestHandlin
 internal class OctoSessionListener : IDocumentExecutionListener
 {
     private readonly IOctoSessionAccessor _accessor;
+    private readonly Services.Files.FileSystemService _fileSystem;
 
     /// <summary>
     ///     Constructor
     /// </summary>
     /// <param name="accessor">The accessor of Octo session for a graphql call</param>
-    public OctoSessionListener(IOctoSessionAccessor accessor)
+    /// <param name="fileSystem">Holds the sibling-name locks released when the session ends (AB#6477)</param>
+    public OctoSessionListener(IOctoSessionAccessor accessor, Services.Files.FileSystemService fileSystem)
     {
         _accessor = accessor;
+        _fileSystem = fileSystem;
     }
 
     /// <inheritdoc />
@@ -57,13 +60,22 @@ internal class OctoSessionListener : IDocumentExecutionListener
 
         if (context.Operation?.Operation == OperationType.Mutation)
         {
-            if (context.Errors.Count == 0)
+            // AB#6477: the sibling-name locks of the mutation are held until the transaction has ended.
+            var session = _accessor.Session;
+            try
             {
-                await _accessor.CommitAsync().ConfigureAwait(false);
+                if (context.Errors.Count == 0)
+                {
+                    await _accessor.CommitAsync().ConfigureAwait(false);
+                }
+                else
+                {
+                    await _accessor.AbortAsync().ConfigureAwait(false);
+                }
             }
-            else
+            finally
             {
-                await _accessor.AbortAsync().ConfigureAwait(false);
+                _fileSystem.NameLocks.Release(session);
             }
         }
     }

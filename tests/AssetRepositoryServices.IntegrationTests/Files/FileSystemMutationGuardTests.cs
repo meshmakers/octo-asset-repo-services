@@ -151,6 +151,46 @@ public class FileSystemMutationGuardTests
     }
 
     [Fact]
+    public async Task CreateFolder_ParallelSameName_ExactlyOneSucceeds()
+    {
+        // AB#6477: the check-then-insert window of the generic create is closed by the per-name lock.
+        var root = await _helpers.CreateRootAsync();
+        for (var round = 0; round < 5; round++)
+        {
+            var name = $"Race{round}";
+            var results = await Task.WhenAll(Enumerable.Range(0, 6).Select(i =>
+                RunAsync(CreateFolder, FolderVars(i % 2 == 0 ? name : name.ToUpperInvariant(), root),
+                    FilesTestFixture.PlainUser)));
+
+            results.Count(r => r.Errors == null || r.Errors.Count == 0).Should().Be(1, $"round {round}");
+            results.Where(r => r.Errors is { Count: > 0 }).Should()
+                .OnlyContain(r => ErrorCode(r) == FileSystemErrorCodes.NameConflict);
+            using var session = Repository.GetSession();
+            (await _fixture.FileSystem.GetChildrenByNameAsync(Repository, session, root.Id, name)).Should()
+                .ContainSingle();
+        }
+    }
+
+    [Fact]
+    public async Task Rename_ParallelToTheSameTargetName_ExactlyOneSucceeds()
+    {
+        var root = await _helpers.CreateRootAsync();
+        var a = await _helpers.CreateFolderAsync(root, "A");
+        var b = await _helpers.CreateFolderAsync(root, "B");
+
+        var results = await Task.WhenAll(
+            RunAsync(RenameFolder, new { rtId = a.Id.RtId.ToString(), name = "Target" }, FilesTestFixture.PlainUser),
+            RunAsync(RenameFolder, new { rtId = b.Id.RtId.ToString(), name = "TARGET" }, FilesTestFixture.PlainUser));
+
+        results.Count(r => r.Errors == null || r.Errors.Count == 0).Should().Be(1);
+        results.Single(r => r.Errors is { Count: > 0 }).Errors!.First().Code.Should()
+            .Be(FileSystemErrorCodes.NameConflict);
+        using var session = Repository.GetSession();
+        (await _fixture.FileSystem.GetChildrenByNameAsync(Repository, session, root.Id, "target")).Should()
+            .ContainSingle();
+    }
+
+    [Fact]
     public async Task RenameFolder_ToSiblingName_IsRefused()
     {
         var root = await _helpers.CreateRootAsync();
