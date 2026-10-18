@@ -53,6 +53,28 @@ public static class CkUpgradeBlockedError
             ContentTypes = { "application/problem+json" }
         };
 
+    /// <summary>
+    ///     AB#6871: the refusal of a blueprint apply or update. Same status, <c>code</c>, <c>updateSet</c> and
+    ///     <c>blockers</c> as <see cref="CreateResult(IReadOnlyList{string}, IReadOnlyList{CkUpgradeBlockerDto})" />;
+    ///     the English <c>detail</c> names the blueprint and an additional <c>blueprintId</c> extension carries it.
+    /// </summary>
+    public static ObjectResult CreateBlueprintResult(string blueprintId, IReadOnlyList<string> updateSet,
+        IReadOnlyList<CkUpgradeBlockerDto> blockers)
+    {
+        var problem = CreateProblem(updateSet, blockers);
+        var dependents = blockers.Select(b => b.Dependent).Distinct(StringComparer.Ordinal).Count();
+        problem.Detail = $"Blueprint {blueprintId} would install {string.Join(", ", updateSet)}, which would break " +
+                         $"{dependents} installed model(s): {string.Join("; ", blockers.Select(Describe))}. " +
+                         "Nothing was changed. Update the dependent models first, or repeat the request with " +
+                         "ForceBreakingUpdate = true (octo-cli: --forceBreakingUpdate) to proceed anyway.";
+        problem.Extensions["blueprintId"] = blueprintId;
+        return new ObjectResult(problem)
+        {
+            StatusCode = StatusCodes.Status409Conflict,
+            ContentTypes = { "application/problem+json" }
+        };
+    }
+
     private static string Describe(CkUpgradeBlockerDto blocker) =>
         string.IsNullOrEmpty(blocker.ResolveHint) ? blocker.Message : $"{blocker.Message} ({blocker.ResolveHint})";
 }

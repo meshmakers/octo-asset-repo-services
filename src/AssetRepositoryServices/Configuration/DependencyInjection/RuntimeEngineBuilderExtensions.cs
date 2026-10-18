@@ -440,6 +440,8 @@ public static class RuntimeEngineBuilderExtensions
         // ICatalogService is, and a scope-per-sweep keeps the sweep off the request pipeline's
         // lifetimes entirely.
         builder.Services.AddTransient<ICkModelLibraryStatusService, CkModelLibraryStatusService>();
+        // AB#6871: the tenant upgrade guard of blueprint apply and update (the engine's BlueprintService asks it).
+        builder.Services.AddTransient<IBlueprintCkUpgradeGuard, BlueprintCkUpgradeGuard>();
         builder.Services.AddTransient<ITenantObservabilityOptIn, TenantObservabilityOptIn>();
         builder.Services.AddHostedService<CkModelObservabilitySweepService>();
     }

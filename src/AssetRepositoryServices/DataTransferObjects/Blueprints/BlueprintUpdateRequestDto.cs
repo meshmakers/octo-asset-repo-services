@@ -37,4 +37,12 @@ public class BlueprintUpdateRequestDto
     ///     preview lists stays kept. Ignored when <see cref="AllowBlanking" /> is true.
     /// </summary>
     public List<BlueprintBlankingConfirmationDto>? ConfirmedBlankings { get; set; }
+
+    /// <summary>
+    ///     Applies the update although the CK models it installs or raises would break an installed model (tenant
+    ///     upgrade guard, CK v2 F2.5, AB#6871). Default <c>false</c>: the apply is refused with
+    ///     <c>409 CK_UPGRADE_BLOCKED</c> before the first change. Requires the data model management policy (403
+    ///     otherwise). Ignored by the preview and by a dry run, which only report the blockers.
+    /// </summary>
+    public bool ForceBreakingUpdate { get; set; }
 }

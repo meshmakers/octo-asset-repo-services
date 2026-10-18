@@ -3,6 +3,7 @@ using GraphQL.Types;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.DataTransferObjects.Blueprints;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Blueprints;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Utils;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.UpgradeGuard;
 using Meshmakers.Octo.Communication.Contracts;
 using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.ConstructionKit.Contracts.BlueprintCatalogs;
@@ -74,8 +75,12 @@ internal sealed class BlueprintsMutation : ObjectGraphType
             var gql = (GraphQlUserContext)ctx.UserContext;
             var blueprintService = ctx.RequestServices!.GetRequiredService<IBlueprintService>();
 
+            // AB#6871: the tenant upgrade guard applies to every surface; GraphQL has no force option (an override is
+            // an API / octo-cli operation for data model managers).
             var result = await blueprintService.ApplyBlueprintAsync(
-                gql.TenantId, blueprintId, force, ctx.CancellationToken);
+                gql.TenantId, blueprintId,
+                new BlueprintApplyOptions { Force = force, CkUpgradeGuard = BlueprintCkUpgradeGuardMode.Enforce },
+                ctx.CancellationToken);
 
             if (!result.IsSuccess)
             {
@@ -83,11 +88,17 @@ internal sealed class BlueprintsMutation : ObjectGraphType
                     .Where(m => m.MessageLevel == MessageLevel.Error)
                     .Select(m => m.MessageText)
                     .ToList();
-                ctx.Errors.Add(new ExecutionError(string.Join(", ",
+                var error = new ExecutionError(string.Join(", ",
                     errors.Count > 0 ? errors : new[] { "Blueprint apply failed" }))
                 {
-                    Code = "OPERATION_FAILED"
-                });
+                    Code = result.IsCkUpgradeBlocked ? CkUpgradeBlockedError.Code : "OPERATION_FAILED"
+                };
+                if (result.IsCkUpgradeBlocked)
+                {
+                    AddBlockerData(error, result.CkUpdateSet, result.CkUpgradeBlockers);
+                }
+
+                ctx.Errors.Add(error);
                 return null;
             }
 
@@ -144,7 +155,9 @@ internal sealed class BlueprintsMutation : ObjectGraphType
                 AllowBlanking = input.AllowBlanking,
                 ConfirmedBlankings = BlueprintUpdatePreviewMapper.ToConfirmations(
                     input.ConfirmedBlankings?.Select(c => new BlueprintBlankingConfirmationDto
-                        { RtId = c.RtId, AttributeName = c.AttributeName }))
+                        { RtId = c.RtId, AttributeName = c.AttributeName })),
+                // AB#6871: the tenant upgrade guard applies to every surface; GraphQL has no force option.
+                CkUpgradeGuard = BlueprintCkUpgradeGuardMode.Enforce
             };
 
             if (input.ConflictResolutions is { Count: > 0 })
@@ -159,11 +172,17 @@ internal sealed class BlueprintsMutation : ObjectGraphType
 
             if (!result.Success)
             {
-                ctx.Errors.Add(new ExecutionError(string.Join(", ",
+                var error = new ExecutionError(string.Join(", ",
                     result.Errors.Count > 0 ? result.Errors : new[] { "Blueprint update failed" }))
                 {
-                    Code = "OPERATION_FAILED"
-                });
+                    Code = result.IsCkUpgradeBlocked ? CkUpgradeBlockedError.Code : "OPERATION_FAILED"
+                };
+                if (result.IsCkUpgradeBlocked)
+                {
+                    AddBlockerData(error, result.CkUpdateSet, result.CkUpgradeBlockers);
+                }
+
+                ctx.Errors.Add(error);
                 return null;
             }
 
@@ -180,7 +199,11 @@ internal sealed class BlueprintsMutation : ObjectGraphType
                 Warnings = result.Warnings.ToList(),
                 BlankedAttributes = BlueprintUpdatePreviewMapper.ToDtos(result.BlankedAttributes),
                 TenantOwnedSkipped = BlueprintUpdatePreviewMapper.ToDtos(result.TenantOwnedSkipped),
-                TenantOwnedStaysDeleted = BlueprintUpdatePreviewMapper.ToDtos(result.TenantOwnedStaysDeleted)
+                TenantOwnedStaysDeleted = BlueprintUpdatePreviewMapper.ToDtos(result.TenantOwnedStaysDeleted),
+                // AB#6871: a dry run reports what a real update would be refused for.
+                IsBlocked = result.IsCkUpgradeBlocked,
+                CkUpdateSet = result.CkUpdateSet.ToList(),
+                Blockers = BlueprintUpdatePreviewMapper.ToDtos(result.CkUpgradeBlockers)
             };
         }
         catch (Exception e)
@@ -225,6 +248,26 @@ internal sealed class BlueprintsMutation : ObjectGraphType
             _logger.LogError(e, "Blueprint uninstall failed");
             return ctx.HandleException(e);
         }
+    }
+
+    /// <summary>
+    ///     AB#6871: the structured blockers of a refused apply, as error data for clients that read it (the English
+    ///     message already names every blocker).
+    /// </summary>
+    private static void AddBlockerData(ExecutionError error, IReadOnlyList<string> updateSet,
+        IReadOnlyList<BlueprintCkUpgradeBlocker> blockers)
+    {
+        error.Data["updateSet"] = updateSet.ToList();
+        error.Data["blockers"] = blockers.Select(b => new Dictionary<string, object?>
+        {
+            ["dependent"] = b.Dependent,
+            ["update"] = b.Update,
+            ["kind"] = b.Kind,
+            ["subject"] = b.Subject,
+            ["code"] = b.Code,
+            ["message"] = b.Message,
+            ["resolveHint"] = b.ResolveHint
+        }).ToList();
     }
 
     private static bool RequireAdminPanelRole(IResolveFieldContext<object?> ctx, string operation)

@@ -1027,6 +1027,33 @@ enforce the guard **before anything is cached or queued** (`ModelsController.Enf
 
 **Response:** `UpgradeCheckResponseDto` with: `modelName`, `installedVersion`, `targetVersion`, `upgradeNeeded`, `migrationPathAvailable`, `hasBreakingChanges`, `errorMessage`, plus `isBlocked` and `blockers[]` (tenant upgrade guard, AB#6868, see above).
 
+#### Tenant upgrade guard for blueprints (CK v2 F2.5, AB#6871)
+
+The tenant blueprint endpoints apply the guard to the CK models a blueprint installs or raises (`TenantApi/v1/Controllers/BlueprintsController`).
+The logic is in the engine's `BlueprintService` (update set = the `ckModelDependencies` floors the tenant does not hold in a satisfying-or-newer
+version, judged as ONE set before the first CK model is installed); this service supplies the evaluation: `Services/BlueprintCkUpgradeGuard`
+(`IBlueprintCkUpgradeGuard`, registered in `RuntimeEngineBuilderExtensions`) delegates to
+`ICkModelLibraryStatusService.EvaluateUpdateSetBlockersAsync` - the same guard, hints and DTO as LibraryStatus/imports. `System` / `System.*`
+are not judged. A host without the registration (or a platform-internal `ApplyBlueprintAsync(tenantId, id, force)` call, for example the
+service-managed blueprints at tenant setup in `TenantContext`) runs unguarded.
+
+| Endpoint | Behavior |
+|----------|----------|
+| `POST {tenantId}/v1/blueprints/updates/preview` | Read-only. Additive members `isBlocked`, `ckUpdateSet`, `blockers[]` (`CkUpgradeBlockerDto`). A guard failure does not fail the preview (the engine records it and an enforcing apply fails closed). |
+| `POST {tenantId}/v1/blueprints/updates/apply` | `409 CK_UPGRADE_BLOCKED` (`application/problem+json`, `CkUpgradeBlockedError.CreateBlueprintResult`: `code`, `updateSet`, `blockers[]`, English `detail`, `blueprintId`) before the first change; installation record, history, CK models, runtime data unchanged. `dryRun: true` never refuses: 200 with `isBlocked` + `blockers`. |
+| `POST {tenantId}/v1/blueprints/apply` | Same for a first install / re-apply (`forceBreakingUpdate` is separate from `force` = re-apply seed data). |
+
+- **Override** = request member `forceBreakingUpdate` (default `false`). The blueprint endpoints are `TenantAssetApiReadWritePolicy`; a forced
+  request additionally needs `DataModelManagementPolicy`, checked in the controller with `IAuthorizationService` (`403` otherwise, nothing
+  called). A forced operation with blockers logs one WARN (tenant, caller via `UpgradeGuard/CallerDescription`, blueprint, update set,
+  blockers) and returns the forced blockers in `blockers[]`. A guard failure is `500` even when forced.
+- **GraphQL**: `installBlueprint` and `applyBlueprintUpdate` always enforce (no force input) and fail with the error code `CK_UPGRADE_BLOCKED`
+  (blockers also in the error data); `previewUpdate` / the update result expose `isBlocked`, `ckUpdateSet`, `blockers`
+  (`BlueprintCkUpgradeBlockerDtoType`). Old clients: the new members are additive; a blocked call that used to succeed now fails.
+- Tests: `BlueprintsControllerUpgradeGuardTests`, `BlueprintCkUpgradeGuardTests` (unit), `BlueprintCkUpgradeGuardSchemaTests` (GraphQL),
+  `Tenant/BlueprintCkUpgradeGuardFlowTests` (integration: real controller, blueprint service and MongoDB; the guard decision is switched by
+  `SwitchableBlueprintCkUpgradeGuard`; blueprint `CkGuardFlowBp`). User documentation: octo-documentation `constructionKits/blueprints.md#ck-upgrade-guard`.
+
 ### Authorization: Data Model Management
 
 Write operations on CK model catalogs (import, refresh) are gated by the `DataModelManagementPolicy`. This requires the `octo_api.data_model_management` or `octo_api` scope claim.

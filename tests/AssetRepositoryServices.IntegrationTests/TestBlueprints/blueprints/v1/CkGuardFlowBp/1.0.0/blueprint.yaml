@@ -1,0 +1,5 @@
+$schema: https://schemas.meshmakers.cloud/blueprint-meta.schema.json
+blueprintId: CkGuardFlowBp-1.0.0
+description: AB#6871 flow test 1.0.0 - CK dependency on System only, no seed data
+ckModelDependencies:
+  - System-[2.5,3.0)
