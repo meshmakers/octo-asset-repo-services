@@ -42,6 +42,35 @@ public abstract class PlacementMatrixCases(StreamDataFixture fixture, ITestOutpu
         output.WriteLine(cell.ToMarkdownRow());
     }
 
+    /// <summary>
+    ///     The engine's own dump with the repeat rule on. With the grace period on this is the pass criterion of the matrix: 0 empty
+    ///     windows, 0 windows differing from the source at map-read time, 0 orphans above the pointer after restore and validator.
+    ///     Without the grace period the cell documents what the repeat rule alone achieves.
+    /// </summary>
+    [Theory]
+    [InlineData(Placement.NoFlip)]
+    [InlineData(Placement.FlipBeforeDump)]
+    [InlineData(Placement.FlipBetweenMapAndData)]
+    [InlineData(Placement.FlipAfterData)]
+    [InlineData(Placement.FlipAfterDump)]
+    [InlineData(Placement.FlipAndSweepBetweenMapAndData)]
+    [InlineData(Placement.FlipAndSweepAfterData)]
+    internal async Task RepeatRuleOn(Placement placement)
+    {
+        fixture.OutputHelper = output;
+        var cell = await RunAsync(placement, repeatOn: true);
+        output.WriteLine(cell.ToMarkdownRow());
+
+        if (graceOn)
+        {
+            cell.EmptyWindows.Should().Be(0, "no window of the restored rollup is empty");
+            cell.DifferingWindows.Should().Be(0, "no window differs from the source at the time of the map read");
+            cell.Orphans.Should().Be(0, "no rows lie above the pointer after the restore and the validator");
+            cell.PointersWithoutRows.Should().Be(0);
+            cell.ValidatorOk.Should().BeTrue();
+        }
+    }
+
     /// <summary>Runs one cell and returns its measures.</summary>
     private async Task<MatrixCell> RunAsync(Placement placement, bool repeatOn)
     {
@@ -94,10 +123,42 @@ public abstract class PlacementMatrixCases(StreamDataFixture fixture, ITestOutpu
         ArchiveCopyPlan loadPlan;
         if (repeatOn)
         {
-            throw new NotSupportedException("The repeat rule runs inside the engine's dump; see RepeatRuleOn.");
+            // The engine's dump: map read, map copy, data copy, second map read, repeat when the map moved. The observer places
+            // the disturbance at the exact phases; a repeated attempt reads the map again, so the last one counts.
+            var options = new ArchiveCopyOptions
+            {
+                PhaseObserver = async (phase, _, _) =>
+                {
+                    if (phase == ArchiveCopyPhase.MapRead)
+                    {
+                        await OnMapReadAsync();
+                    }
+                    else if (phase == ArchiveCopyPhase.DataCopied)
+                    {
+                        await OnDataCopiedAsync();
+                    }
+                }
+            };
+            try
+            {
+                var dump = await matrix.Kit.Repository.DumpArchiveToStagingAsync(source.RtId, location, options, ct);
+                dump.IsSuccess.Should().BeTrue("every slice was copied");
+                loadPlan = dump.Plan;
+                dumpText = $"{dump.Attempts} attempt(s)";
+            }
+            catch (ArchiveCopyRefusedException e)
+            {
+                dumpText = $"refused: {e.Reason}";
+                var refused = new MatrixCell(placement, graceOn, repeatOn, dumpText, 0, 0, 0, 0, false, false);
+                output.WriteLine(refused.ToMarkdownRow());
+                throw;
+            }
         }
-
-        (loadPlan, dumpText) = await DumpWithoutRepeatRuleAsync(matrix, source, location, OnMapReadAsync, OnDataCopiedAsync, ct);
+        else
+        {
+            (loadPlan, dumpText) =
+                await DumpWithoutRepeatRuleAsync(matrix, source, location, OnMapReadAsync, OnDataCopiedAsync, ct);
+        }
 
         if (placement == Placement.FlipAfterDump)
         {

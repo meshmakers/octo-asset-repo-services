@@ -299,3 +299,33 @@ To complete the test infrastructure:
    - Error handling tests
    - Complex filter tests
 5. **Performance Tests**: Add tests measuring query performance
+
+## Rollup consistency tests (AB#6968)
+
+These need Docker (MongoDB and a single-node CrateDB as Testcontainers, shared per test process).
+
+```bash
+# Validate -> queued repair -> host tick -> Done -> validate ok, against a real CrateDB
+dotnet test tests/AssetRepositoryServices.IntegrationTests/ -c DebugL --filter "FullyQualifiedName~RollupRepairEndToEndTests"
+
+# A rollup dumped to a file:// staging area inside the CrateDB container and loaded into a fresh rollup
+dotnet test tests/AssetRepositoryServices.IntegrationTests/ -c DebugL --filter "FullyQualifiedName~RollupDumpRestoreSmokeTests"
+
+# The placement matrix: grace period off/on x repeat rule off/on x placement of the pointer flip and the sweep
+dotnet test tests/AssetRepositoryServices.IntegrationTests/ -c DebugL --filter "FullyQualifiedName~PlacementMatrix"
+```
+
+- **Placement matrix** (`StreamData/PlacementMatrixCases.cs`): a recompute (new late points in the source, a new generation, a pointer
+  flip, with the grace period zero also the immediate sweep) is placed before the dump, between the copy of the generation map and the
+  copy of the data, after the data, and after the dump; flip+sweep is placed between and after. The dump is restored into a fresh
+  rollup and measured: empty windows, windows that differ from the source *at the time of the map read*, orphans above the pointer
+  and pointers without rows after the validator ran. `PlacementMatrixGraceOffTests` / `PlacementMatrixGraceOnTests` run the same
+  cells on a host with `StreamData:Recompute:SweepGracePeriod` zero or the default 2 h. Pass criterion: grace on and repeat rule on
+  give 0 / 0 / 0 in every placement (`RepeatRuleOn`). The other cells are characterisation tests (`RepeatRuleOff_Characterisation`,
+  and `RepeatRuleOn` without grace): they assert only that the dump and the load ran and record the observed result.
+  The table is written to `placement-matrix-results.md` next to the test assembly (`bin/DebugL/net10.0/`).
+- **Staging area**: `file://` inside the CrateDB container. CrateDB does not create the directories of `COPY ... TO DIRECTORY`, so the
+  tests create the slice folders through a container exec and make them writable (`RollupDumpRestoreSmokeTests.PrepareStagingAsync`);
+  the cluster setting `stats.jobs_log_filter` is set once per process (`RollupTestKit`), without it the copy refuses to run.
+- **Recompute tests** keep asserting the immediate sweep: the shared `StreamDataFixture` runs with a sweep grace period of zero.
+- `KnownDefect` trait: a test that fails until a known defect of the code under test is fixed (not skipped).
