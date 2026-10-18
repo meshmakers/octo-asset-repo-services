@@ -266,4 +266,74 @@ public class CkModelLibraryStatusUpgradeGuardTests
         blockers.Should().ContainSingle().Which.Dependent.Should().Be("EnergyCommunity.Registration-2.8.0");
         A.CallTo(() => _tenantContext.ImportCkModelAsync(A<CkCompiledModelRoot>._)).MustNotHaveHappened();
     }
+
+    // AB#6870: the import endpoints judge the WHOLE update set together.
+
+    private static readonly CkModelId[] FullSbegUpdateSet =
+    [
+        Id(Registration, "2.10.0"), Id("Basic", "2.5.0"), Id("Basic.Energy", "1.10.0"), Id("EnergyCommunity", "4.10.0")
+    ];
+
+    [Fact]
+    public async Task EvaluateUpdateSetBlockers_SetWithTheNewerRegistration_IsJudgedTogetherAndClear()
+    {
+        SeedSbeg();
+        _offered.Add(Id(Registration, "2.10.0"));
+        // Registration 2.10.0 is range-retaining: with it in the set nothing breaks.
+        _guardIsClear = set => set.Any(c => c.ModelId.FullName == "EnergyCommunity.Registration-2.10.0");
+
+        var blockers = await CreateSut().EvaluateUpdateSetBlockersAsync(TenantId, FullSbegUpdateSet,
+            TestContext.Current.CancellationToken);
+
+        blockers.Should().BeEmpty();
+        // ONE evaluation of the four models as one set - not four individual ones.
+        _updateSetsEvaluated.Should().ContainSingle().Which.Select(i => i.FullName).Should().BeEquivalentTo(
+            FullSbegUpdateSet.Select(i => i.FullName));
+    }
+
+    [Fact]
+    public async Task EvaluateUpdateSetBlockers_SetWithoutRegistration_IsBlockedAsAWhole_WithProvenHints()
+    {
+        SeedSbeg();
+        _offered.Add(Id(Registration, "2.10.0"));
+        _guardIsClear = set => set.Any(c => c.ModelId.FullName == "EnergyCommunity.Registration-2.10.0");
+
+        var blockers = await CreateSut().EvaluateUpdateSetBlockersAsync(TenantId, FullSbegUpdateSet.Skip(1).ToList(),
+            TestContext.Current.CancellationToken);
+
+        blockers.Select(b => b.Update).Should().BeEquivalentTo("Basic-2.5.0", "Basic.Energy-1.10.0",
+            "EnergyCommunity-4.10.0");
+        blockers.Should().OnlyContain(b => b.Dependent == "EnergyCommunity.Registration-2.8.0");
+        // The hint is proven against the combined set (all three updates plus Registration 2.10.0).
+        blockers.Should().OnlyContain(b => b.ResolveHint == "update EnergyCommunity.Registration to 2.10.0 first");
+        _updateSetsEvaluated.Should().Contain(s => s.Count == 4);
+    }
+
+    [Fact]
+    public async Task EvaluateUpdateSetBlockers_EmptySet_EvaluatesNothing()
+    {
+        SeedSbeg();
+
+        var blockers = await CreateSut().EvaluateUpdateSetBlockersAsync(TenantId, [],
+            TestContext.Current.CancellationToken);
+
+        blockers.Should().BeEmpty();
+        A.CallTo(() => _tenantContext.EvaluateCkUpdateAsync(A<IReadOnlyCollection<CkCompiledModelRoot>>._,
+            A<IReadOnlyCollection<CkModelId>?>._, A<CancellationToken>._)).MustNotHaveHappened();
+    }
+
+    [Fact]
+    public async Task EvaluateUpdateSetBlockers_GuardFailure_Propagates_SoTheImportFailsClosed()
+    {
+        SeedSbeg();
+        var sut = CreateSut();
+        A.CallTo(() => _tenantContext.EvaluateCkUpdateAsync(A<IReadOnlyCollection<CkCompiledModelRoot>>._,
+                A<IReadOnlyCollection<CkModelId>?>._, A<CancellationToken>._))
+            .ThrowsAsync(new InvalidOperationException("guard exploded"));
+
+        var act = () => sut.EvaluateUpdateSetBlockersAsync(TenantId, [Id("Basic", "2.5.0")],
+            TestContext.Current.CancellationToken);
+
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("guard exploded");
+    }
 }

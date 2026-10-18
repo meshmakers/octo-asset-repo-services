@@ -13,6 +13,7 @@ using Meshmakers.Octo.Runtime.Contracts.Exchange;
 using Meshmakers.Octo.Services.Contracts.DistributionEventHub.Commands;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Logging;
 using Xunit;
 
 namespace AssetRepositoryServices.UnitTests.TenantApi;
@@ -44,7 +45,8 @@ public class ModelsControllerImportRtCallerTests
             A.Fake<Meshmakers.Octo.Runtime.Contracts.MongoDb.ISystemContext>(),
             A.Fake<Meshmakers.Octo.Runtime.Contracts.CkModelMigrations.ICkModelUpgradeService>(),
             A.Fake<Meshmakers.Octo.Runtime.Contracts.CkModelMigrations.ICkModelMigrationService>(),
-            A.Fake<ICkModelLibraryStatusService>());
+            A.Fake<ICkModelLibraryStatusService>(),
+            A.Fake<ILogger<ModelsController>>());
 
         A.CallTo(() => _importRtCommandClient.GetResponse<JobCreatedResponse>(A<ImportRtCommandRequest>._))
             .Returns(new JobCreatedResponse("job-1"));

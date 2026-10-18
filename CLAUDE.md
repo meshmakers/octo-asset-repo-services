@@ -940,11 +940,13 @@ Tenant-scoped endpoint to import a CK model directly from a catalog without file
 ```json
 {
   "catalogName": "PublicGitHub",
-  "modelId": "Energy-2.0.0"
+  "modelId": "Energy-2.0.0",
+  "forceBreakingUpdate": false
 }
 ```
 
-**Response:** `TransferModelResponseDto` with `jobId` for async tracking.
+**Response:** `TransferModelResponseDto` with `jobId` for async tracking. `409 CK_UPGRADE_BLOCKED` when the model would break an installed
+model and `forceBreakingUpdate` is not set (tenant upgrade guard, AB#6870, see below).
 
 **Flow:** Fetches compiled model from catalog → serializes to JSON → caches in Redis → sends `ImportCkCommandRequest` through existing async job pipeline (RabbitMQ → Hangfire → `ITenantContext.ImportCkModelAsync`).
 
@@ -952,7 +954,7 @@ Tenant-scoped endpoint to import a CK model directly from a catalog without file
 
 **Request body:** Same as ImportFromCatalog (`catalogName` + `modelId`).
 
-**Response:** `DependencyResolutionResponseDto` with recursive `RootModel` tree. Each item contains: `modelId`, `name`, `requiredVersion`, `installedVersion` (null if not installed), `action` ("install", "none"), and nested `dependencies`.
+**Response:** `DependencyResolutionResponseDto` with recursive `RootModel` tree. Each item contains: `modelId`, `name`, `requiredVersion`, `installedVersion` (null if not installed), `action` ("install", "none"), and nested `dependencies`. Plus `isBlocked` / `blockers[]` (AB#6870): the flattened import set of the tree judged by the tenant upgrade guard, read-only (`ResolveDependenciesBatch` returns the same two members for `modelsToImport` as one set).
 
 Installed state is judged by what the **parent model requires** (CK v2 F1.0 AB#5900, G3 review A-M1): a classic
 parent's compile-time exact pin stays exact (a newer installed version would make the parent `ResolveFailed`), a
@@ -970,7 +972,7 @@ batch tree correction works on the typed model id, never on the display strings 
 #### Tenant upgrade guard in LibraryStatus and CheckUpgrade (CK v2 F2.5, AB#6868)
 
 `GET {tenantId}/v1/models/LibraryStatus` and `POST {tenantId}/v1/models/CheckUpgrade` report, **read-only**, which installed
-models an offered update would break (nothing is enforced yet; enforcement is AB#6870). The service
+models an offered update would break (these two endpoints enforce nothing; the import endpoints do, see "Tenant upgrade guard enforcement" below). The service
 `CkModelLibraryStatusService` calls `ITenantContext.EvaluateCkUpdateAsync` (engine-mongodb, AB#6867) with the compiled
 catalog model of the offered version and the versions the catalogs offer; the guard reads the tenant database only.
 
@@ -981,8 +983,8 @@ catalog model of the offered version and the versions the catalogs offer; the gu
   the `ModelsNeedingActionCount` excludes it). The guard runs only for an installed, non-service-managed row with an update that is
   otherwise importable (compatible with the installed System models, no catalog inconsistency); catalog-only rows are never
   blocked. A guard failure for one row lands in that row's existing error state (`isCompatible = false`), never a 500.
-- **Each row is judged individually** against the current installed state (conservative); a batch of several updates is not
-  considered. Cost: one guard evaluation (one tenant model read) per updatable row, also in the observability sweep.
+- **Each row is judged individually** against the current installed state (conservative); the import endpoints judge the whole
+  update set of a request together (below). Cost: one guard evaluation (one tenant model read) per updatable row, also in the observability sweep.
 - **`resolveHint` is proven, not guessed**: when the guard suggests a newer catalog version of the blocking dependent
   (`suggestedDependentUpdate`, for example `EnergyCommunity.Registration-2.10.0`), the service evaluates the combined update set
   (offered model + that version) and keeps the suggestion (hint `update EnergyCommunity.Registration to 2.10.0 first`) only if no
@@ -994,6 +996,30 @@ catalog model of the offered version and the versions the catalogs offer; the gu
   replaces it`); clients that localize render `code`, `dependent`, `update` and `subject`. `kind` is a string and may gain values.
 - Tests: `CkModelLibraryStatusUpgradeGuardTests` (sbeg case, additive update, proven hint, error isolation, `isRangeRetaining`),
   `ModelsControllerCheckUpgradeTests` (blockers, read-only policy, no job, additive DTO shape / old payloads).
+
+#### Tenant upgrade guard enforcement (CK v2 F2.5, AB#6870)
+
+`POST {tenantId}/v1/models/ImportFromCatalog` and `ImportFromCatalogBatch` (octo-cli `ImportFromCatalog` and `FixAll` use the batch)
+enforce the guard **before anything is cached or queued** (`ModelsController.EnforceUpgradeGuardAsync` ->
+`ICkModelLibraryStatusService.EvaluateUpdateSetBlockersAsync`, which hands the whole set to `ITenantContext.EvaluateCkUpdateAsync`):
+
+- **Update set** = the one model of `ImportFromCatalog`, or all `modelIds` of the batch, judged **as one set** (a dependent in the set is
+  judged by its new version; hints are proven against the combined set). **Batch semantics: all or nothing** - a blocked set is refused
+  as a whole (all models are compiled first, nothing is cached, no job queued, no partial import, no per-model result).
+- **Refusal** = `409 Conflict`, `application/problem+json` (`UpgradeGuard/CkUpgradeBlockedError`, like the blueprint-lock contract):
+  `type https://schemas.meshmakers.cloud/errors/ck-upgrade-blocked`, `code = CK_UPGRADE_BLOCKED`, `updateSet` (full ids as requested),
+  `blockers[]` (`CkUpgradeBlockerDto`, language neutral) and an English `detail` that names the force option.
+- **Override** = request member `forceBreakingUpdate` (default `false`, on both request DTOs; ignored by the read-only endpoints). Both
+  endpoints are already under `DataModelManagementPolicy`, so a caller without it gets `403` before the flag is read. A forced import with
+  blockers logs one WARN line (tenant, caller `sub` / `client_id` / `name`, update set, blockers) and proceeds; without blockers nothing
+  is logged. A guard failure is a `500` even when forced (fail closed).
+- **Not guarded on purpose**: `Models/ImportCk` (a model file, explicit operator decision) and the embedded System imports at service start
+  (downgrade guard AB#5894). Refinery Studio offers no force action; FixAll in octo-cli never sends the flag.
+- `ModelsController` takes an `ILogger<ModelsController>` (audit line).
+- Tests: `ModelsControllerUpgradeGuardEnforcementTests` (sbeg 409 with nothing cached/queued/written, additive update, forced + WARN
+  audit line, batch with and without Registration, one blocked model refuses the batch, guard failure, policy attributes, additive DTOs),
+  `CkModelLibraryStatusUpgradeGuardTests` (`EvaluateUpdateSetBlockersAsync`: set judged together, proven hint, empty set, failure).
+- User documentation: octo-documentation `constructionKits/libraryManagement.md#upgrade-guard-enforcement`.
 
 | `POST` | `{tenantId}/v1/models/CheckUpgrade` | ReadOnly | Pre-flight check for migration impact |
 
@@ -1009,6 +1035,6 @@ Write operations on CK model catalogs (import, refresh) are gated by the `DataMo
 |----------|--------|
 | Catalog browsing (GET) | `SystemAssetApiReadOnlyPolicy` |
 | Catalog refresh (POST) | `DataModelManagementPolicy` |
-| ImportFromCatalog | `DataModelManagementPolicy` |
+| ImportFromCatalog, ImportFromCatalogBatch (incl. `forceBreakingUpdate`) | `DataModelManagementPolicy` |
 | ResolveDependencies | `TenantAssetApiReadOnlyPolicy` |
 | CheckUpgrade | `TenantAssetApiReadOnlyPolicy` |
