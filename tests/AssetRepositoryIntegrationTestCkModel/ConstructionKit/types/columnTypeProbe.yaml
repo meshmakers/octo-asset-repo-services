@@ -1,0 +1,48 @@
+$schema: https://schemas.meshmakers.cloud/construction-kit-elements.schema.json
+types:
+# A type with an attribute of every value type an archive column supports; only the CrateDB version matrix
+# (AB#5490) archives it, to prove that a dump of every column type restores unchanged. No GeospatialPoint attribute:
+# the CK source generator emits uncompilable code for it (GetAttributeGeometryObjectValueOrDefault<TValue>, CS0411), so the
+# matrix adds the geo_point column to the archive table by hand.
+- typeId: ColumnTypeProbe
+  derivedFromCkTypeId: ${System}/Entity
+  attributes:
+    - id: ${this}/ProbeBoolean
+      name: ProbeBoolean
+      isOptional: true
+    - id: ${this}/ProbeInt
+      name: ProbeInt
+      isOptional: true
+    - id: ${this}/ProbeInt64
+      name: ProbeInt64
+      isOptional: true
+    - id: ${this}/ProbeEnum
+      name: ProbeEnum
+      isOptional: true
+    - id: ${this}/ProbeDouble
+      name: ProbeDouble
+      isOptional: true
+    - id: ${this}/ProbeString
+      name: ProbeString
+      isOptional: true
+    - id: ${this}/ProbeDateTime
+      name: ProbeDateTime
+      isOptional: true
+    - id: ${this}/ProbeDateTimeOffset
+      name: ProbeDateTimeOffset
+      isOptional: true
+    - id: ${this}/ProbeTimeSpan
+      name: ProbeTimeSpan
+      isOptional: true
+    - id: ${this}/ProbeStringArray
+      name: ProbeStringArray
+      isOptional: true
+    - id: ${this}/ProbeIntArray
+      name: ProbeIntArray
+      isOptional: true
+    - id: ${this}/ProbeRecord
+      name: ProbeRecord
+      isOptional: true
+    - id: ${this}/ProbeRecordArray
+      name: ProbeRecordArray
+      isOptional: true
