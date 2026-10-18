@@ -4,8 +4,10 @@ using Meshmakers.Octo.Backend.AssetRepositoryServices.DataTransferObjects.Bluepr
 using Meshmakers.Octo.Backend.AssetRepositoryServices.TenantApi.v1.Controllers;
 using Meshmakers.Octo.ConstructionKit.Contracts.BlueprintCatalogs;
 using Meshmakers.Octo.Runtime.Contracts.Blueprints;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
 namespace AssetRepositoryServices.UnitTests.TenantApi;
@@ -35,7 +37,9 @@ public class BlueprintsControllerTests
         _controller = new BlueprintsController(
             _blueprintHistory,
             _blueprintService,
-            A.Fake<ITenantBlueprintInstallations>());
+            A.Fake<ITenantBlueprintInstallations>(),
+            A.Fake<IAuthorizationService>(),
+            NullLogger<BlueprintsController>.Instance);
 
         var httpContext = new DefaultHttpContext();
         httpContext.Request.RouteValues["tenantId"] = TenantId;

@@ -28,6 +28,12 @@ public class BlueprintUpdateFlowFixture : AssetRepoFixture
         // blueprint apply would wait forever. Tests do not need the notifications.
         Services.Replace(ServiceDescriptor.Singleton<IBlueprintNotifications, NoOpBlueprintNotifications>());
 
+        // AB#6871: the flow tests exercise the real blueprint service and database; what the host's tenant upgrade
+        // guard says about the CK update set is switched per test (the guard itself is covered by its own tests).
+        Services.AddSingleton<SwitchableBlueprintCkUpgradeGuard>();
+        Services.Replace(ServiceDescriptor.Singleton<IBlueprintCkUpgradeGuard>(
+            sp => sp.GetRequiredService<SwitchableBlueprintCkUpgradeGuard>()));
+
         Services.RemoveAll<IBlueprintCatalog>();
         Services.AddTransient<IBlueprintCatalog, LocalFileSystemBlueprintCatalog>();
 
@@ -46,6 +52,8 @@ public class BlueprintUpdateFlowFixture : AssetRepoFixture
     }
 
     public IBlueprintService GetBlueprintService() => GetService<IBlueprintService>();
+
+    public SwitchableBlueprintCkUpgradeGuard CkUpgradeGuard => GetService<SwitchableBlueprintCkUpgradeGuard>();
 
     public ITenantBlueprintHistory GetBlueprintHistory() => GetService<ITenantBlueprintHistory>();
 
@@ -96,4 +104,46 @@ internal sealed class NoOpBlueprintNotifications : IBlueprintNotifications
     public Task NotifyUninstalledAsync(BlueprintUninstalledNotification notification, CancellationToken cancellationToken = default) => Task.CompletedTask;
 
     public Task NotifyOperationFailedAsync(BlueprintOperationFailedNotification notification, CancellationToken cancellationToken = default) => Task.CompletedTask;
+}
+
+/// <summary>
+/// AB#6871: stands in for the host's tenant upgrade guard in the flow tests - answers "nothing breaks" unless a test
+/// sets blockers - and records what it was asked to judge.
+/// </summary>
+public sealed class SwitchableBlueprintCkUpgradeGuard : IBlueprintCkUpgradeGuard
+{
+    private readonly object _gate = new();
+    private List<BlueprintCkUpgradeBlocker> _blockers = [];
+    private readonly List<List<string>> _asked = [];
+
+    public void Block(params BlueprintCkUpgradeBlocker[] blockers)
+    {
+        lock (_gate)
+        {
+            _blockers = blockers.ToList();
+            _asked.Clear();
+        }
+    }
+
+    public IReadOnlyList<List<string>> Asked
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return _asked.Select(a => a.ToList()).ToList();
+            }
+        }
+    }
+
+    public Task<IReadOnlyList<BlueprintCkUpgradeBlocker>> EvaluateAsync(string tenantId,
+        IReadOnlyList<Meshmakers.Octo.ConstructionKit.Contracts.CkModelId> updateSet,
+        CancellationToken cancellationToken = default)
+    {
+        lock (_gate)
+        {
+            _asked.Add(updateSet.Select(m => m.FullName).ToList());
+            return Task.FromResult<IReadOnlyList<BlueprintCkUpgradeBlocker>>(_blockers.ToList());
+        }
+    }
 }

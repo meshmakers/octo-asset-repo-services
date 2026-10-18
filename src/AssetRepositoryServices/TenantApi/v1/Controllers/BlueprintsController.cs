@@ -3,6 +3,7 @@ using Asp.Versioning;
 using Duende.IdentityModel;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.DataTransferObjects.Blueprints;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.Services;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.UpgradeGuard;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects.ApiErrors;
 using Meshmakers.Octo.ConstructionKit.Contracts.BlueprintCatalogs;
 using Meshmakers.Octo.ConstructionKit.Contracts.Messages;
@@ -10,6 +11,7 @@ using Meshmakers.Octo.Runtime.Contracts;
 using Meshmakers.Octo.Runtime.Contracts.Blueprints;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Logging;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.TenantApi.v1.Controllers;
 
@@ -25,6 +27,8 @@ public class BlueprintsController : ControllerBase
     private readonly ITenantBlueprintHistory _blueprintHistory;
     private readonly IBlueprintService _blueprintService;
     private readonly ITenantBlueprintInstallations _blueprintInstallations;
+    private readonly IAuthorizationService _authorizationService;
+    private readonly ILogger<BlueprintsController> _logger;
 
     /// <summary>
     ///     Constructor
@@ -32,20 +36,32 @@ public class BlueprintsController : ControllerBase
     /// <param name="blueprintHistory">Blueprint history service</param>
     /// <param name="blueprintService">Blueprint service</param>
     /// <param name="blueprintInstallations">Tenant blueprint installations service</param>
+    /// <param name="authorizationService">Authorization service (checks the policy a forced breaking update needs)</param>
+    /// <param name="logger">Logger</param>
     public BlueprintsController(
         ITenantBlueprintHistory blueprintHistory,
         IBlueprintService blueprintService,
-        ITenantBlueprintInstallations blueprintInstallations)
+        ITenantBlueprintInstallations blueprintInstallations,
+        IAuthorizationService authorizationService,
+        ILogger<BlueprintsController> logger)
     {
         _blueprintHistory = blueprintHistory;
         _blueprintService = blueprintService;
         _blueprintInstallations = blueprintInstallations;
+        _authorizationService = authorizationService;
+        _logger = logger;
     }
 
     // POST {tenantId}/v1/blueprints/apply
     /// <summary>
     ///     Applies a blueprint to the tenant for the first time. CK models are
     ///     loaded into the tenant and seed data is imported via upsert.
+    ///     <para>
+    ///         Tenant upgrade guard (CK v2 F2.5, AB#6871): when the CK models the blueprint installs or raises would
+    ///         break an installed model the request is refused with <c>409 CK_UPGRADE_BLOCKED</c> (problem details with
+    ///         the structured blockers) before the first change. <c>ForceBreakingUpdate = true</c> (data model
+    ///         management policy) applies anyway and logs the blockers and the caller at WARN.
+    ///     </para>
     /// </summary>
     /// <param name="request">Apply request</param>
     /// <param name="cancellationToken">Cancellation token</param>
@@ -54,6 +70,8 @@ public class BlueprintsController : ControllerBase
     [Authorize(AssetRepositoryServiceConstants.TenantAssetApiReadWritePolicy)]
     [ProducesResponseType(typeof(BlueprintApplyResultDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(OperationFailedErrorDto), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
     [ProducesResponseType(typeof(InternalServerErrorDto), StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> Apply(
         [FromBody] BlueprintApplyRequestDto request,
@@ -82,14 +100,37 @@ public class BlueprintsController : ControllerBase
                 return BadRequest(new OperationFailedErrorDto($"Invalid BlueprintId: {e.Message}"));
             }
 
+            if (request.ForceBreakingUpdate && !await MayForceBreakingUpdateAsync())
+            {
+                return Forbid();
+            }
+
             var result = await _blueprintService.ApplyBlueprintAsync(
                 tenantId,
                 blueprintId,
-                request.Force,
+                new BlueprintApplyOptions
+                {
+                    Force = request.Force,
+                    CkUpgradeGuard = GuardMode(request.ForceBreakingUpdate)
+                },
                 cancellationToken);
 
             if (!result.IsSuccess)
             {
+                if (result.IsCkUpgradeBlocked)
+                {
+                    return CkUpgradeBlockedError.CreateBlueprintResult(blueprintId.FullName, result.CkUpdateSet,
+                        BlueprintUpdatePreviewMapper.ToDtos(result.CkUpgradeBlockers));
+                }
+
+                if (result.CkUpgradeGuardFailed)
+                {
+                    return StatusCode(StatusCodes.Status500InternalServerError, new InternalServerErrorDto(
+                        string.Join(", ", result.OperationResult.Messages
+                            .Where(m => m.MessageLevel == MessageLevel.Error)
+                            .Select(m => m.MessageText))));
+                }
+
                 var errors = result.OperationResult.Messages
                     .Where(m => m.MessageLevel == MessageLevel.Error)
                     .Select(m => m.MessageText)
@@ -99,9 +140,13 @@ public class BlueprintsController : ControllerBase
                     string.Join(", ", errors.Count > 0 ? errors : ["Blueprint apply failed"])));
             }
 
+            LogForcedBreakingUpdate(tenantId, blueprintId.FullName, result.CkUpdateSet, result.CkUpgradeBlockers);
+
             var response = new BlueprintApplyResultDto
             {
                 Success = true,
+                CkUpdateSet = result.CkUpdateSet.ToList(),
+                Blockers = BlueprintUpdatePreviewMapper.ToDtos(result.CkUpgradeBlockers),
                 TenantId = result.TenantId ?? tenantId,
                 BlueprintId = result.BlueprintId?.FullName ?? request.BlueprintId,
                 ApplicationMode = (request.Force
@@ -353,6 +398,13 @@ public class BlueprintsController : ControllerBase
     // POST {tenantId}/v1/blueprints/updates/apply
     /// <summary>
     ///     Applies a blueprint update to the tenant
+    ///     <para>
+    ///         Tenant upgrade guard (CK v2 F2.5, AB#6871): when the CK models the update installs or raises would break
+    ///         an installed model the request is refused with <c>409 CK_UPGRADE_BLOCKED</c> before the first change; the
+    ///         installation record, the CK models and the runtime data stay as they were.
+    ///         <c>ForceBreakingUpdate = true</c> (data model management policy) applies anyway and logs the blockers and
+    ///         the caller at WARN. A dry run never refuses: it answers 200 with <c>isBlocked</c> and the blockers.
+    ///     </para>
     /// </summary>
     /// <param name="request">Update request</param>
     /// <param name="cancellationToken">Cancellation token</param>
@@ -365,6 +417,8 @@ public class BlueprintsController : ControllerBase
     [Authorize(AssetRepositoryServiceConstants.TenantAssetApiReadWritePolicy)]
     [ProducesResponseType(typeof(BlueprintUpdateResultDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(OperationFailedErrorDto), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
     [ProducesResponseType(typeof(InternalServerErrorDto), StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> ApplyUpdate(
         [FromBody] BlueprintUpdateRequestDto request,
@@ -386,11 +440,17 @@ public class BlueprintsController : ControllerBase
             var targetBlueprintId = new BlueprintId(request.TargetVersion);
             var updateMode = Enum.Parse<BlueprintUpdateMode>(request.UpdateMode, ignoreCase: true);
 
+            if (request.ForceBreakingUpdate && !await MayForceBreakingUpdateAsync())
+            {
+                return Forbid();
+            }
+
             var options = new BlueprintUpdateOptions
             {
                 DryRun = request.DryRun,
                 AllowBlanking = request.AllowBlanking,
-                ConfirmedBlankings = BlueprintUpdatePreviewMapper.ToConfirmations(request.ConfirmedBlankings)
+                ConfirmedBlankings = BlueprintUpdatePreviewMapper.ToConfirmations(request.ConfirmedBlankings),
+                CkUpgradeGuard = GuardMode(request.ForceBreakingUpdate)
             };
 
             if (request.ConflictResolutions != null)
@@ -412,8 +472,22 @@ public class BlueprintsController : ControllerBase
 
             if (!result.Success)
             {
-                return BadRequest(new OperationFailedErrorDto(
-                    string.Join(", ", result.Errors.Count > 0 ? result.Errors : ["Update failed"])));
+                if (result.IsCkUpgradeBlocked)
+                {
+                    return CkUpgradeBlockedError.CreateBlueprintResult(targetBlueprintId.FullName, result.CkUpdateSet,
+                        BlueprintUpdatePreviewMapper.ToDtos(result.CkUpgradeBlockers));
+                }
+
+                var failure = string.Join(", ", result.Errors.Count > 0 ? result.Errors : ["Update failed"]);
+                return result.CkUpgradeGuardFailed
+                    ? StatusCode(StatusCodes.Status500InternalServerError, new InternalServerErrorDto(failure))
+                    : BadRequest(new OperationFailedErrorDto(failure));
+            }
+
+            if (!request.DryRun)
+            {
+                LogForcedBreakingUpdate(tenantId, targetBlueprintId.FullName, result.CkUpdateSet,
+                    result.CkUpgradeBlockers);
             }
 
             return Ok(BlueprintUpdatePreviewMapper.ToDto(result));
@@ -430,6 +504,42 @@ public class BlueprintsController : ControllerBase
         {
             return StatusCode(StatusCodes.Status500InternalServerError, new InternalServerErrorDto(ex.Message));
         }
+    }
+
+    /// <summary>
+    ///     AB#6871: the guard mode of a request. Every REST apply is guarded; the caller may only override it with
+    ///     <c>ForceBreakingUpdate</c> (policy checked by <see cref="MayForceBreakingUpdateAsync" />).
+    /// </summary>
+    private static BlueprintCkUpgradeGuardMode GuardMode(bool forceBreakingUpdate) =>
+        forceBreakingUpdate ? BlueprintCkUpgradeGuardMode.ForceBreakingUpdate : BlueprintCkUpgradeGuardMode.Enforce;
+
+    /// <summary>
+    ///     AB#6871: overriding the tenant upgrade guard is a data model operation, like importing a CK model - the
+    ///     blueprint endpoints themselves only need the tenant read-write policy.
+    /// </summary>
+    private async Task<bool> MayForceBreakingUpdateAsync()
+    {
+        var authorization = await _authorizationService.AuthorizeAsync(HttpContext.User, null,
+            AssetRepositoryServiceConstants.DataModelManagementPolicy);
+        return authorization.Succeeded;
+    }
+
+    /// <summary>
+    ///     AB#6871: audit line of a forced breaking update - the blockers the caller forced past and who did it. The
+    ///     engine returns blockers on a successful result only when the guard let them pass.
+    /// </summary>
+    private void LogForcedBreakingUpdate(string tenantId, string blueprintId, IReadOnlyList<string> updateSet,
+        IReadOnlyList<BlueprintCkUpgradeBlocker> blockers)
+    {
+        if (blockers.Count == 0)
+        {
+            return;
+        }
+
+        _logger.LogWarning(
+            "Forced breaking CK update on tenant {TenantId} by {Caller}: blueprint {BlueprintId} installs {UpdateSet} and breaks {BlockerCount} installed model(s): {Blockers}",
+            tenantId, CallerDescription.From(HttpContext.User), blueprintId, string.Join(", ", updateSet),
+            blockers.Count, string.Join("; ", blockers.Select(b => $"{b.Dependent} [{b.Kind} {b.Subject}] by {b.Update}")));
     }
 
     /// <summary>

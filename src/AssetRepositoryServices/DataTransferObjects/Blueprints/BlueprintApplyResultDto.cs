@@ -43,4 +43,24 @@ public class BlueprintApplyResultDto
     ///     <c>EntityId</c> is <c>null</c>. Counted in the skipped total.
     /// </summary>
     public List<BlueprintTenantOwnedEntityDto> TenantOwnedStaysDeleted { get; set; } = [];
+
+    /// <summary>
+    ///     True when the CK models of the update would break at least one installed model (tenant upgrade guard,
+    ///     AB#6871). In a preview or a dry run it announces that a real update is refused with
+    ///     <c>409 CK_UPGRADE_BLOCKED</c> unless it is forced; <see cref="Blockers" /> lists what breaks. Read-only
+    ///     information, nothing was written.
+    /// </summary>
+    public bool IsBlocked { get; set; }
+
+    /// <summary>
+    ///     The CK models (full ids) the tenant upgrade guard judged as one set (AB#6871): the floors of the blueprint
+    ///     the tenant does not hold in a satisfying-or-newer version. Empty when the guard did not run.
+    /// </summary>
+    public List<string> CkUpdateSet { get; set; } = [];
+
+    /// <summary>
+    ///     The installed models the CK update set breaks (AB#6871; same entries as the library status, AB#6868):
+    ///     the blockers a caller forced past, or those a dry run reports. Empty when nothing breaks.
+    /// </summary>
+    public List<CkModelCatalog.CkUpgradeBlockerDto> Blockers { get; set; } = [];
 }

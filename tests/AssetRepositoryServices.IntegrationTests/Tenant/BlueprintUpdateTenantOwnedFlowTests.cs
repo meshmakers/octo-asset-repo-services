@@ -1,4 +1,5 @@
 using System.Text.Json;
+using FakeItEasy;
 using FluentAssertions;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.DataTransferObjects.Blueprints;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Collections;
@@ -9,8 +10,10 @@ using Meshmakers.Octo.ConstructionKit.Contracts.BlueprintCatalogs;
 using Meshmakers.Octo.Runtime.Contracts.Repositories;
 using Meshmakers.Octo.Runtime.Contracts.Repositories.Query;
 using Meshmakers.Octo.Runtime.Contracts.RepositoryEntities;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Tenant;
@@ -120,7 +123,8 @@ public class BlueprintUpdateTenantOwnedFlowTests(BlueprintUpdateFlowFixture fixt
     private BlueprintsController CreateController(string tenantId)
     {
         var controller = new BlueprintsController(
-            fixture.GetBlueprintHistory(), fixture.GetBlueprintService(), fixture.GetBlueprintInstallations());
+            fixture.GetBlueprintHistory(), fixture.GetBlueprintService(), fixture.GetBlueprintInstallations(),
+            A.Fake<IAuthorizationService>(), NullLogger<BlueprintsController>.Instance);
         var httpContext = new DefaultHttpContext();
         httpContext.Request.RouteValues["tenantId"] = tenantId;
         controller.ControllerContext = new ControllerContext { HttpContext = httpContext };

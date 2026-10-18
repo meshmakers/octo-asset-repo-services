@@ -60,5 +60,17 @@ internal sealed class BlueprintUpdatePreviewDtoType : ObjectGraphType<BlueprintU
         Field<NonNullGraphType<ListGraphType<NonNullGraphType<BlueprintTenantOwnedEntityDtoType>>>>("tenantOwnedStaysDeleted")
             .Description("Tenant-owned seed entities the tenant deleted and the update does not bring back (AB#6454). entityId is null. Identity only, no values.")
             .Resolve(ctx => ctx.Source!.TenantOwnedStaysDeleted);
+
+        Field<NonNullGraphType<BooleanGraphType>>("isBlocked")
+            .Description("AB#6871: true when the CK models of the update would break an installed model. Read-only information; a real update is refused with CK_UPGRADE_BLOCKED while true.")
+            .Resolve(ctx => ctx.Source!.IsBlocked);
+
+        Field<NonNullGraphType<ListGraphType<NonNullGraphType<StringGraphType>>>>("ckUpdateSet")
+            .Description("AB#6871: the CK models (full ids) the tenant upgrade guard judged as one set.")
+            .Resolve(ctx => ctx.Source!.CkUpdateSet);
+
+        Field<NonNullGraphType<ListGraphType<NonNullGraphType<BlueprintCkUpgradeBlockerDtoType>>>>("blockers")
+            .Description("AB#6871: the installed models the CK update set would break (same entries as the library status).")
+            .Resolve(ctx => ctx.Source!.Blockers);
     }
 }

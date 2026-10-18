@@ -16,4 +16,12 @@ public class BlueprintApplyRequestDto
     ///     or manual cleanup. Default: <c>false</c>.
     /// </summary>
     public bool Force { get; set; }
+
+    /// <summary>
+    ///     Applies the blueprint although the CK models it installs or raises would break an installed model (tenant
+    ///     upgrade guard, CK v2 F2.5, AB#6871). Default <c>false</c>: the apply is refused with
+    ///     <c>409 CK_UPGRADE_BLOCKED</c> before the first change. Requires the data model management policy (403
+    ///     otherwise). Not to be confused with <see cref="Force" />, which only re-applies seed data.
+    /// </summary>
+    public bool ForceBreakingUpdate { get; set; }
 }

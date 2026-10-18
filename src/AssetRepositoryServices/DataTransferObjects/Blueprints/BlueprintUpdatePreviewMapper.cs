@@ -41,7 +41,10 @@ internal static class BlueprintUpdatePreviewMapper
             Changes = preview.Changes.Select(ToDto).ToList(),
             BlankedAttributes = ToDtos(preview.BlankedAttributes),
             TenantOwnedSkipped = ToDtos(preview.TenantOwnedSkipped),
-            TenantOwnedStaysDeleted = ToDtos(preview.TenantOwnedStaysDeleted)
+            TenantOwnedStaysDeleted = ToDtos(preview.TenantOwnedStaysDeleted),
+            IsBlocked = preview.IsCkUpgradeBlocked,
+            CkUpdateSet = preview.CkUpdateSet.ToList(),
+            Blockers = ToDtos(preview.CkUpgradeBlockers)
         };
     }
 
@@ -61,8 +64,31 @@ internal static class BlueprintUpdatePreviewMapper
             Warnings = result.Warnings.ToList(),
             BlankedAttributes = ToDtos(result.BlankedAttributes),
             TenantOwnedSkipped = ToDtos(result.TenantOwnedSkipped),
-            TenantOwnedStaysDeleted = ToDtos(result.TenantOwnedStaysDeleted)
+            TenantOwnedStaysDeleted = ToDtos(result.TenantOwnedStaysDeleted),
+            IsBlocked = result.IsCkUpgradeBlocked,
+            CkUpdateSet = result.CkUpdateSet.ToList(),
+            Blockers = ToDtos(result.CkUpgradeBlockers)
         };
+    }
+
+    /// <summary>
+    ///     AB#6871: the blockers of the tenant upgrade guard as the DTO the library status and the import refusal use
+    ///     (one shape for every surface).
+    /// </summary>
+    public static List<CkModelCatalog.CkUpgradeBlockerDto> ToDtos(IEnumerable<BlueprintCkUpgradeBlocker> blockers)
+    {
+        return blockers.Select(b => new CkModelCatalog.CkUpgradeBlockerDto
+        {
+            Dependent = b.Dependent,
+            Update = b.Update,
+            Kind = b.Kind,
+            Subject = b.Subject,
+            Code = b.Code,
+            Message = b.Message,
+            DependentIsInUpdateSet = b.DependentIsInUpdateSet,
+            SuggestedDependentUpdate = b.SuggestedDependentUpdate,
+            ResolveHint = b.ResolveHint
+        }).ToList();
     }
 
     /// <summary>
