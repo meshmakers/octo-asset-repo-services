@@ -1072,7 +1072,7 @@ service-managed blueprints at tenant setup in `TenantContext`) runs unguarded.
   fields `install`, `applyUpdate` and `uninstall` are **nullable** (they were `NonNull`): a resolver error leaves the field `null` without
   the second "Cannot return null for a non-null type" error and without nulling `blueprints`. This is backward compatible for queries; a
   generated client type gains `| null`. `previewUpdate` / the update result expose `isBlocked`, `ckUpdateSet`, `blockers`
-  (`BlueprintCkUpgradeBlockerDtoType`). A blocked call that used to succeed now fails.
+  (`BlueprintCkUpgradeBlockerDtoType`).
 - Tests: `BlueprintsControllerUpgradeGuardTests`, `BlueprintCkUpgradeGuardTests` (unit), `BlueprintCkUpgradeGuardSchemaTests` and `BlueprintsMutationCkUpgradeBlockedTests` (GraphQL: runs `BlueprintsMutation` and the error serialization with a faked `IBlueprintService`),
   `Tenant/BlueprintCkUpgradeGuardFlowTests` (integration: real controller, blueprint service and MongoDB; the guard decision is switched by
   `SwitchableBlueprintCkUpgradeGuard`; blueprint `CkGuardFlowBp`). User documentation: octo-documentation `constructionKits/blueprints.md#ck-upgrade-guard`.
