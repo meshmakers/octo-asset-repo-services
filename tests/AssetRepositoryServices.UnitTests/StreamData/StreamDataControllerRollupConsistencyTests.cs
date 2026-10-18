@@ -76,12 +76,12 @@ public class StreamDataControllerRollupConsistencyTests
     }
 
     [Fact]
-    public async Task Validate_RollupThatCouldNotBeChecked_CarriesCauseAndReasonAndIsNeverOk()
+    public async Task Validate_BlockingNotChecked_CarriesCauseAndReasonAndIsNeverOk()
     {
         var report = new RollupConsistencyReport(
         [
             new RollupConsistencyEntry(_rollupRtId, [],
-                new RollupNotChecked(RollupNotCheckedCause.NeverActivated, "The archive was never activated."))
+                new RollupNotChecked(RollupNotCheckedCause.NoLiveTable, "The rollup has no table."))
         ], DateTime.UtcNow);
         A.CallTo(() => _repository.ValidateRollupsAsync(null, A<CancellationToken>._)).Returns(report);
 
@@ -94,8 +94,34 @@ public class StreamDataControllerRollupConsistencyTests
         var entry = dto.Entries.Should().ContainSingle().Subject;
         entry.IsOk.Should().BeFalse();
         entry.IsNotChecked.Should().BeTrue();
-        entry.NotChecked.Should().Be(new RollupNotCheckedRestDto("NeverActivated", "The archive was never activated."));
+        entry.IsBlockedByNotChecked.Should().BeTrue();
+        dto.HasBlockingNotChecked.Should().BeTrue();
+        entry.NotChecked.Should().Be(new RollupNotCheckedRestDto("NoLiveTable", "The rollup has no table.", true));
         entry.Findings.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Validate_NeverActivatedRollup_IsInformationalAndKeepsTheReportOk()
+    {
+        var report = new RollupConsistencyReport(
+        [
+            new RollupConsistencyEntry(_rollupRtId, [],
+                new RollupNotChecked(RollupNotCheckedCause.NeverActivated, "The archive was never activated."))
+        ], DateTime.UtcNow);
+        A.CallTo(() => _repository.ValidateRollupsAsync(null, A<CancellationToken>._)).Returns(report);
+
+        var result = await _controller.ValidateRollups(TenantId, null);
+
+        var dto = result.Result.Should().BeOfType<OkObjectResult>().Subject.Value
+            .Should().BeOfType<RollupConsistencyReportRestDto>().Subject;
+        dto.IsOk.Should().BeTrue();
+        dto.HasNotChecked.Should().BeTrue();
+        dto.HasBlockingNotChecked.Should().BeFalse();
+        var entry = dto.Entries.Should().ContainSingle().Subject;
+        entry.IsOk.Should().BeTrue();
+        entry.IsNotChecked.Should().BeTrue();
+        entry.IsBlockedByNotChecked.Should().BeFalse();
+        entry.NotChecked.Should().Be(new RollupNotCheckedRestDto("NeverActivated", "The archive was never activated.", false));
     }
 
     [Fact]

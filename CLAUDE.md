@@ -289,7 +289,7 @@ Time-series data support (`StreamData/`):
     never bound to an HTTP request (an ingress cuts a request long before it ends). A second request while one is active returns the
     active one. The status endpoint (ReadOnly) returns `Pending|Running|Done|Failed` with the final report; unknown id = 404. No
     `rollupRtId` = every rollup. A repository without the feature answers 400. Tests: `StreamDataControllerRollupConsistencyTests`.
-    A rollup the validator cannot check is an entry with `isNotChecked: true`, `notChecked: {cause, reason}` (NoLiveTable|NeverActivated|SourceMissing) and `isOk: false`; the report carries `hasNotChecked`. Fields are additive.
+    A rollup the validator cannot check is an entry with `isNotChecked: true`, `notChecked: {cause, reason, isBlocking}` (NoLiveTable|NeverActivated|SourceMissing). `isBlocking` is false only for NeverActivated (informational: `isOk` stays true, the report stays ok); a blocking gap makes `isOk` false (`isBlockedByNotChecked`). The report carries `hasNotChecked` (any) and `hasBlockingNotChecked`. Fields are additive.
 - **TenantManager** - Manages stream data tenant contexts
 - **StreamDataDatabaseManager** - Database operations for time-series data
 - **StreamDataTenantContext** - Per-tenant stream data context

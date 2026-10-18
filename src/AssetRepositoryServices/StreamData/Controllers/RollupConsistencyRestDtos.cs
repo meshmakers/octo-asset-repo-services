@@ -22,28 +22,32 @@ public sealed record RollupConsistencyFindingRestDto(
 
 /// <summary>
 ///     Why the validator could not check a rollup. <c>Cause</c> is <c>NoLiveTable</c>, <c>NeverActivated</c> or
-///     <c>SourceMissing</c> (a string so a new cause does not break an older client).
+///     <c>SourceMissing</c> (a string so a new cause does not break an older client). <c>IsBlocking</c> is false for
+///     <c>NeverActivated</c>: informational, the entry and the report stay ok.
 /// </summary>
-public sealed record RollupNotCheckedRestDto(string Cause, string Reason)
+public sealed record RollupNotCheckedRestDto(string Cause, string Reason, bool IsBlocking = true)
 {
     internal static RollupNotCheckedRestDto From(RollupNotChecked notChecked) =>
-        new(notChecked.Cause.ToString(), notChecked.Reason);
+        new(notChecked.Cause.ToString(), notChecked.Reason, notChecked.IsBlocking);
 }
 
 /// <summary>
 ///     The validator's result for one rollup. A rollup that could not be checked has <c>IsNotChecked</c> true,
-///     <c>NotChecked</c> set and <c>IsOk</c> false: it is never reported as consistent.
+///     <c>NotChecked</c> set. <c>IsOk</c> is false when the gap is blocking (<c>IsBlockedByNotChecked</c>); an informational
+///     gap (<c>NeverActivated</c>) is listed but keeps <c>IsOk</c> true.
 /// </summary>
 public sealed record RollupConsistencyEntryRestDto(
     string RollupRtId,
     bool IsOk,
     IReadOnlyList<RollupConsistencyFindingRestDto> Findings,
     bool IsNotChecked = false,
-    RollupNotCheckedRestDto? NotChecked = null)
+    RollupNotCheckedRestDto? NotChecked = null,
+    bool IsBlockedByNotChecked = false)
 {
     internal static RollupConsistencyEntryRestDto From(RollupConsistencyEntry entry) => new(
         entry.RollupRtId.ToString(), entry.IsOk, entry.Findings.Select(RollupConsistencyFindingRestDto.From).ToList(),
-        entry.IsNotChecked, entry.NotChecked is null ? null : RollupNotCheckedRestDto.From(entry.NotChecked));
+        entry.IsNotChecked, entry.NotChecked is null ? null : RollupNotCheckedRestDto.From(entry.NotChecked),
+        entry.IsBlockedByNotChecked);
 }
 
 /// <summary>The validator's result for a tenant: one entry per rollup that was checked.</summary>
@@ -51,11 +55,12 @@ public sealed record RollupConsistencyReportRestDto(
     bool IsOk,
     DateTime CheckedAtUtc,
     IReadOnlyList<RollupConsistencyEntryRestDto> Entries,
-    bool HasNotChecked = false)
+    bool HasNotChecked = false,
+    bool HasBlockingNotChecked = false)
 {
     internal static RollupConsistencyReportRestDto From(RollupConsistencyReport report) => new(
         report.IsOk, report.GeneratedAtUtc, report.Rollups.Select(RollupConsistencyEntryRestDto.From).ToList(),
-        report.HasNotChecked);
+        report.HasNotChecked, report.HasBlockingNotChecked);
 }
 
 /// <summary>One step of a rollup repair.</summary>
