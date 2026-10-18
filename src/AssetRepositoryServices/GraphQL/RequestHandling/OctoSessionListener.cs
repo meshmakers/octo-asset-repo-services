@@ -75,7 +75,7 @@ internal class OctoSessionListener : IDocumentExecutionListener
             }
             finally
             {
-                _fileSystem.NameLocks.Release(session);
+                await _fileSystem.NameLocks.ReleaseAsync(session).ConfigureAwait(false);
             }
         }
     }

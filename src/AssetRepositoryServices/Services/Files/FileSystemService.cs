@@ -29,7 +29,16 @@ public class FileSystemService
     /// <summary>
     ///     AB#6477: sibling-name locks that close the check-then-insert window of folder and file creation.
     /// </summary>
-    public FileSystemNameLocks NameLocks { get; } = new();
+    public FileSystemNameLocks NameLocks { get; }
+
+    /// <summary>
+    ///     Creates the service; <paramref name="nameLeases" /> (AB#6885) extends the sibling-name locks across
+    ///     asset repository replicas, null keeps them in-process.
+    /// </summary>
+    public FileSystemService(IFileSystemNameLeaseStore? nameLeases = null)
+    {
+        NameLocks = new FileSystemNameLocks(nameLeases);
+    }
 
     internal static readonly RtCkId<CkTypeId> FolderRootType = new(FileSystemConstants.FolderRootCkTypeId);
     internal static readonly RtCkId<CkTypeId> FolderType = new(FileSystemConstants.FolderCkTypeId);
