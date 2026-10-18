@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Text.RegularExpressions;
+using Meshmakers.Octo.Runtime.Contracts.RepositoryEntities;
 using Microsoft.Extensions.Options;
 using MongoDB.Bson;
 using MongoDB.Driver;
@@ -266,17 +267,39 @@ public class ReportingFilesMoveSweep
     }
 
     /// <summary>
-    ///     System.Files entities per concrete type id.
+    ///     System.Files entities per concrete type id, live and archived (soft-deleted, <c>rtState = Archived</c>)
+    ///     counted separately (AB#6894). GraphQL and the file APIs hide archived items, so only the live count is what
+    ///     users see; archived items moved from the legacy collection stay archived and are reported on their own.
+    ///     A document without <c>rtState</c> is live.
     /// </summary>
-    public static async Task<IReadOnlyDictionary<string, long>> CountTargetAsync(IMongoDatabase database,
-        CancellationToken cancellationToken)
+    public static async Task<(IReadOnlyDictionary<string, long> Live, IReadOnlyDictionary<string, long> Archived)>
+        CountTargetAsync(IMongoDatabase database, CancellationToken cancellationToken)
     {
-        var perType = await database.GetCollection<BsonDocument>(FileSystemConstants.EntityCollectionName).Aggregate()
+        var perTypeAndState = await database.GetCollection<BsonDocument>(FileSystemConstants.EntityCollectionName)
+            .Aggregate()
             .Match(Builders<BsonDocument>.Filter.In("ckTypeId", ReportingFilesMigrationConstants.TargetTypeIds))
-            .Group(new BsonDocument { { "_id", "$ckTypeId" }, { "count", new BsonDocument("$sum", 1) } })
+            .Group(new BsonDocument
+            {
+                {
+                    "_id", new BsonDocument
+                    {
+                        { "ckTypeId", "$ckTypeId" },
+                        { "archived", new BsonDocument("$eq", new BsonArray { "$rtState", (int)RtState.Archived }) }
+                    }
+                },
+                { "count", new BsonDocument("$sum", 1) }
+            })
             .ToListAsync(cancellationToken).ConfigureAwait(false);
-        return ReportingFilesMigrationConstants.TargetTypeIds.ToDictionary(t => t,
-            t => perType.FirstOrDefault(d => d["_id"] == t)?["count"].ToInt64() ?? 0, StringComparer.Ordinal);
+
+        long Sum(string ckTypeId, bool archived) => perTypeAndState
+            .Where(d => d["_id"]["ckTypeId"] == ckTypeId && d["_id"]["archived"].AsBoolean == archived)
+            .Sum(d => d["count"].ToInt64());
+
+        return (
+            ReportingFilesMigrationConstants.TargetTypeIds.ToDictionary(t => t, t => Sum(t, false),
+                StringComparer.Ordinal),
+            ReportingFilesMigrationConstants.TargetTypeIds.ToDictionary(t => t, t => Sum(t, true),
+                StringComparer.Ordinal));
     }
 
     /// <summary>

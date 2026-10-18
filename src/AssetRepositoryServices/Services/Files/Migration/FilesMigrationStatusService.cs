@@ -87,9 +87,10 @@ public class FilesMigrationStatusService
         var legacy = await ReportingFilesMoveSweep.CountLegacyAsync(database, cancellationToken).ConfigureAwait(false);
         var targetReady = await ReportingFilesMoveSweep.IsTargetReadyAsync(database, cancellationToken)
             .ConfigureAwait(false);
-        var target = targetReady
+        var (target, targetArchived) = targetReady
             ? await ReportingFilesMoveSweep.CountTargetAsync(database, cancellationToken).ConfigureAwait(false)
-            : ReportingFilesMigrationConstants.TargetTypeIds.ToDictionary(t => t, _ => 0L);
+            : (ReportingFilesMigrationConstants.TargetTypeIds.ToDictionary(t => t, _ => 0L),
+                ReportingFilesMigrationConstants.TargetTypeIds.ToDictionary(t => t, _ => 0L));
         var light = mode == FilesMigrationStatusMode.Light;
         var (orphanCount, orphans) = light
             ? (0L, (IReadOnlyList<string>)[])
@@ -113,6 +114,7 @@ public class FilesMigrationStatusService
             Legacy = legacy,
             TargetModelReady = targetReady,
             Target = target,
+            TargetArchived = targetArchived,
             OtherLegacyTypes = otherTypes,
             RootConflicts = rootConflicts,
             LiteralScanComplete = scan.Complete,
