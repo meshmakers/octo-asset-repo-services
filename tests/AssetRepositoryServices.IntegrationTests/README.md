@@ -327,4 +327,55 @@ dotnet test tests/AssetRepositoryServices.IntegrationTests/ -c DebugL --filter "
 - **Staging area**: `file://` inside the CrateDB container. CrateDB does not create the directories of `COPY ... TO DIRECTORY`, so the
   tests create the slice folders through a container exec and make them writable (`RollupDumpRestoreSmokeTests.PrepareStagingAsync`);
   the cluster setting `stats.jobs_log_filter` is set once per process (`RollupTestKit`), without it the copy refuses to run.
-- **Recompute tests** keep asserting the immediate sweep: the shared `StreamDataFixture` runs with a sweep grace period of zero.
+- **Recompute tests** that assert the state right after a recompute (only the generation the pointer selects is left) run with a sweep grace
+  period of zero: `ImmediateSweepStreamDataFixture` (collection `StreamDataImmediateSweep`) or the grace setting in their own fixture
+  (`RowBoundStreamDataFixture`, `StatementBudgetStreamDataFixture`). Every other test uses the default of 2 h; production configuration is untouched.
+
+## CrateDB version matrix (AB#5490)
+
+Proves that an archive dumped on a CrateDB 5.x restores on a 6.x CrateDB with identical data. Needs Docker; the images are pulled on
+the first run (about 3 GB: `crate:5.9.10`, `crate:5.10.10`, `crate:6.4.6`, `chrislusf/seaweedfs:4.48`). **No kind cluster, no cloud
+store**: a SeaweedFS container (the store of the kind infrastructure, same arguments) and two CrateDB containers share one Docker network,
+and `COPY ... TO / FROM 's3://...'` runs on the CrateDB nodes exactly as in a cluster (format 2). The store credential is generated per
+process and never printed.
+
+```bash
+# Everything of the matrix (both pairs), separately from the rest of the suite
+dotnet test tests/AssetRepositoryServices.IntegrationTests/ -c DebugL --filter "Category=CrateVersionMatrix"
+
+# One version pair locally (two CrateDB containers + the store)
+dotnet test tests/AssetRepositoryServices.IntegrationTests/ -c DebugL --filter "FullyQualifiedName~CrateVersionMatrix59To6Tests"
+dotnet test tests/AssetRepositoryServices.IntegrationTests/ -c DebugL --filter "FullyQualifiedName~CrateVersionMatrix510To6Tests"
+
+# Only the small-data smoke of a pair (20 rows of the fixture archive)
+dotnet test tests/AssetRepositoryServices.IntegrationTests/ -c DebugL --filter "Category=CrateVersionMatrix&Matrix=Smoke"
+
+# The suite without the matrix
+dotnet test tests/AssetRepositoryServices.IntegrationTests/ -c DebugL --filter "Category!=CrateVersionMatrix"
+```
+
+- **Pairs**: 5.9.10 to 6.4.6 and 5.10.10 to 6.4.6 (`Collections/CrateVersionMatrixCollections.cs`; each pair is one collection that runs alone,
+  `DisableParallelization`). The exact tags are in `Fixtures/CrateVersionMatrixInfrastructure.cs`; `OCTO_CRATE_MATRIX_IMAGE_59`,
+  `OCTO_CRATE_MATRIX_IMAGE_510` and `OCTO_CRATE_MATRIX_IMAGE_6` replace them for a try with another patch release.
+  `OCTO_CRATE_MATRIX_ROWS` sets the rows of the seeded archives (default 20,000).
+- **Cases** (`CrateVersions/CrateVersionMatrixCases.cs`, written once, one derived class per pair):
+
+  | Case | What it proves |
+  |---|---|
+  | `Smoke_...` | the fixture archive (20 rows) dumped on 5.x loads on 6.x with identical aggregates |
+  | `Format2_ASeededArchive_...` | 20,000 rows with NULLs in `voltage` / `current`: row count, sum, min, max and count of non-null of every column identical; NULL in a column without DEFAULT stays NULL |
+  | `Format2_EveryColumnType_...` | every archive column type (boolean, int, int64, enum, double, string, date-time, date-time-offset, time-span, geo point, string array, int array, record, record array) with NULLs: aggregates and array / record / geo details identical |
+  | `Format2_ANullInAColumnWithADefault_...` | a NULL in a column with a DEFAULT (`rtcreationdatetime`) is restored as the default, not as NULL (AB#6647); the same on both series |
+  | `Format1_ARowBackup...` | the rows written as the bot's tenant dump writes them (NDJSON) and read back like its import reads them restore through `ImportRowsAsync` with identical data; a control import on the source version shows the row path behaves the same on every version |
+  | `Rollup_ARecomputedRange_...` | a rollup recomputed twice (generation 1 live) dumped on 5.x reads the same values on 6.x and validates ok |
+
+- **Disk factor**: every full case prints one line per pair, for example
+  `[format 2] 5.10.10 -> 6.4.6: 20,000 rows, copy 0.7 s (1 attempt(s)); disk 5.10.10 2,013,325 B (100.7 B/row), 6.4.6 3,689,251 B (184.5 B/row), disk factor 1.83`.
+  The disk size is the sum of the primary shard sizes in `sys.shards` after `OPTIMIZE TABLE`; the factor is target / source. Read the lines with
+  `--logger "console;verbosity=detailed"`.
+- **Runtime** (macOS, Docker Desktop, images already pulled, idle machine): the matrix takes about 30 s of test time and 50 s wall clock for
+  both pairs (4 CrateDB containers one after the other, 1 store). That is the budget to add to the asset-repo CI job (90 min, agent with one
+  DinD sidecar); the first run on an agent adds the image pulls.
+- **Notes**: the probe type `ColumnTypeProbe` in `tests/AssetRepositoryIntegrationTestCkModel` has an attribute for every column type
+  except the geo point, which is added to the table by hand because the CK source generator does not compile a `GeospatialPoint`
+  attribute (`GetAttributeGeometryObjectValueOrDefault<TValue>`, CS0411).

@@ -33,7 +33,7 @@ internal sealed class RollupTestKit
     public IArchiveRecomputeExecutor Executor => (IArchiveRecomputeExecutor)Repository;
 
     private static readonly SemaphoreSlim JobLogFilterGate = new(1, 1);
-    private static bool _jobLogFilterSet;
+    private static readonly HashSet<string> JobLogFilterSet = [];
 
     /// <summary>
     ///     The staging copy refuses to run unless CrateDB keeps <c>COPY</c> statements out of <c>sys.jobs_log</c> (their text
@@ -45,7 +45,8 @@ internal sealed class RollupTestKit
         await JobLogFilterGate.WaitAsync();
         try
         {
-            if (_jobLogFilterSet)
+            // One cluster per connection string: the CrateDB version matrix (AB#5490) runs several in one process.
+            if (JobLogFilterSet.Contains(fixture.CrateDbConnectionString!))
             {
                 return;
             }
@@ -55,7 +56,7 @@ internal sealed class RollupTestKit
             await using var cmd = new NpgsqlCommand(
                 "SET GLOBAL TRANSIENT \"stats.jobs_log_filter\" = 'stmt NOT ILIKE ''copy %'''", conn);
             await cmd.ExecuteNonQueryAsync();
-            _jobLogFilterSet = true;
+            JobLogFilterSet.Add(fixture.CrateDbConnectionString!);
         }
         finally
         {
