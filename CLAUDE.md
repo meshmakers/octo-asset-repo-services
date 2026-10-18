@@ -1030,8 +1030,8 @@ enforce the guard **before anything is cached or queued** (`ModelsController.Enf
   endpoints are already under `DataModelManagementPolicy`, so a caller without it gets `403` before the flag is read. A forced import with
   blockers logs one WARN line (tenant, caller `sub` / `client_id` / `name`, update set, blockers) and proceeds; without blockers nothing
   is logged. A guard failure is a `500` even when forced (fail closed).
-- **Not guarded on purpose**: `Models/ImportCk` (a model file, explicit operator decision) and the embedded System imports at service start
-  (downgrade guard AB#5894). Refinery Studio offers no force action; FixAll in octo-cli never sends the flag.
+- **Not guarded on purpose**: the embedded System imports at service start (downgrade guard AB#5894). `Models/ImportCk` is guarded
+  since AB#6966 (next section). Refinery Studio offers no force action; FixAll in octo-cli never sends the flag.
 - `ModelsController` takes an `ILogger<ModelsController>` (audit line).
 - Tests: `ModelsControllerUpgradeGuardEnforcementTests` (sbeg 409 with nothing cached/queued/written, additive update, forced + WARN
   audit line, batch with and without Registration, one blocked model refuses the batch, guard failure, policy attributes, additive DTOs),
@@ -1043,6 +1043,32 @@ enforce the guard **before anything is cached or queued** (`ModelsController.Enf
 **Request body:** Same as ImportFromCatalog (`catalogName` + `modelId`).
 
 **Response:** `UpgradeCheckResponseDto` with: `modelName`, `installedVersion`, `targetVersion`, `upgradeNeeded`, `migrationPathAvailable`, `hasBreakingChanges`, `errorMessage`, plus `isBlocked` and `blockers[]` (tenant upgrade guard, AB#6868, see above).
+
+#### Tenant upgrade guard for the file import (CK v2 F2.5, AB#6966)
+
+`POST {tenantId}/v1/models/ImportCk` (a CK model file; octo-cli `ImportCk -f`) used to be unguarded ("explicit operator decision"): a System
+file that removed an attribute used by `System.Identity` was accepted, left every model `Available` and made the tenant unloadable (no API
+path back, `Delete` fails too). Decided 2026-10-18 (Gerald): the file import is guarded like every other F2.5 surface.
+
+- **Flow** (`ModelsController.ImportCk`): policy check of a requested force -> read the upload exactly as the import job does (`json`/`yaml`
+  via `ICkSerializer`; a `zip` is opened for its `.json`, else its `.yaml`; unreadable -> `400`) -> `ICkModelLibraryStatusService.
+  EvaluateFileImportBlockersAsync` -> `409 CK_UPGRADE_BLOCKED` **before anything is cached or queued**, else cache + queue as before.
+- **Explicit caller**: the evaluation calls `ITenantContext.EvaluateExplicitCkImportAsync` (engine-mongodb), which, unlike the default
+  `EvaluateCkUpdateAsync`, also judges service-managed models (`System`, `System.*`) and judges a **downgrade** like an upgrade (a harmless
+  one is no blocker and stays allowed with the WARN of the engine; a breaking one is refused). Blueprints, FixAll, the batch import and the
+  embedded import keep the default (System skipped).
+- **Refusal** = the contract of AB#6870 (`CkUpgradeBlockedError.CreateFileImportResult`: `409`, `application/problem+json`, `code`, `updateSet` =
+  the model id of the file, `blockers[]`, plus `fileName`; the English `detail` names `forceBreakingUpdate` / `--forceBreakingUpdate`).
+- **Override** = form member `forceBreakingUpdate` (default `false`). The endpoint stays on `TenantAssetApiReadWritePolicy`; a *requested*
+  force needs `DataModelManagementPolicy` (checked via `IAuthorizationService`, `403` otherwise, nothing happens). A forced import with
+  blockers logs the WARN audit line (tenant, caller, file name, model id, blockers); a guard failure is a `500` even when forced.
+- **CheckUpgrade** (`EvaluateExplicitUpgradeBlockersAsync`) judges service-managed candidates too, so the preview agrees with the file import
+  (`isBlocked` / `blockers` for System). `hasBreakingChanges` stays the migration view of the model itself.
+- `ModelsController` takes `ICkSerializer` and `IAuthorizationService`; `ICkModelLibraryStatusService` gained `EvaluateFileImportBlockersAsync`
+  and `EvaluateExplicitUpgradeBlockersAsync` (the existing members are unchanged).
+- Tests: `ModelsControllerUpgradeGuardEnforcementTests` (ImportCk: 409 with nothing cached/queued, forced + WARN, 403 without the policy,
+  additive/first install unchanged, unreadable file 400, fail closed, zip), `CkModelLibraryStatusUpgradeGuardTests` (explicit evaluation),
+  `FileImportUpgradeGuardFlowTests` (real tenant: System file judged, default path skips it, nothing written, tenant loads).
 
 #### Tenant upgrade guard for blueprints (CK v2 F2.5, AB#6871)
 

@@ -336,4 +336,73 @@ public class CkModelLibraryStatusUpgradeGuardTests
 
         await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("guard exploded");
     }
+    // AB#6966: the file import and CheckUpgrade judge as an explicit caller (service-managed models included).
+
+    private void FakeExplicitSystemBlocker()
+    {
+        A.CallTo(() => _tenantContext.EvaluateExplicitCkImportAsync(A<IReadOnlyCollection<CkCompiledModelRoot>>._,
+                A<IReadOnlyCollection<CkModelId>?>._, A<CancellationToken>._))
+            .ReturnsLazily((IReadOnlyCollection<CkCompiledModelRoot> set, IReadOnlyCollection<CkModelId>? _,
+                CancellationToken _) => Task.FromResult(new CkUpgradeGuardResult(
+                [
+                    new CkUpgradeBlocker(Id("System.Identity", "2.26.0"), set.First().ModelId,
+                        CkUpgradeBlockerKind.ElementRemoved, "System@2/DisplayName-1", "CK_UPGRADE_ELEMENT_REMOVED",
+                        "System.Identity-2.26.0 uses System@2/DisplayName-1, which System-2.8.0 does not define",
+                        false, null)
+                ], [])));
+    }
+
+    [Fact]
+    public async Task EvaluateFileImportBlockers_JudgesAsAnExplicitCaller_SoSystemIsCovered()
+    {
+        SeedSbeg();
+        FakeExplicitSystemBlocker();
+        var file = new CkCompiledModelRoot { ModelId = Id("System", "2.8.0") };
+
+        var blockers = await CreateSut().EvaluateFileImportBlockersAsync(TenantId, [file],
+            TestContext.Current.CancellationToken);
+
+        var blocker = blockers.Should().ContainSingle().Subject;
+        blocker.Dependent.Should().Be("System.Identity-2.26.0");
+        blocker.Update.Should().Be("System-2.8.0");
+        blocker.Code.Should().Be("CK_UPGRADE_ELEMENT_REMOVED");
+        A.CallTo(() => _tenantContext.EvaluateCkUpdateAsync(A<IReadOnlyCollection<CkCompiledModelRoot>>._,
+            A<IReadOnlyCollection<CkModelId>?>._, A<CancellationToken>._)).MustNotHaveHappened();
+        A.CallTo(() => _tenantContext.ImportCkModelAsync(A<CkCompiledModelRoot>._)).MustNotHaveHappened();
+    }
+
+    [Fact]
+    public async Task EvaluateFileImportBlockers_NoCandidates_EvaluatesNothing_AndAFailurePropagates()
+    {
+        SeedSbeg();
+        var sut = CreateSut();
+
+        (await sut.EvaluateFileImportBlockersAsync(TenantId, [], TestContext.Current.CancellationToken)).Should().BeEmpty();
+        A.CallTo(() => _tenantContext.EvaluateExplicitCkImportAsync(A<IReadOnlyCollection<CkCompiledModelRoot>>._,
+            A<IReadOnlyCollection<CkModelId>?>._, A<CancellationToken>._)).MustNotHaveHappened();
+
+        A.CallTo(() => _tenantContext.EvaluateExplicitCkImportAsync(A<IReadOnlyCollection<CkCompiledModelRoot>>._,
+                A<IReadOnlyCollection<CkModelId>?>._, A<CancellationToken>._))
+            .ThrowsAsync(new InvalidOperationException("guard exploded"));
+        var act = () => sut.EvaluateFileImportBlockersAsync(TenantId,
+            [new CkCompiledModelRoot { ModelId = Id("System", "2.8.0") }], TestContext.Current.CancellationToken);
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("guard exploded");
+    }
+
+    [Fact]
+    public async Task EvaluateExplicitUpgradeBlockers_JudgesASystemCandidate_TheDefaultPreviewDoesNot()
+    {
+        SeedSbeg();
+        _offered.Add(Id("System", "2.8.0"));
+        FakeExplicitSystemBlocker();
+        var sut = CreateSut();
+
+        var explicitBlockers = await sut.EvaluateExplicitUpgradeBlockersAsync(TenantId, Id("System", "2.8.0"),
+            TestContext.Current.CancellationToken);
+        explicitBlockers.Should().ContainSingle().Which.Dependent.Should().Be("System.Identity-2.26.0");
+
+        // The default path (LibraryStatus rows, blueprint preview) keeps its own method on the context.
+        A.CallTo(() => _tenantContext.EvaluateCkUpdateAsync(A<IReadOnlyCollection<CkCompiledModelRoot>>._,
+            A<IReadOnlyCollection<CkModelId>?>._, A<CancellationToken>._)).MustNotHaveHappened();
+    }
 }

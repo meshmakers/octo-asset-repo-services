@@ -51,7 +51,9 @@ public class ModelsControllerCheckUpgradeTests
             _upgradeService,
             A.Fake<ICkModelMigrationService>(),
             _libraryStatusService,
-            A.Fake<ILogger<ModelsController>>());
+            A.Fake<ILogger<ModelsController>>(),
+            A.Fake<Meshmakers.Octo.ConstructionKit.Contracts.Serialization.ICkSerializer>(),
+            A.Fake<Microsoft.AspNetCore.Authorization.IAuthorizationService>());
         var httpContext = new DefaultHttpContext();
         httpContext.Request.RouteValues["tenantId"] = "sbeg";
         _controller.ControllerContext = new ControllerContext { HttpContext = httpContext };
@@ -70,7 +72,7 @@ public class ModelsControllerCheckUpgradeTests
     [Fact]
     public async Task CheckUpgrade_ReturnsTheBlockers_NextToTheMigrationVerdict()
     {
-        A.CallTo(() => _libraryStatusService.EvaluateUpgradeBlockersAsync("sbeg", A<CkModelId>._, A<CancellationToken>._))
+        A.CallTo(() => _libraryStatusService.EvaluateExplicitUpgradeBlockersAsync("sbeg", A<CkModelId>._, A<CancellationToken>._))
             .Returns(new List<CkUpgradeBlockerDto>
             {
                 new()
@@ -94,7 +96,7 @@ public class ModelsControllerCheckUpgradeTests
     [Fact]
     public async Task CheckUpgrade_NothingBlocked_IsNotBlocked_AndStartsNoJob()
     {
-        A.CallTo(() => _libraryStatusService.EvaluateUpgradeBlockersAsync("sbeg", A<CkModelId>._, A<CancellationToken>._))
+        A.CallTo(() => _libraryStatusService.EvaluateExplicitUpgradeBlockersAsync("sbeg", A<CkModelId>._, A<CancellationToken>._))
             .Returns(new List<CkUpgradeBlockerDto>());
 
         var result = await _controller.CheckUpgrade(Request(), TestContext.Current.CancellationToken);
