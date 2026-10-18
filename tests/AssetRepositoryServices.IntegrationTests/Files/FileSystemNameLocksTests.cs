@@ -36,10 +36,10 @@ public class FileSystemNameLocksTests(FilesTestFixture fixture, ITestOutputHelpe
         await Task.Delay(150, TestContext.Current.CancellationToken);
         waiting.IsCompleted.Should().BeFalse();
 
-        locks.Release(first);
+        await locks.ReleaseAsync(first);
         await waiting.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
-        locks.Release(second);
-        locks.Release(second); // idempotent
+        await locks.ReleaseAsync(second);
+        await locks.ReleaseAsync(second); // idempotent
         locks.ActiveCount.Should().Be(0);
     }
 
@@ -54,9 +54,9 @@ public class FileSystemNameLocksTests(FilesTestFixture fixture, ITestOutputHelpe
         var act = () => locks.AcquireAsync(second, ["a", "b"], TimeSpan.FromMilliseconds(100));
         (await act.Should().ThrowAsync<FileSystemException>()).Which.StatusCode.Should().Be(409);
 
-        locks.Release(first);
+        await locks.ReleaseAsync(first);
         locks.ActiveCount.Should().Be(0);
         await locks.AcquireAsync(second, ["a", "b"], TimeSpan.FromMilliseconds(100)); // "a" was given back
-        locks.Release(second);
+        await locks.ReleaseAsync(second);
     }
 }

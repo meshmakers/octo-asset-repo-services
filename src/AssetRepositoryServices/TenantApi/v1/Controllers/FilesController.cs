@@ -326,7 +326,7 @@ public class FilesController(
             }
             finally
             {
-                fileSystem.NameLocks.Release(session);
+                await fileSystem.NameLocks.ReleaseAsync(session);
             }
         }, RtDataAction.Write);
     }
@@ -433,7 +433,7 @@ public class FilesController(
         }
         finally
         {
-            fileSystem.NameLocks.Release(session);
+            await fileSystem.NameLocks.ReleaseAsync(session);
         }
     }
 
@@ -443,7 +443,8 @@ public class FilesController(
     {
         // AB#6477: two uploads of the same new name must not both pass the free-name check (the caller releases
         // the lock after the commit).
-        await fileSystem.NameLocks.AcquireAsync(session, [FileSystemNameLocks.KeyOf(folder.Id.RtId, name)]);
+        await fileSystem.NameLocks.AcquireAsync(session, [FileSystemNameLocks.KeyOf(folder.Id.RtId, name)],
+            tenantId: repository.TenantId);
         var (entry, replaced) = await fileSystem.UploadAsync(repository, session, unfiltered, folder, name,
             ResolveContentType(name), content, mode);
         await session.CommitTransactionAsync();

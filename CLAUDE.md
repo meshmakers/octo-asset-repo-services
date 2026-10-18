@@ -350,9 +350,19 @@ nor creates the root. Model content:
   locks the first *missing* folder of the path before it starts its transaction, so its snapshot sees the
   predecessor's folder; deeper folders are created below a folder nobody else can see yet). Release points:
   `OctoSessionListener.AfterExecutionAsync` (GraphQL) and the `finally` of `FilesController.UploadByPath` /
-  `UploadIntoFolderById`. Wait limit 30 s, then a retryable 409. **Limit:** the lock is per process; with several
-  asset-repo replicas the window is narrowed but not closed (no cross-process guarantee without an engine-side
-  unique key). Existing tenants with duplicate sibling names are not touched: nothing fails at start, the paths
+  `UploadIntoFolderById`. Wait limit 30 s (in-process wait and lease wait together), then a retryable 409.
+  **Across replicas (AB#6885):** after the in-process lock the key is also leased in MongoDB
+  (`IFileSystemNameLeaseStore`, collection `FileSystemNameLease` of the tenant database, `_id` = the lock key,
+  `owner`, `expiresAt`): an atomic `findOneAndUpdate` upsert that matches only an expired lease, polled with a short
+  jittered back-off; released with the session (`FileSystemNameLocks.ReleaseAsync`, after commit/abort). It uses the
+  admin client of the files migration (a connection outside the request transaction, so other replicas see the lease
+  at once). Lease duration 2 min (longer than MongoDB's 60 s transaction limit; **not renewed**), a TTL index
+  (10 min) sweeps leases a crashed replica left behind, an expired lease is taken over at once. Without MongoDB admin
+  credentials the store reports "unavailable" (one warning) and only the in-process lock applies. **Why a lease and
+  not a unique index:** the sibling relation is an association document in another collection than the entity's
+  `name`, so no MongoDB unique index can span it; the engine has no unique-key concept for it either. **Trade-off:**
+  two extra MongoDB round-trips per name-creating request and a 2 min worst case after a replica dies while holding
+  a lease; a writer that bypasses the asset repository (raw database access) is not covered. Existing tenants with duplicate sibling names are not touched: nothing fails at start, the paths
   stay `AMBIGUOUS_PATH` and every such answer logs a warning (`Duplicate sibling names under ...`).
 - **Metadata = generic GraphQL** (decision Q1). `FileSystemMutationGuard` is called by the generic
   create/update/delete resolvers (typed and `runtimeEntities`) whenever a System.Files entity is written or a
