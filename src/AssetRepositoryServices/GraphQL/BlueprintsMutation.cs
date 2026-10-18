@@ -3,7 +3,6 @@ using GraphQL.Types;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.DataTransferObjects.Blueprints;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Blueprints;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Utils;
-using Meshmakers.Octo.Backend.AssetRepositoryServices.UpgradeGuard;
 using Meshmakers.Octo.Communication.Contracts;
 using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.ConstructionKit.Contracts.BlueprintCatalogs;
@@ -32,18 +31,18 @@ internal sealed class BlueprintsMutation : ObjectGraphType
         Name = "BlueprintsMutation";
         Description = "Install, update and uninstall blueprints on the active tenant.";
 
-        Field<NonNullGraphType<BlueprintApplyResultDtoType>>("install")
+        Field<BlueprintApplyResultDtoType>("install")
             .Description("Applies a blueprint to the tenant for the first time. With force=true, re-applies seed data via upsert (recovery path).")
             .Argument<NonNullGraphType<StringGraphType>>("blueprintId", "Fully-qualified blueprint id (Name-Version).")
             .Argument<BooleanGraphType>("force", "Re-apply seed data even if the same version is already recorded. Defaults to false.")
             .ResolveAsync(ResolveInstallAsync);
 
-        Field<NonNullGraphType<BlueprintApplyResultDtoType>>("applyUpdate")
+        Field<BlueprintApplyResultDtoType>("applyUpdate")
             .Description("Applies a blueprint update to the tenant. Conflict resolutions and dry-run are controlled by the input. Returns the resulting apply summary.")
             .Argument<NonNullGraphType<BlueprintUpdateRequestInputType>>("input", "Update parameters.")
             .ResolveAsync(ResolveApplyUpdateAsync);
 
-        Field<NonNullGraphType<BlueprintUninstallResultDtoType>>("uninstall")
+        Field<BlueprintUninstallResultDtoType>("uninstall")
             .Description("Removes a blueprint from the tenant. With cascade=true, dependents are uninstalled first and orphan dependencies are auto-cleaned.")
             .Argument<NonNullGraphType<StringGraphType>>("blueprintName", "Blueprint name (without version).")
             .Argument<BooleanGraphType>("cascade", "Also uninstall dependents and orphan dependencies. Defaults to false.")
@@ -84,21 +83,26 @@ internal sealed class BlueprintsMutation : ObjectGraphType
 
             if (!result.IsSuccess)
             {
+                if (result.IsCkUpgradeBlocked)
+                {
+                    // AB#6935: one self-contained error (blockers in extensions); the field is nullable, so no second
+                    // "cannot return null" error follows.
+                    var blocked = CkUpgradeBlockedGraphQlError.Create(
+                        blueprintId.FullName, result.CkUpdateSet, result.CkUpgradeBlockers);
+                    blocked.Path = ctx.Path;
+                    ctx.Errors.Add(blocked);
+                    return null;
+                }
+
                 var errors = result.OperationResult.Messages
                     .Where(m => m.MessageLevel == MessageLevel.Error)
                     .Select(m => m.MessageText)
                     .ToList();
-                var error = new ExecutionError(string.Join(", ",
+                ctx.Errors.Add(new ExecutionError(string.Join(", ",
                     errors.Count > 0 ? errors : new[] { "Blueprint apply failed" }))
                 {
-                    Code = result.IsCkUpgradeBlocked ? CkUpgradeBlockedError.Code : "OPERATION_FAILED"
-                };
-                if (result.IsCkUpgradeBlocked)
-                {
-                    AddBlockerData(error, result.CkUpdateSet, result.CkUpgradeBlockers);
-                }
-
-                ctx.Errors.Add(error);
+                    Code = "OPERATION_FAILED"
+                });
                 return null;
             }
 
@@ -172,17 +176,20 @@ internal sealed class BlueprintsMutation : ObjectGraphType
 
             if (!result.Success)
             {
-                var error = new ExecutionError(string.Join(", ",
-                    result.Errors.Count > 0 ? result.Errors : new[] { "Blueprint update failed" }))
-                {
-                    Code = result.IsCkUpgradeBlocked ? CkUpgradeBlockedError.Code : "OPERATION_FAILED"
-                };
                 if (result.IsCkUpgradeBlocked)
                 {
-                    AddBlockerData(error, result.CkUpdateSet, result.CkUpgradeBlockers);
+                    var blocked = CkUpgradeBlockedGraphQlError.Create(
+                        targetBlueprintId.FullName, result.CkUpdateSet, result.CkUpgradeBlockers);
+                    blocked.Path = ctx.Path;
+                    ctx.Errors.Add(blocked);
+                    return null;
                 }
 
-                ctx.Errors.Add(error);
+                ctx.Errors.Add(new ExecutionError(string.Join(", ",
+                    result.Errors.Count > 0 ? result.Errors : new[] { "Blueprint update failed" }))
+                {
+                    Code = "OPERATION_FAILED"
+                });
                 return null;
             }
 
@@ -248,26 +255,6 @@ internal sealed class BlueprintsMutation : ObjectGraphType
             _logger.LogError(e, "Blueprint uninstall failed");
             return ctx.HandleException(e);
         }
-    }
-
-    /// <summary>
-    ///     AB#6871: the structured blockers of a refused apply, as error data for clients that read it (the English
-    ///     message already names every blocker).
-    /// </summary>
-    private static void AddBlockerData(ExecutionError error, IReadOnlyList<string> updateSet,
-        IReadOnlyList<BlueprintCkUpgradeBlocker> blockers)
-    {
-        error.Data["updateSet"] = updateSet.ToList();
-        error.Data["blockers"] = blockers.Select(b => new Dictionary<string, object?>
-        {
-            ["dependent"] = b.Dependent,
-            ["update"] = b.Update,
-            ["kind"] = b.Kind,
-            ["subject"] = b.Subject,
-            ["code"] = b.Code,
-            ["message"] = b.Message,
-            ["resolveHint"] = b.ResolveHint
-        }).ToList();
     }
 
     private static bool RequireAdminPanelRole(IResolveFieldContext<object?> ctx, string operation)

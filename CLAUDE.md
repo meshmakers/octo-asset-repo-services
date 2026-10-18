@@ -1063,10 +1063,17 @@ service-managed blueprints at tenant setup in `TenantContext`) runs unguarded.
   request additionally needs `DataModelManagementPolicy`, checked in the controller with `IAuthorizationService` (`403` otherwise, nothing
   called). A forced operation with blockers logs one WARN (tenant, caller via `UpgradeGuard/CallerDescription`, blueprint, update set,
   blockers) and returns the forced blockers in `blockers[]`. A guard failure is `500` even when forced.
-- **GraphQL**: `installBlueprint` and `applyBlueprintUpdate` always enforce (no force input) and fail with the error code `CK_UPGRADE_BLOCKED`
-  (blockers also in the error data); `previewUpdate` / the update result expose `isBlocked`, `ckUpdateSet`, `blockers`
-  (`BlueprintCkUpgradeBlockerDtoType`). Old clients: the new members are additive; a blocked call that used to succeed now fails.
-- Tests: `BlueprintsControllerUpgradeGuardTests`, `BlueprintCkUpgradeGuardTests` (unit), `BlueprintCkUpgradeGuardSchemaTests` (GraphQL),
+- **GraphQL** (AB#6935): `blueprints { install }` and `blueprints { applyUpdate }` (role `AdminPanelManagement`) always enforce (no force
+  input). The refusal is ONE error built by `GraphQL/CkUpgradeBlockedGraphQlError`: `extensions.code = CK_UPGRADE_BLOCKED`, `extensions.blueprintId`,
+  `extensions.updateSet` and `extensions.blockers[]` (dependent, update, kind, subject, code, message, dependentIsInUpdateSet,
+  suggestedDependentUpdate, resolveHint - the library-status blocker); `path` is set. The data goes into `ExecutionError.Extensions`
+  explicitly: `ExecutionError.Data` is NOT sent to clients (GraphQL.NET `ExposeData` is off and must stay off - exception data can carry
+  internals). The message is built here, not taken from the engine, and does not name the REST / CLI `ForceBreakingUpdate`. The mutation
+  fields `install`, `applyUpdate` and `uninstall` are **nullable** (they were `NonNull`): a resolver error leaves the field `null` without
+  the second "Cannot return null for a non-null type" error and without nulling `blueprints`. This is backward compatible for queries; a
+  generated client type gains `| null`. `previewUpdate` / the update result expose `isBlocked`, `ckUpdateSet`, `blockers`
+  (`BlueprintCkUpgradeBlockerDtoType`). A blocked call that used to succeed now fails.
+- Tests: `BlueprintsControllerUpgradeGuardTests`, `BlueprintCkUpgradeGuardTests` (unit), `BlueprintCkUpgradeGuardSchemaTests` and `BlueprintsMutationCkUpgradeBlockedTests` (GraphQL: runs `BlueprintsMutation` and the error serialization with a faked `IBlueprintService`),
   `Tenant/BlueprintCkUpgradeGuardFlowTests` (integration: real controller, blueprint service and MongoDB; the guard decision is switched by
   `SwitchableBlueprintCkUpgradeGuard`; blueprint `CkGuardFlowBp`). User documentation: octo-documentation `constructionKits/blueprints.md#ck-upgrade-guard`.
 
