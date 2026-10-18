@@ -75,7 +75,7 @@ public class FilesMigrationStatusService
     ///     state including the pre-check state (<c>Sweep.PreCheck</c>, AB#6554). It neither waits for nor starts a scan.
     /// </summary>
     public async Task<FilesMigrationStatusDto?> GetStatusAsync(string tenantId, FilesMigrationStatusMode mode,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default, bool includeArchived = false)
     {
         var database = await _databaseProvider.TryGetDatabaseAsync(tenantId).ConfigureAwait(false);
         if (database == null)
@@ -87,9 +87,14 @@ public class FilesMigrationStatusService
         var legacy = await ReportingFilesMoveSweep.CountLegacyAsync(database, cancellationToken).ConfigureAwait(false);
         var targetReady = await ReportingFilesMoveSweep.IsTargetReadyAsync(database, cancellationToken)
             .ConfigureAwait(false);
-        var target = targetReady
-            ? await ReportingFilesMoveSweep.CountTargetAsync(database, cancellationToken).ConfigureAwait(false)
-            : ReportingFilesMigrationConstants.TargetTypeIds.ToDictionary(t => t, _ => 0L);
+        var (target, targetArchived) = targetReady
+            ? await ReportingFilesMoveSweep.CountTargetAsync(database, includeArchived, cancellationToken)
+                .ConfigureAwait(false)
+            : ((IReadOnlyDictionary<string, long>)ReportingFilesMigrationConstants.TargetTypeIds
+                    .ToDictionary(t => t, _ => 0L),
+                includeArchived
+                    ? ReportingFilesMigrationConstants.TargetTypeIds.ToDictionary(t => t, _ => 0L)
+                    : null);
         var light = mode == FilesMigrationStatusMode.Light;
         var (orphanCount, orphans) = light
             ? (0L, (IReadOnlyList<string>)[])
@@ -113,6 +118,7 @@ public class FilesMigrationStatusService
             Legacy = legacy,
             TargetModelReady = targetReady,
             Target = target,
+            TargetArchived = targetArchived,
             OtherLegacyTypes = otherTypes,
             RootConflicts = rootConflicts,
             LiteralScanComplete = scan.Complete,

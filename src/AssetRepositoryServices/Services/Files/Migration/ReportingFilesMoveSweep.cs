@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Text.RegularExpressions;
+using Meshmakers.Octo.Runtime.Contracts.RepositoryEntities;
 using Microsoft.Extensions.Options;
 using MongoDB.Bson;
 using MongoDB.Driver;
@@ -266,17 +267,44 @@ public class ReportingFilesMoveSweep
     }
 
     /// <summary>
-    ///     System.Files entities per concrete type id.
+    ///     Live System.Files entities per concrete type id: archived (soft-deleted, <c>rtState = Archived</c>) items are
+    ///     never part of it, because GraphQL and the file APIs hide them too (AB#6894). A document without
+    ///     <c>rtState</c> is live. With <paramref name="includeArchived" /> the archived items are counted as well, per
+    ///     type and separately (<c>Archived</c>, otherwise null; no extra query runs without the switch).
     /// </summary>
-    public static async Task<IReadOnlyDictionary<string, long>> CountTargetAsync(IMongoDatabase database,
-        CancellationToken cancellationToken)
+    public static async Task<(IReadOnlyDictionary<string, long> Live, IReadOnlyDictionary<string, long>? Archived)>
+        CountTargetAsync(IMongoDatabase database, bool includeArchived, CancellationToken cancellationToken)
     {
-        var perType = await database.GetCollection<BsonDocument>(FileSystemConstants.EntityCollectionName).Aggregate()
-            .Match(Builders<BsonDocument>.Filter.In("ckTypeId", ReportingFilesMigrationConstants.TargetTypeIds))
-            .Group(new BsonDocument { { "_id", "$ckTypeId" }, { "count", new BsonDocument("$sum", 1) } })
+        var perTypeAndState = await database.GetCollection<BsonDocument>(FileSystemConstants.EntityCollectionName)
+            .Aggregate()
+            .Match(Builders<BsonDocument>.Filter.In("ckTypeId", ReportingFilesMigrationConstants.TargetTypeIds) &
+                   (includeArchived
+                       ? FilterDefinition<BsonDocument>.Empty
+                       : Builders<BsonDocument>.Filter.Ne("rtState", (int)RtState.Archived)))
+            .Group(new BsonDocument
+            {
+                {
+                    "_id", new BsonDocument
+                    {
+                        { "ckTypeId", "$ckTypeId" },
+                        { "archived", new BsonDocument("$eq", new BsonArray { "$rtState", (int)RtState.Archived }) }
+                    }
+                },
+                { "count", new BsonDocument("$sum", 1) }
+            })
             .ToListAsync(cancellationToken).ConfigureAwait(false);
-        return ReportingFilesMigrationConstants.TargetTypeIds.ToDictionary(t => t,
-            t => perType.FirstOrDefault(d => d["_id"] == t)?["count"].ToInt64() ?? 0, StringComparer.Ordinal);
+
+        long Sum(string ckTypeId, bool archived) => perTypeAndState
+            .Where(d => d["_id"]["ckTypeId"] == ckTypeId && d["_id"]["archived"].AsBoolean == archived)
+            .Sum(d => d["count"].ToInt64());
+
+        return (
+            ReportingFilesMigrationConstants.TargetTypeIds.ToDictionary(t => t, t => Sum(t, false),
+                StringComparer.Ordinal),
+            includeArchived
+                ? ReportingFilesMigrationConstants.TargetTypeIds.ToDictionary(t => t, t => Sum(t, true),
+                    StringComparer.Ordinal)
+                : null);
     }
 
     /// <summary>

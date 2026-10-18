@@ -210,6 +210,35 @@ public class FilesMigrationTestFixture : FilesTestFixture
         return (id, association);
     }
 
+    /// <summary>
+    ///     Inserts a System.Files entity of <paramref name="ckTypeId" /> raw; <paramref name="rtState" /> null
+    ///     leaves the field out (a document written without a state is live), 1 = archived (AB#6894).
+    /// </summary>
+    public async Task<ObjectId> InsertTargetItemAsync(string ckTypeId, string name, int? rtState)
+    {
+        var id = ObjectId.GenerateNewId();
+        var now = DateTime.UtcNow;
+        var document = new BsonDocument
+        {
+            { "_id", id },
+            { "_t", "RtEntity" },
+            { "attributes", new BsonDocument("name", name) },
+            { "rtCreationDateTime", now },
+            { "rtChangedDateTime", now },
+            { "ckTypeId", ckTypeId },
+            { "rtDisplayName", BsonNull.Value },
+            { "rtDisplayDescription", BsonNull.Value },
+            { "rtVersion", 0 }
+        };
+        if (rtState.HasValue)
+        {
+            document.Add("rtState", rtState.Value);
+        }
+
+        await Collection(FileSystemConstants.EntityCollectionName).InsertOneAsync(document);
+        return id;
+    }
+
     public async Task<ObjectId> InsertAssociationAsync(ObjectId originRtId, string originCkTypeId,
         ObjectId targetRtId, string targetCkTypeId, string roleId)
     {
