@@ -185,7 +185,7 @@ internal sealed class PlacementMatrixKit
 
         var empty = windows.Count(w => !actual.Keys.Any(k => k.Window == w));
         var differing = sourceAtMapRead.Count(kv =>
-            actual.TryGetValue(kv.Key, out var value) && !Nullable.Equals(value, kv.Value));
+            !actual.TryGetValue(kv.Key, out var value) || !Nullable.Equals(value, kv.Value));
 
         var report = await _kit.Repository.ValidateRollupsAsync([restored.RtId], TestContext.Current.CancellationToken);
         var findings = report.Rollups.SelectMany(r => r.Findings).ToList();

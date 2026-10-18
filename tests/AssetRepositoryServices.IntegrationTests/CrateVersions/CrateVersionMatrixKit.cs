@@ -141,7 +141,15 @@ internal static class CrateVersionMatrixKit
             var q = $"\"{name.Replace("\"", "\"\"")}\"";
             switch (type)
             {
-                case "integer" or "bigint" or "smallint" or "double precision" or "real":
+                case "double precision" or "real":
+                    // A floating point sum depends on the order of the additions, which differs with the shard layout;
+                    // rounding to 1e-6 keeps the comparison exact for real data loss and tolerant to the last ulp.
+                    Add($"CAST(ROUND(SUM({q}) * 1000000) AS TEXT)", "sum");
+                    Add($"CAST(MIN({q}) AS TEXT)", "min");
+                    Add($"CAST(MAX({q}) AS TEXT)", "max");
+                    Add($"CAST(COUNT({q}) AS TEXT)", "count");
+                    break;
+                case "integer" or "bigint" or "smallint":
                     Add($"CAST(SUM({q}) AS TEXT)", "sum");
                     Add($"CAST(MIN({q}) AS TEXT)", "min");
                     Add($"CAST(MAX({q}) AS TEXT)", "max");

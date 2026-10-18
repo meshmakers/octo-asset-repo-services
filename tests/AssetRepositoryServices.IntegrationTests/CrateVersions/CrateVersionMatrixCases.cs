@@ -254,7 +254,7 @@ public abstract class CrateVersionMatrixCases(
         "'AssetRepositoryIntegrationTest/ColumnTypeProbe', 'p' || generate_series, " +
         "CASE WHEN generate_series % 9 = 0 THEN NULL ELSE generate_series % 2 = 0 END, " +
         "CASE WHEN generate_series % 9 = 0 THEN NULL ELSE generate_series END, " +
-        "CASE WHEN generate_series % 9 = 0 THEN NULL ELSE CAST(generate_series AS BIGINT) * 10000000000 END, " +
+        "CASE WHEN generate_series % 9 = 0 THEN NULL ELSE CAST(generate_series AS BIGINT) * 3000000000 + 1 END, " +
         "CASE WHEN generate_series % 9 = 0 THEN NULL ELSE generate_series % 3 END, " +
         "CASE WHEN generate_series % 9 = 0 THEN NULL ELSE generate_series * 0.25 END, " +
         "CASE WHEN generate_series % 9 = 0 THEN NULL ELSE 'text ' || generate_series END, " +

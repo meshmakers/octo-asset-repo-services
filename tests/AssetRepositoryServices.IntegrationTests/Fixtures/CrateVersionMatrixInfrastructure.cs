@@ -114,8 +114,10 @@ internal static class CrateVersionMatrixInfrastructure
     public static async Task<CrateVersionContainer> StartCrateAsync(string image)
     {
         await EnsureStoreAsync();
+        // A registry-qualified reference contains '/' and ':', which a Docker container name does not allow.
+        var imageName = global::System.Text.RegularExpressions.Regex.Replace(image, "[^a-zA-Z0-9_.-]", "-");
         var container = new ContainerBuilder(image)
-            .WithName($"cratedb-matrix-{image.Replace(':', '-')}-{Guid.NewGuid():N}")
+            .WithName($"cratedb-matrix-{imageName}-{Guid.NewGuid():N}")
             .WithNetwork(_network!)
             .WithPortBinding(5432, true)
             .WithPortBinding(4200, true)
