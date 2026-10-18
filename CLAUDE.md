@@ -280,6 +280,12 @@ Time-series data support (`StreamData/`):
     is dropped. The Studio's Tenant Features panel reflects the flag via
     `GET {tenantId}/v1/features/status` (`FeaturesController`, AB#4884) — the CK model stays after
     a disable, so model presence would lie. The former `GET streamdata/status` is removed.
+  - `GET rollups/validate?rollupRtId=…` / `POST rollups/repair?rollupRtId=…&dryRun=true` (AB#6968): operator check and repair of
+    the rollup state after a restore (octo-cli `ValidateRollups` / `RepairRollups`, MCP `validate_rollups` / `repair_rollups`). Validate is
+    read only (ReadOnly policy; counts and MAX/MIN, no rows), repair needs ReadWrite and **defaults to a dry run** (planned steps per rollup,
+    nothing changed). Both delegate to `IStreamDataRepository.ValidateRollupsAsync` / `RepairRollupsAsync`; no `rollupRtId` = every rollup.
+    The applied repair (`dryRun=false`) is not served inline: recompute ranges must run as recompute jobs (an ingress cuts a request long
+    before a large recompute ends), so it answers 501 until the repository can enqueue them. Tests: `StreamDataControllerRollupConsistencyTests`.
 - **TenantManager** - Manages stream data tenant contexts
 - **StreamDataDatabaseManager** - Database operations for time-series data
 - **StreamDataTenantContext** - Per-tenant stream data context
