@@ -16,8 +16,8 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Strea
 /// (observed live at three entries, one of them pointing at a swept-empty generation). The flip now
 /// drops the entries its own range fully contains.
 /// </summary>
-[Collection(StreamDataMutatingCollection.Name)]
-public class RollupRecomputeGenerationMapHygieneTests(StreamDataFixture fixture, ITestOutputHelper output)
+[Collection(StreamDataImmediateSweepCollection.Name)]
+public class RollupRecomputeGenerationMapHygieneTests(ImmediateSweepStreamDataFixture fixture, ITestOutputHelper output)
 {
     private static readonly TimeSpan BucketSize = TimeSpan.FromMinutes(15);
     private static readonly DateTime WideStart = new(2026, 1, 1, 10, 0, 0, DateTimeKind.Utc);

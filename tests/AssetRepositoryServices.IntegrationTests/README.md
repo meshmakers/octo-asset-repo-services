@@ -328,4 +328,3 @@ dotnet test tests/AssetRepositoryServices.IntegrationTests/ -c DebugL --filter "
   tests create the slice folders through a container exec and make them writable (`RollupDumpRestoreSmokeTests.PrepareStagingAsync`);
   the cluster setting `stats.jobs_log_filter` is set once per process (`RollupTestKit`), without it the copy refuses to run.
 - **Recompute tests** keep asserting the immediate sweep: the shared `StreamDataFixture` runs with a sweep grace period of zero.
-- `KnownDefect` trait: a test that fails until a known defect of the code under test is fixed (not skipped).

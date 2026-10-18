@@ -20,8 +20,8 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Strea
 /// SQL (generation column + PK, ON CONFLICT key, INSERT-at-generation, genmap flip, CASE read filter,
 /// sweep) so it cannot regress.
 /// </summary>
-[Collection(StreamDataCollection.Name)]
-public class RollupRecomputeGenerationPointerTests(StreamDataFixture fixture, ITestOutputHelper output)
+[Collection(StreamDataImmediateSweepCollection.Name)]
+public class RollupRecomputeGenerationPointerTests(ImmediateSweepStreamDataFixture fixture, ITestOutputHelper output)
 {
     private static readonly DateTime RangeStart = new(2026, 1, 1, 10, 0, 0, DateTimeKind.Utc);
     private static readonly DateTime RangeEnd = new(2026, 1, 1, 11, 0, 0, DateTimeKind.Utc);

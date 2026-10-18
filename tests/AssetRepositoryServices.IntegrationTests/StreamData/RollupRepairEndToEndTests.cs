@@ -86,14 +86,11 @@ public class RollupRepairEndToEndTests(StreamDataFixture fixture, ITestOutputHel
     }
 
     /// <summary>
-    ///     KNOWN DEFECT of the engine's repair (found by this test, handed to the engine lane): a missing generation map table of
-    ///     a rollup whose rows are generation 1 or higher. The repair creates the empty map, the pointer entries are gone with the
-    ///     table, so the rows count as orphans and the watermark as ahead of the rows, and the request ends <c>Failed</c> without
-    ///     a failed step; the restore marker stays. The test is deliberately not skipped: it fails until the repair converges
-    ///     (rows kept or recomputed, validator ok, values equal) and then guards it.
+    ///     A missing generation map table of a rollup whose rows are generation 1 or higher (found by this test, fixed in the
+    ///     engine): the pointer entries are gone with the table and cannot be rebuilt from the rows, so the repair creates the
+    ///     map and recomputes the whole extent from the sources — one run, validator ok, values equal.
     /// </summary>
     [Fact]
-    [Trait("KnownDefect", "repair of a missing generation map on rows of generation >= 1")]
     public async Task AMissingGenerationMapTable_OfARollupWithRecomputedRows_IsRepairedInOneRun()
     {
         fixture.OutputHelper = output;

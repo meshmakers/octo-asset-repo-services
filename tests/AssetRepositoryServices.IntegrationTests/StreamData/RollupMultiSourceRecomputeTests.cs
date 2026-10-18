@@ -31,8 +31,8 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Strea
 /// <see cref="ASingleTimestampCorrection_SchedulesExactlyOneBucketRecomputeOnTheDependent"/>.
 /// </para>
 /// </summary>
-[Collection(StreamDataMutatingCollection.Name)]
-public class RollupMultiSourceRecomputeTests(StreamDataFixture fixture, ITestOutputHelper output)
+[Collection(StreamDataImmediateSweepCollection.Name)]
+public class RollupMultiSourceRecomputeTests(ImmediateSweepStreamDataFixture fixture, ITestOutputHelper output)
 {
     private readonly MultiSourceArchiveBuilder _builder = new(fixture);
 
