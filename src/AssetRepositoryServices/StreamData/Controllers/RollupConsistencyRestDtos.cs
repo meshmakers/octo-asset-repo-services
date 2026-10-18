@@ -20,24 +20,42 @@ public sealed record RollupConsistencyFindingRestDto(
         finding.Rows, finding.Gap?.ToString("c"));
 }
 
-/// <summary>The validator's result for one rollup.</summary>
+/// <summary>
+///     Why the validator could not check a rollup. <c>Cause</c> is <c>NoLiveTable</c>, <c>NeverActivated</c> or
+///     <c>SourceMissing</c> (a string so a new cause does not break an older client).
+/// </summary>
+public sealed record RollupNotCheckedRestDto(string Cause, string Reason)
+{
+    internal static RollupNotCheckedRestDto From(RollupNotChecked notChecked) =>
+        new(notChecked.Cause.ToString(), notChecked.Reason);
+}
+
+/// <summary>
+///     The validator's result for one rollup. A rollup that could not be checked has <c>IsNotChecked</c> true,
+///     <c>NotChecked</c> set and <c>IsOk</c> false: it is never reported as consistent.
+/// </summary>
 public sealed record RollupConsistencyEntryRestDto(
     string RollupRtId,
     bool IsOk,
-    IReadOnlyList<RollupConsistencyFindingRestDto> Findings)
+    IReadOnlyList<RollupConsistencyFindingRestDto> Findings,
+    bool IsNotChecked = false,
+    RollupNotCheckedRestDto? NotChecked = null)
 {
     internal static RollupConsistencyEntryRestDto From(RollupConsistencyEntry entry) => new(
-        entry.RollupRtId.ToString(), entry.IsOk, entry.Findings.Select(RollupConsistencyFindingRestDto.From).ToList());
+        entry.RollupRtId.ToString(), entry.IsOk, entry.Findings.Select(RollupConsistencyFindingRestDto.From).ToList(),
+        entry.IsNotChecked, entry.NotChecked is null ? null : RollupNotCheckedRestDto.From(entry.NotChecked));
 }
 
 /// <summary>The validator's result for a tenant: one entry per rollup that was checked.</summary>
 public sealed record RollupConsistencyReportRestDto(
     bool IsOk,
     DateTime CheckedAtUtc,
-    IReadOnlyList<RollupConsistencyEntryRestDto> Entries)
+    IReadOnlyList<RollupConsistencyEntryRestDto> Entries,
+    bool HasNotChecked = false)
 {
     internal static RollupConsistencyReportRestDto From(RollupConsistencyReport report) => new(
-        report.IsOk, report.GeneratedAtUtc, report.Rollups.Select(RollupConsistencyEntryRestDto.From).ToList());
+        report.IsOk, report.GeneratedAtUtc, report.Rollups.Select(RollupConsistencyEntryRestDto.From).ToList(),
+        report.HasNotChecked);
 }
 
 /// <summary>One step of a rollup repair.</summary>

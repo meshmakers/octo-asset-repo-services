@@ -76,6 +76,43 @@ public class StreamDataControllerRollupConsistencyTests
     }
 
     [Fact]
+    public async Task Validate_RollupThatCouldNotBeChecked_CarriesCauseAndReasonAndIsNeverOk()
+    {
+        var report = new RollupConsistencyReport(
+        [
+            new RollupConsistencyEntry(_rollupRtId, [],
+                new RollupNotChecked(RollupNotCheckedCause.NeverActivated, "The archive was never activated."))
+        ], DateTime.UtcNow);
+        A.CallTo(() => _repository.ValidateRollupsAsync(null, A<CancellationToken>._)).Returns(report);
+
+        var result = await _controller.ValidateRollups(TenantId, null);
+
+        var dto = result.Result.Should().BeOfType<OkObjectResult>().Subject.Value
+            .Should().BeOfType<RollupConsistencyReportRestDto>().Subject;
+        dto.IsOk.Should().BeFalse();
+        dto.HasNotChecked.Should().BeTrue();
+        var entry = dto.Entries.Should().ContainSingle().Subject;
+        entry.IsOk.Should().BeFalse();
+        entry.IsNotChecked.Should().BeTrue();
+        entry.NotChecked.Should().Be(new RollupNotCheckedRestDto("NeverActivated", "The archive was never activated."));
+        entry.Findings.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Validate_AllChecked_HasNoNotCheckedMarkers()
+    {
+        A.CallTo(() => _repository.ValidateRollupsAsync(null, A<CancellationToken>._)).Returns(Broken());
+
+        var result = await _controller.ValidateRollups(TenantId, null);
+
+        var dto = result.Result.Should().BeOfType<OkObjectResult>().Subject.Value
+            .Should().BeOfType<RollupConsistencyReportRestDto>().Subject;
+        dto.HasNotChecked.Should().BeFalse();
+        dto.Entries.Single().IsNotChecked.Should().BeFalse();
+        dto.Entries.Single().NotChecked.Should().BeNull();
+    }
+
+    [Fact]
     public async Task Validate_WithIds_HandsThemToTheRepository()
     {
         A.CallTo(() => _repository.ValidateRollupsAsync(A<IReadOnlyCollection<OctoObjectId>?>._, A<CancellationToken>._))
