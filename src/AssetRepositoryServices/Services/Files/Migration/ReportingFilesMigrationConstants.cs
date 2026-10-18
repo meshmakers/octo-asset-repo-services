@@ -33,6 +33,17 @@ public static class ReportingFilesMigrationConstants
     public const string LegacyEntityCollectionName = "RtEntity_SystemReportingFileSystemEntity";
 
     /// <summary>
+    ///     Prefix of the entity collections of the System.Notification types (AB#6940). Fallback for the
+    ///     type check: a document in such a collection is a notification even when its ckTypeId is missing.
+    /// </summary>
+    public const string NotificationCollectionPrefix = "RtEntity_SystemNotification";
+
+    /// <summary>
+    ///     Model name of the notification types (AB#6940).
+    /// </summary>
+    public const string NotificationModelName = "System.Notification";
+
+    /// <summary>
     ///     Collection of all associations of a tenant.
     /// </summary>
     public const string AssociationCollectionName = "RtAssociation";

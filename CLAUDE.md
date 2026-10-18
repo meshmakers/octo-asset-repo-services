@@ -867,7 +867,11 @@ System.Reporting 3.0.0.
   (except the two file collections) whose stored document contains
   `System.Reporting/{FileSystemItem|Folder|FolderRoot|FileSystemEntity|FileSystemContainer}` (also the
   versioned `System.Reporting-x.y.z/…` form) with collection, rtId, ckTypeId, well-known name,
-  `rtBlueprintSource` and field paths. The scan reads raw BSON (secondary-preferred) and searches the UTF-8
+  `rtBlueprintSource` and field paths. **Notification events are not counted (AB#6940):** documents with ckTypeId
+  `System.Notification/…` (also `System.Notification-x.y.z/…`) and every document of an `RtEntity_SystemNotification*`
+  collection (fallback when the type is unknown) only carry log text; they go to `ignoredLogReferenceCount` (0 in `Light`)
+  instead of `literalReferenceCount` and `literalReferences`, so error messages do not block the Reporting-off gate;
+  pipelines, policies and all other types are still counted. The scan reads raw BSON (secondary-preferred) and searches the UTF-8
   bytes, so it is schema-free; scans are serialized per pod and cut off after `ScanTimeout` (5 min,
   `LiteralScanComplete = false`). At tenant start only the lease holder scans, and only when the cheap
   check found legacy data. **The scan runs in the background after the move (AB#6554)**: on a 1.3 million document
