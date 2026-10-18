@@ -130,7 +130,7 @@ public class FileSystemMutationGuard(
 
             var parentId = creates[0].Target;
             await EnsureVisibleContainerAsync(repository, session, parentId).ConfigureAwait(false);
-            await LockNameAsync(session, parentId, name!).ConfigureAwait(false);
+            await LockNameAsync(repository, session, parentId, name!).ConfigureAwait(false);
             await EnsureNameFreeAsync(repository, unfiltered, parentId, name!, null).ConfigureAwait(false);
             if (!namesPerParent.TryGetValue(parentId, out var names))
             {
@@ -380,7 +380,7 @@ public class FileSystemMutationGuard(
                     await EnsureNotOwnDescendantAsync(repository, unfiltered, current, target).ConfigureAwait(false);
                 }
 
-                await LockNameAsync(session, target, effectiveName).ConfigureAwait(false);
+                await LockNameAsync(repository, session, target, effectiveName).ConfigureAwait(false);
                 await EnsureNameFreeAsync(repository, unfiltered, target, effectiveName, current.Id.RtId)
                     .ConfigureAwait(false);
             }
@@ -388,7 +388,7 @@ public class FileSystemMutationGuard(
             {
                 foreach (var parentId in remaining)
                 {
-                    await LockNameAsync(session, parentId, effectiveName).ConfigureAwait(false);
+                    await LockNameAsync(repository, session, parentId, effectiveName).ConfigureAwait(false);
                     await EnsureNameFreeAsync(repository, unfiltered, parentId, effectiveName, current.Id.RtId)
                         .ConfigureAwait(false);
                 }
@@ -435,8 +435,9 @@ public class FileSystemMutationGuard(
     ///     transaction ends (the GraphQL session listener releases it), so a concurrent writer of the same name
     ///     re-reads the committed state instead of racing the check-then-insert window.
     /// </summary>
-    private Task LockNameAsync(IOctoSession session, RtEntityId parentId, string name) =>
-        fileSystem.NameLocks.AcquireAsync(session, [FileSystemNameLocks.KeyOf(parentId.RtId, name)]);
+    private Task LockNameAsync(ITenantRepository repository, IOctoSession session, RtEntityId parentId, string name) =>
+        fileSystem.NameLocks.AcquireAsync(session, [FileSystemNameLocks.KeyOf(parentId.RtId, name)],
+            tenantId: repository.TenantId);
 
     private async Task EnsureNameFreeAsync(ITenantRepository repository, IOctoSession session,
         RtEntityId parentId, string name, OctoObjectId? self)
