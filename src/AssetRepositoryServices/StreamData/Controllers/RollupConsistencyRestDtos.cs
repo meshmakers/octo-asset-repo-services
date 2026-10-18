@@ -49,12 +49,11 @@ public sealed record RollupRepairActionRestDto(
     DateTime? RangeFromUtc,
     DateTime? RangeToUtc,
     long? Generation,
-    string? Error,
-    string? JobId)
+    string? Error)
 {
     internal static RollupRepairActionRestDto From(RollupRepairAction action) => new(
         action.RollupRtId.ToString(), action.Kind.ToString(), action.Description, action.Status.ToString(),
-        action.RangeFromUtc, action.RangeToUtc, action.Generation, action.Error, null);
+        action.RangeFromUtc, action.RangeToUtc, action.Generation, action.Error);
 }
 
 /// <summary>What a rollup repair did or, on a dry run, would do.</summary>
@@ -64,11 +63,28 @@ public sealed record RollupRepairReportRestDto(
     RollupConsistencyReportRestDto Before,
     IReadOnlyList<RollupRepairActionRestDto> Actions,
     RollupConsistencyReportRestDto? After,
-    string? FailedStep,
-    IReadOnlyList<string> JobIds)
+    string? FailedStep)
 {
     internal static RollupRepairReportRestDto From(RollupRepairReport report) => new(
         report.DryRun, report.IsOk, RollupConsistencyReportRestDto.From(report.Before),
         report.Actions.Select(RollupRepairActionRestDto.From).ToList(),
-        report.After is null ? null : RollupConsistencyReportRestDto.From(report.After), report.FailedStep, []);
+        report.After is null ? null : RollupConsistencyReportRestDto.From(report.After), report.FailedStep);
+}
+
+/// <summary>
+///     An applied rollup repair (AB#6968): a request the host executes in the background, so a large recompute is never
+///     bound to an HTTP request. <c>State</c> is <c>Pending</c>, <c>Running</c>, <c>Done</c> or <c>Failed</c>.
+/// </summary>
+public sealed record RollupRepairRequestRestDto(
+    string RequestId,
+    string State,
+    DateTime RequestedAtUtc,
+    DateTime? FinishedAtUtc,
+    IReadOnlyList<RollupRepairActionRestDto> PlannedActions,
+    RollupRepairReportRestDto? Report)
+{
+    internal static RollupRepairRequestRestDto From(RollupRepairRequest request) => new(
+        request.RequestId, request.State.ToString(), request.RequestedAtUtc, request.FinishedAtUtc,
+        request.PlannedActions.Select(RollupRepairActionRestDto.From).ToList(),
+        request.Report is null ? null : RollupRepairReportRestDto.From(request.Report));
 }

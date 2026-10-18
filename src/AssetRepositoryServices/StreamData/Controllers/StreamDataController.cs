@@ -375,12 +375,15 @@ public class StreamDataController : ControllerBase
 
     /// <summary>
     /// Repairs what <c>rollups/validate</c> finds (AB#6968). Idempotent. With <c>dryRun=true</c> (the default) the
-    /// planned steps per rollup are listed and nothing is changed. Without <c>rollupRtId</c> every rollup of the
-    /// tenant is repaired.
+    /// planned steps per rollup are listed and nothing is changed. With <c>dryRun=false</c> the repair is only
+    /// <em>requested</em>: the call answers 202 with the request (and a <c>Location</c> to
+    /// <c>rollups/repair/{requestId}</c>) and the host executes it in the background, so a large recompute is never
+    /// bound to this HTTP request (an ingress cuts a request long before it ends). A second request while one is
+    /// active returns the active one. Without <c>rollupRtId</c> every rollup of the tenant is repaired.
     /// </summary>
     [HttpPost("rollups/repair")]
     [Microsoft.AspNetCore.Authorization.Authorize(AssetRepositoryServiceConstants.TenantAssetApiReadWritePolicy)]
-    public async Task<ActionResult<RollupRepairReportRestDto>> RepairRollups(
+    public async Task<IActionResult> RepairRollups(
         [Required] string tenantId, [FromQuery] string[]? rollupRtId, [FromQuery] bool dryRun = true)
     {
         if (!TryParseRollupIds(rollupRtId, out var rollupRtIds, out var invalidId))
@@ -395,16 +398,18 @@ public class StreamDataController : ControllerBase
                 ?? throw new StreamDataException(
                     $"StreamData is not enabled for tenant '{tenantId}'. Call POST /streamdata/enable first.");
 
-            if (!dryRun)
+            if (dryRun)
             {
-                // The applied repair enqueues its recompute ranges as recompute jobs (never inline in this
-                // request, AB#6968); that member of the repository contract is not available yet.
-                return StatusCode(StatusCodes.Status501NotImplemented,
-                    "Applying a rollup repair is not available yet; use dryRun=true to list the planned steps.");
+                var plan = await repository.RepairRollupsAsync(rollupRtIds, true, HttpContext.RequestAborted);
+                return Ok(RollupRepairReportRestDto.From(plan));
             }
 
-            var report = await repository.RepairRollupsAsync(rollupRtIds, true, HttpContext.RequestAborted);
-            return Ok(RollupRepairReportRestDto.From(report));
+            // Under the application-lifetime token like the recompute endpoints (AB#4286): the enqueue is a quick
+            // write that must not depend on the client connection; the repair itself runs on the host tick.
+            var request = await repository.EnqueueRollupRepairAsync(rollupRtIds, _appLifetime.ApplicationStopping);
+            var location = Url?.Action(nameof(GetRollupRepair),
+                new { tenantId, requestId = request.RequestId }) ?? $"rollups/repair/{request.RequestId}";
+            return Accepted(location, RollupRepairRequestRestDto.From(request));
         }
         catch (ConfigurationException e)
         {
@@ -417,6 +422,42 @@ public class StreamDataController : ControllerBase
         catch (StreamDataException e)
         {
             _logger.LogWarning("RepairRollups refused for tenant '{TenantId}': {Reason}", tenantId, e.Message);
+            return BadRequest(e.Message);
+        }
+    }
+
+    /// <summary>
+    /// The state of a rollup repair request (AB#6968): <c>Pending</c>, <c>Running</c>, <c>Done</c> or <c>Failed</c>,
+    /// with the final report once it has ended. 404 for an unknown request id.
+    /// </summary>
+    [HttpGet("rollups/repair/{requestId}")]
+    [Microsoft.AspNetCore.Authorization.Authorize(AssetRepositoryServiceConstants.TenantAssetApiReadOnlyPolicy)]
+    public async Task<ActionResult<RollupRepairRequestRestDto>> GetRollupRepair(
+        [Required] string tenantId, [Required] string requestId)
+    {
+        try
+        {
+            var tenantContext = await _systemContext.FindTenantContextAsync(tenantId);
+            var repository = tenantContext.GetStreamDataRepository()
+                ?? throw new StreamDataException(
+                    $"StreamData is not enabled for tenant '{tenantId}'. Call POST /streamdata/enable first.");
+
+            var request = await repository.GetRollupRepairRequestAsync(requestId, HttpContext.RequestAborted);
+            return request is null
+                ? NotFound($"Rollup repair request '{requestId}' does not exist.")
+                : Ok(RollupRepairRequestRestDto.From(request));
+        }
+        catch (ConfigurationException e)
+        {
+            return BadRequest(e.Message);
+        }
+        catch (ArchiveCopyNotSupportedException e)
+        {
+            return BadRequest(e.Message);
+        }
+        catch (StreamDataException e)
+        {
+            _logger.LogWarning("GetRollupRepair refused for tenant '{TenantId}': {Reason}", tenantId, e.Message);
             return BadRequest(e.Message);
         }
     }
