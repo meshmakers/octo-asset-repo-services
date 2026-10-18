@@ -23,6 +23,22 @@ internal static class SharedCrateDbContainer
     private static IContainer? _container;
     private static string? _connectionString;
 
+    /// <summary>
+    ///     Runs a command inside the shared CrateDB container (for example <c>mkdir</c> of a <c>file://</c> staging directory,
+    ///     which CrateDB does not create itself). Starts the container first when it is not running yet.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">The command ended with a non-zero exit code.</exception>
+    public static async Task ExecAsync(params string[] command)
+    {
+        await GetConnectionStringAsync();
+        var result = await _container!.ExecAsync(command);
+        if (result.ExitCode != 0)
+        {
+            throw new InvalidOperationException(
+                $"'{string.Join(' ', command)}' in the CrateDB container ended with exit code {result.ExitCode}: {result.Stderr}");
+        }
+    }
+
     public static async Task<string> GetConnectionStringAsync()
     {
         if (_connectionString != null)

@@ -32,8 +32,40 @@ internal sealed class RollupTestKit
 
     public IArchiveRecomputeExecutor Executor => (IArchiveRecomputeExecutor)Repository;
 
+    private static readonly SemaphoreSlim JobLogFilterGate = new(1, 1);
+    private static bool _jobLogFilterSet;
+
+    /// <summary>
+    ///     The staging copy refuses to run unless CrateDB keeps <c>COPY</c> statements out of <c>sys.jobs_log</c> (their text
+    ///     carries the storage credential). Production sets <c>stats.jobs_log_filter</c> on the cluster (AB#6944); the
+    ///     test container gets the same setting once per process.
+    /// </summary>
+    private static async Task EnsureJobLogFilterAsync(StreamDataFixture fixture)
+    {
+        await JobLogFilterGate.WaitAsync();
+        try
+        {
+            if (_jobLogFilterSet)
+            {
+                return;
+            }
+
+            await using var conn = new NpgsqlConnection(fixture.CrateDbConnectionString);
+            await conn.OpenAsync();
+            await using var cmd = new NpgsqlCommand(
+                "SET GLOBAL TRANSIENT \"stats.jobs_log_filter\" = 'stmt NOT ILIKE ''copy %'''", conn);
+            await cmd.ExecuteNonQueryAsync();
+            _jobLogFilterSet = true;
+        }
+        finally
+        {
+            JobLogFilterGate.Release();
+        }
+    }
+
     public static async Task<RollupTestKit> CreateAsync(StreamDataFixture fixture)
     {
+        await EnsureJobLogFilterAsync(fixture);
         var systemContext = fixture.GetSystemContext();
         var tenantContext = await systemContext.FindTenantContextAsync(systemContext.TenantId);
         var repository = tenantContext.GetStreamDataRepository()
