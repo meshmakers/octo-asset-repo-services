@@ -52,6 +52,25 @@ public interface ICkModelLibraryStatusService
         IReadOnlyList<CkModelId> updateSet, CancellationToken cancellationToken = default);
 
     /// <summary>
+    ///     The read-only preview for an <b>explicit</b> caller (AB#6966, <c>CheckUpgrade</c>): like
+    ///     <see cref="EvaluateUpgradeBlockersAsync" />, but a service-managed candidate (<c>System</c>, <c>System.*</c>) is
+    ///     judged too, because the file import judges it as well (a preview must agree with the import).
+    /// </summary>
+    Task<IReadOnlyList<CkUpgradeBlockerDto>> EvaluateExplicitUpgradeBlockersAsync(string tenantId, CkModelId candidate,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    ///     The guard of the file import (AB#6966, <c>ImportCk</c>): which installed models would importing the already
+    ///     compiled <paramref name="candidates" /> (the uploaded file) break? Judged as an explicit caller, so
+    ///     service-managed candidates (<c>System</c>, <c>System.*</c>) and downgrades are judged too. The catalogs are
+    ///     only consulted for the suggestion of a newer dependent version. Read-only; a failure propagates (the import
+    ///     fails closed).
+    /// </summary>
+    Task<IReadOnlyList<CkUpgradeBlockerDto>> EvaluateFileImportBlockersAsync(string tenantId,
+        IReadOnlyList<ConstructionKit.Contracts.DataTransferObjects.CkCompiledModelRoot> candidates,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     ///     Installed versions of the service-managed (System*) models of a tenant, restricted to
     ///     models in state <c>Available</c>. This is the baseline every compatibility check is
     ///     evaluated against.
@@ -207,10 +226,47 @@ public sealed class CkModelLibraryStatusService : ICkModelLibraryStatusService
             cancellationToken);
     }
 
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<CkUpgradeBlockerDto>> EvaluateExplicitUpgradeBlockersAsync(string tenantId,
+        CkModelId candidate, CancellationToken cancellationToken = default)
+    {
+        var tenantContext = await _systemContext.FindTenantContextAsync(tenantId);
+        var catalogResult = await _catalogService.ListAsync(0, ModelPageSize, cancellationToken: cancellationToken);
+        var availableVersions = catalogResult.ModelResultItems.Select(m => m.ModelId).ToList();
+
+        return await EvaluateBlockersAsync(tenantContext, [candidate], availableVersions, new CatalogModelMemo(),
+            cancellationToken, explicitCaller: true);
+    }
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<CkUpgradeBlockerDto>> EvaluateFileImportBlockersAsync(string tenantId,
+        IReadOnlyList<ConstructionKit.Contracts.DataTransferObjects.CkCompiledModelRoot> candidates,
+        CancellationToken cancellationToken = default)
+    {
+        if (candidates.Count == 0)
+        {
+            return [];
+        }
+
+        var tenantContext = await _systemContext.FindTenantContextAsync(tenantId);
+        var catalogResult = await _catalogService.ListAsync(0, ModelPageSize, cancellationToken: cancellationToken);
+        var availableVersions = catalogResult.ModelResultItems.Select(m => m.ModelId).ToList();
+
+        return await EvaluateCompiledBlockersAsync(tenantContext, candidates, availableVersions, new CatalogModelMemo(),
+            true, cancellationToken);
+    }
+
     private Task<List<CkUpgradeBlockerDto>> EvaluateBlockersAsync(ITenantContext tenantContext,
         CkModelId candidate, IReadOnlyCollection<CkModelId> availableVersions, CatalogModelMemo memo,
         CancellationToken cancellationToken) =>
         EvaluateBlockersAsync(tenantContext, [candidate], availableVersions, memo, cancellationToken);
+
+    private static Task<CkUpgradeGuardResult> JudgeAsync(ITenantContext tenantContext,
+        IReadOnlyCollection<ConstructionKit.Contracts.DataTransferObjects.CkCompiledModelRoot> set,
+        IReadOnlyCollection<CkModelId> availableVersions, bool explicitCaller, CancellationToken cancellationToken) =>
+        explicitCaller
+            ? tenantContext.EvaluateExplicitCkImportAsync(set, availableVersions, cancellationToken)
+            : tenantContext.EvaluateCkUpdateAsync(set, availableVersions, cancellationToken);
 
     /// <summary>
     ///     Runs the tenant upgrade guard for one candidate and maps the blockers. A suggested newer version of a blocking
@@ -222,7 +278,7 @@ public sealed class CkModelLibraryStatusService : ICkModelLibraryStatusService
     /// </summary>
     private async Task<List<CkUpgradeBlockerDto>> EvaluateBlockersAsync(ITenantContext tenantContext,
         IReadOnlyList<CkModelId> candidates, IReadOnlyCollection<CkModelId> availableVersions, CatalogModelMemo memo,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken, bool explicitCaller = false)
     {
         // A candidate that is not published in a catalog cannot be judged and is left out (as for one candidate).
         var compiled = new List<ConstructionKit.Contracts.DataTransferObjects.CkCompiledModelRoot>();
@@ -240,7 +296,16 @@ public sealed class CkModelLibraryStatusService : ICkModelLibraryStatusService
             return [];
         }
 
-        var result = await tenantContext.EvaluateCkUpdateAsync(compiled, availableVersions, cancellationToken);
+        return await EvaluateCompiledBlockersAsync(tenantContext, compiled, availableVersions, memo, explicitCaller,
+            cancellationToken);
+    }
+
+    private async Task<List<CkUpgradeBlockerDto>> EvaluateCompiledBlockersAsync(ITenantContext tenantContext,
+        IReadOnlyList<ConstructionKit.Contracts.DataTransferObjects.CkCompiledModelRoot> compiled,
+        IReadOnlyCollection<CkModelId> availableVersions, CatalogModelMemo memo, bool explicitCaller,
+        CancellationToken cancellationToken)
+    {
+        var result = await JudgeAsync(tenantContext, compiled, availableVersions, explicitCaller, cancellationToken);
         if (!result.IsBlocked)
         {
             return [];
@@ -252,7 +317,7 @@ public sealed class CkModelLibraryStatusService : ICkModelLibraryStatusService
             var dto = ToDto(blocker);
             if (blocker.SuggestedDependentUpdate is { } suggestion &&
                 await IsSuggestionProvenAsync(tenantContext, compiled, blocker, suggestion, availableVersions, memo,
-                    cancellationToken))
+                    explicitCaller, cancellationToken))
             {
                 dto.SuggestedDependentUpdate = suggestion.FullName;
                 dto.ResolveHint = $"update {suggestion.Name} to {suggestion.Version} first";
@@ -267,7 +332,7 @@ public sealed class CkModelLibraryStatusService : ICkModelLibraryStatusService
     private async Task<bool> IsSuggestionProvenAsync(ITenantContext tenantContext,
         IReadOnlyList<ConstructionKit.Contracts.DataTransferObjects.CkCompiledModelRoot> candidates,
         CkUpgradeBlocker blocker, CkModelId suggestion, IReadOnlyCollection<CkModelId> availableVersions,
-        CatalogModelMemo memo, CancellationToken cancellationToken)
+        CatalogModelMemo memo, bool explicitCaller, CancellationToken cancellationToken)
     {
         var (found, suggested) = await memo.GetAsync(_catalogService, suggestion, cancellationToken);
         if (!found || suggested == null)
@@ -275,7 +340,7 @@ public sealed class CkModelLibraryStatusService : ICkModelLibraryStatusService
             return false;
         }
 
-        var combined = await tenantContext.EvaluateCkUpdateAsync([.. candidates, suggested], availableVersions,
+        var combined = await JudgeAsync(tenantContext, [.. candidates, suggested], availableVersions, explicitCaller,
             cancellationToken);
         return !combined.Blockers.Any(b =>
             string.Equals(b.Dependent.Name, blocker.Dependent.Name, StringComparison.OrdinalIgnoreCase));

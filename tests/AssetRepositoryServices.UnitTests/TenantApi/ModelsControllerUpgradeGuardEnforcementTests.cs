@@ -41,6 +41,8 @@ public class ModelsControllerUpgradeGuardEnforcementTests
     private readonly ICommandClient<ImportCkBatchCommandRequest> _importCkBatch =
         A.Fake<ICommandClient<ImportCkBatchCommandRequest>>();
     private readonly ICkModelLibraryStatusService _libraryStatusService = A.Fake<ICkModelLibraryStatusService>();
+    private readonly ICkSerializer _ckSerializer = A.Fake<ICkSerializer>();
+    private readonly IAuthorizationService _authorization = A.Fake<IAuthorizationService>();
     private readonly ISystemContext _systemContext = A.Fake<ISystemContext>();
     private readonly ITenantContext _tenantContext = A.Fake<ITenantContext>();
     private readonly ListLogger _logger = new();
@@ -80,7 +82,9 @@ public class ModelsControllerUpgradeGuardEnforcementTests
             A.Fake<ICkModelUpgradeService>(),
             A.Fake<ICkModelMigrationService>(),
             _libraryStatusService,
-            _logger);
+            _logger,
+            _ckSerializer,
+            _authorization);
 
         var httpContext = new DefaultHttpContext();
         httpContext.Request.RouteValues["tenantId"] = "sbeg";
@@ -295,6 +299,181 @@ public class ModelsControllerUpgradeGuardEnforcementTests
         result.Should().BeOfType<BadRequestObjectResult>();
         A.CallTo(() => _libraryStatusService.EvaluateUpdateSetBlockersAsync(A<string>._, A<IReadOnlyList<CkModelId>>._,
             A<CancellationToken>._)).MustNotHaveHappened();
+    }
+
+    // ---- ImportCk (AB#6966) ----
+
+    private static FormFile Upload(string fileName = "ck-system-2.yaml", string contentType = "application/x-yaml",
+        byte[]? content = null)
+    {
+        var bytes = content ?? "modelId: System-2.8.0"u8.ToArray();
+        return new FormFile(new MemoryStream(bytes), 0, bytes.Length, "file", fileName)
+        {
+            Headers = new HeaderDictionary(), ContentType = contentType
+        };
+    }
+
+    private void FakeFileModel(string modelId = "System-2.8.0") =>
+        A.CallTo(() => _ckSerializer.DeserializeCompiledModelRootAsync(A<Stream>._, A<string>._, A<OperationResult>._))
+            .ReturnsLazily(() => Task.FromResult(new CkCompiledModelRoot { ModelId = new CkModelId(modelId) }));
+
+    private static CkUpgradeBlockerDto SystemBlocker() => new()
+    {
+        Dependent = "System.Identity-2.26.0", Update = "System-2.8.0", Kind = "ElementRemoved",
+        Subject = "System@2/DisplayName-1", Code = "CK_UPGRADE_ELEMENT_REMOVED",
+        Message = "System.Identity 2.26.0 would break: uses System@2/DisplayName-1, which System-2.8.0 does not define"
+    };
+
+    private void FakeFileGuard(params CkUpgradeBlockerDto[] blockers) =>
+        A.CallTo(() => _libraryStatusService.EvaluateFileImportBlockersAsync("sbeg",
+                A<IReadOnlyList<CkCompiledModelRoot>>._, A<CancellationToken>._))
+            .Returns(Task.FromResult<IReadOnlyList<CkUpgradeBlockerDto>>(blockers));
+
+    private void MayForce(bool allowed) =>
+        A.CallTo(() => _authorization.AuthorizeAsync(A<ClaimsPrincipal>._, A<object?>._, "DataModelManagementPolicy"))
+            .Returns(allowed ? AuthorizationResult.Success() : AuthorizationResult.Failed());
+
+    [Fact]
+    public async Task ImportCk_BreakingSystemFile_IsRefusedWith409_AndNothingIsCachedQueuedOrWritten()
+    {
+        FakeFileModel();
+        FakeFileGuard(SystemBlocker());
+
+        var result = await _controller.ImportCk(Upload());
+
+        var conflict = result.Should().BeOfType<ObjectResult>().Subject;
+        conflict.StatusCode.Should().Be(StatusCodes.Status409Conflict);
+        conflict.ContentTypes.Should().Contain("application/problem+json");
+        var problem = conflict.Value.Should().BeOfType<ProblemDetails>().Subject;
+        problem.Extensions["code"].Should().Be("CK_UPGRADE_BLOCKED");
+        problem.Extensions["updateSet"].Should().BeEquivalentTo(new[] { "System-2.8.0" });
+        problem.Extensions["fileName"].Should().Be("ck-system-2.yaml");
+        problem.Extensions["blockers"].Should().BeAssignableTo<IReadOnlyList<CkUpgradeBlockerDto>>().Subject
+            .Should().ContainSingle().Which.Dependent.Should().Be("System.Identity-2.26.0");
+        problem.Detail.Should().Contain("Nothing was imported").And.Contain("forceBreakingUpdate")
+            .And.Contain("--forceBreakingUpdate");
+        NothingMayHaveBeenWritten();
+        _logger.Entries.Should().BeEmpty();
+        A.CallTo(() => _authorization.AuthorizeAsync(A<ClaimsPrincipal>._, A<object?>._, A<string>._)).MustNotHaveHappened();
+    }
+
+    [Fact]
+    public async Task ImportCk_Forced_WithThePolicy_QueuesTheJob_AndLogsTenantCallerFileAndBlockersAtWarn()
+    {
+        FakeFileModel();
+        FakeFileGuard(SystemBlocker());
+        MayForce(true);
+
+        var result = await _controller.ImportCk(Upload(), forceBreakingUpdate: true);
+
+        result.Should().BeOfType<OkObjectResult>().Which.Value.Should().BeOfType<TransferModelResponseDto>()
+            .Which.JobId.Should().Be("job-1");
+        var warn = _logger.Entries.Should().ContainSingle().Subject;
+        warn.Level.Should().Be(LogLevel.Warning);
+        warn.Message.Should().Contain("sbeg").And.Contain("sub=user-4711").And.Contain("name=Ada Admin")
+            .And.Contain("ck-system-2.yaml").And.Contain("System-2.8.0")
+            .And.Contain("System.Identity-2.26.0").And.Contain("ElementRemoved");
+    }
+
+    [Fact]
+    public async Task ImportCk_Forced_WithoutThePolicy_Is403_AndNothingHappens()
+    {
+        FakeFileModel();
+        FakeFileGuard(SystemBlocker());
+        MayForce(false);
+
+        var result = await _controller.ImportCk(Upload(), forceBreakingUpdate: true);
+
+        result.Should().BeOfType<ForbidResult>();
+        NothingMayHaveBeenWritten();
+        A.CallTo(() => _libraryStatusService.EvaluateFileImportBlockersAsync(A<string>._,
+            A<IReadOnlyList<CkCompiledModelRoot>>._, A<CancellationToken>._)).MustNotHaveHappened();
+    }
+
+    [Fact]
+    public async Task ImportCk_AdditiveOrFirstInstallFile_ImportsAsBefore_WithoutAuditLine()
+    {
+        FakeFileModel("Basic-2.6.0");
+        FakeFileGuard();
+
+        var result = await _controller.ImportCk(Upload("basic.json", "application/json"));
+
+        result.Should().BeOfType<OkObjectResult>();
+        A.CallTo(() => _distributedCache.CreateStreamAsync("sbeg", A<Stream>._, "application/json", "basic.json",
+            A<TimeSpan?>._)).MustHaveHappenedOnceExactly();
+        A.CallTo(() => _importCk.GetResponse<JobCreatedResponse>(A<ImportCkCommandRequest>._))
+            .MustHaveHappenedOnceExactly();
+        _logger.Entries.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task ImportCk_ForcedWithoutBlockers_NeedsNoAuditLine()
+    {
+        FakeFileModel("Basic-2.6.0");
+        FakeFileGuard();
+        MayForce(true);
+
+        var result = await _controller.ImportCk(Upload(), forceBreakingUpdate: true);
+
+        result.Should().BeOfType<OkObjectResult>();
+        _logger.Entries.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task ImportCk_UnreadableFile_IsABadRequest_BeforeTheGuardRuns()
+    {
+        A.CallTo(() => _ckSerializer.DeserializeCompiledModelRootAsync(A<Stream>._, A<string>._, A<OperationResult>._))
+            .Returns(Task.FromResult<CkCompiledModelRoot>(null!));
+
+        var result = await _controller.ImportCk(Upload());
+
+        result.Should().BeOfType<BadRequestObjectResult>().Which.Value.Should().BeOfType<Meshmakers.Octo.Communication.Contracts.DataTransferObjects.ApiErrors.InternalServerErrorDto>()
+            .Which.Message.Should().Contain("ck-system-2.yaml");
+        NothingMayHaveBeenWritten();
+        A.CallTo(() => _libraryStatusService.EvaluateFileImportBlockersAsync(A<string>._,
+            A<IReadOnlyList<CkCompiledModelRoot>>._, A<CancellationToken>._)).MustNotHaveHappened();
+    }
+
+    [Fact]
+    public async Task ImportCk_GuardFailure_FailsClosed_With500_EvenWhenForced()
+    {
+        FakeFileModel();
+        MayForce(true);
+        A.CallTo(() => _libraryStatusService.EvaluateFileImportBlockersAsync("sbeg",
+                A<IReadOnlyList<CkCompiledModelRoot>>._, A<CancellationToken>._))
+            .ThrowsAsync(new Exception("guard exploded"));
+
+        var result = await _controller.ImportCk(Upload(), forceBreakingUpdate: true);
+
+        result.Should().BeOfType<ObjectResult>().Which.StatusCode.Should().Be(500);
+        NothingMayHaveBeenWritten();
+    }
+
+    [Fact]
+    public async Task ImportCk_ZipFile_IsReadFromItsJsonEntry()
+    {
+        FakeFileModel("Basic-2.6.0");
+        FakeGuardClear();
+        FakeFileGuard();
+        using var buffer = new MemoryStream();
+        using (var archive = new System.IO.Compression.ZipArchive(buffer, System.IO.Compression.ZipArchiveMode.Create, true))
+        {
+            using var entry = new StreamWriter(archive.CreateEntry("ck-basic.json").Open());
+            entry.Write("{}");
+        }
+
+        var result = await _controller.ImportCk(Upload("ck-basic.zip", "application/zip", buffer.ToArray()));
+
+        result.Should().BeOfType<OkObjectResult>();
+        A.CallTo(() => _ckSerializer.DeserializeCompiledModelRootAsync(A<Stream>._, "ck-basic.json", A<OperationResult>._))
+            .MustHaveHappenedOnceExactly();
+    }
+
+    [Fact]
+    public void ImportCk_StaysOnTheReadWritePolicy_ForcingIsCheckedInTheAction()
+    {
+        typeof(ModelsController).GetMethod(nameof(ModelsController.ImportCk))!.GetCustomAttribute<AuthorizeAttribute>()!
+            .Policy.Should().Be("TenantAssetApiReadWritePolicy");
     }
 
     // ---- Authorization, additive DTOs ----

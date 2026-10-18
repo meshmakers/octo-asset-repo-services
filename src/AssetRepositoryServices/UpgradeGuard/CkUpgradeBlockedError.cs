@@ -75,6 +75,28 @@ public static class CkUpgradeBlockedError
         };
     }
 
+    /// <summary>
+    ///     AB#6966: the refusal of a file import (<c>ImportCk</c>). Same status, <c>code</c>, <c>updateSet</c> (the model
+    ///     id of the file) and <c>blockers</c>; an additional <c>fileName</c> extension names the upload and the English
+    ///     <c>detail</c> names the form member that overrides the guard.
+    /// </summary>
+    public static ObjectResult CreateFileImportResult(string fileName, IReadOnlyList<string> updateSet,
+        IReadOnlyList<CkUpgradeBlockerDto> blockers)
+    {
+        var problem = CreateProblem(updateSet, blockers);
+        var dependents = blockers.Select(b => b.Dependent).Distinct(StringComparer.Ordinal).Count();
+        problem.Detail = $"Importing the file {fileName} ({string.Join(", ", updateSet)}) would break {dependents} " +
+                         $"installed model(s): {string.Join("; ", blockers.Select(Describe))}. Nothing was imported. " +
+                         "Update the dependent models first, or repeat the request with forceBreakingUpdate = true " +
+                         "(octo-cli ImportCk: --forceBreakingUpdate) to import anyway.";
+        problem.Extensions["fileName"] = fileName;
+        return new ObjectResult(problem)
+        {
+            StatusCode = StatusCodes.Status409Conflict,
+            ContentTypes = { "application/problem+json" }
+        };
+    }
+
     private static string Describe(CkUpgradeBlockerDto blocker) =>
         string.IsNullOrEmpty(blocker.ResolveHint) ? blocker.Message : $"{blocker.Message} ({blocker.ResolveHint})";
 }

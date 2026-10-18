@@ -68,7 +68,9 @@ public class ModelsControllerImportFromCatalogBatchTests
             A.Fake<ICkModelUpgradeService>(),
             A.Fake<ICkModelMigrationService>(),
             _libraryStatusService,
-            A.Fake<ILogger<ModelsController>>());
+            A.Fake<ILogger<ModelsController>>(),
+            A.Fake<Meshmakers.Octo.ConstructionKit.Contracts.Serialization.ICkSerializer>(),
+            A.Fake<Microsoft.AspNetCore.Authorization.IAuthorizationService>());
 
         var httpContext = new DefaultHttpContext();
         httpContext.Request.RouteValues["tenantId"] = "test-tenant";

@@ -59,7 +59,9 @@ public class ModelsControllerImportFromCatalogTests
             A.Fake<Meshmakers.Octo.Runtime.Contracts.CkModelMigrations.ICkModelUpgradeService>(),
             A.Fake<Meshmakers.Octo.Runtime.Contracts.CkModelMigrations.ICkModelMigrationService>(),
             _libraryStatusService,
-            A.Fake<ILogger<ModelsController>>());
+            A.Fake<ILogger<ModelsController>>(),
+            A.Fake<Meshmakers.Octo.ConstructionKit.Contracts.Serialization.ICkSerializer>(),
+            A.Fake<Microsoft.AspNetCore.Authorization.IAuthorizationService>());
 
         // Set up HttpContext with tenant ID via request route values
         var httpContext = new DefaultHttpContext();

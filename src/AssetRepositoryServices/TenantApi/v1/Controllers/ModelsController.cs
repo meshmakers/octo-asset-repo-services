@@ -1,4 +1,5 @@
 ﻿using System.ComponentModel.DataAnnotations;
+using System.IO.Compression;
 using Asp.Versioning;
 using Duende.IdentityModel;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.DataTransferObjects.CkModelCatalog;
@@ -33,7 +34,9 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.TenantApi.v1.Controlle
 public class ModelsController : ControllerBase
 {
     private readonly ICatalogService _catalogService;
+    private readonly IAuthorizationService _authorizationService;
     private readonly ICkJsonSerializer _ckJsonSerializer;
+    private readonly ICkSerializer _ckSerializer;
     private readonly IDistributedCacheService _distributedCache;
     private readonly ICommandClient<ExportRtByQueryCommandRequest> _exportRtByQueryCommandClient;
     private readonly ICommandClient<ExportRtByDeepGraphCommandRequest> _exportRtByDeepGraphCommandClient;
@@ -62,6 +65,8 @@ public class ModelsController : ControllerBase
     /// <param name="migrationService">CK model migration service for migration history</param>
     /// <param name="libraryStatusService">CK model library status service (AB#5432)</param>
     /// <param name="logger">Logger (audit line of a forced breaking update, AB#6870)</param>
+    /// <param name="ckSerializer">Reads the uploaded CK model of ImportCk for the upgrade guard (AB#6966)</param>
+    /// <param name="authorizationService">Checks the data model management policy of a forced import (AB#6966)</param>
     public ModelsController(IDistributedCacheService distributedCache,
         ICommandClient<ExportRtByQueryCommandRequest> exportRtByQueryCommandClient,
         ICommandClient<ExportRtByDeepGraphCommandRequest> exportRtByDeepGraphCommandClient,
@@ -74,8 +79,12 @@ public class ModelsController : ControllerBase
         ICkModelUpgradeService upgradeService,
         ICkModelMigrationService migrationService,
         ICkModelLibraryStatusService libraryStatusService,
-        ILogger<ModelsController> logger)
+        ILogger<ModelsController> logger,
+        ICkSerializer ckSerializer,
+        IAuthorizationService authorizationService)
     {
+        _ckSerializer = ckSerializer;
+        _authorizationService = authorizationService;
         _distributedCache = distributedCache;
         _exportRtByQueryCommandClient = exportRtByQueryCommandClient;
         _exportRtByDeepGraphCommandClient = exportRtByDeepGraphCommandClient;
@@ -241,16 +250,28 @@ public class ModelsController : ControllerBase
     // POST: {tenantId}/v1/Models/ImportCk
     /// <summary>
     ///     Imports a construction kit model
+    ///     <para>
+    ///         Tenant upgrade guard (CK v2 F2.5, AB#6966): the uploaded file is read and judged before anything is cached
+    ///         or queued, as an explicit caller (service-managed models such as <c>System</c> are judged too, and a
+    ///         downgrade like an upgrade). When it would break an installed model the request is refused with
+    ///         <c>409 CK_UPGRADE_BLOCKED</c> (problem details with the structured blockers); no job is queued and
+    ///         nothing is written. <c>forceBreakingUpdate=true</c> (form member) imports anyway, needs the data model
+    ///         management policy (403 otherwise) and logs the blockers and the caller at WARN. A file that cannot be read
+    ///         is a 400; a guard failure is a 500 even when forced (fail closed).
+    ///     </para>
     /// </summary>
     /// <param name="file">The file with the CK model definition</param>
+    /// <param name="forceBreakingUpdate">Import even if it breaks an installed model (default false)</param>
     /// <returns></returns>
     [HttpPost]
     [Route("ImportCk")]
     [Authorize(AssetRepositoryServiceConstants.TenantAssetApiReadWritePolicy)]
     [ProducesResponseType(typeof(TransferModelResponseDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(InternalServerErrorDto), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
     [ProducesResponseType(typeof(InternalServerErrorDto), StatusCodes.Status500InternalServerError)]
-    public async Task<IActionResult> ImportCk(IFormFile file)
+    public async Task<IActionResult> ImportCk(IFormFile file, [FromForm] bool forceBreakingUpdate = false)
     {
         try
         {
@@ -258,6 +279,30 @@ public class ModelsController : ControllerBase
             if (string.IsNullOrEmpty(tenantId))
             {
                 return BadRequest(new OperationFailedErrorDto("TenantId is required"));
+            }
+
+            if (forceBreakingUpdate && !await MayForceBreakingUpdateAsync())
+            {
+                return Forbid();
+            }
+
+            // AB#6966: tenant upgrade guard - before anything is cached or queued.
+            var compiled = await ReadCompiledModelAsync(file);
+            var blockers = await _libraryStatusService.EvaluateFileImportBlockersAsync(tenantId, [compiled],
+                HttpContext.RequestAborted);
+            if (blockers.Count > 0)
+            {
+                var updateSet = new List<string> { compiled.ModelId.FullName };
+                if (!forceBreakingUpdate)
+                {
+                    return CkUpgradeBlockedError.CreateFileImportResult(file.FileName, updateSet, blockers.ToList());
+                }
+
+                _logger.LogWarning(
+                    "Forced breaking CK update on tenant {TenantId} by {Caller}: file import {File} of {UpdateSet} breaks {BlockerCount} installed model(s): {Blockers}",
+                    tenantId, CallerDescription.From(HttpContext.User), file.FileName, string.Join(", ", updateSet),
+                    blockers.Count,
+                    string.Join("; ", blockers.Select(b => $"{b.Dependent} [{b.Kind} {b.Subject}] by {b.Update}")));
             }
 
             var cacheKey = await AddFileToCache(tenantId, file);
@@ -501,7 +546,9 @@ public class ModelsController : ControllerBase
                 tenantId, ckModelId.Name, ckModelId.Version.ToString(), cancellationToken);
 
             // AB#6868: read-only tenant upgrade guard - which installed models would the target version break?
-            var blockers = await _libraryStatusService.EvaluateUpgradeBlockersAsync(tenantId, ckModelId,
+            // AB#6966: as an explicit caller - the file import judges service-managed models (System) too, so the
+            // preview does as well. "HasBreakingChanges" below is the migration view; IsBlocked/Blockers the tenant guard.
+            var blockers = await _libraryStatusService.EvaluateExplicitUpgradeBlockersAsync(tenantId, ckModelId,
                 cancellationToken);
 
             return Ok(new UpgradeCheckResponseDto
@@ -1061,6 +1108,69 @@ public class ModelsController : ControllerBase
         var key = await _distributedCache.CreateStreamAsync(tenantId, memoryStream, "application/json", fileName,
             TimeSpan.FromHours(1));
         return key;
+    }
+
+    /// <summary>
+    ///     AB#6966: reads the uploaded file the way the import job does (json or yaml; a zip is opened for its .json,
+    ///     else its .yaml) so that the upgrade guard judges exactly what would be imported. Throws
+    ///     <see cref="InvalidOperationException" /> (a 400) when the file cannot be read as a compiled CK model.
+    /// </summary>
+    private async Task<CkCompiledModelRoot> ReadCompiledModelAsync(IFormFile? file)
+    {
+        if (file == null || file.Length == 0)
+        {
+            throw new InvalidOperationException("A CK model file is required.");
+        }
+
+        await using var upload = file.OpenReadStream();
+        var isZip = file.ContentType.Equals("application/zip", StringComparison.OrdinalIgnoreCase) ||
+                    file.ContentType.Equals("application/x-zip-compressed", StringComparison.OrdinalIgnoreCase);
+        var operationResult = new OperationResult();
+        CkCompiledModelRoot? model;
+        try
+        {
+            if (isZip)
+            {
+                using var archive = new ZipArchive(upload);
+                var entry = archive.Entries.FirstOrDefault(e => Path.GetExtension(e.Name).Equals(".json", StringComparison.OrdinalIgnoreCase))
+                            ?? archive.Entries.FirstOrDefault(e => Path.GetExtension(e.Name).Equals(".yaml", StringComparison.OrdinalIgnoreCase));
+                if (entry == null)
+                {
+                    throw new InvalidOperationException("The zip archive contains no .json or .yaml CK model file.");
+                }
+
+                await using var entryStream = entry.Open();
+                model = await _ckSerializer.DeserializeCompiledModelRootAsync(entryStream, entry.Name, operationResult);
+            }
+            else
+            {
+                model = await _ckSerializer.DeserializeCompiledModelRootAsync(upload, file.FileName, operationResult);
+            }
+        }
+        catch (InvalidDataException e)
+        {
+            throw new InvalidOperationException($"The file '{file.FileName}' is not a readable CK model archive: {e.Message}");
+        }
+
+        if (model == null || operationResult.HasErrors || operationResult.HasFatalErrors)
+        {
+            var reasons = string.Join("; ", operationResult.Messages.Select(m => m.MessageText));
+            throw new InvalidOperationException(
+                $"The file '{file.FileName}' cannot be read as a compiled CK model{(reasons.Length > 0 ? ": " + reasons : ".")}");
+        }
+
+        return model;
+    }
+
+    /// <summary>
+    ///     AB#6966: overriding the tenant upgrade guard is a data model operation, like importing from a catalog - the
+    ///     <c>ImportCk</c> endpoint itself only needs the tenant read-write policy.
+    /// </summary>
+    private async Task<bool> MayForceBreakingUpdateAsync()
+    {
+        var authorization = await _authorizationService.AuthorizeAsync(HttpContext.User, null,
+            AssetRepositoryServiceConstants.DataModelManagementPolicy);
+        return authorization.Succeeded;
     }
 
     private async Task<string> AddFileToCache(string tenantId, IFormFile file)
