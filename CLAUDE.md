@@ -668,6 +668,23 @@ invocation types until the method runtime lands). **Schema export for frontend c
 "FullyQualifiedName~SchemaExportTests"` — writes the SDL of the integration-test tenant (all CK meta types plus the
 CK v2 test model's runtime types); the Studio's own `schema.graphql` stays an introspection of a real tenant.
 
+### CK method gateway gate (AB#6912, F3.4)
+
+`GraphQL/Methods/CkMethodGateway.cs` (`ICkMethodGateway`, registered by `AddCkMethodGateway()`; tests `GraphQL/Methods/CkMethodGatewayTests`)
+is the one place that decides, **before the target entity is loaded**, whether a caller may call a CK method. Order: authenticate
+(unauthenticated = no principal) -> authorize with the shared `ICkMethodAuthorizationEvaluator` of octo-common-services (AB#6911: roles any-of,
+`allowSelf` on the parsed id from the request, declared scopes, `octo_api` always, default-deny; **one enforcement code path**, the pipeline filter at
+band 200 stays as second line) -> load the target through the `targetExists` delegate the caller passes in (instance methods only) -> dispatch via
+`ICkMethodDispatcher` with `CkMethodPrincipalScope` open. A refusal is `METHOD_FORBIDDEN` with `methodId` and the fixed reason `not-authorized`: it
+depends on the method and the caller only, so it is identical for an existing and a missing target, and the target is never read before the check
+(`Refusal_IsByteIdentical_ForAnExistingAndAMissingTarget_AndReadsNothing` uses a counting reader). `METHOD_TARGET_NOT_FOUND` is returned only to a caller
+who passed. The refusal log line (Information) names method id, tenant and the rule, never the target id, parameters or token.
+`octo_api` is required for every method call independent of `GraphQl:EnforceMutationScope` (the gate never reads the flag; the generic
+`MutationScopeListener` is unchanged). `CkMethodGraphQlError.Create` turns a failed response into ONE `ExecutionError` with `extensions.code` and
+`extensions.parameters` and a fixed message. **Not wired yet:** no method mutation exists on main; the resolver that generates the per-type
+mutations (F3.7, AB#6884) must call `ICkMethodGateway`, pass its tenant-repository lookup as `targetExists`, and register `AddCkMethodDispatcher()`,
+`AddCkMethodAuthorization()` and `AddCkMethodGateway()`. Gateway-side parameter validation (between target load and dispatch) is part of that resolver.
+
 ### Blueprint-locked entities: stable error contract (AB#6385)
 
 The engine write guard (`DataPermissionWriteGuard`, AB#6384; opt-in by `DataPolicy.ProtectBlueprintLocked`) refuses a
