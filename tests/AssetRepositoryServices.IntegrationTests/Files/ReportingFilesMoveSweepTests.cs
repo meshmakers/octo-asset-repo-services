@@ -432,16 +432,17 @@ public class ReportingFilesMoveSweepTests
     }
 
     [Fact]
-    public async Task Status_CountsLiveAndArchivedTargetItemsSeparately()
+    public async Task Status_TargetCountsLiveOnly_ArchivedOnlyWithTheSwitch()
     {
-        // AB#6894: GraphQL excludes archived items, so a status number that included them (1,758 vs the 1,757 users
-        // see) raised false alarms. Live = what users see; archived (rtState = Archived) is reported on its own.
+        // AB#6894: GraphQL excludes archived items, so `target` never counts them (1,758 reported vs the 1,757 users
+        // see was a bug); the archived count is delivered separately and only on request.
         await _fixture.Sweep.SweepAsync(TenantId, "Test", Ct);
         var before = await _fixture.Status.GetStatusAsync(TenantId, FilesMigrationStatusMode.Light, Ct);
         var folderLive = before!.Target[FileSystemConstants.FolderCkTypeId];
-        var folderArchived = before.TargetArchived[FileSystemConstants.FolderCkTypeId];
         var rootLive = before.Target[FileSystemConstants.FolderRootCkTypeId];
-        var rootArchived = before.TargetArchived[FileSystemConstants.FolderRootCkTypeId];
+        before.TargetArchived.Should().BeNull("the archived count is not computed by default");
+        var archivedBefore = (await _fixture.Status.GetStatusAsync(TenantId, FilesMigrationStatusMode.Light, Ct,
+            includeArchived: true))!.TargetArchived!;
 
         await _fixture.InsertTargetItemAsync(FileSystemConstants.FolderCkTypeId, "live-without-state", null);
         await _fixture.InsertTargetItemAsync(FileSystemConstants.FolderCkTypeId, "live-active", 0);
@@ -451,13 +452,19 @@ public class ReportingFilesMoveSweepTests
 
         foreach (var mode in new[] { FilesMigrationStatusMode.Light, FilesMigrationStatusMode.Full })
         {
-            var status = await _fixture.Status.GetStatusAsync(TenantId, mode, Ct);
+            var byDefault = await _fixture.Status.GetStatusAsync(TenantId, mode, Ct);
+            byDefault!.Target[FileSystemConstants.FolderCkTypeId].Should().Be(folderLive + 2);
+            byDefault.Target[FileSystemConstants.FolderRootCkTypeId].Should().Be(rootLive);
+            byDefault.TargetArchived.Should().BeNull();
 
-            status!.Target[FileSystemConstants.FolderCkTypeId].Should().Be(folderLive + 2);
-            status.TargetArchived[FileSystemConstants.FolderCkTypeId].Should().Be(folderArchived + 2);
-            status.Target[FileSystemConstants.FolderRootCkTypeId].Should().Be(rootLive);
-            status.TargetArchived[FileSystemConstants.FolderRootCkTypeId].Should().Be(rootArchived + 1);
-            status.TargetArchived.Keys.Should().BeEquivalentTo(status.Target.Keys);
+            var withArchived = await _fixture.Status.GetStatusAsync(TenantId, mode, Ct, includeArchived: true);
+            withArchived!.Target[FileSystemConstants.FolderCkTypeId].Should().Be(folderLive + 2);
+            withArchived.Target[FileSystemConstants.FolderRootCkTypeId].Should().Be(rootLive);
+            withArchived.TargetArchived![FileSystemConstants.FolderCkTypeId]
+                .Should().Be(archivedBefore[FileSystemConstants.FolderCkTypeId] + 2);
+            withArchived.TargetArchived[FileSystemConstants.FolderRootCkTypeId]
+                .Should().Be(archivedBefore[FileSystemConstants.FolderRootCkTypeId] + 1);
+            withArchived.TargetArchived.Keys.Should().BeEquivalentTo(withArchived.Target.Keys);
         }
     }
 

@@ -847,12 +847,12 @@ System.Reporting 3.0.0.
   `Pending`, `Done` with reason, switch, listed flag and the last audit record). The sweep itself is idempotent:
   a second run for a listed tenant finds nothing and writes nothing.
 - **Pre-check (R4):** `FilesMigrationStatusService`, exposed as `GET system/v1/files/migration-status/{tenantId}`
-  (`?mode=Full`, default; `?mode=Light` since AB#6860, see below)
+  (`?mode=Full`, default; `?mode=Light` since AB#6860, see below; `?includeArchived=true` since AB#6894)
   (`SystemAssetApiReadOnlyPolicy` **plus** in-controller check: token `tenant_id` = system tenant, user
   tokens need `AdminPanelManagement` — the report crosses tenant boundaries; a 500 carries no exception
-  text). Legacy counts, other types in the legacy collection, root conflicts, System.Files counts (`target` = live
-  items per type, what GraphQL and the file APIs show; `targetArchived` = archived/soft-deleted items
-  (`rtState = Archived`) per type, AB#6894 — compare `target`, not the sum, with what users see), orphans
+  text). Legacy counts, other types in the legacy collection, root conflicts, System.Files counts (`target` = **live** items per type, always — archived/soft-deleted items
+  (`rtState = Archived`) are never in it, like in GraphQL and the file APIs; `targetArchived` = archived items per type,
+  present only with `?includeArchived=true` and not computed otherwise, AB#6894), orphans
   without ParentChild parent, the latest audit records, and every entity in any `RtEntity_*` collection
   (except the two file collections) whose stored document contains
   `System.Reporting/{FileSystemItem|Folder|FolderRoot|FileSystemEntity|FileSystemContainer}` (also the

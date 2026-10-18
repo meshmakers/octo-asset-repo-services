@@ -267,17 +267,20 @@ public class ReportingFilesMoveSweep
     }
 
     /// <summary>
-    ///     System.Files entities per concrete type id, live and archived (soft-deleted, <c>rtState = Archived</c>)
-    ///     counted separately (AB#6894). GraphQL and the file APIs hide archived items, so only the live count is what
-    ///     users see; archived items moved from the legacy collection stay archived and are reported on their own.
-    ///     A document without <c>rtState</c> is live.
+    ///     Live System.Files entities per concrete type id: archived (soft-deleted, <c>rtState = Archived</c>) items are
+    ///     never part of it, because GraphQL and the file APIs hide them too (AB#6894). A document without
+    ///     <c>rtState</c> is live. With <paramref name="includeArchived" /> the archived items are counted as well, per
+    ///     type and separately (<c>Archived</c>, otherwise null; no extra query runs without the switch).
     /// </summary>
-    public static async Task<(IReadOnlyDictionary<string, long> Live, IReadOnlyDictionary<string, long> Archived)>
-        CountTargetAsync(IMongoDatabase database, CancellationToken cancellationToken)
+    public static async Task<(IReadOnlyDictionary<string, long> Live, IReadOnlyDictionary<string, long>? Archived)>
+        CountTargetAsync(IMongoDatabase database, bool includeArchived, CancellationToken cancellationToken)
     {
         var perTypeAndState = await database.GetCollection<BsonDocument>(FileSystemConstants.EntityCollectionName)
             .Aggregate()
-            .Match(Builders<BsonDocument>.Filter.In("ckTypeId", ReportingFilesMigrationConstants.TargetTypeIds))
+            .Match(Builders<BsonDocument>.Filter.In("ckTypeId", ReportingFilesMigrationConstants.TargetTypeIds) &
+                   (includeArchived
+                       ? FilterDefinition<BsonDocument>.Empty
+                       : Builders<BsonDocument>.Filter.Ne("rtState", (int)RtState.Archived)))
             .Group(new BsonDocument
             {
                 {
@@ -298,8 +301,10 @@ public class ReportingFilesMoveSweep
         return (
             ReportingFilesMigrationConstants.TargetTypeIds.ToDictionary(t => t, t => Sum(t, false),
                 StringComparer.Ordinal),
-            ReportingFilesMigrationConstants.TargetTypeIds.ToDictionary(t => t, t => Sum(t, true),
-                StringComparer.Ordinal));
+            includeArchived
+                ? ReportingFilesMigrationConstants.TargetTypeIds.ToDictionary(t => t, t => Sum(t, true),
+                    StringComparer.Ordinal)
+                : null);
     }
 
     /// <summary>

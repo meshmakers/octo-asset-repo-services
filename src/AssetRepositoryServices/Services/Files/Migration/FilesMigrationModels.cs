@@ -344,17 +344,16 @@ public sealed class FilesMigrationStatusDto
     public bool TargetModelReady { get; init; }
 
     /// <summary>
-    ///     Live System.Files entities per type id: what users see (GraphQL and the file APIs exclude archived
-    ///     items). Archived items are reported in <see cref="TargetArchived" />; since AB#6894 they are no longer
-    ///     part of this count.
+    ///     Live System.Files entities per type id: what users see (GraphQL and the file APIs exclude archived items).
+    ///     Archived items are never counted here (AB#6894).
     /// </summary>
     public required IReadOnlyDictionary<string, long> Target { get; init; }
 
     /// <summary>
-    ///     Archived (soft-deleted, <c>rtState = Archived</c>) System.Files entities per type id (AB#6894). Live plus
-    ///     archived is the number of documents in the System.Files collection.
+    ///     Archived (soft-deleted, <c>rtState = Archived</c>) System.Files entities per type id. Only set when the
+    ///     report was requested with <c>includeArchived=true</c>; null otherwise (AB#6894).
     /// </summary>
-    public required IReadOnlyDictionary<string, long> TargetArchived { get; init; }
+    public IReadOnlyDictionary<string, long>? TargetArchived { get; init; }
 
     /// <summary>
     ///     Legacy files and folders without a parent (ParentChild) association; they move as they are.

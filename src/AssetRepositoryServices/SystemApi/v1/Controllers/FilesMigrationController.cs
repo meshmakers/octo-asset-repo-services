@@ -53,6 +53,8 @@ public class FilesMigrationController : ControllerBase
     /// </remarks>
     /// <param name="tenantId">The tenant to check.</param>
     /// <param name="mode"><c>Full</c> (default) or <c>Light</c> (no scan; stored state only).</param>
+    /// <param name="includeArchived"><c>true</c> adds <c>targetArchived</c> (archived System.Files items per type);
+    /// default <c>false</c>: <c>target</c> counts live items only and the archived count is not computed.</param>
     /// <param name="cancellationToken">Cancellation token</param>
     [HttpGet("migration-status/{tenantId}")]
     [Authorize(AssetRepositoryServiceConstants.SystemAssetApiReadOnlyPolicy)]
@@ -63,7 +65,8 @@ public class FilesMigrationController : ControllerBase
     [ProducesResponseType(typeof(InternalServerErrorDto), StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> GetMigrationStatus(string tenantId,
         [FromQuery] FilesMigrationStatusMode mode = FilesMigrationStatusMode.Full,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        [FromQuery] bool includeArchived = false)
     {
         if (!IsSystemAdministrator(User))
         {
@@ -72,7 +75,7 @@ public class FilesMigrationController : ControllerBase
 
         try
         {
-            var status = await _statusService.GetStatusAsync(tenantId, mode, cancellationToken);
+            var status = await _statusService.GetStatusAsync(tenantId, mode, cancellationToken, includeArchived);
             if (status == null)
             {
                 return NotFound(new NotFoundErrorDto($"Tenant '{tenantId}' not found"));
