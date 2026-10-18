@@ -366,9 +366,19 @@ public sealed class FilesMigrationStatusDto
     public required IReadOnlyList<string> Orphans { get; init; }
 
     /// <summary>
-    ///     Number of entities outside the file collections that name a legacy type literally.
+    ///     Number of entities outside the file collections that name a legacy type literally. Entities of
+    ///     <c>System.Notification/*</c> (event texts that merely mention a type name, AB#6940) are not
+    ///     counted here; see <see cref="IgnoredLogReferenceCount" />.
     /// </summary>
     public long LiteralReferenceCount { get; init; }
+
+    /// <summary>
+    ///     Number of <c>System.Notification</c> entities (and documents of the <c>RtEntity_SystemNotification*</c>
+    ///     collections) that name a legacy type in their text. They are log output, not references, and
+    ///     are excluded from <see cref="LiteralReferenceCount" />; reported separately so nothing is hidden
+    ///     (AB#6940). Zero in <c>Light</c> mode (not computed).
+    /// </summary>
+    public long IgnoredLogReferenceCount { get; init; }
 
     /// <summary>
     ///     Up to <see cref="FilesMigrationOptions.MaxReportedReferences" /> of them.

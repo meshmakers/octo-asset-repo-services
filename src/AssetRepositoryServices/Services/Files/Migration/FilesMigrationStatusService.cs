@@ -106,7 +106,7 @@ public class FilesMigrationStatusService
             ? await ReportingFilesMoveSweep.FindRootConflictsAsync(database, cancellationToken).ConfigureAwait(false)
             : [];
         var scan = light
-            ? new ScanResult(0, [], 0, 0, false)
+            ? new ScanResult(0, 0, [], 0, 0, false)
             : await ScanSerializedAsync(database, options, cancellationToken).ConfigureAwait(false);
         var recent = await ReadRecentSweepsAsync(database, cancellationToken).ConfigureAwait(false);
 
@@ -125,6 +125,7 @@ public class FilesMigrationStatusService
             OrphanCount = orphanCount,
             Orphans = orphans,
             LiteralReferenceCount = scan.Count,
+            IgnoredLogReferenceCount = scan.IgnoredLogCount,
             LiteralReferences = scan.References,
             ScannedCollections = scan.Collections,
             ScannedDocuments = scan.Documents,
@@ -231,12 +232,13 @@ public class FilesMigrationStatusService
         return (count, sample);
     }
 
-    private sealed record ScanResult(long Count, IReadOnlyList<LegacyTypeReferenceDto> References, int Collections,
+    private sealed record ScanResult(long Count, long IgnoredLogCount, IReadOnlyList<LegacyTypeReferenceDto> References, int Collections,
         long Documents, bool Complete);
 
     private sealed class ScanState
     {
         public long Count;
+        public long IgnoredLogCount;
         public long Documents;
         public int Collections;
         public readonly List<LegacyTypeReferenceDto> References = [];
@@ -265,7 +267,7 @@ public class FilesMigrationStatusService
                 complete = false;
             }
 
-            return new ScanResult(state.Count, state.References, state.Collections, state.Documents, complete);
+            return new ScanResult(state.Count, state.IgnoredLogCount, state.References, state.Collections, state.Documents, complete);
         }
         finally
         {
@@ -285,6 +287,8 @@ public class FilesMigrationStatusService
         foreach (var collectionName in collectionNames.Where(n => !ExcludedCollections.Contains(n)).Order(StringComparer.Ordinal))
         {
             state.Collections++;
+            var notificationCollection = collectionName.StartsWith(
+                ReportingFilesMigrationConstants.NotificationCollectionPrefix, StringComparison.Ordinal);
             var collection = database.GetCollection<RawBsonDocument>(collectionName);
             using var cursor = await collection.FindAsync(FilterDefinition<RawBsonDocument>.Empty,
                 new FindOptions<RawBsonDocument> { BatchSize = 500, MaxTime = maxTime }, cancellationToken).ConfigureAwait(false);
@@ -301,6 +305,13 @@ public class FilesMigrationStatusService
                             continue;
                         }
 
+                        // AB#6940: notification events carry log text, not references.
+                        if (notificationCollection || IsNotificationDocument(document))
+                        {
+                            state.IgnoredLogCount++;
+                            continue;
+                        }
+
                         state.Count++;
                         if (state.References.Count < maxReferences)
                         {
@@ -311,6 +322,28 @@ public class FilesMigrationStatusService
             }
         }
 
+    }
+
+    /// <summary>
+    ///     True for <c>System.Notification/…</c> and the versioned <c>System.Notification-x.y.z/…</c> type ids
+    ///     (AB#6940). Read from the stored string, never through the CK cache.
+    /// </summary>
+    private static bool IsNotificationDocument(RawBsonDocument document)
+    {
+        return document.GetValue("ckTypeId", BsonNull.Value) is { IsString: true } value &&
+               IsNotificationCkTypeId(value.AsString);
+    }
+
+    internal static bool IsNotificationCkTypeId(string? ckTypeId)
+    {
+        const string model = ReportingFilesMigrationConstants.NotificationModelName;
+        if (ckTypeId == null || !ckTypeId.StartsWith(model, StringComparison.Ordinal) || ckTypeId.Length <= model.Length)
+        {
+            return false;
+        }
+
+        var next = ckTypeId[model.Length];
+        return next == '/' || (next == '-' && ckTypeId.IndexOf('/', model.Length) > model.Length);
     }
 
     private static IReadOnlySet<string> FindLiteralsInRawDocument(RawBsonDocument document)

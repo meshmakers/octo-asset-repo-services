@@ -340,6 +340,69 @@ public class ReportingFilesMoveSweepTests
     }
 
     [Fact]
+    public async Task PreCheck_IgnoresNotificationEvents_NextToALivePipeline_AndReportsThemSeparately()
+    {
+        // AB#6940: a System.Notification event whose text only mentions a System.Reporting type must not
+        // block the Reporting-off gate; a pipeline that really names it is still counted.
+        const string mention = "Pipeline failed: unknown type System.Reporting/FileSystemItem";
+        var pipelineId = ObjectId.GenerateNewId();
+        var eventId = ObjectId.GenerateNewId();
+        var versionedEventId = ObjectId.GenerateNewId();
+        var noTypeInCollectionId = ObjectId.GenerateNewId();
+        var pipelines = _fixture.Collection("RtEntity_SystemCommunicationDeployableEntity");
+        var events = _fixture.Collection("RtEntity_SystemNotificationEvent");
+        var elsewhere = _fixture.Collection("RtEntity_SystemPersistentQuery");
+
+        BsonDocument Doc(ObjectId id, string? ckTypeId, string text)
+        {
+            var doc = new BsonDocument { { "_id", id }, { "_t", "RtEntity" } };
+            if (ckTypeId != null)
+            {
+                doc.Add("ckTypeId", ckTypeId);
+            }
+
+            doc.Add("attributes", new BsonDocument { { "name", "x" }, { "message", text } });
+            return doc;
+        }
+
+        await pipelines.InsertOneAsync(Doc(pipelineId, "System.Communication/Pipeline", "ckTypeId: System.Reporting/Folder"),
+            cancellationToken: Ct);
+        await events.InsertOneAsync(Doc(eventId, "System.Notification/Event", mention), cancellationToken: Ct);
+        // Type unknown to the collection name (versioned form) and collection fallback without a ckTypeId.
+        await elsewhere.InsertOneAsync(Doc(versionedEventId, "System.Notification-1.0.2/Event", mention),
+            cancellationToken: Ct);
+        await events.InsertOneAsync(Doc(noTypeInCollectionId, null, mention), cancellationToken: Ct);
+
+        try
+        {
+            var status = await _fixture.Status.GetStatusAsync(TenantId, Ct);
+
+            status.Should().NotBeNull();
+            status!.LiteralReferenceCount.Should().Be(1, "only the pipeline is a real reference");
+            status.LiteralReferences.Should().ContainSingle().Which.RtId.Should().Be(pipelineId.ToString());
+            status.IgnoredLogReferenceCount.Should().Be(3);
+            status.LiteralScanComplete.Should().BeTrue();
+        }
+        finally
+        {
+            await pipelines.DeleteOneAsync(Builders<BsonDocument>.Filter.Eq("_id", pipelineId), Ct);
+            await events.DeleteManyAsync(Builders<BsonDocument>.Filter.In("_id", new[] { eventId, noTypeInCollectionId }), Ct);
+            await elsewhere.DeleteOneAsync(Builders<BsonDocument>.Filter.Eq("_id", versionedEventId), Ct);
+        }
+    }
+
+    [Fact]
+    public void IsNotificationCkTypeId_MatchesPlainAndVersionedNotificationTypes_Only()
+    {
+        FilesMigrationStatusService.IsNotificationCkTypeId("System.Notification/Event").Should().BeTrue();
+        FilesMigrationStatusService.IsNotificationCkTypeId("System.Notification-1.0.2/Event-1").Should().BeTrue();
+        FilesMigrationStatusService.IsNotificationCkTypeId("System.Notification").Should().BeFalse();
+        FilesMigrationStatusService.IsNotificationCkTypeId("System.NotificationX/Event").Should().BeFalse();
+        FilesMigrationStatusService.IsNotificationCkTypeId("System.Communication/Pipeline").Should().BeFalse();
+        FilesMigrationStatusService.IsNotificationCkTypeId(null).Should().BeFalse();
+    }
+
+    [Fact]
     public async Task SweepIsOffByDefault_AndASwitchedOffRunnerLeavesLegacyDataAlone()
     {
         // AB#6171 decision: a deploy of asset-repo alone never moves data; the rollout switches the sweep on.

@@ -388,13 +388,14 @@ public class ReportingFilesSweepRunner : IDisposable
         _logger.LogInformation(
             "{Sweep}: pre-check tenant '{TenantId}': legacy {Legacy}; orphans without parent: {Orphans}; other types in the " +
             "legacy collection: {OtherTypes}; root conflicts: {RootConflicts}; entities naming System.Reporting file types " +
-            "outside the file collections: {References} (scanned {Documents} documents in {Collections} collections, complete: {Complete})",
+            "outside the file collections: {References} (ignored notification events: {Ignored}; scanned {Documents} documents in {Collections} collections, complete: {Complete})",
             ReportingFilesMigrationConstants.SweepName, status.TenantId, status.Legacy, status.OrphanCount,
             status.OtherLegacyTypes.Count == 0
                 ? "none"
                 : string.Join(", ", status.OtherLegacyTypes.Select(kv => $"{kv.Key}={kv.Value}")),
             status.RootConflicts.Count == 0 ? "none" : string.Join("; ", status.RootConflicts),
-            status.LiteralReferenceCount, status.ScannedDocuments, status.ScannedCollections, status.LiteralScanComplete);
+            status.LiteralReferenceCount, status.IgnoredLogReferenceCount, status.ScannedDocuments, status.ScannedCollections,
+            status.LiteralScanComplete);
 
         foreach (var reference in status.LiteralReferences.Take(MaxLoggedReferences))
         {
