@@ -1,0 +1,32 @@
+$schema: https://schemas.meshmakers.cloud/construction-kit-elements.schema.json
+attributes:
+  # One attribute per value type an archive column supports (AB#5490 CrateDB version matrix).
+  - id: ProbeBoolean
+    valueType: Boolean
+  - id: ProbeInt
+    valueType: Int
+  - id: ProbeInt64
+    valueType: Int64
+  - id: ProbeEnum
+    valueCkEnumId: ${this}/OperatingStatus
+    valueType: Enum
+  - id: ProbeDouble
+    valueType: Double
+  - id: ProbeString
+    valueType: String
+  - id: ProbeDateTime
+    valueType: DateTime
+  - id: ProbeDateTimeOffset
+    valueType: DateTimeOffset
+  - id: ProbeTimeSpan
+    valueType: TimeSpan
+  - id: ProbeStringArray
+    valueType: StringArray
+  - id: ProbeIntArray
+    valueType: IntArray
+  - id: ProbeRecord
+    valueType: Record
+    valueCkRecordId: ${this}/Specification
+  - id: ProbeRecordArray
+    valueType: RecordArray
+    valueCkRecordId: ${this}/Specification

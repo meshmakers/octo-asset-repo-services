@@ -33,7 +33,14 @@ public sealed class SharedContainerLifetime : IAsyncLifetime
         }
         finally
         {
-            await SharedMongoDbContainer.DisposeAsync();
+            try
+            {
+                await CrateVersionMatrixInfrastructure.DisposeAsync();
+            }
+            finally
+            {
+                await SharedMongoDbContainer.DisposeAsync();
+            }
         }
     }
 }

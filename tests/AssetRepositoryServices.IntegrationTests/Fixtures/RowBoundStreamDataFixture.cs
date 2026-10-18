@@ -16,6 +16,8 @@ public class RowBoundStreamDataFixture : StreamDataFixture
     protected override void ConfigureStreamDataServices(IServiceCollection services)
     {
         base.ConfigureStreamDataServices(services);
+        // These tests assert the state right after a recompute: the superseded generation is swept at once (AB#6968).
+        services.Configure<CrateRecomputeOptions>(o => o.SweepGracePeriod = TimeSpan.Zero);
         services.Configure<CrateRecomputeOptions>(o => o.SliceTargetRows = SliceTargetRows);
     }
 }
