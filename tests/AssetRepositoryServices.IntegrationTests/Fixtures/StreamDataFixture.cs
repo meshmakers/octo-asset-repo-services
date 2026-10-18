@@ -180,6 +180,13 @@ public class StreamDataFixture : AssetRepoFixture
     /// </summary>
     protected virtual void ConfigureStreamDataServices(IServiceCollection services)
     {
+        // A recompute defers the sweep of the superseded generation by StreamData:Recompute:SweepGracePeriod
+        // (default 2 h, AB#6968) so that a native dump which read the generation map before the flip still finds
+        // the rows its copy names. The recompute tests of this project assert the immediate sweep (the behaviour
+        // before the grace period), so the fixture runs with a grace period of zero; the placement matrix
+        // (PlacementMatrixFixture) sets its own.
+        services.Configure<CrateRecomputeOptions>(o => o.SweepGracePeriod = TimeSpan.Zero);
+
         var raw = Environment.GetEnvironmentVariable(SliceTargetRowsVariable);
         if (int.TryParse(raw, global::System.Globalization.NumberStyles.Integer,
                 global::System.Globalization.CultureInfo.InvariantCulture, out var sliceTargetRows)
