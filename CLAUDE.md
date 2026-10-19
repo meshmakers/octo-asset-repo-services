@@ -720,6 +720,29 @@ attributes) of an opted-in type with an error `OperationMessage` of number **638
   System.Identity CK model is not part of the test tenant) and `tests/.../UnitTests/BlueprintLock/`.
 - User documentation: octo-documentation, `dataAccess/runtime/errorHandling.md` (#blueprint-locked-entities).
 
+### Export entry points run as the caller (AB#6734)
+
+`POST {tenantId}/v1/Models/ExportRtByQuery` and `ExportRtByDeepGraph` (`ModelsController`, policy
+`TenantAssetApiReadOnlyPolicy`) hand the export to a bus command that the job service (octo-bot-services) runs as a Hangfire job.
+The job must run with the data permissions of the caller, so the controller builds the caller context with the mapping the GraphQL
+surface uses (`GraphQL.Helpers.GetSecurityContext(ClaimsPrincipal)`: subject from `sub` / NameIdentifier / `client_id`, roles from
+the identity's role claims and the `role` claim) plus the `client_id` claim, and sends it in the additive optional members
+`InitiatedBySubjectId`, `InitiatedByRoleNames`, `InitiatedByClientId` of `ExportRtByQueryCommandRequest` /
+`ExportRtByDeepGraphCommandRequest` (octo-common-services).
+
+- **Fail closed:** an unauthenticated principal, or one with neither `sub` nor `client_id`, gets `401` and no job is enqueued
+  (`ModelsController.TryGetExportCaller`). A client-credentials token without `sub` is evaluated as its client with the client's
+  roles, exactly like on the normal API; a service token is never treated as the system.
+- The consumer (octo-bot-services) refuses a request without subject and fails an old job without context; the engine filters rows
+  and prunes the deep graph (octo-construction-kit-engine-mongodb). Roll out asset repository and bot services in the same train:
+  an old asset repository against the new job service gets an error (never an unfiltered export); a new asset repository against
+  an OLD job service is the unsafe pair (the old job ignores the new members and still runs as the system), so the bot services must
+  be rolled out first or in the same train, never later.
+- Callers of the routes (SDK `AssetServicesClient`, octo-cli `ExportRtByQuery` / `ExportRtByDeepGraph`, MCP `CkModelFileTools`, Studio
+  `asset-repo.service.ts`, pipelines/scripts) need no code change; restricted users now get fewer rows, and tokens without identity get 401.
+- Tests: `ModelsControllerExportCallerTests` (subject/roles/client in the command, client-credentials subject, 401 without identity,
+  nothing enqueued).
+
 ### Authentication
 The service supports dual authentication:
 - Cookie-based authentication for GraphQL Playground

@@ -102,7 +102,9 @@ public class ModelsController : ControllerBase
 
     // POST: {tenantId}/v1/Models/ExportRtByQuery
     /// <summary>
-    ///     Exports a runtime model by query
+    ///     Exports a runtime model by query. The export job runs with the identity and roles of the caller, so
+    ///     the file contains only the rows the caller may read on the normal API (AB#6734); a caller without an
+    ///     identity is rejected with 401.
     /// </summary>
     /// <param name="exportModelRequestByQueryDto">The query options for the export</param>
     /// <returns></returns>
@@ -111,6 +113,7 @@ public class ModelsController : ControllerBase
     [Authorize(AssetRepositoryServiceConstants.TenantAssetApiReadOnlyPolicy)]
     [ProducesResponseType(typeof(TransferModelResponseDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(InternalServerErrorDto), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(OperationFailedErrorDto), StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(typeof(InternalServerErrorDto), StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> ExportRtByQueryAsync(
         [FromBody] ExportModelRequestByQueryDto exportModelRequestByQueryDto)
@@ -123,7 +126,19 @@ public class ModelsController : ControllerBase
                 return BadRequest(new OperationFailedErrorDto("TenantId is required"));
             }
 
-            var args = new ExportRtByQueryCommandRequest(tenantId, exportModelRequestByQueryDto.QueryId);
+            // AB#6734: the export runs as a background job; it must run with the data permissions of the
+            // caller. A caller without an identity is rejected here, before any job is enqueued.
+            if (!TryGetExportCaller(out var caller))
+            {
+                return Unauthorized(new OperationFailedErrorDto(ExportCallerRequiredMessage));
+            }
+
+            var args = new ExportRtByQueryCommandRequest(tenantId, exportModelRequestByQueryDto.QueryId)
+            {
+                InitiatedBySubjectId = caller.SubjectId,
+                InitiatedByRoleNames = caller.RoleNames,
+                InitiatedByClientId = caller.ClientId
+            };
             var r =
                 await _exportRtByQueryCommandClient.GetResponse<JobCreatedResponse>(args);
             return Ok(new TransferModelResponseDto(r.JobId));
@@ -140,7 +155,9 @@ public class ModelsController : ControllerBase
 
     // POST: {tenantId}/v1/Models/ExportRtByDeepGraph
     /// <summary>
-    ///     Exports a runtime model by deep graph
+    ///     Exports a runtime model by deep graph. The export job runs with the identity and roles of the caller:
+    ///     entities the caller may not read, and the associations pointing to them, are not part of the file
+    ///     (AB#6734); a caller without an identity is rejected with 401.
     /// </summary>
     /// <param name="exportModelRequestByDeepGraphDto">The deep graph options for the export</param>
     /// <returns></returns>
@@ -149,6 +166,7 @@ public class ModelsController : ControllerBase
     [Authorize(AssetRepositoryServiceConstants.TenantAssetApiReadOnlyPolicy)]
     [ProducesResponseType(typeof(TransferModelResponseDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(InternalServerErrorDto), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(OperationFailedErrorDto), StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(typeof(InternalServerErrorDto), StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> ExportRtByDeepGraphAsync(
         [FromBody] ExportModelRequestByDeepGraphDto exportModelRequestByDeepGraphDto)
@@ -161,10 +179,19 @@ public class ModelsController : ControllerBase
                 return BadRequest(new OperationFailedErrorDto("TenantId is required"));
             }
 
+            // AB#6734: see ExportRtByQuery — the job runs with the caller's data permissions.
+            if (!TryGetExportCaller(out var caller))
+            {
+                return Unauthorized(new OperationFailedErrorDto(ExportCallerRequiredMessage));
+            }
+
             var args = new ExportRtByDeepGraphCommandRequest(tenantId,
                 exportModelRequestByDeepGraphDto.OriginRtIds,
                 exportModelRequestByDeepGraphDto.OriginCkTypeId)
             {
+                InitiatedBySubjectId = caller.SubjectId,
+                InitiatedByRoleNames = caller.RoleNames,
+                InitiatedByClientId = caller.ClientId,
                 FollowSpecs = exportModelRequestByDeepGraphDto.FollowSpecs?
                     .Select(spec => new DeepGraphFollowSpecRequest(spec.RoleId, spec.Direction))
                     .ToList()
@@ -181,6 +208,39 @@ public class ModelsController : ControllerBase
         {
             return StatusCode(StatusCodes.Status500InternalServerError, new InternalServerErrorDto(ex.Message));
         }
+    }
+
+    private const string ExportCallerRequiredMessage = "The caller identity is required to export runtime data";
+
+    /// <summary>
+    ///     The identity an export job runs with (AB#6734): built with the very mapping the GraphQL surface uses
+    ///     (<see cref="GraphQL.Helpers.GetSecurityContext(System.Security.Claims.ClaimsPrincipal?)" />: subject from
+    ///     <c>sub</c> / NameIdentifier / <c>client_id</c>, roles from the role claims), so that a client-credentials
+    ///     token without <c>sub</c> is evaluated as its client with the client's roles — never as the system.
+    /// </summary>
+    internal sealed record ExportCaller(string SubjectId, IReadOnlyList<string> RoleNames, string? ClientId);
+
+    /// <summary>
+    ///     Resolves the caller of an export route; false (fail closed) when the principal is unauthenticated or
+    ///     carries neither a subject nor a client id.
+    /// </summary>
+    private bool TryGetExportCaller(out ExportCaller caller)
+    {
+        caller = null!;
+        if (HttpContext.User.Identity?.IsAuthenticated != true)
+        {
+            return false;
+        }
+
+        var securityContext = GraphQL.Helpers.GetSecurityContext(HttpContext.User);
+        if (string.IsNullOrWhiteSpace(securityContext.SubjectId))
+        {
+            return false;
+        }
+
+        caller = new ExportCaller(securityContext.SubjectId, securityContext.Roles.ToList(),
+            HttpContext.User.FindFirst("client_id")?.Value);
+        return true;
     }
 
     // POST: {tenantId}/v1/Models/ImportRt
