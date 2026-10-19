@@ -6,8 +6,8 @@ using Meshmakers.Octo.Runtime.Contracts.MongoDb;
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.SystemApi.v1.Controllers;
 
 /// <summary>
-///     The system-level caller check of the system endpoints that cross tenant boundaries (files migration status,
-///     GridFS orphan sweep): fail closed unless the token is signed in to the system tenant and, for a user token,
+///     The system-level caller check of the system endpoints that cross tenant boundaries (GridFS orphan sweep,
+///     tenant registry reconcile): fail closed unless the token is signed in to the system tenant and, for a user token,
 ///     carries the admin panel role.
 /// </summary>
 internal static class SystemAdministratorGuard

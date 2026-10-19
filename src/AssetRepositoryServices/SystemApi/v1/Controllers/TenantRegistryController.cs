@@ -41,7 +41,7 @@ public class TenantRegistryController : ControllerBase
     ///     mirror provisioning, token cleanup, CORS, health checks, <c>GetTenants -a</c>) although the recursive
     ///     listing (<c>GetTenants -r</c>) still shows it. The call crosses tenant boundaries, so besides the system
     ///     read-write scope the caller must be signed in to the system tenant (<c>tenant_id</c> claim) and, with a
-    ///     user token, hold the role <c>AdminPanelManagement</c> (same rule as <c>migration-status</c>).
+    ///     user token, hold the role <c>AdminPanelManagement</c> (<see cref="SystemAdministratorGuard" />).
     ///     Runbook: dry run, review inserts and conflicts, then <c>apply=true</c>.
     /// </remarks>
     /// <param name="apply">False (default): report only. True: insert the missing rows.</param>

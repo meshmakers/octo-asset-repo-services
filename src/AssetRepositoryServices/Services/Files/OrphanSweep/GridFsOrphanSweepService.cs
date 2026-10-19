@@ -85,7 +85,7 @@ public interface IGridFsOrphanSweepExecutor
 /// <summary>
 ///     Engine-backed executor. The engine's user repository access is internal, so the sweeper gets a client of
 ///     its own: one lazily created admin client (admin credentials of <see cref="OctoSystemConfiguration" />, like
-///     the files migration), shared by all runs and disposed with the service.
+///     <see cref="TenantMongoDatabaseProvider" />), shared by all runs and disposed with the service.
 /// </summary>
 internal sealed class GridFsOrphanSweepExecutor : IGridFsOrphanSweepExecutor, IDisposable
 {

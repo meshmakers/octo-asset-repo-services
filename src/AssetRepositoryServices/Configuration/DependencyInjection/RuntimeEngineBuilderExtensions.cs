@@ -354,9 +354,6 @@ public static class RuntimeEngineBuilderExtensions
         // FileManagement), until/unless the tenant carries its own policies for System.Files.
         Meshmakers.Octo.Backend.AssetRepositoryServices.Services.Files.FileSystemPermissionBaselineServiceCollectionExtensions
             .AddFileSystemPermissionBaseline(builder.Services);
-        // AB#6175: move of System.Reporting file data to System.Files (sweep at tenant start + straggler timer).
-        Meshmakers.Octo.Backend.AssetRepositoryServices.Services.Files.Migration.FilesMigrationServiceCollectionExtensions
-            .AddReportingFilesMigration(builder.Services);
         // AB#6541: orphaned GridFS bytes of linked binaries are found and removed on demand (system API).
         Meshmakers.Octo.Backend.AssetRepositoryServices.Services.Files.OrphanSweep.GridFsOrphanSweepServiceCollectionExtensions
             .AddGridFsOrphanSweep(builder.Services);
