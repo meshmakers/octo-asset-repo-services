@@ -694,6 +694,23 @@ who passed. The refusal log line (Information) names method id, tenant and the r
 mutations (F3.7, AB#6884) must call `ICkMethodGateway`, pass its tenant-repository lookup as `targetExists`, and register `AddCkMethodDispatcher()`,
 `AddCkMethodAuthorization()` and `AddCkMethodGateway()`. Gateway-side parameter validation (between target load and dispatch) is part of that resolver.
 
+### In-process handlers never see the request session (AB#7023, OD-8 part 2)
+
+A CK method handler that the asset repository runs **in-process** (`AddCkInProcessMethodHandlers`, `ICkInProcessMethodTransport`) runs outside the
+request's Mongo transaction (decision 2026-10-07). Guarantee: **`IOctoSessionAccessor.HasSession` is `false` inside the handler**, also when the
+call is started from a GraphQL mutation that holds the request session, and the handler can neither commit nor abort that session. Two layers
+(octo-common-services >= 3.5.34): the transport starts the handler under a suppressed `ExecutionContext` in a new DI scope per call, so the static
+`AsyncLocal` of `OctoSessionAccessor` is empty there; and the tripwire `GraphQL/RequestHandling/OctoSessionAmbientStateProbe`
+(`ICkInProcessAmbientStateProbe`, backed by `HasSession`, resolved from the handler's new scope) is asked at handler entry, before the handler is created. A
+probe that reports `true` (a regression) or throws (e.g. no accessor registered; fail closed) fails the call with `METHOD_HANDLER_FAILED`
+(`methodId`, `correlationId`) and the handler body does not run. Registration: `AddCkMethodGateway()` calls `AddOctoSessionAmbientStateProbe()`
+(idempotent), so every host that wires the gateway also gets the tripwire.
+Tests: `UnitTests/GraphQL/Methods/InProcessSessionIsolationTests` (real `OctoSessionAccessor` and transport; HasSession false in the handler, request
+session still usable and committable, handler cannot end it, request-scoped repository is a new instance, tripwire with a test accessor that lets the
+session flow, fail closed, registration once) and `IntegrationTests/GraphQL/Mutations/InProcessMethodSessionIsolationTests` (a real mutation inside
+the real `OctoSessionListener` transaction; harness `InProcessMethodGraphQlTestFixture` plays the resolver with a document listener registered after
+`OctoSessionListener`, because the method resolver (AB#7026) does not exist yet - switch it to the real resolver when that lands).
+
 ### Blueprint-locked entities: stable error contract (AB#6385)
 
 The engine write guard (`DataPermissionWriteGuard`, AB#6384; opt-in by `DataPolicy.ProtectBlueprintLocked`) refuses a
