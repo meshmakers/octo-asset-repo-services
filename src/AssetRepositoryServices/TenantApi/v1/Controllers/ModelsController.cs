@@ -467,15 +467,13 @@ public class ModelsController : ControllerBase
             var installedVersions = await _libraryStatusService.GetInstalledModelVersionsAsync(tenantContext);
 
             // Resolve the dependency tree
-            var resolved = new HashSet<string>();
-            var rootItem = await ResolveDependencyTreeAsync(
-                compiledModel.ModelId, DependencyRequirement.Exact(compiledModel.ModelId), compiledModel,
-                tenantContext, installedVersions, resolved, cancellationToken);
+            var rootItem = await CkImportDependencyResolver.ResolveRootAsync(compiledModel,
+                tenantContext.IsCkModelExistingAsync, installedVersions, LoadCatalogModelAsync, cancellationToken);
 
             // AB#6870: the preview agrees with the refusal of the import - the flattened import set of the tree is
             // judged by the same tenant upgrade guard (read-only).
             var importSet = new List<string>();
-            CollectModelsToImport(rootItem, importSet, new HashSet<string>());
+            CkImportDependencyResolver.CollectModelsToImport(rootItem, importSet, new HashSet<string>());
             var blockers = await _libraryStatusService.EvaluateUpdateSetBlockersAsync(tenantId,
                 importSet.Select(id => new CkModelId(id)).ToList(), cancellationToken);
 
@@ -656,15 +654,13 @@ public class ModelsController : ControllerBase
 
                 if (compiledModel == null) continue;
 
-                var resolved = new HashSet<string>();
-                var rootItem = await ResolveDependencyTreeAsync(
-                    compiledModel.ModelId, DependencyRequirement.Exact(compiledModel.ModelId), compiledModel,
-                    tenantContext, installedVersions, resolved, cancellationToken);
+                var rootItem = await CkImportDependencyResolver.ResolveRootAsync(compiledModel,
+                    tenantContext.IsCkModelExistingAsync, installedVersions, LoadCatalogModelAsync, cancellationToken);
 
                 dependencyTrees.Add(new DependencyResolutionResponseDto { RootModel = rootItem });
 
                 // Flatten this tree into the combined list
-                CollectModelsToImport(rootItem, allModelsToImport, seen);
+                CkImportDependencyResolver.CollectModelsToImport(rootItem, allModelsToImport, seen);
             }
 
             // Build lookup of final import versions by name
@@ -679,7 +675,7 @@ public class ModelsController : ControllerBase
             // mark lower-version dependencies as "none" to avoid confusion
             foreach (var tree in dependencyTrees)
             {
-                CorrectTreeActions(tree.RootModel, importVersionByName);
+                CkImportDependencyResolver.CorrectTreeActions(tree.RootModel, importVersionByName);
             }
 
             // AB#6870: the whole import set is judged together by the tenant upgrade guard (read-only), so the preview
@@ -915,185 +911,9 @@ public class ModelsController : ControllerBase
         return parts.Count > 0 ? string.Join(" ", parts) : "unknown caller";
     }
 
-    private static void CollectModelsToImport(DependencyResolutionItemDto item, List<string> result,
-        HashSet<string> seen)
-    {
-        foreach (var dep in item.Dependencies)
-        {
-            CollectModelsToImport(dep, result, seen);
-        }
-
-        if ((item.Action != "install" && item.Action != "update") || CkModelLibraryStatusService.IsSystemManaged(item.Name) ||
-            HasIncompatibleDependency(item))
-        {
-            return;
-        }
-
-        // Deduplicate by model name - keep the highest version
-        if (!seen.Add(item.Name))
-        {
-            // Already have this model name - replace if new version is higher
-            var existingIndex = result.FindIndex(r => r.StartsWith(item.Name + "-", StringComparison.Ordinal));
-            if (existingIndex >= 0)
-            {
-                var existingId = new CkModelId(result[existingIndex]);
-                var newId = new CkModelId(item.ModelId);
-                if (newId.Version.CompareTo(existingId.Version) > 0)
-                {
-                    result[existingIndex] = item.ModelId;
-                }
-            }
-        }
-        else
-        {
-            result.Add(item.ModelId);
-        }
-    }
-
-    /// <summary>
-    ///     What the parent model requires of a dependency: the exact compile-time pin of a classic model, or the declared
-    ///     range + floor of a range-retaining model (CK v2 F1.0 / G3 review A-M1).
-    /// </summary>
-    private sealed record DependencyRequirement(CkModelId Pin, CkModelDependencyDto? Range)
-    {
-        public static DependencyRequirement Exact(CkModelId pin) => new(pin, null);
-
-        public static DependencyRequirement For(CkModelId pin, CkCompiledModelRoot? parent) =>
-            new(pin, parent?.DependencyRanges?.FirstOrDefault(r => r.Range.Name == pin.Name));
-
-        /// <summary>
-        ///     True when the installed version satisfies the requirement: exact pin -> the same version; range -> within
-        ///     the effective range (>= floor). Never across majors.
-        /// </summary>
-        public bool IsSatisfiedBy(CkVersion installed)
-        {
-            if (installed.Major != Pin.Version.Major)
-            {
-                return false;
-            }
-
-            return Range == null
-                ? installed.CompareTo(Pin.Version) == 0
-                : Range.IsSatisfiedBy(new CkModelId(Pin.Name, installed.ToString()));
-        }
-
-        public string Describe() => Range == null ? $"v{Pin.Version}" : Range.ToString();
-    }
-
-    private async Task<DependencyResolutionItemDto> ResolveDependencyTreeAsync(
-        CkModelId modelId,
-        DependencyRequirement requirement,
-        CkCompiledModelRoot? compiledModel,
-        ITenantContext tenantContext,
-        Dictionary<string, CkVersion> installedVersions,
-        HashSet<string> resolved,
-        CancellationToken cancellationToken)
-    {
-        var item = new DependencyResolutionItemDto
-        {
-            ModelId = modelId.FullName,
-            Name = modelId.Name,
-            RequiredVersion = modelId.Version.ToString(),
-            RequiredRange = requirement.Range?.ToString()
-        };
-
-        var isServiceManaged = CkModelLibraryStatusService.IsSystemManaged(modelId.Name);
-        var isInstalled = await tenantContext.IsCkModelExistingAsync(modelId);
-        if (isInstalled)
-        {
-            item.InstalledVersion = modelId.Version.ToString();
-            item.Action = "none";
-        }
-        else if (installedVersions.TryGetValue(modelId.Name, out var installedVersion))
-        {
-            // Judged by what the PARENT requires (G3 review A-M1): a classic parent is pinned to the exact version
-            // (a newer installed version makes it ResolveFailed), a range-retaining parent accepts its range from
-            // the floor; never across majors. A newer installed version is never offered for a downgrade install.
-            if (requirement.IsSatisfiedBy(installedVersion))
-            {
-                item.Action = "none";
-                item.InstalledVersion = isServiceManaged
-                    ? $"(service-managed: v{installedVersion})"
-                    : installedVersion.ToString();
-            }
-            else if (isServiceManaged || installedVersion.CompareTo(modelId.Version) > 0)
-            {
-                item.Action = "incompatible";
-                item.InstalledVersion = $"(requires {requirement.Describe()}, installed v{installedVersion})";
-            }
-            else
-            {
-                // Older installed version: the import upgrades it.
-                item.Action = "install";
-                item.InstalledVersion = installedVersion.ToString();
-            }
-        }
-        else if (isServiceManaged)
-        {
-            item.Action = "none";
-            item.InstalledVersion = "(service-managed)";
-        }
-        else
-        {
-            item.Action = "install";
-        }
-
-        // Resolve sub-dependencies
-        if (compiledModel?.Dependencies != null)
-        {
-            foreach (var dep in compiledModel.Dependencies)
-            {
-                // Prevent circular dependencies. Keyed by the requirement too (re-review N8): a dependency shared by
-                // a range-retaining and a classic parent must be judged against each requirement, otherwise the
-                // classic parent's exact pin would never be checked.
-                var requirementForDep = DependencyRequirement.For(dep, compiledModel);
-                if (!resolved.Add($"{dep.FullName}|{requirementForDep.Describe()}"))
-                {
-                    continue;
-                }
-
-                // Fetch sub-dependency from catalog to get its dependencies
-                var operationResult = new OperationResult();
-                var depModel = await _catalogService.GetAsync(dep, operationResult,
-                    cancellationToken: cancellationToken);
-
-                var depItem = await ResolveDependencyTreeAsync(dep, requirementForDep,
-                    depModel, tenantContext, installedVersions, resolved, cancellationToken);
-                item.Dependencies.Add(depItem);
-            }
-        }
-
-        return item;
-    }
-
-    private static void CorrectTreeActions(DependencyResolutionItemDto item,
-        Dictionary<string, CkModelId> importVersionByName)
-    {
-        foreach (var dep in item.Dependencies)
-        {
-            CorrectTreeActions(dep, importVersionByName);
-        }
-
-        // If this item shows "install" but a higher version of the same model
-        // is already in the import list, mark as "none" (covered by higher version)
-        if (item.Action is "install" or "update" &&
-            importVersionByName.TryGetValue(item.Name, out var importVersion))
-        {
-            // The typed id, never the display strings (re-review N1).
-            var itemVersion = new CkModelId(item.ModelId).Version;
-            if (importVersion.Version.CompareTo(itemVersion) > 0)
-            {
-                item.Action = "none";
-                item.InstalledVersion = $"(will import {importVersion.FullName})";
-            }
-        }
-    }
-
-    private static bool HasIncompatibleDependency(DependencyResolutionItemDto item)
-    {
-        if (item.Action == "incompatible") return true;
-        return item.Dependencies.Any(HasIncompatibleDependency);
-    }
+    private async Task<CkCompiledModelRoot?> LoadCatalogModelAsync(CkModelId modelId,
+        CancellationToken cancellationToken) =>
+        await _catalogService.GetAsync(modelId, new OperationResult(), cancellationToken: cancellationToken);
 
     private async Task<string> SerializeModelToCache(string tenantId,
         ConstructionKit.Contracts.DataTransferObjects.CkCompiledModelRoot compiledModel)

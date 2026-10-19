@@ -163,6 +163,19 @@ public sealed class CkModelLibraryStatusService : ICkModelLibraryStatusService
             }
         }
 
+        // Highest Available version per installed model: the same map the import dialog resolves against (AB#7017).
+        var installedVersions = new Dictionary<string, CkVersion>();
+        var installedIds = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var inst in installedResult.Items.Where(i =>
+                     i.ModelState == ConstructionKit.Contracts.DataTransferObjects.ModelState.Available))
+        {
+            installedIds.Add(inst.Id.FullName);
+            if (!installedVersions.TryGetValue(inst.ModelId, out var existing) || inst.Id.Version.CompareTo(existing) > 0)
+            {
+                installedVersions[inst.ModelId] = inst.Id.Version;
+            }
+        }
+
         // One memo for the whole evaluation: shared dependencies are fetched once, not once per row.
         var memo = new CatalogModelMemo();
 
@@ -176,8 +189,8 @@ public sealed class CkModelLibraryStatusService : ICkModelLibraryStatusService
         foreach (var inst in installedResult.Items)
         {
             processedNames.Add(inst.ModelId);
-            items.Add(await BuildInstalledItemAsync(inst, catalogByName, installedSystemVersions, tenantContext,
-                availableVersions, memo, cancellationToken));
+            items.Add(await BuildInstalledItemAsync(inst, catalogByName, installedSystemVersions,
+                new InstalledSnapshot(installedVersions, installedIds), tenantContext, availableVersions, memo, cancellationToken));
         }
 
         // Add catalog-only models (not installed)
@@ -261,6 +274,46 @@ public sealed class CkModelLibraryStatusService : ICkModelLibraryStatusService
         CancellationToken cancellationToken) =>
         EvaluateBlockersAsync(tenantContext, [candidate], availableVersions, memo, cancellationToken);
 
+    /// <summary>
+    ///     The update set a library status row is judged with (AB#7017): the offered version of the row plus the
+    ///     dependency updates its import pulls in - exactly the set the import dialog (<c>ResolveDependencies</c>) builds,
+    ///     from the same <see cref="CkImportDependencyResolver" />, so row and dialog cannot disagree. Falls back to the
+    ///     offered version alone when it is not published or the dialog would not import it (incompatible branch), which
+    ///     is how the row was judged before.
+    /// </summary>
+    private async Task<IReadOnlyList<CkModelId>> ResolveUpdateSetAsync(CkModelId candidate,
+        InstalledSnapshot installed, CatalogModelMemo memo, CancellationToken cancellationToken)
+    {
+        var (found, root) = await memo.GetAsync(_catalogService, candidate, cancellationToken);
+        if (!found || root == null)
+        {
+            return [candidate];
+        }
+
+        var tree = await CkImportDependencyResolver.ResolveRootAsync(root,
+            id => Task.FromResult(installed.Ids.Contains(id.FullName)), installed.Versions,
+            async (id, ct) =>
+            {
+                var (depFound, dep) = await memo.GetAsync(_catalogService, id, ct);
+                return depFound ? dep : null;
+            }, cancellationToken);
+
+        var importSet = new List<string>();
+        CkImportDependencyResolver.CollectModelsToImport(tree, importSet, new HashSet<string>());
+        var updateSet = importSet.Select(id => new CkModelId(id)).ToList();
+
+        return updateSet.Any(m => string.Equals(m.Name, candidate.Name, StringComparison.Ordinal))
+            ? updateSet
+            : [candidate];
+    }
+
+    /// <summary>
+    ///     The installed <c>Available</c> models of the tenant, read once per status call (AB#7017): the highest version
+    ///     per name and the exact ids - the same answers the import dialog gets from the tenant, without a lookup per
+    ///     dependency.
+    /// </summary>
+    private sealed record InstalledSnapshot(IReadOnlyDictionary<string, CkVersion> Versions, IReadOnlySet<string> Ids);
+
     private static Task<CkUpgradeGuardResult> JudgeAsync(ITenantContext tenantContext,
         IReadOnlyCollection<ConstructionKit.Contracts.DataTransferObjects.CkCompiledModelRoot> set,
         IReadOnlyCollection<CkModelId> availableVersions, bool explicitCaller, CancellationToken cancellationToken) =>
@@ -273,8 +326,8 @@ public sealed class CkModelLibraryStatusService : ICkModelLibraryStatusService
     ///     dependent is only passed on as a <see cref="CkUpgradeBlockerDto.ResolveHint" /> when it is <b>proven</b>
     ///     against the combined update set (AB#6867 left this to the caller): the candidate plus the suggested compiled
     ///     dependent are evaluated together, and the hint stays only if no blocker for that dependent remains.
-    ///     Judged individually against the current installed state (conservative); a batch of several updates is not
-    ///     considered here.
+    ///     The candidates are judged as one set against the current installed state; a library status row passes its
+    ///     candidate together with the dependency updates its import pulls in (AB#7017).
     /// </summary>
     private async Task<List<CkUpgradeBlockerDto>> EvaluateBlockersAsync(ITenantContext tenantContext,
         IReadOnlyList<CkModelId> candidates, IReadOnlyCollection<CkModelId> availableVersions, CatalogModelMemo memo,
@@ -505,6 +558,7 @@ public sealed class CkModelLibraryStatusService : ICkModelLibraryStatusService
         Runtime.Contracts.MongoDb.Repositories.Entities.CkModel inst,
         Dictionary<string, CatalogResultItem> catalogByName,
         Dictionary<string, CkVersion> installedSystemVersions,
+        InstalledSnapshot installed,
         ITenantContext tenantContext,
         IReadOnlyCollection<CkModelId> availableVersions,
         CatalogModelMemo memo,
@@ -537,10 +591,14 @@ public sealed class CkModelLibraryStatusService : ICkModelLibraryStatusService
             // AB#6868: tenant upgrade guard (read-only). Only an offered update that is otherwise importable can be
             // blocked; a blocked row keeps HasUpdate and loses NeedsAction, so a client that predates the guard
             // (octo-cli FixAll) skips it.
+            // AB#7017: the row is judged with the dependency updates its import pulls in (the set the import dialog
+            // judges), not the offered version alone.
             var blockers = new List<CkUpgradeBlockerDto>();
             if (hasUpdate && isCompatible && !hasInconsistency)
             {
-                blockers = await EvaluateBlockersAsync(tenantContext, catalog!.ModelId, availableVersions, memo,
+                var updateSet = await ResolveUpdateSetAsync(catalog!.ModelId, installed, memo,
+                    cancellationToken);
+                blockers = await EvaluateBlockersAsync(tenantContext, updateSet, availableVersions, memo,
                     cancellationToken);
             }
 

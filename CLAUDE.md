@@ -1027,8 +1027,16 @@ catalog model of the offered version and the versions the catalogs offer; the gu
   the `ModelsNeedingActionCount` excludes it). The guard runs only for an installed, non-service-managed row with an update that is
   otherwise importable (compatible with the installed System models, no catalog inconsistency); catalog-only rows are never
   blocked. A guard failure for one row lands in that row's existing error state (`isCompatible = false`), never a 500.
-- **Each row is judged individually** against the current installed state (conservative); the import endpoints judge the whole
-  update set of a request together (below). Cost: one guard evaluation (one tenant model read) per updatable row, also in the observability sweep.
+- **A row is judged with the dependency updates its import pulls in** (AB#7017): `CkImportDependencyResolver` (extracted unchanged
+  from `ModelsController`; `ResolveDependencies`/`ResolveDependenciesBatch` use the same code) resolves the dependency tree of the offered
+  version against the installed `Available` models and flattens it to the import set; the row hands that set to the guard as ONE update
+  set (`CkModelLibraryStatusService.ResolveUpdateSetAsync`), so row and import dialog cannot disagree (`Industry.Energy-3.6.0` brings
+  `Basic-2.5.0`: the row is blocked with `Basic-2.5.0` as `update` and `EnergyCommunity.Registration-2.8.0` as `dependent`). It falls
+  back to the offered version alone when that is not published or the dialog would not import it (incompatible branch). A row is still
+  judged against the current installed state, not against the other rows. Cost: one guard evaluation (one tenant model read) per
+  updatable row, also in the observability sweep; the dependency models come from the per-call `CatalogModelMemo` (each fetched once per
+  status call) and the installed state is read once per call - no extra tenant lookups. The blueprint guard builds its set differently
+  (declared blueprint dependencies below their floor, no expansion by catalog dependencies of those models; noted in the AB#7017 PR, not changed there).
 - **`resolveHint` is proven, not guessed**: when the guard suggests a newer catalog version of the blocking dependent
   (`suggestedDependentUpdate`, for example `EnergyCommunity.Registration-2.10.0`), the service evaluates the combined update set
   (offered model + that version) and keeps the suggestion (hint `update EnergyCommunity.Registration to 2.10.0 first`) only if no
@@ -1039,6 +1047,7 @@ catalog model of the offered version and the versions the catalogs offer; the gu
 - `message` is English and names the dependent (`EnergyCommunity.Registration 2.8.0 would break: exact pin Basic-2.4.0: Basic-2.5.0
   replaces it`); clients that localize render `code`, `dependent`, `update` and `subject`. `kind` is a string and may gain values.
 - Tests: `CkModelLibraryStatusUpgradeGuardTests` (sbeg case, additive update, proven hint, error isolation, `isRangeRetaining`),
+  `CkModelLibraryStatusUpdateSetTests` (AB#7017: dependency update blocks the row, safe combined set, satisfied dependency, no dependency updates, memo, row verdict == `ResolveDependencies` verdict over four states),
   `ModelsControllerCheckUpgradeTests` (blockers, read-only policy, no job, additive DTO shape / old payloads).
 
 #### Tenant upgrade guard enforcement (CK v2 F2.5, AB#6870)
