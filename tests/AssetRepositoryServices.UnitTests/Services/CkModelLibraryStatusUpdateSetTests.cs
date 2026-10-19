@@ -201,6 +201,98 @@ public class CkModelLibraryStatusUpdateSetTests
         A.CallTo(() => _tenantContext.IsCkModelExistingAsync(A<CkModelId>._)).MustNotHaveHappened();
     }
 
+    // ---- AB#7029: the blueprint preview/apply judges its CK models together with the dependency updates they pull in ----
+
+    [Fact]
+    public async Task BlueprintSet_WhoseModelPullsInABreakingDependencyUpdate_IsBlockedWithTheDependencyAsCause()
+    {
+        SeedTenant();
+
+        // The blueprint declares only Industry.Energy at 3.6.0; Basic-2.5.0 comes with its import.
+        var blockers = await CreateSut().EvaluateImportSetBlockersAsync(TenantId, [Id("Industry.Energy", "3.6.0")],
+            TestContext.Current.CancellationToken);
+
+        var blocker = blockers.Should().ContainSingle().Subject;
+        blocker.Update.Should().Be("Basic-2.5.0");
+        blocker.Dependent.Should().Be("EnergyCommunity.Registration-2.8.0");
+        blocker.Subject.Should().Be("Basic-2.4.0");
+        _setsEvaluated.Should().Contain(s => s.SequenceEqual(new[] { "Basic-2.5.0", "Industry.Energy-3.6.0" }));
+    }
+
+    [Fact]
+    public async Task BlueprintSet_WhoseCombinedSetIsSafe_IsNotBlocked()
+    {
+        SeedTenant(withRegistration: false);
+
+        var blockers = await CreateSut().EvaluateImportSetBlockersAsync(TenantId, [Id("Industry.Energy", "3.6.0")],
+            TestContext.Current.CancellationToken);
+
+        blockers.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task BlueprintSet_WithoutDependencyUpdates_IsJudgedAsToday()
+    {
+        SeedTenant();
+
+        var blockers = await CreateSut().EvaluateImportSetBlockersAsync(TenantId, [Id("Standalone", "1.1.0")],
+            TestContext.Current.CancellationToken);
+
+        blockers.Should().BeEmpty();
+        _setsEvaluated.Should().ContainSingle().Which.Should().Equal("Standalone-1.1.0");
+    }
+
+    [Fact]
+    public async Task BlueprintSet_DeclaringTheDependencyItself_JudgesItOnce()
+    {
+        SeedTenant();
+
+        await CreateSut().EvaluateImportSetBlockersAsync(TenantId,
+            [Id("Basic", "2.5.0"), Id("Industry.Energy", "3.6.0")], TestContext.Current.CancellationToken);
+
+        _setsEvaluated.Should().Contain(s => s.SequenceEqual(new[] { "Basic-2.5.0", "Industry.Energy-3.6.0" }));
+        _setsEvaluated.Should().NotContain(s => s.Count(x => x.StartsWith("Basic-", StringComparison.Ordinal)) > 1);
+    }
+
+    /// <summary>The blueprint verdict is the verdict of the import dialog for the same model, for every state.</summary>
+    [Theory]
+    [InlineData("sbeg")]
+    [InlineData("no-registration")]
+    [InlineData("basic-already-raised")]
+    [InlineData("registration-updated-too")]
+    public async Task BlueprintVerdict_EqualsTheImportDialogVerdict_ForTheSameModel(string state)
+    {
+        switch (state)
+        {
+            case "sbeg":
+                SeedTenant();
+                break;
+            case "no-registration":
+                SeedTenant(withRegistration: false);
+                break;
+            case "basic-already-raised":
+                SeedTenant(basicVersion: "2.5.0");
+                break;
+            case "registration-updated-too":
+                SeedTenant();
+                _offered.Add(Id(Registration, "2.10.0"));
+                _dependenciesOfOffered["Industry.Energy-3.6.0"] = [Id("Basic", "2.5.0"), Id(Registration, "2.10.0")];
+                break;
+        }
+
+        var sut = CreateSut();
+        var blueprint = await sut.EvaluateImportSetBlockersAsync(TenantId, [Id("Industry.Energy", "3.6.0")],
+            TestContext.Current.CancellationToken);
+
+        var result = await CreateController(sut).ResolveDependencies(
+            new ImportFromCatalogRequestDto { CatalogName = CatalogName, ModelId = "Industry.Energy-3.6.0" },
+            TestContext.Current.CancellationToken);
+        var dialog = (DependencyResolutionResponseDto)result.Should().BeOfType<OkObjectResult>().Subject.Value!;
+
+        blueprint.Select(b => (b.Dependent, b.Update, b.Kind, b.Subject))
+            .Should().BeEquivalentTo(dialog.Blockers.Select(b => (b.Dependent, b.Update, b.Kind, b.Subject)), state);
+    }
+
     public static TheoryData<string> States =>
         ["sbeg", "no-registration", "basic-already-raised", "registration-updated-too"];
 

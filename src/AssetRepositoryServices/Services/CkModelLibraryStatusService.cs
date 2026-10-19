@@ -2,6 +2,7 @@ using Meshmakers.Octo.Backend.AssetRepositoryServices.DataTransferObjects.CkMode
 using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.ConstructionKit.Contracts.Services;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb;
+using Meshmakers.Octo.Runtime.Contracts.MongoDb.Repositories.Entities;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb.UpgradeGuard;
 using Meshmakers.Octo.Runtime.Contracts.Repositories.Query;
 
@@ -50,6 +51,16 @@ public interface ICkModelLibraryStatusService
     /// </summary>
     Task<IReadOnlyList<CkUpgradeBlockerDto>> EvaluateUpdateSetBlockersAsync(string tenantId,
         IReadOnlyList<CkModelId> updateSet, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    ///     Tenant upgrade guard for the models a blueprint installs or raises (AB#7029): judges <paramref name="roots" />
+    ///     together with the dependency updates their import pulls in - the same set the import dialog
+    ///     (<c>ResolveDependencies</c>) and a library status row (AB#7017) judge, from the same
+    ///     <c>CkImportDependencyResolver</c>. A root that is not published in a catalog is judged alone. Read-only; a
+    ///     failure propagates (the blueprint operation fails closed). Empty when nothing would break.
+    /// </summary>
+    Task<IReadOnlyList<CkUpgradeBlockerDto>> EvaluateImportSetBlockersAsync(string tenantId,
+        IReadOnlyList<CkModelId> roots, CancellationToken cancellationToken = default);
 
     /// <summary>
     ///     The read-only preview for an <b>explicit</b> caller (AB#6966, <c>CheckUpgrade</c>): like
@@ -164,17 +175,7 @@ public sealed class CkModelLibraryStatusService : ICkModelLibraryStatusService
         }
 
         // Highest Available version per installed model: the same map the import dialog resolves against (AB#7017).
-        var installedVersions = new Dictionary<string, CkVersion>();
-        var installedIds = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var inst in installedResult.Items.Where(i =>
-                     i.ModelState == ConstructionKit.Contracts.DataTransferObjects.ModelState.Available))
-        {
-            installedIds.Add(inst.Id.FullName);
-            if (!installedVersions.TryGetValue(inst.ModelId, out var existing) || inst.Id.Version.CompareTo(existing) > 0)
-            {
-                installedVersions[inst.ModelId] = inst.Id.Version;
-            }
-        }
+        var snapshot = BuildInstalledSnapshot(installedResult.Items);
 
         // One memo for the whole evaluation: shared dependencies are fetched once, not once per row.
         var memo = new CatalogModelMemo();
@@ -190,7 +191,7 @@ public sealed class CkModelLibraryStatusService : ICkModelLibraryStatusService
         {
             processedNames.Add(inst.ModelId);
             items.Add(await BuildInstalledItemAsync(inst, catalogByName, installedSystemVersions,
-                new InstalledSnapshot(installedVersions, installedIds), tenantContext, availableVersions, memo, cancellationToken));
+                snapshot, tenantContext, availableVersions, memo, cancellationToken));
         }
 
         // Add catalog-only models (not installed)
@@ -240,6 +241,28 @@ public sealed class CkModelLibraryStatusService : ICkModelLibraryStatusService
     }
 
     /// <inheritdoc />
+    public async Task<IReadOnlyList<CkUpgradeBlockerDto>> EvaluateImportSetBlockersAsync(string tenantId,
+        IReadOnlyList<CkModelId> roots, CancellationToken cancellationToken = default)
+    {
+        if (roots.Count == 0)
+        {
+            return [];
+        }
+
+        var tenantContext = await _systemContext.FindTenantContextAsync(tenantId);
+        var installedResult = await tenantContext.GetTenantRepository().GetCkModelsAsync(
+            tenantContext.GetTenantRepository().GetSession(), null, RtEntityQueryOptions.Create(),
+            take: ModelPageSize);
+        var catalogResult = await _catalogService.ListAsync(0, ModelPageSize, cancellationToken: cancellationToken);
+        var availableVersions = catalogResult.ModelResultItems.Select(m => m.ModelId).ToList();
+        var memo = new CatalogModelMemo();
+
+        var updateSet = await ResolveImportSetAsync(roots, BuildInstalledSnapshot(installedResult.Items), memo,
+            cancellationToken);
+        return await EvaluateBlockersAsync(tenantContext, updateSet, availableVersions, memo, cancellationToken);
+    }
+
+    /// <inheritdoc />
     public async Task<IReadOnlyList<CkUpgradeBlockerDto>> EvaluateExplicitUpgradeBlockersAsync(string tenantId,
         CkModelId candidate, CancellationToken cancellationToken = default)
     {
@@ -284,6 +307,53 @@ public sealed class CkModelLibraryStatusService : ICkModelLibraryStatusService
     private async Task<IReadOnlyList<CkModelId>> ResolveUpdateSetAsync(CkModelId candidate,
         InstalledSnapshot installed, CatalogModelMemo memo, CancellationToken cancellationToken)
     {
+        var importSet = await ImportSetOfAsync(candidate, installed, memo, cancellationToken);
+        return importSet.Any(m => string.Equals(m.Name, candidate.Name, StringComparison.Ordinal))
+            ? importSet
+            : [candidate];
+    }
+
+    /// <summary>
+    ///     The update set of a blueprint (AB#7029): every root (the blueprint's declared model at its floor version) plus
+    ///     the dependency updates its import pulls in, one entry per model name at its highest version. A root is always
+    ///     part of the result, also when it is not published or the resolver leaves its branch out (incompatible): it
+    ///     is then judged alone, as before.
+    /// </summary>
+    private async Task<IReadOnlyList<CkModelId>> ResolveImportSetAsync(IReadOnlyList<CkModelId> roots,
+        InstalledSnapshot installed, CatalogModelMemo memo, CancellationToken cancellationToken)
+    {
+        var byName = new Dictionary<string, CkModelId>(StringComparer.Ordinal);
+        var order = new List<string>();
+
+        void Add(CkModelId id)
+        {
+            if (!byName.TryGetValue(id.Name, out var existing))
+            {
+                byName[id.Name] = id;
+                order.Add(id.Name);
+            }
+            else if (id.Version.CompareTo(existing.Version) > 0)
+            {
+                byName[id.Name] = id;
+            }
+        }
+
+        foreach (var root in roots)
+        {
+            foreach (var pulledIn in await ImportSetOfAsync(root, installed, memo, cancellationToken))
+            {
+                Add(pulledIn);
+            }
+
+            Add(root);
+        }
+
+        return order.Select(n => byName[n]).ToList();
+    }
+
+    private async Task<IReadOnlyList<CkModelId>> ImportSetOfAsync(CkModelId candidate, InstalledSnapshot installed,
+        CatalogModelMemo memo, CancellationToken cancellationToken)
+    {
         var (found, root) = await memo.GetAsync(_catalogService, candidate, cancellationToken);
         if (!found || root == null)
         {
@@ -300,11 +370,24 @@ public sealed class CkModelLibraryStatusService : ICkModelLibraryStatusService
 
         var importSet = new List<string>();
         CkImportDependencyResolver.CollectModelsToImport(tree, importSet, new HashSet<string>());
-        var updateSet = importSet.Select(id => new CkModelId(id)).ToList();
+        return importSet.Select(id => new CkModelId(id)).ToList();
+    }
 
-        return updateSet.Any(m => string.Equals(m.Name, candidate.Name, StringComparison.Ordinal))
-            ? updateSet
-            : [candidate];
+    private static InstalledSnapshot BuildInstalledSnapshot(IEnumerable<CkModel> installedModels)
+    {
+        var versions = new Dictionary<string, CkVersion>();
+        var ids = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var inst in installedModels.Where(i =>
+                     i.ModelState == ConstructionKit.Contracts.DataTransferObjects.ModelState.Available))
+        {
+            ids.Add(inst.Id.FullName);
+            if (!versions.TryGetValue(inst.ModelId, out var existing) || inst.Id.Version.CompareTo(existing) > 0)
+            {
+                versions[inst.ModelId] = inst.Id.Version;
+            }
+        }
+
+        return new InstalledSnapshot(versions, ids);
     }
 
     /// <summary>
