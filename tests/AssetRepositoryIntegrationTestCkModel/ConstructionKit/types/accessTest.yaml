@@ -35,9 +35,10 @@ types:
       authorization:
         roles: [ AccessTestAdmin ]
         allowSelf: true
+      # Sensitive parameters: a pipeline handler is refused by the compiler (message 132, AB#7004).
       execution:
         timeoutSeconds: 5
-        handler: pipeline
+        handler: service
     - methodId: ResetPassword-2
       description: "Version 2 with only optional parameters and a String result."
       parameters:
@@ -46,8 +47,10 @@ types:
         valueType: String
       authorization:
         roles: [ AccessTestAdmin ]
+      # The pipeline-handled method of this model (no sensitive parameter, explicit timeout).
       execution:
-        handler: service
+        timeoutSeconds: 30
+        handler: pipeline
     - methodId: Touch-1
       description: "Parameterless instance method."
       authorization:

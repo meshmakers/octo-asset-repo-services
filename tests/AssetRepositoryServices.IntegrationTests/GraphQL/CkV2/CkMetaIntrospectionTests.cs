@@ -79,12 +79,13 @@ public class CkMetaIntrospectionTests
         reset.SelectToken("authorization.roles")!.Values<string>().Should().Equal("AccessTestAdmin");
         reset.SelectToken("authorization.allowSelf")!.Value<bool>().Should().BeTrue();
         reset.SelectToken("execution.timeoutSeconds")!.Value<int>().Should().Be(5);
-        reset.SelectToken("execution.handler")!.Value<string>().Should().Be("pipeline");
+        reset.SelectToken("execution.handler")!.Value<string>().Should().Be("service");
 
         methods["ResetPassword-2"].SelectToken("result.valueType")!.Value<string>().Should().Be("STRING");
         methods["Touch-1"]["parameters"]!.Should().BeEmpty();
         methods["Touch-1"].SelectToken("execution.timeoutSeconds")!.Value<int>().Should().Be(15);
-        methods["ResetPassword-2"].SelectToken("execution.handler")!.Value<string>().Should().Be("service");
+        methods["ResetPassword-2"].SelectToken("execution.handler")!.Value<string>().Should().Be("pipeline");
+        methods["ResetPassword-2"].SelectToken("execution.timeoutSeconds")!.Value<int>().Should().Be(30);
         methods["Touch-1"].SelectToken("execution.handler")!.Value<string>().Should()
             .Be("service", "an undeclared handler reads as the default 'service'");
         methods["Lookup-1"]["kind"]!.Value<string>().Should().Be("Static");
