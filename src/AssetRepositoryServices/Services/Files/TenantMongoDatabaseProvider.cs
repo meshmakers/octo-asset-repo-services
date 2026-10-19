@@ -3,10 +3,11 @@ using Meshmakers.Octo.Runtime.Contracts.MongoDb.Configuration;
 using Microsoft.Extensions.Options;
 using MongoDB.Driver;
 
-namespace Meshmakers.Octo.Backend.AssetRepositoryServices.Services.Files.Migration;
+namespace Meshmakers.Octo.Backend.AssetRepositoryServices.Services.Files;
 
 /// <summary>
-///     Raw MongoDB access to a tenant database for the file data migration (AB#6175).
+///     Raw MongoDB access to a tenant database, outside the request's session and the CK cache. Used by the
+///     cross-replica name lease of the platform file system (<see cref="MongoFileSystemNameLeaseStore" />, AB#6885).
 /// </summary>
 public interface ITenantMongoDatabaseProvider
 {
@@ -21,10 +22,9 @@ public interface ITenantMongoDatabaseProvider
 ///     connection settings the engine's admin client uses (servers, admin credentials, TLS, replica set,
 ///     majority read/write concern) and hands out tenant databases by name.
 ///     <para>
-///         Why an own client: the sweep must work on the stored documents without the CK cache (the legacy
-///         types may already be gone from it) and must reach <c>fs.files</c> and the association collection;
-///         the engine keeps its <c>IMongoDatabase</c> internal (<c>IAdminRepositoryAccess</c>,
-///         <c>IOctoSessionInternal</c>), so there is no public way to borrow it.
+///         Why an own client: the name lease must be written outside the request's transaction, so that other
+///         replicas see it at once; the engine keeps its <c>IMongoDatabase</c> internal
+///         (<c>IAdminRepositoryAccess</c>, <c>IOctoSessionInternal</c>), so there is no public way to borrow it.
 ///     </para>
 /// </summary>
 internal sealed class TenantMongoDatabaseProvider : ITenantMongoDatabaseProvider, IDisposable
@@ -59,7 +59,7 @@ internal sealed class TenantMongoDatabaseProvider : ITenantMongoDatabaseProvider
             string.IsNullOrWhiteSpace(configuration.AdminUserPassword))
         {
             throw new InvalidOperationException(
-                "The files migration needs the MongoDB admin credentials (System:AdminUser / AdminUserPassword).");
+                "Raw tenant database access needs the MongoDB admin credentials (System:AdminUser / AdminUserPassword).");
         }
 
         var urlBuilder = new MongoUrlBuilder();
@@ -76,7 +76,7 @@ internal sealed class TenantMongoDatabaseProvider : ITenantMongoDatabaseProvider
         urlBuilder.Username = configuration.AdminUser;
         urlBuilder.Password = configuration.AdminUserPassword;
         urlBuilder.AuthenticationSource = configuration.AuthenticationDatabaseName;
-        urlBuilder.ApplicationName = "octo-asset-repo-files-migration";
+        urlBuilder.ApplicationName = "octo-asset-repo-files";
         urlBuilder.UseTls = configuration.UseTls;
         urlBuilder.AllowInsecureTls = configuration.AllowInsecureTls;
         urlBuilder.RetryReads = true;

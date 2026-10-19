@@ -22,14 +22,14 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Files
 ///     survive, a dry run (the default) deletes nothing, removal respects the grace period, the report numbers are
 ///     exact, a second run finds nothing, unauthorised callers get 403.
 /// </summary>
-[Collection(FilesMigrationCollection.Name)]
+[Collection(FilesRawMongoCollection.Name)]
 public class GridFsOrphanSweepTests
 {
     private const string EntityCollection = "RtEntity_OrphanSweepTest";
 
-    private readonly FilesMigrationTestFixture _fixture;
+    private readonly FilesRawMongoFixture _fixture;
 
-    public GridFsOrphanSweepTests(FilesMigrationTestFixture fixture, ITestOutputHelper output)
+    public GridFsOrphanSweepTests(FilesRawMongoFixture fixture, ITestOutputHelper output)
     {
         _fixture = fixture;
         _fixture.OutputHelper = output;

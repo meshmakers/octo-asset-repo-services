@@ -48,7 +48,7 @@ public class FilesOrphanSweepController : ControllerBase
     /// <remarks>
     ///     The sweep crosses tenant boundaries, so besides the system read-write scope the caller must be signed in to
     ///     the system tenant (<c>tenant_id</c> claim) and, with a user token, hold the role
-    ///     <c>AdminPanelManagement</c> (same rule as <c>migration-status</c>). Runbook: dry run on every tenant,
+    ///     <c>AdminPanelManagement</c> (<see cref="SystemAdministratorGuard" />). Runbook: dry run on every tenant,
     ///     review the report, then <c>remove=true</c>. The log contains counts only.
     /// </remarks>
     /// <param name="tenantId">The tenant to sweep.</param>

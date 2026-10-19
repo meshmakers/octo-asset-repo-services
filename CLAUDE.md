@@ -166,9 +166,8 @@ Located in versioned API folders:
 - `DiagnosticsController.cs` - Health and diagnostics
 - `BlueprintsController.cs` - Blueprint management
 - `CkModelCatalogController.cs` - CK model catalog browsing, search, and cache refresh
-- `FilesMigrationController.cs` - `GET system/v1/files/migration-status/{tenantId}`: pre-check report of the System.Reporting → System.Files file data move (AB#6175, see "Files migration" below)
-- `TenantRegistryController.cs` - `POST system/v1/tenants/reconcile-registry?apply=false`: repairs the system tenant registry (AB#6971, AB#6941). Tenants that a parent lists in its own registry (visible in `GetTenants -r`) but that lack their system registry row (missing in `GetTenants -a`, so client mirror provisioning, token cleanup, CORS and health checks skip them) get the row inserted through the engine's `ISystemContext.ReconcileTenantRegistryAsync`. **Dry run is the default**; rows are only inserted, never changed or deleted; disagreeing rows and unreadable parent registries are returned as `conflicts`; idempotent. Runs in one admin transaction. Same caller check as `migration-status` (`SystemAdministratorGuard`: system-tenant token, user tokens need `AdminPanelManagement`, else 403) plus `SystemAssetApiReadWritePolicy`. Report: `applied`, `walked`, `inserted[]`, `alreadyPresent`, `conflicts[]` (with reason), `summary`. Needs an engine release that contains `ReconcileTenantRegistryAsync` (octo-construction-kit-engine-mongodb PR 172). Runbook: dry run, review inserts and conflicts, then `apply=true`, then re-run the client mirror backfill.
-- `FilesOrphanSweepController.cs` - `POST system/v1/files/orphan-sweep/{tenantId}?remove=false&gracePeriodMinutes=1440`: finds (dry run, the default) and removes (`remove=true`) orphaned GridFS bytes of linked binaries with the engine's `GridFsOrphanSweeper`; same caller check as `migration-status` (`SystemAdministratorGuard`: system-tenant token, user tokens need `AdminPanelManagement`, otherwise 403) plus `SystemAssetApiReadWritePolicy`; grace period default 24 h, minimum 10 min (400 below); returns a count report, logs counts only (AB#6541, see `docs/gridfs-orphan-sweep.md`)
+- `TenantRegistryController.cs` - `POST system/v1/tenants/reconcile-registry?apply=false`: repairs the system tenant registry (AB#6971, AB#6941). Tenants that a parent lists in its own registry (visible in `GetTenants -r`) but that lack their system registry row (missing in `GetTenants -a`, so client mirror provisioning, token cleanup, CORS and health checks skip them) get the row inserted through the engine's `ISystemContext.ReconcileTenantRegistryAsync`. **Dry run is the default**; rows are only inserted, never changed or deleted; disagreeing rows and unreadable parent registries are returned as `conflicts`; idempotent. Runs in one admin transaction. Caller check `SystemAdministratorGuard` (shared with the orphan sweep: system-tenant token, user tokens need `AdminPanelManagement`, else 403) plus `SystemAssetApiReadWritePolicy`. Report: `applied`, `walked`, `inserted[]`, `alreadyPresent`, `conflicts[]` (with reason), `summary`. Needs an engine release that contains `ReconcileTenantRegistryAsync` (octo-construction-kit-engine-mongodb PR 172). Runbook: dry run, review inserts and conflicts, then `apply=true`, then re-run the client mirror backfill.
+- `FilesOrphanSweepController.cs` - `POST system/v1/files/orphan-sweep/{tenantId}?remove=false&gracePeriodMinutes=1440`: finds (dry run, the default) and removes (`remove=true`) orphaned GridFS bytes of linked binaries with the engine's `GridFsOrphanSweeper`; caller check `SystemAdministratorGuard` (shared with `reconcile-registry`: system-tenant token, user tokens need `AdminPanelManagement`, otherwise 403) plus `SystemAssetApiReadWritePolicy`; grace period default 24 h, minimum 10 min (400 below); returns a count report, logs counts only (AB#6541, see `docs/gridfs-orphan-sweep.md`)
 
 **Tenant APIs** (`TenantApi/v1/Controllers/`):
 - `TenantsController.cs` - Tenant management. `GET {tenantId}/v1/tenants` returns **only the child tenants** of the current tenant; `GET {tenantId}/v1/tenants/self` returns the current (own) tenant, including its `Database`. Keeping the two apart is deliberate (AB#4601): AB#4432 had injected the own tenant into the *list* as a virtual index 0, which made every list-row action (`Detach`, `Delete` in the Refinery Studio context menu) offer itself on the tenant the operator was signed into — an operation the API must never expose. The own tenant is only resolvable server-side (its `Database` comes from the request's `ITenantContext`; the registry entry describing a tenant lives in its **parent's** database and in the system database, never in its own), which is why `self` exists at all instead of the frontend deriving it. `self` needs no extra tenant check beyond its `TenantAssetApiReadOnlyPolicy`: it sits under the `{tenantId:tenantId}` prefix, so `TenantAuthorizationMiddleware` already 403s a user token whose `tenant_id` claim does not match the route (client-credentials tokens are exempt there by design). Child tenants come back in the underlying query's default order — the endpoint imposes **no explicit sort**, so cross-page ordering is only as stable as that default (`GetChildTenantsAsync` in the engine exposes no sort parameter). **Roles (AB#4497).** The reads are scope-only. The administrative actions `Post` (create), `Attach`, `Detach`, `Clear`, `Delete`, `ReRunSetup`, `ClearCache` and `RecomputeDisplayNames` carry `TenantAdministrationPolicy` (`AssetRepositoryAuthorizationPolicies`): full-access scope **plus the tenant role `TenantManagement`** in the caller's token (one `role` claim per role; both the raw `role` and the inbound-mapped `ClaimTypes.Role` spelling are probed); a caller without the role gets 403. The Studio's route guard stays as UX only. octo-cli `CreateTenant`, `ClearCache` and `RecomputeDisplayNames` (and the MCP `clear_tenant_cache`) therefore need `TenantManagement`; the following `ProvisionCurrentUser` is the identity service's admin-provisioning endpoint, which accepts `TenantManagement` or `UserManagement` (AB#5859). Tests: `TenantAdministrationAuthorizationTests` (per action: no role = refused, role = allowed, other roles refused, production policy registration). A new tenant-administration action must carry `TenantAdministrationPolicy` and a negative test.
@@ -347,8 +346,7 @@ nor creates the root. Model content:
   nothing of System.Files during its setup. `GetCkModelIds` (`System.Files-[1.0,2.0)`) stays so that later minors
   migrate through the standard upgrade path; a tenant without System.Files is skipped there ("not installed").
 - **While the model is missing** (platform-services not yet through, or not deployed): the file API answers
-  `GET capabilities` with `available: false`, `reason: SYSTEM_FILES_MISSING`; the Reporting sweep
-  (`ReportingFilesSweepRunner`) does nothing for the tenant and the straggler timer retries. Nothing fails, nothing
+  `GET capabilities` with `available: false`, `reason: SYSTEM_FILES_MISSING`. Nothing fails, nothing
   waits for an asset-repo restart; once platform-services has installed the model and created the root, the file API
   is available on the next request. An installation without platform-services (`platformServices.deploy: false`)
   never gets System.Files and stays at `SYSTEM_FILES_MISSING`.
@@ -366,7 +364,7 @@ nor creates the root. Model content:
   (`IFileSystemNameLeaseStore`, collection `FileSystemNameLease` of the tenant database, `_id` = the lock key,
   `owner`, `expiresAt`): an atomic `findOneAndUpdate` upsert that matches only an expired lease, polled with a short
   jittered back-off; released with the session (`FileSystemNameLocks.ReleaseAsync`, after commit/abort). It uses the
-  admin client of the files migration (a connection outside the request transaction, so other replicas see the lease
+  raw admin client of `ITenantMongoDatabaseProvider` (`Services/Files/TenantMongoDatabaseProvider.cs`; a connection outside the request transaction, so other replicas see the lease
   at once). Lease duration 2 min (longer than MongoDB's 60 s transaction limit; **not renewed**), a TTL index
   (10 min) sweeps leases a crashed replica left behind, an expired lease is taken over at once. Without MongoDB admin
   credentials the store reports "unavailable" (one warning) and only the in-process lock applies. **Why a lease and
@@ -410,7 +408,7 @@ nor creates the root. Model content:
   `FORBIDDEN`, GraphQL reads return nothing (engine read filter). The baseline steps aside as soon as the tenant
   has its own enforcing data policy targeting `System.Files/FileSystemEntity` (the `System.Identity.Bootstrap` seeds `files.read` /
   `files.manage`, or an administrator's custom roles): then only the tenant policies decide, so a custom role
-  can be granted write access without `FileManagement`. System contexts (migrations, sweep, blueprint apply) are
+  can be granted write access without `FileManagement`. System contexts (CK migrations, blueprint apply) are
   never restricted. The baseline protects the **REST/GraphQL surface of asset-repo only**: the in-process pipeline engine (mesh adapter file nodes) is governed by the identity seeds (Bootstrap 1.6.0 policies), not by the baseline, so until a tenant has been re-seeded with 1.6.0 its pipelines are more permissive on System.Files than REST. The baseline steps aside only for an **enforcing** tenant rule on `System.Files/FileSystemEntity` (any actions: the engine denies the actions no rule grants); an AuditOnly rule or a rule on leaf types only keeps it active. **Interim tenant guard (AB#6579).** While `UserTokenEnforcement` is LogOnly (AB#5054), `FileSystemAccess.EnsureTenantMatch` (shared core `FilesTenantGuard`) refuses on every Files route (incl. `capabilities`) a bearer **user** token (has `sub`) whose `tenant_id` differs from the route tenant: 403 FORBIDDEN, counter `octo.files.access_denied` with `action=tenant_mismatch`. It mirrors the `TenantAuthorizationMiddleware` user-token decision: client-credentials tokens (no `sub`), cookie principals and requests without a bearer header are not touched; no parent-tenant exemption (the middleware's parent rule AB#5060 applies only to endpoints marked `IAllowParentTenantAdministration` and gives a parent no data routes of its child), so a parent-tenant token is refused exactly as under the planned platform Enforce. **The same guard covers GraphQL and largeBinaries for System.Files (AB#6624)**, with the same decision (`FilesTenantGuard`: bearer user token with `sub`, `tenant_id` != route tenant, case-insensitive, no parent exemption; service tokens and cookie principals untouched), the same counter (`action=tenant_mismatch`, no tenant/account label; the log line names account, client id and both tenants, never a token) and the same switch. GraphQL: `FilesTenantGuardListener` (document listener, registered before `OctoSessionListener`, so a refused request opens no session) refuses the **whole request** with the error code `FORBIDDEN` (HTTP 200 with errors, like other GraphQL errors) when the token tenant differs **and** the operation touches System.Files (`FilesGraphQlInspector`: a selected field with a System.Files `CkId` metadata or return type `SystemFiles*`, an inline/named fragment on such a type, or any argument/variable value naming `System.Files` - this covers `runtimeEntities(ckId:)`, `ckTypeId` in create/update inputs and delete by `RtEntityId`). Every other operation of the same token (cross-tenant topology reads of meshmakers-app, octo-cli, introspection) is untouched, and a token of the route tenant pays nothing (the mismatch test runs first). Not covered statically: a persisted query addressed by rtId (`runtimeQuery`) whose target type is System.Files, and generic association hops from non-Files entities to Files entities (other types are protected only by the tenant's own policies until platform Enforce, AB#5054). `LargeBinariesController.Get` answers **403** when the binary is owned by a System.Files entity (ownerless and other binaries unchanged). All three go away when Enforce is armed platform-wide. Switchable without a release: `OCTO_Files__TenantGuard=LogOnly|Enforce` (default Enforce; an invalid value also means Enforce, with a warning; LogOnly logs `tenant_mismatch` with account, client id, token tenant and route tenant and lets the request pass). Remove it when Enforce is armed platform-wide. `GET capabilities` stays open to every caller with the API scope **on purpose**: it only advertises limits and whether System.Files exists (Studio calls it before it knows the caller's roles to decide whether to show the Files page); it names no entry. GraphQL reads of a caller without a file role are filtered by the engine and return **0 rows, not an error** (a folder lookup returns no item); only REST and the mutations answer 403 FORBIDDEN. `GET stats` without `root` answers 400 INVALID_REQUEST. Clients with a machine
   token that carry no file role — customer client-credentials clients and octo-cli `LogInClientCredentials` — get 403 on
   every Files endpoint until the client is given `FileViewer`/`FileManagement` (`octo-cli AddClientToRole`).
@@ -439,7 +437,8 @@ nor creates the root. Model content:
   no tokens or secrets. The Dash0 rule (meshmakers-infrastructure) fires on this counter; fix = grant FileManagement / FileViewer.
   Not yet covered: GraphQL mutations denied by the engine itself (`TranslateForbiddenAsync`), which have no tenant/account at hand.
 - Tests: `tests/AssetRepositoryServices.IntegrationTests/Files/*` (`FilesTestFixture` plays platform-services: it imports System.Files and creates the
-  default root, and has a switchable data-policy table).
+  default root, and has a switchable data-policy table). `FilesRawMongoFixture` (collection `FilesRawMongo`, own database) adds raw
+  MongoDB access for the name lease and GridFS orphan sweep tests.
 
 ### Important Naming Conventions
 - **Ck** prefix = Construction Kit (metadata/model definitions)
@@ -818,116 +817,18 @@ transport-level barrier between a client-credentials client of the authority and
 Use environment variable prefix `OCTO_` to override configuration values.
 User secrets are supported for local development (UserSecretsId: `173d8e91-b831-4e8a-a43f-672c57e6a4da`).
 
-### Files migration: System.Reporting → System.Files (AB#6175)
+### Former files migration: System.Reporting → System.Files (AB#6175, removed in AB#7033)
 
-`Services/Files/Migration/`. `ReportingFilesMoveSweep` moves the file data of a tenant from the
-System.Reporting 2.x types to System.Files (the raw move of the S0 spike, `.po/ab6171-s0-spike-migrate.js`).
-Everything is raw MongoDB (own admin `MongoClient` from `OctoSystemConfiguration`,
-`TenantMongoDatabaseProvider`) — never the CK cache, because the legacy types disappear from it with
-System.Reporting 3.0.0.
-
-- **Cheap check first (read-only):** legacy `ckTypeId`s in `RtEntity_SystemReportingFileSystemEntity`, legacy
-  `originCkTypeId`/`targetCkTypeId` in `RtAssociation`, legacy `fs.files.metadata.rtEntityId` stamps. All
-  zero → no write, no lease, no scan (steady state). Then System.Files must be imported (collection with CK
-  indexes), else `TargetModelMissing` (still read-only, warning rate-limited to `RepeatedWarningInterval`).
-- **Lease:** per-tenant `findOneAndUpdate` lease in `FilesMigrationLease` (`TenantSweepLease`, expiry
-  `LeaseDuration` 5 min, renewed per batch). Every pod runs the start hook; only the holder scans and moves,
-  the others skip at debug level (`LeaseHeld`).
-- **Root merge / root conflict (AB#6883):** a legacy `FolderRoot` whose well-known name equals (case-insensitive) an
-  existing System.Files root is classified before anything is written (`AnalyzeRootsAsync`). The System.Files root is
-  **empty** when no `System/ParentChild` association with a non-legacy origin type points at it and it carries no
-  attribute besides `name` (or an attribute the legacy root has too). Reporting 3.0.0 creates the four
-  `ReportingAssets_*` roots at tenant start (AB#6863) and blueprints create roots such as `Documents` (also with
-  the legacy rtId) before the sweep runs: an **empty** root is **taken over** — `MergeEmptyRootsAsync` re-points the
-  associations of the legacy root (both directions) to the existing root, parks the legacy root document in
-  `FilesMigrationConflicts` (rule "merged into …") and removes it from the legacy collection; the legacy children
-  then move under the existing root with the normal batches. The sweep result lists them in `RootsMerged`, the audit
-  record in `merged` (not in `conflicts`), the status report in `RecentSweeps[].Merged`; no duplicate root arises. A
-  **non-empty or divergent** root (children, foreign attributes — e.g. the default root `Files` with content) still
-  aborts the whole tenant with `RootConflict` before any root is taken over or any entity moves (error log
-  rate-limited, one audit record per distinct conflict set). The merge is crash-safe: children re-pointed to the root
-  keep their legacy origin type until the type rewrite, so a repeated sweep still sees the root as empty and finishes
-  the job. `FindRootConflictsAsync` (used by the status report) returns only real conflicts.
-- **Move:** batches (`BatchSize` 500) in one transaction each — `replaceOne` upsert by `_id` into the
-  System.Files collection with the rewritten `ckTypeId`, delete from the source, each batch verified
-  afterwards. An rtId that already exists in System.Files (stale writer re-wrote a moved entity) is **never
-  replaced**: the System.Files version is kept, the legacy document is parked in `FilesMigrationConflicts`
-  (with `rtId`, `detectedAt`, full `document`) and listed in the audit. Then `RtAssociation` `updateMany`
-  (outside the transaction, like the engine) and the `fs.files` stamp prefix rewrite (**R1**: the
-  `/largeBinaries` data-permission gate and the linked-binary cascade delete key on that stamp). A count
-  mismatch stops after the entity step (no association/stamp rewrite) and logs an error. The legacy
-  collection is **never dropped** (a straggler written between "empty" and "drop" would be lost); other
-  (derived/unknown) types in it are not moved and are reported.
-- **Audit:** one document per sweep that wrote or failed in `FilesMigrationAudit` (before/after counts,
-  moved per type, conflicts, association fields, stamps, errors, trigger, host). Deliberately **not**
-  `System/MigrationHistory` — that collection drives the CK upgrade version detection.
-- **Triggers (Q3):** `DefaultConfigurationCreatorService.StartTenantAsync` (never fails the start; does nothing
-  without System.Files) and `ReportingFilesSweepBackgroundService` every
-  `StragglerSweepInterval` (10 min) for tenants in `ReportingFilesSweepTracker`. A tenant stays on the timer
-  for `StragglerWindow` (24 h) after its last finding (legacy data, failure, lease held elsewhere), or until
-  System.Reporting 3.0.0+ is installed (`CkModel` ids), even through zero checks (in memory, per pod; the
-  next start re-checks). Switch `FilesMigration:SweepEnabled`, **off by default** (`OCTO_FilesMigration__SweepEnabled=true` to enable; Helm `services.assetRepository.filesMigration.sweepEnabled`). It is switched on per cluster in the rollout (AB#6183) after Reporting (AB#6176) and the consumers (AB#6181) read System.Files (risk R5).
-- **Two-level control (AB#6473):** the sweep runs for a tenant only when `FilesMigration:SweepEnabled` is on **and**
-  the tenant is listed in `FilesMigration:SweepTenants` (list of tenant ids, **default empty**, exact and
-  case-insensitive; env `OCTO_FilesMigration__SweepTenants__0`, `__1`, …; Helm
-  `services.assetRepository.filesMigration.sweepTenants`). `SweepEnabled=true` with an empty list sweeps nothing.
-  The trigger is the tenant start (a `ClearCache` starts the tenant, `ReRunTenantSetup` does not) — so a rollout
-  operator names the tenants, enables the switch and restarts/clears the cache of exactly those. At every tenant
-  start of a tenant the sweep does not run for the runner logs **one line and touches no data** (no database lookup,
-  no legacy count — the start is awaited by the tenant setup and the count is an unindexed regex count on `fs.files`):
-  switch off → an info line (as before); switch on and tenant not listed → a **warning** (`nlog.config` defaults
-  `Meshmakers.*` to Warn and the chart sets `OCTO_LOG_LEVEL` only on request, so an info line is invisible on
-  staging/prod — that is why the former "sweep disabled" line was never seen). Whether the tenant holds legacy data
-  is answered on demand by the migration status. An id in `SweepTenants` that is no tenant right now is logged once per
-  process (at the first tenant start while the switch is on; the lookup tries the id as written and lower-case) as a
-  warning "not (yet) a tenant" and ignored — a tenant created later is still swept at its start. The straggler timer drops a
-  tenant that left the list. The state per tenant is part of the status report (`Sweep`: `Disabled`, `NotListed`,
-  `Pending`, `Done` with reason, switch, listed flag and the last audit record). The sweep itself is idempotent:
-  a second run for a listed tenant finds nothing and writes nothing.
-- **Pre-check (R4):** `FilesMigrationStatusService`, exposed as `GET system/v1/files/migration-status/{tenantId}`
-  (`?mode=Full`, default; `?mode=Light` since AB#6860, see below; `?includeArchived=true` since AB#6894)
-  (`SystemAssetApiReadOnlyPolicy` **plus** in-controller check: token `tenant_id` = system tenant, user
-  tokens need `AdminPanelManagement` — the report crosses tenant boundaries; a 500 carries no exception
-  text). Legacy counts, other types in the legacy collection, root conflicts, System.Files counts (`target` = **live** items per type, always — archived/soft-deleted items
-  (`rtState = Archived`) are never in it, like in GraphQL and the file APIs; `targetArchived` = archived items per type,
-  present only with `?includeArchived=true` and not computed otherwise, AB#6894), orphans
-  without ParentChild parent, the latest audit records, and every entity in any `RtEntity_*` collection
-  (except the two file collections) whose stored document contains
-  `System.Reporting/{FileSystemItem|Folder|FolderRoot|FileSystemEntity|FileSystemContainer}` (also the
-  versioned `System.Reporting-x.y.z/…` form) with collection, rtId, ckTypeId, well-known name,
-  `rtBlueprintSource` and field paths. **Notification events are not counted (AB#6940):** documents with ckTypeId
-  `System.Notification/…` (also `System.Notification-x.y.z/…`) and every document of an `RtEntity_SystemNotification*`
-  collection (fallback when the type is unknown) only carry log text; they go to `ignoredLogReferenceCount` (0 in `Light`)
-  instead of `literalReferenceCount` and `literalReferences`, so error messages do not block the Reporting-off gate;
-  pipelines, policies and all other types are still counted. The scan reads raw BSON (secondary-preferred) and searches the UTF-8
-  bytes, so it is schema-free; scans are serialized per pod and cut off after `ScanTimeout` (5 min,
-  `LiteralScanComplete = false`). At tenant start only the lease holder scans, and only when the cheap
-  check found legacy data. **The scan runs in the background after the move (AB#6554)**: on a 1.3 million document
-  tenant it took 3 min 8 s inline and held the tenant setup. `RunAtTenantStartAsync` now returns once the move is done;
-  the report line ("pre-check tenant …") is logged when the scan finishes and lists what is left after the move. The
-  sweep finds root conflicts itself and fails closed, so the move never waits for the scan. One scan per tenant at a
-  time per pod; the scan token is cancelled at shutdown. `Sweep.PreCheck` in the status shows `None` / `Scanning` /
-  `Scanned` / `Failed` (with `PreCheckStartedUtc` / `PreCheckFinishedUtc`), per instance. Runbook (AB#6183): after
-  restarting a listed tenant, watch `Sweep.State` for the move and `Sweep.PreCheck` for the report; the setup
-  duration no longer grows with the tenant size. Not scanned: GridFS contents, CK collections, `RtAssociation`, binary values. The
-  sweep never rewrites pipeline YAML — blueprint pipelines are fixed by the app blueprint release (S9),
-  tenant-local ones by the runbook (S11).
-- **Light status (AB#6860, AB#6554):** the full report is a scan of every entity collection (189 s locally, 300 s on
-  prod-2 sbeg) and runs into the 180 s ingress limit (504). `GET system/v1/files/migration-status/{tenantId}?mode=Light`
-  answers from stored state only: `legacy` counts, System.Files counts, other legacy types, root conflicts,
-  `recentSweeps` (audit: outcome, entities moved, association fields, stamps, conflicts, errors) and `sweep`
-  (`State` Disabled/NotListed/Pending/Done, `LastSweep`, `PreCheck` None/Scanning/Scanned/Failed with start/finish
-  times). It runs no orphan search and no literal scan and never waits for a running scan, so `Sweep.PreCheck =
-  Scanning` is observable while the first sweep of a tenant scans. In `Light` the response has `mode = "Light"`,
-  `orphanCount = 0`, empty `orphans`/`literalReferences`, `literalScanComplete = false`, `scannedDocuments = 0`
-  (not computed, not "none found"). Same auth as the full mode (system tenant, 403 otherwise); an unknown mode
-  value is a 400. Runbook: read the audit and the counters with `?mode=Light`, use the default only when the orphan
-  list or the literal references are needed (and not through a proxy with a short timeout). Follow-up outside this
-  repo: an octo-cli / octo-mcp flag for the mode.
-- Tests: `tests/AssetRepositoryServices.IntegrationTests/Files/ReportingFilesMoveSweepTests.cs`
-  (`FilesMigrationTestFixture` seeds legacy data raw, incl. real GridFS files; it lists the system tenant; AB#6883: empty roots of the four `ReportingAssets_*` names and `Documents` are merged with a new and with the legacy rtId, non-empty/divergent roots still abort without a partial move, an interrupted merge is finished) and
-  `FilesSweepAllowListTests.cs` (two tenants with legacy data: empty list, one listed, switch off, second run,
-  unknown id, log levels).
+The one-time move of System.Reporting 2.x file data to System.Files (sweep at tenant start, straggler timer, status
+endpoint for the pre-check, own configuration section and Helm switch) ran on test-2,
+staging-1, prod-1 and prod-2 (Epic AB#6171) and was **removed in AB#7033**. The last release that contains it is
+**r3.5.32**; recovery path for an environment that still holds legacy Reporting file data (old dump, restore): run
+that release, or take the code from the git history at that tag. The data the migration left in tenant databases is
+**kept and read by nothing**: collections `FilesMigrationConflicts` (parked legacy documents, evidence),
+`FilesMigrationAudit` and `FilesMigrationLease`. Dropping them is a separate decision. Still in use from that work:
+`ITenantMongoDatabaseProvider` (raw tenant database access, used by the name lease) and `SystemAdministratorGuard`. The
+removal is pinned by `tests/AssetRepositoryServices.UnitTests/SystemApi/RemovedLegacyFilesMoveTests.cs` (no status
+route mapped, i.e. 404; no type of the former `Services/Files/Migration` namespace).
 
 ### CK Model Catalog REST API
 

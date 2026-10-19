@@ -1,4 +1,3 @@
-using Meshmakers.Octo.Backend.AssetRepositoryServices.Services.Files.Migration;
 using MongoDB.Bson;
 using MongoDB.Driver;
 
@@ -31,11 +30,11 @@ public interface IFileSystemNameLeaseStore
 }
 
 /// <summary>
-///     MongoDB implementation: collection <c>FileSystemNameLease</c> of the tenant database, taken with the same
-///     atomic <c>findOneAndUpdate</c> upsert as <see cref="TenantSweepLease" /> (matches only an expired lease; the
-///     upsert's duplicate key on <c>_id</c> is the "held by someone else" answer). Uses the admin client of the
-///     files migration, i.e. a connection outside the request's transaction — the lease is visible to other
-///     replicas at once and is released after the request's commit or abort.
+///     MongoDB implementation: collection <c>FileSystemNameLease</c> of the tenant database, taken with an atomic
+///     <c>findOneAndUpdate</c> upsert (matches only an expired lease; the upsert's duplicate key on <c>_id</c> is the
+///     "held by someone else" answer). Uses the raw admin client of <see cref="ITenantMongoDatabaseProvider" />, i.e.
+///     a connection outside the request's transaction — the lease is visible to other replicas at once and is
+///     released after the request's commit or abort.
 /// </summary>
 internal sealed class MongoFileSystemNameLeaseStore(
     ITenantMongoDatabaseProvider databaseProvider,

@@ -341,7 +341,10 @@ public static class RuntimeEngineBuilderExtensions
         // AB#6171: the platform file system. AB#6480: the System.Files CK model (engine package) is installed into every
         // tenant by platform-services (service-managed), together with the default root "Files"; this service only
         // uses the generated types and registers no embedded model.
-        // AB#6885: MongoDB lease per sibling name, so the name locks also hold across asset repository replicas.
+        // AB#6885: MongoDB lease per sibling name, so the name locks also hold across asset repository replicas. The
+        // lease store writes through a raw admin client outside the request's transaction.
+        builder.Services.AddSingleton<Meshmakers.Octo.Backend.AssetRepositoryServices.Services.Files.ITenantMongoDatabaseProvider,
+            Meshmakers.Octo.Backend.AssetRepositoryServices.Services.Files.TenantMongoDatabaseProvider>();
         builder.Services.AddSingleton<Meshmakers.Octo.Backend.AssetRepositoryServices.Services.Files.IFileSystemNameLeaseStore,
             Meshmakers.Octo.Backend.AssetRepositoryServices.Services.Files.MongoFileSystemNameLeaseStore>();
         builder.Services.AddSingleton<Meshmakers.Octo.Backend.AssetRepositoryServices.Services.Files.FileSystemService>();
@@ -351,9 +354,6 @@ public static class RuntimeEngineBuilderExtensions
         // FileManagement), until/unless the tenant carries its own policies for System.Files.
         Meshmakers.Octo.Backend.AssetRepositoryServices.Services.Files.FileSystemPermissionBaselineServiceCollectionExtensions
             .AddFileSystemPermissionBaseline(builder.Services);
-        // AB#6175: move of System.Reporting file data to System.Files (sweep at tenant start + straggler timer).
-        Meshmakers.Octo.Backend.AssetRepositoryServices.Services.Files.Migration.FilesMigrationServiceCollectionExtensions
-            .AddReportingFilesMigration(builder.Services);
         // AB#6541: orphaned GridFS bytes of linked binaries are found and removed on demand (system API).
         Meshmakers.Octo.Backend.AssetRepositoryServices.Services.Files.OrphanSweep.GridFsOrphanSweepServiceCollectionExtensions
             .AddGridFsOrphanSweep(builder.Services);
