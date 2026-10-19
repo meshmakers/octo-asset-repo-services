@@ -60,8 +60,9 @@ public class GraphQlTestFixture : SampleDataFixture
     /// <param name="query">The GraphQL document</param>
     /// <param name="variables">Optional JSON object with the variables</param>
     /// <param name="user">Optional principal; null = unauthenticated</param>
+    /// <param name="configure">Optional hook on the execution options (field middleware of a test, AB#7023)</param>
     public async Task<ExecutionResult> ExecuteGraphQlAsync(string query, string? variables = null,
-        ClaimsPrincipal? user = null)
+        ClaimsPrincipal? user = null, Action<ExecutionOptions>? configure = null)
     {
         if (_documentExecuter == null)
         {
@@ -82,6 +83,7 @@ public class GraphQlTestFixture : SampleDataFixture
             options.Variables = inputs != null ? new Inputs(inputs) : null;
             options.RequestServices = Provider;
             options.UserContext = new GraphQlUserContext(user, GetSystemContext());
+            configure?.Invoke(options);
         });
 
         return result;
