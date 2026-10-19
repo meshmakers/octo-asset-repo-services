@@ -2,7 +2,6 @@ using FluentAssertions;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Collections;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Fixtures;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.Services.Files;
-using Meshmakers.Octo.Backend.AssetRepositoryServices.Services.Files.Migration;
 using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.Runtime.Contracts;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb.Repositories;
@@ -18,8 +17,8 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Files
 ///     instances that share only the MongoDB lease store stand for two replicas (their in-process semaphores are
 ///     independent).
 /// </summary>
-[Collection(FilesMigrationCollection.Name)]
-public class FileSystemNameLeaseTests(FilesMigrationTestFixture fixture, ITestOutputHelper output)
+[Collection(FilesRawMongoCollection.Name)]
+public class FileSystemNameLeaseTests(FilesRawMongoFixture fixture, ITestOutputHelper output)
 {
     private ITenantRepository Repository
     {

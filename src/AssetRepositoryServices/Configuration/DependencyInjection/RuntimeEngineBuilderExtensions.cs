@@ -341,7 +341,10 @@ public static class RuntimeEngineBuilderExtensions
         // AB#6171: the platform file system. AB#6480: the System.Files CK model (engine package) is installed into every
         // tenant by platform-services (service-managed), together with the default root "Files"; this service only
         // uses the generated types and registers no embedded model.
-        // AB#6885: MongoDB lease per sibling name, so the name locks also hold across asset repository replicas.
+        // AB#6885: MongoDB lease per sibling name, so the name locks also hold across asset repository replicas. The
+        // lease store writes through a raw admin client outside the request's transaction.
+        builder.Services.AddSingleton<Meshmakers.Octo.Backend.AssetRepositoryServices.Services.Files.ITenantMongoDatabaseProvider,
+            Meshmakers.Octo.Backend.AssetRepositoryServices.Services.Files.TenantMongoDatabaseProvider>();
         builder.Services.AddSingleton<Meshmakers.Octo.Backend.AssetRepositoryServices.Services.Files.IFileSystemNameLeaseStore,
             Meshmakers.Octo.Backend.AssetRepositoryServices.Services.Files.MongoFileSystemNameLeaseStore>();
         builder.Services.AddSingleton<Meshmakers.Octo.Backend.AssetRepositoryServices.Services.Files.FileSystemService>();

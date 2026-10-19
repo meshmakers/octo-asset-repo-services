@@ -13,7 +13,6 @@ public static class FilesMigrationServiceCollectionExtensions
     public static IServiceCollection AddReportingFilesMigration(this IServiceCollection services)
     {
         services.AddOptions<FilesMigrationOptions>();
-        services.AddSingleton<ITenantMongoDatabaseProvider, TenantMongoDatabaseProvider>();
         services.AddSingleton<ReportingFilesSweepTracker>();
         services.AddSingleton<ReportingFilesMoveSweep>();
         services.AddSingleton<FilesMigrationStatusService>();

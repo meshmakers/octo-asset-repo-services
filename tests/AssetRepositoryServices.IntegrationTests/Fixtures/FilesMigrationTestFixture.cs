@@ -15,7 +15,7 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Fixtu
 ///     model, which is what the sweep has to cope with once System.Reporting 3.0.0 has dropped the types.
 /// </summary>
 // ReSharper disable once ClassNeverInstantiated.Global
-public class FilesMigrationTestFixture : FilesTestFixture
+public class FilesMigrationTestFixture : FilesRawMongoFixture
 {
     /// <summary>
     ///     Test-model customer from the sample data, used as origin of a "Related" link to a legacy file.
@@ -23,8 +23,6 @@ public class FilesMigrationTestFixture : FilesTestFixture
     public const string CustomerRtId = "67000001aaaa1111bbbb0001";
 
     public const string CustomerCkTypeId = "AssetRepositoryIntegrationTest/Customer";
-
-    private IMongoDatabase? _database;
 
     public FilesMigrationTestFixture()
     {
@@ -37,12 +35,6 @@ public class FilesMigrationTestFixture : FilesTestFixture
         });
     }
 
-    /// <summary>
-    ///     The system tenant database (the tenant the tests run against).
-    /// </summary>
-    public IMongoDatabase Database =>
-        _database ??= new MongoClient(GetConnectionString()).GetDatabase(SystemDatabaseName);
-
     public ReportingFilesMoveSweep Sweep => GetService<ReportingFilesMoveSweep>();
 
     public ReportingFilesSweepRunner Runner => GetService<ReportingFilesSweepRunner>();
@@ -50,8 +42,6 @@ public class FilesMigrationTestFixture : FilesTestFixture
     public ReportingFilesSweepTracker Tracker => GetService<ReportingFilesSweepTracker>();
 
     public FilesMigrationStatusService Status => GetService<FilesMigrationStatusService>();
-
-    public IMongoCollection<BsonDocument> Collection(string name) => Database.GetCollection<BsonDocument>(name);
 
     /// <summary>
     ///     Seeds a legacy tree: root → folder "Docs" → item "a.txt", item "b.txt" directly under the root, an
@@ -254,15 +244,6 @@ public class FilesMigrationTestFixture : FilesTestFixture
             { "associationRoleId", roleId }
         });
         return id;
-    }
-
-    public async Task<bool> CollectionExistsAsync(string name)
-    {
-        var names = await (await Database.ListCollectionNamesAsync(new ListCollectionNamesOptions
-        {
-            Filter = new BsonDocument("name", name)
-        })).ToListAsync();
-        return names.Count > 0;
     }
 }
 
