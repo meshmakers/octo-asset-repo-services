@@ -708,8 +708,8 @@ probe that reports `true` (a regression) or throws (e.g. no accessor registered;
 Tests: `UnitTests/GraphQL/Methods/InProcessSessionIsolationTests` (real `OctoSessionAccessor` and transport; HasSession false in the handler, request
 session still usable and committable, handler cannot end it, request-scoped repository is a new instance, tripwire with a test accessor that lets the
 session flow, fail closed, registration once) and `IntegrationTests/GraphQL/Mutations/InProcessMethodSessionIsolationTests` (a real mutation inside
-the real `OctoSessionListener` transaction; harness `InProcessMethodGraphQlTestFixture` plays the resolver with a document listener registered after
-`OctoSessionListener`, because the method resolver (AB#7026) does not exist yet - switch it to the real resolver when that lands).
+the real `OctoSessionListener` transaction; harness `InProcessMethodGraphQlTestFixture` starts the method from a document listener registered after
+`OctoSessionListener`, i.e. inside the session and the transaction of the mutation).
 
 ### Blueprint-locked entities: stable error contract (AB#6385)
 
