@@ -18,7 +18,7 @@ POST system/v1/files/orphan-sweep/{tenantId}?remove=false&gracePeriodMinutes=144
 | `remove` | `false` | **Dry run is the default**: the sweep only counts. `remove=true` deletes the orphaned files and their chunks. |
 | `gracePeriodMinutes` | `1440` (24 h) | Only files older than this are examined. Minimum `10` (ten times the 60 s transaction lifetime); a smaller value answers 400 and nothing runs. |
 
-**Authorisation (fail closed, same rule as `migration-status`):** policy `SystemAssetApiReadWritePolicy` (scope
+**Authorisation (fail closed, `SystemAdministratorGuard`):** policy `SystemAssetApiReadWritePolicy` (scope
 `octo_api`) **plus** an in-controller check: the token's `tenant_id` must be the system tenant, and a user token needs
 the role `AdminPanelManagement`. Everything else (another tenant, no tenant claim, no admin role) answers **403** and
 nothing is run. Other answers: 400 (grace period out of range), 404 (unknown tenant), 409 (a sweep of this tenant is
@@ -45,7 +45,7 @@ A FileSystem GridFS file that no entity of the tenant references by `_id` in a l
 period are not examined, so bytes staged by an in-flight transaction survive. The sweep is idempotent and safe to
 repeat; a second run finds nothing.
 
-## Runbook (before the files migration sweep, AB#6183, is switched on)
+## Runbook
 
 1. **Dry run** on every tenant: `POST .../orphan-sweep/{tenantId}` (no parameters). Nothing is deleted.
 2. **Review the report**: `orphanFiles`, `orphanChunks`, `orphanBytes` must match what you expect (a few after crashes,
@@ -66,11 +66,11 @@ it for a very large tenant in a quiet window.
 | Part | File |
 |------|------|
 | Endpoint | `SystemApi/v1/Controllers/FilesOrphanSweepController.cs` |
-| Caller check shared with `migration-status` | `SystemApi/v1/Controllers/SystemAdministratorGuard.cs` |
+| Caller check shared with `reconcile-registry` | `SystemApi/v1/Controllers/SystemAdministratorGuard.cs` |
 | Service, report DTO, per-tenant run gate | `Services/Files/OrphanSweep/GridFsOrphanSweepService.cs` |
 
 The engine keeps its repository access internal, so the service creates one lazily built admin client from
-`OctoSystemConfiguration` (admin credentials, like the files migration) and hands it to the engine's
+`OctoSystemConfiguration` (admin credentials, like `TenantMongoDatabaseProvider`) and hands it to the engine's
 `GridFsOrphanSweeper`. Tests: `FilesOrphanSweepControllerTests`, `GridFsOrphanSweepServiceTests` (unit: 403, defaults,
 grace validation, report mapping, one run per tenant) and `Files/GridFsOrphanSweepTests` (integration against MongoDB:
 dry run deletes nothing, grace period respected, referenced and young bytes survive, exact report numbers, second run
