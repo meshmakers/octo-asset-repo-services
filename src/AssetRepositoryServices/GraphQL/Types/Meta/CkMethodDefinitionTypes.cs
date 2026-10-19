@@ -74,6 +74,11 @@ internal sealed class CkMethodDtoType : ObjectGraphType<CkMethodDefinitionView>
             .Resolve(ctx => ctx.Source.Definition.Authorization ?? new CkMethodAuthorizationDto());
         Field<NonNullGraphType<CkMethodExecutionDtoType>>("execution")
             .Resolve(ctx => ctx.Source.Definition.Execution ?? new CkMethodExecutionDto());
+        Field<NonNullGraphType<BooleanGraphType>>("replacesGenericCreate")
+            .Description("AB#7025: true when this static method replaces the generic create of its declaring type " +
+                         "and of every type derived from it; the generic create of those types is refused with " +
+                         "GENERIC_CREATE_REPLACED_BY_METHOD. Always false for interface methods.")
+            .Resolve(ctx => ctx.Source.Definition.ReplacesGenericCreate);
     }
 }
 
