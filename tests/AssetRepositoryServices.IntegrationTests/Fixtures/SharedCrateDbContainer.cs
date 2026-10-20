@@ -17,7 +17,7 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Fixtu
 /// </summary>
 internal static class SharedCrateDbContainer
 {
-    private const string Image = "crate:5.10.10";
+    private const string Image = "crate:6.4.6";
 
     private static readonly SemaphoreSlim Gate = new(1, 1);
     private static IContainer? _container;
