@@ -44,6 +44,10 @@ dotnet test '**/*Tests.csproj' --exclude '**/*SystemTests.csproj' -c DebugL
 dotnet test --filter "FullyQualifiedName~RtEntityDeleteMutationTests" -c DebugL
 ```
 
+The CrateDB containers of the integration tests run `crate:6.4.6`. `OCTO_TEST_CRATEDB_IMAGE=crate:5.10.10` runs the same suite on the 5.x
+line that stays in production while the clusters are upgraded one after the other (AB#7149); both lines must stay green.
+The dump and restore between the lines is the version matrix (`Category=CrateVersionMatrix`, see the README of the test project).
+
 Tests must be locale-independent (developer machines run e.g. `de_AT`, CI runs `en_US`): parse and
 format numbers with `CultureInfo.InvariantCulture` (e.g. `Convert.ToDouble(raw, CultureInfo.InvariantCulture)`
 on a JSON `GetRawText()` value). Verify a culture-sensitive test with

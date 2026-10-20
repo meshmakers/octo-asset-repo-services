@@ -25,7 +25,13 @@ internal sealed class CrateDbTestCluster : IAsyncDisposable
 {
     public const int NodeCount = 2;
 
-    private const string Image = "crate:6.4.6";
+    /// <summary>
+    ///     The CrateDB image; <c>OCTO_TEST_CRATEDB_IMAGE</c> (for example <c>crate:5.10.10</c>) replaces the default so the suite
+    ///     can also run on the 5.x line that stays in production during a rolling upgrade (AB#7149).
+    /// </summary>
+    private static readonly string Image = Environment.GetEnvironmentVariable("OCTO_TEST_CRATEDB_IMAGE") is { Length: > 0 } image
+        ? image
+        : "crate:6.4.6";
     private const string HeapSize = "512m";
     private static readonly TimeSpan FormationTimeout = TimeSpan.FromMinutes(2);
 
