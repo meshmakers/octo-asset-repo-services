@@ -8,7 +8,7 @@ using Xunit;
 namespace AssetRepositoryServices.UnitTests.Services;
 
 /// <summary>
-/// AB#6871: the asset repository's guard for blueprints judges the CK models of a blueprint with the same evaluation
+/// AB#6871: the asset repository's guard for blueprints judges the CK models of a blueprint (with the dependency updates their import pulls in, AB#7029) with the same evaluation
 /// the library status and the imports use, leaves service-managed models alone and maps the blockers one to one.
 /// </summary>
 public class BlueprintCkUpgradeGuardTests
@@ -20,7 +20,7 @@ public class BlueprintCkUpgradeGuardTests
     [Fact]
     public async Task Evaluate_JudgesTheSetAsOne_AndMapsTheBlockers()
     {
-        A.CallTo(() => _status.EvaluateUpdateSetBlockersAsync("sbeg", A<IReadOnlyList<CkModelId>>._, A<CancellationToken>._))
+        A.CallTo(() => _status.EvaluateImportSetBlockersAsync("sbeg", A<IReadOnlyList<CkModelId>>._, A<CancellationToken>._))
             .Returns(Task.FromResult<IReadOnlyList<CkUpgradeBlockerDto>>(
             [
                 new CkUpgradeBlockerDto
@@ -43,7 +43,7 @@ public class BlueprintCkUpgradeGuardTests
         blocker.Code.Should().Be("CK_UPGRADE_EXACT_PIN");
         blocker.SuggestedDependentUpdate.Should().Be("EnergyCommunity.Registration-2.10.0");
         blocker.ResolveHint.Should().Be("update first");
-        A.CallTo(() => _status.EvaluateUpdateSetBlockersAsync("sbeg",
+        A.CallTo(() => _status.EvaluateImportSetBlockersAsync("sbeg",
                 A<IReadOnlyList<CkModelId>>.That.Matches(s => s.Count == 2), A<CancellationToken>._))
             .MustHaveHappenedOnceExactly();
     }
@@ -54,7 +54,7 @@ public class BlueprintCkUpgradeGuardTests
         await new BlueprintCkUpgradeGuard(_status).EvaluateAsync("sbeg",
             [new CkModelId("System", "2.6.0"), new CkModelId("System.UI", "2.3.0"), new CkModelId("Basic", "2.5.0")], Ct);
 
-        A.CallTo(() => _status.EvaluateUpdateSetBlockersAsync("sbeg",
+        A.CallTo(() => _status.EvaluateImportSetBlockersAsync("sbeg",
                 A<IReadOnlyList<CkModelId>>.That.Matches(s => s.Count == 1 && s[0].Name == "Basic"),
                 A<CancellationToken>._))
             .MustHaveHappenedOnceExactly();

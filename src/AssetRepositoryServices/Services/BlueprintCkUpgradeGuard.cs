@@ -6,7 +6,8 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.Services;
 
 /// <summary>
 ///     The asset repository's tenant upgrade guard for blueprints (CK v2 F2.5, AB#6871): judges the CK models a
-///     blueprint apply or update installs or raises as ONE set, with the same evaluation the library status
+///     blueprint apply or update installs or raises - together with the dependency updates their import pulls in
+///     (AB#7029, the set the import dialog judges) - as ONE set, with the same evaluation the library status
 ///     (AB#6868) and the import endpoints (AB#6870) use, so a blueprint is refused for exactly the reasons an import
 ///     of the same models would be. Read-only.
 /// </summary>
@@ -34,7 +35,7 @@ internal sealed class BlueprintCkUpgradeGuard : IBlueprintCkUpgradeGuard
             return [];
         }
 
-        var blockers = await _libraryStatusService.EvaluateUpdateSetBlockersAsync(tenantId, judged, cancellationToken);
+        var blockers = await _libraryStatusService.EvaluateImportSetBlockersAsync(tenantId, judged, cancellationToken);
         return blockers.Select(ToBlueprintBlocker).ToList();
     }
 

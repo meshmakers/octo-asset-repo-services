@@ -976,8 +976,8 @@ catalog model of the offered version and the versions the catalogs offer; the gu
   back to the offered version alone when that is not published or the dialog would not import it (incompatible branch). A row is still
   judged against the current installed state, not against the other rows. Cost: one guard evaluation (one tenant model read) per
   updatable row, also in the observability sweep; the dependency models come from the per-call `CatalogModelMemo` (each fetched once per
-  status call) and the installed state is read once per call - no extra tenant lookups. The blueprint guard builds its set differently
-  (declared blueprint dependencies below their floor, no expansion by catalog dependencies of those models; noted in the AB#7017 PR, not changed there).
+  status call) and the installed state is read once per call - no extra tenant lookups. The blueprint guard now expands its set the same way
+  (AB#7029, see "Tenant upgrade guard for blueprints").
 - **`resolveHint` is proven, not guessed**: when the guard suggests a newer catalog version of the blocking dependent
   (`suggestedDependentUpdate`, for example `EnergyCommunity.Registration-2.10.0`), the service evaluates the combined update set
   (offered model + that version) and keeps the suggestion (hint `update EnergyCommunity.Registration to 2.10.0 first`) only if no
@@ -1053,8 +1053,15 @@ The tenant blueprint endpoints apply the guard to the CK models a blueprint inst
 The logic is in the engine's `BlueprintService` (update set = the `ckModelDependencies` floors the tenant does not hold in a satisfying-or-newer
 version, judged as ONE set before the first CK model is installed); this service supplies the evaluation: `Services/BlueprintCkUpgradeGuard`
 (`IBlueprintCkUpgradeGuard`, registered in `RuntimeEngineBuilderExtensions`) delegates to
-`ICkModelLibraryStatusService.EvaluateUpdateSetBlockersAsync` - the same guard, hints and DTO as LibraryStatus/imports. `System` / `System.*`
-are not judged. A host without the registration (or a platform-internal `ApplyBlueprintAsync(tenantId, id, force)` call, for example the
+`ICkModelLibraryStatusService.EvaluateImportSetBlockersAsync` - the same guard, hints and DTO as LibraryStatus/imports. The engine's update set
+(the declared floors) is **expanded with the dependency updates the import of those models pulls in** (AB#7029): `CkModelLibraryStatusService.ResolveImportSetAsync`
+runs each declared model through `CkImportDependencyResolver` (the calculation of `ResolveDependencies` and the library status rows, no second one),
+merges the results to one entry per model name at its highest version (a declared model is always part of the set, also when it is not published or
+its branch is incompatible) and judges them as ONE set - so the preview/apply agree with the import dialog (`Industry.Energy-3.6.0` brings `Basic-2.5.0`:
+blocked with `Basic-2.5.0` as `update`). `preview.ckUpdateSet` stays the engine's set (what the blueprint itself installs); the pulled-in updates show up
+as the `update` of a blocker. No engine change. The import endpoints keep `EvaluateUpdateSetBlockersAsync` (their set is already complete).
+The dependency set is calculated only in `CkImportDependencyResolver` (the code has no other catalog-dependency calculation; AB#5587 is not
+referenced anywhere in it), so there is nothing second to share. `System` / `System.*` are not judged. A host without the registration (or a platform-internal `ApplyBlueprintAsync(tenantId, id, force)` call, for example the
 service-managed blueprints at tenant setup in `TenantContext`) runs unguarded.
 
 | Endpoint | Behavior |
@@ -1077,7 +1084,7 @@ service-managed blueprints at tenant setup in `TenantContext`) runs unguarded.
   the second "Cannot return null for a non-null type" error and without nulling `blueprints`. This is backward compatible for queries; a
   generated client type gains `| null`. `previewUpdate` / the update result expose `isBlocked`, `ckUpdateSet`, `blockers`
   (`BlueprintCkUpgradeBlockerDtoType`).
-- Tests: `BlueprintsControllerUpgradeGuardTests`, `BlueprintCkUpgradeGuardTests` (unit), `BlueprintCkUpgradeGuardSchemaTests` and `BlueprintsMutationCkUpgradeBlockedTests` (GraphQL: runs `BlueprintsMutation` and the error serialization with a faked `IBlueprintService`),
+- Tests: `BlueprintsControllerUpgradeGuardTests`, `BlueprintCkUpgradeGuardTests` (unit), `CkModelLibraryStatusUpdateSetTests` (AB#7029 `BlueprintSet_*` / `BlueprintVerdict_*`: pulled-in dependency update blocks, safe set, no dependency updates, dedupe, blueprint verdict == `ResolveDependencies` verdict), `BlueprintCkUpgradeGuardSchemaTests` and `BlueprintsMutationCkUpgradeBlockedTests` (GraphQL: runs `BlueprintsMutation` and the error serialization with a faked `IBlueprintService`),
   `Tenant/BlueprintCkUpgradeGuardFlowTests` (integration: real controller, blueprint service and MongoDB; the guard decision is switched by
   `SwitchableBlueprintCkUpgradeGuard`; blueprint `CkGuardFlowBp`). User documentation: octo-documentation `constructionKits/blueprints.md#ck-upgrade-guard`.
 
