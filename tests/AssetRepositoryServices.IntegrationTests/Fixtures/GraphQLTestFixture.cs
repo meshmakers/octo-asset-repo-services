@@ -223,4 +223,45 @@ public class GraphQlTestFixture : SampleDataFixture
                 $"Modified count: {result.ModifiedCount}, Matched count: {result.MatchedCount}");
         }
     }
+
+    /// <summary>
+    ///     Copies a stored runtime entity into the collection of another CK type and rewrites its type id, bypassing the
+    ///     engine write path (AB#7025: a type whose generic create is refused can still hold entities, e.g. created by
+    ///     its method; the tests need one to prove that update and delete are untouched).
+    /// </summary>
+    /// <returns>The RtId (ObjectId string) of the copy.</returns>
+    public async Task<string> CloneRawEntityInMongoDb(string sourceRtId, string sourceCollectionSuffix,
+        string sourceTypeToken, string targetCollectionSuffix, string targetTypeToken)
+    {
+        if (_mongoClient == null)
+        {
+            throw new InvalidOperationException("MongoDB client not initialized");
+        }
+
+        var database = _mongoClient.GetDatabase(SystemDatabaseName);
+        var source = database.GetCollection<BsonDocument>($"RtEntity_{sourceCollectionSuffix}");
+        var document = await source.Find(Builders<BsonDocument>.Filter.Eq("_id", ObjectId.Parse(sourceRtId)))
+            .FirstAsync();
+        var copy = (BsonDocument)Rewrite(document, sourceTypeToken, targetTypeToken);
+        var newId = ObjectId.GenerateNewId();
+        copy["_id"] = newId;
+        await database.GetCollection<BsonDocument>($"RtEntity_{targetCollectionSuffix}").InsertOneAsync(copy);
+        return newId.ToString();
+    }
+
+    private static BsonValue Rewrite(BsonValue value, string from, string to)
+    {
+        switch (value)
+        {
+            case BsonDocument document:
+                return new BsonDocument(document.Elements.Select(e =>
+                    new BsonElement(e.Name, Rewrite(e.Value, from, to))));
+            case BsonArray array:
+                return new BsonArray(array.Select(v => Rewrite(v, from, to)));
+            case BsonString text when text.Value.Contains(from, StringComparison.Ordinal):
+                return new BsonString(text.Value.Replace(from, to, StringComparison.Ordinal));
+            default:
+                return value;
+        }
+    }
 }

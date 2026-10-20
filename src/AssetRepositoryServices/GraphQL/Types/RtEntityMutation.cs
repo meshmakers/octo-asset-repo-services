@@ -1,6 +1,7 @@
 using GraphQL;
 using GraphQL.Types;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Caches;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Methods;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Inputs;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Utils;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
@@ -66,6 +67,15 @@ internal class RtEntityMutation : RtMutationBase
         }
 
         var inputObjects = arg.GetArgument<List<RtEntityDto>>(Statics.EntitiesArg);
+
+        // AB#7025: a type whose method replaces the generic create is created through that method only.
+        var replacedByMethod = GenericCreateReplacedByMethodGraphQlError.TryCreate(ckCacheService,
+            graphQlUserContext.TenantId, rtCkTypeId);
+        if (replacedByMethod != null)
+        {
+            arg.Errors.Add(replacedByMethod);
+            return null;
+        }
 
         try
         {

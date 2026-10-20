@@ -1,6 +1,7 @@
 using AssetRepositoryServices.Resources;
 using GraphQL;
 using GraphQL.Types;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Methods;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Enums;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.Services.Files;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Inputs;
@@ -75,6 +76,15 @@ internal sealed class RtEntityMutationGeneric : RtMutationBase
         {
             arg.Errors.Add(new ExecutionError("All entities must have the same CkTypeId.")
                 { Code = Statics.GraphQlInvalidArguments });
+            return null;
+        }
+
+        // AB#7025: a type whose method replaces the generic create is created through that method only.
+        var replacedByMethod = GenericCreateReplacedByMethodGraphQlError.TryCreate(ckCacheService,
+            graphQlUserContext.TenantId, firstCkTypeId);
+        if (replacedByMethod != null)
+        {
+            arg.Errors.Add(replacedByMethod);
             return null;
         }
 

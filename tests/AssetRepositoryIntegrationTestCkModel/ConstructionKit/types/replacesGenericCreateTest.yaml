@@ -1,0 +1,33 @@
+$schema: https://schemas.meshmakers.cloud/construction-kit-elements.schema.json
+types:
+# AB#7025: a type whose static method replaces the generic create (AB#7024). Derivable inside the model (ckLanguage 2
+# default), so ManagedThingChild inherits the method.
+- typeId: ManagedThing
+  derivedFromCkTypeId: ${System}/Entity
+  description: "Created only through the static method Provision-1; the generic create is refused (AB#7025)."
+  attributes:
+    - id: ${System}/Name
+      name: Name
+  methods:
+    - methodId: Provision-1
+      kind: Static
+      description: "Replaces the generic create of ManagedThing and its derived types."
+      replacesGenericCreate: true
+      authorization:
+        roles: [ AccessTestAdmin ]
+- typeId: ManagedThingChild
+  derivedFromCkTypeId: ${this}/ManagedThing
+  description: "Concrete type derived from ManagedThing: inherits Provision-1, so its generic create is refused too."
+# A type with a static method that does NOT replace the generic create: its generic create works as before.
+- typeId: ToolThing
+  derivedFromCkTypeId: ${System}/Entity
+  description: "Has a static method without replacesGenericCreate; the generic create is allowed (AB#7025)."
+  attributes:
+    - id: ${System}/Name
+      name: Name
+  methods:
+    - methodId: Lookup-1
+      kind: Static
+      description: "A plain static method that leaves the generic create alone."
+      authorization:
+        roles: [ AccessTestAdmin ]

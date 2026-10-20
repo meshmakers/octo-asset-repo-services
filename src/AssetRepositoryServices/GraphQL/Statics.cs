@@ -89,6 +89,13 @@ internal static class Statics
     public const string GraphQlAttributeNotWritable = "ATTRIBUTE_NOT_WRITABLE";
 
     /// <summary>
+    ///     AB#7025: the generic <c>create</c> of a type whose static method has <c>replacesGenericCreate: true</c> (or
+    ///     whose base type has one) is refused. Extensions: <c>code</c> and <c>parameters</c> (<c>ckTypeId</c>,
+    ///     <c>methodId</c>). A GraphQL-layer code, not a code of the method response envelope.
+    /// </summary>
+    public const string GraphQlGenericCreateReplacedByMethod = "GENERIC_CREATE_REPLACED_BY_METHOD";
+
+    /// <summary>
     ///     CK v2 (AB#5668): a query used a <c>Hidden</c> attribute as column, filter, sort, search, aggregation or
     ///     group-by path.
     /// </summary>

@@ -711,6 +711,25 @@ session flow, fail closed, registration once) and `IntegrationTests/GraphQL/Muta
 the real `OctoSessionListener` transaction; harness `InProcessMethodGraphQlTestFixture` starts the method from a document listener registered after
 `OctoSessionListener`, i.e. inside the session and the transaction of the mutation).
 
+### Generic create refused for types whose method replaces it (AB#7025, F3.7)
+
+A static CK method with `replacesGenericCreate: true` (AB#7024; engine/engine-mongodb >= 3.5.34) means entities of its declaring type **and of every
+type derived from it** are created only through that method. Both generic creates - the per-type `create` of `RtEntityMutation` and the untyped
+`runtimeEntities.create` of `RtEntityMutationGeneric` - call `GraphQL/Methods/GenericCreateReplacedByMethodGraphQlError.TryCreate` first (before any
+entity is built, so nothing is written). It reads the type by its **version-less** `RtCkId` (`ICkCacheService.TryGetRtCkType`; never a generated
+versioned id) and looks for a `CkMethodGraph` with `ReplacesGenericCreate` in `CkTypeGraph.AllMethods`, which already includes the inherited methods
+(the compiler allows at most one such method per concrete type, inherited ones included). The answer is ONE GraphQL error, `data.<field>` = null:
+`extensions.code` = `GENERIC_CREATE_REPLACED_BY_METHOD` (`Statics.GraphQlGenericCreateReplacedByMethod`, a GraphQL-layer code, not a code of the method
+response envelope) and `extensions.parameters` = `{ ckTypeId, methodId }` (`methodId` = qualified id `Model/Type.Method-1` of the declaring type). The
+message is fixed, contains only ids, and carries no entity data, so it is byte-identical for every caller. It needs no method right and runs after
+authentication like any mutation. Update, delete, query-row writes and every other mutation are untouched; types without the flag are untouched.
+The CK meta field `CkMethod.replacesGenericCreate` (`Boolean!`, additive) shows the flag; v1 CK queries are unchanged.
+**Create paths that do not go through the GraphQL create and are therefore not covered:** `ModelsController.ImportRt` (async `ImportRtCommandRequest`
+job), blueprint seed data and `ImportCk`-time data, the mesh-adapter `ApplyChanges` nodes (repository access), and `FileSystemService`/system
+types (never flagged). There is no REST endpoint that creates arbitrary runtime entities. Tests: `UnitTests/GraphQL/Methods/GenericCreateReplacedByMethodGraphQlErrorTests`,
+`IntegrationTests/GraphQL/CkV2/GenericCreateReplacedByMethodTests` (test types `ManagedThing`, `ManagedThingChild`, `ToolThing` in
+`tests/AssetRepositoryIntegrationTestCkModel/ConstructionKit/types/replacesGenericCreateTest.yaml`).
+
 ### Blueprint-locked entities: stable error contract (AB#6385)
 
 The engine write guard (`DataPermissionWriteGuard`, AB#6384; opt-in by `DataPolicy.ProtectBlueprintLocked`) refuses a
