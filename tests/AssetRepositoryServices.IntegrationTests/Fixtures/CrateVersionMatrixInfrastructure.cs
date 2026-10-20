@@ -33,7 +33,7 @@ internal static class CrateVersionMatrixInfrastructure
     /// <summary>The 5.9 series: the oldest series a tenant dump comes from (AB#5490). Exact tag, never a floating one.</summary>
     public static string Crate59 => Environment.GetEnvironmentVariable(Crate59Variable) is { Length: > 0 } image ? image : "crate:5.9.10";
 
-    /// <summary>The 5.10 series; the version the other integration tests run on.</summary>
+    /// <summary>The 5.10 series: the source series of the 5.10 to 6.x step (the other integration tests run on 6.x since AB#6651).</summary>
     public static string Crate510 => Environment.GetEnvironmentVariable(Crate510Variable) is { Length: > 0 } image ? image : "crate:5.10.10";
 
     /// <summary>The 6.x target of the matrix.</summary>

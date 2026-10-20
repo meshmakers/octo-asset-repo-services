@@ -25,7 +25,7 @@ internal sealed class CrateDbTestCluster : IAsyncDisposable
 {
     public const int NodeCount = 2;
 
-    private const string Image = "crate:5.10.10";
+    private const string Image = "crate:6.4.6";
     private const string HeapSize = "512m";
     private static readonly TimeSpan FormationTimeout = TimeSpan.FromMinutes(2);
 
