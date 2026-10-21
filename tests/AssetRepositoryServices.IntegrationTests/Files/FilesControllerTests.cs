@@ -493,8 +493,37 @@ public class FilesControllerTests
     }
 
     [Fact]
-    public async Task Replace_OfAFileTheCallerMayNotWrite_Answers403()
+    public async Task Replace_OfAFileTheCallerCanSeeButMayNotWrite_Answers403()
     {
+        // AB#7213: "may not write" is only answered for a file the caller can see (AB#7126: visibility first),
+        // so bob reads everything and writes only his own files here.
+        var root = await _helpers.CreateRootAsync();
+        var wkn = root.Entity.RtWellKnownName!;
+        var alice = FilesTestFixture.CreateUser("alice", "FileUser");
+        var bob = FilesTestFixture.CreateUser("bob", "FileUser");
+
+        _fixture.Permissions.Table = FileSystemMutationGuardTests.ReadAllWriteOwnedFilesTable();
+        try
+        {
+            var (a1, _) = Create(alice, "secret"u8.ToArray(), "text/plain");
+            ((ObjectResult)await a1.UploadByPath(wkn, "alice.txt")).StatusCode.Should().Be(201);
+
+            var (b1, _) = Create(bob, "overwrite"u8.ToArray(), "text/plain");
+            var denied = (ObjectResult)await b1.UploadByPath(wkn, "alice.txt", "replace");
+            denied.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
+            Code(denied).Should().Be(FileSystemErrorCodes.Forbidden);
+        }
+        finally
+        {
+            _fixture.Permissions.Table = RtDataPolicyTable.Empty;
+        }
+    }
+
+    [Fact]
+    public async Task Replace_OfAHiddenFile_Answers404()
+    {
+        // AB#7213 (semantic change of AB#7126): a file hidden by owned-only Read does not exist for bob, so
+        // replacing it is "not found" (not 403) and leaves the content untouched.
         var root = await _helpers.CreateRootAsync();
         var wkn = root.Entity.RtWellKnownName!;
         var alice = FilesTestFixture.CreateUser("alice", "FileUser");
@@ -507,9 +536,8 @@ public class FilesControllerTests
             ((ObjectResult)await a1.UploadByPath(wkn, "alice.txt")).StatusCode.Should().Be(201);
 
             var (b1, _) = Create(bob, "overwrite"u8.ToArray(), "text/plain");
-            var denied = (ObjectResult)await b1.UploadByPath(wkn, "alice.txt", "replace");
-            denied.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
-            Code(denied).Should().Be(FileSystemErrorCodes.Forbidden);
+            var hidden = (ObjectResult)await b1.UploadByPath(wkn, "alice.txt", "replace");
+            hidden.StatusCode.Should().Be(StatusCodes.Status404NotFound);
         }
         finally
         {
