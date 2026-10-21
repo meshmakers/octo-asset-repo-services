@@ -288,19 +288,24 @@ public class FileSystemMutationGuardTests
         }
     }
 
+    private const string RenameMutation = """
+        mutation ($rtId: OctoObjectId!) { runtime { systemFilesFileSystemItems {
+          update(entities: [{rtId: $rtId, item: {name: "mine.txt"}}]) { rtId } } } }
+        """;
+
     [Fact]
-    public async Task Rename_OfAFileTheCallerMayNotWrite_AnswersForbidden()
+    public async Task Rename_OfAFileTheCallerCanSeeButMayNotWrite_AnswersForbidden()
     {
+        // AB#7213: since AB#7126 the write guard asks for visibility first, so "may not write" (403) only
+        // exists for a file the caller can SEE. The table therefore grants bob Read on everything and Write
+        // on his own files only.
         var root = await _helpers.CreateRootAsync();
         var bob = FilesTestFixture.CreateUser("bob", "FileUser");
-        _fixture.Permissions.Table = OwnedFilesTable();
+        _fixture.Permissions.Table = ReadAllWriteOwnedFilesTable();
         try
         {
             var aliceFile = await UploadAsAsync("alice", root, "alice.txt");
-            var result = await RunAsync("""
-                mutation ($rtId: OctoObjectId!) { runtime { systemFilesFileSystemItems {
-                  update(entities: [{rtId: $rtId, item: {name: "mine.txt"}}]) { rtId } } } }
-                """, new { rtId = aliceFile.Id.RtId.ToString() }, bob);
+            var result = await RunAsync(RenameMutation, new { rtId = aliceFile.Id.RtId.ToString() }, bob);
             ErrorCode(result).Should().Be(FileSystemErrorCodes.Forbidden);
         }
         finally
@@ -308,6 +313,83 @@ public class FileSystemMutationGuardTests
             _fixture.Permissions.Table = Meshmakers.Octo.Runtime.Contracts.DataPermissions.RtDataPolicyTable.Empty;
         }
     }
+
+    [Fact]
+    public async Task Rename_OfAHiddenFile_AnswersLikeAMissingFile()
+    {
+        // AB#7213 (semantic change of AB#7126): with owned-only Read, alice's file does not exist for bob, so
+        // renaming it answers exactly like renaming an id that does not exist, not FORBIDDEN.
+        var root = await _helpers.CreateRootAsync();
+        var bob = FilesTestFixture.CreateUser("bob", "FileUser");
+        _fixture.Permissions.Table = OwnedFilesTable();
+        try
+        {
+            var aliceFile = await UploadAsAsync("alice", root, "alice.txt");
+            var hidden = await RunAsync(RenameMutation, new { rtId = aliceFile.Id.RtId.ToString() }, bob);
+            var missing = await RunAsync(RenameMutation, new { rtId = Meshmakers.Octo.ConstructionKit.Contracts.OctoObjectId.GenerateNewId().ToString() }, bob);
+            ErrorCode(hidden).Should().NotBeNullOrEmpty().And.Be(ErrorCode(missing));
+            ErrorCode(hidden).Should().NotBe(FileSystemErrorCodes.Forbidden);
+
+            using var system = Repository.GetSession();
+            (await _fixture.FileSystem.FindByRtIdAsync(Repository, system, aliceFile.Id.RtId))!.Name.Should()
+                .Be("alice.txt", "the hidden file is unchanged");
+        }
+        finally
+        {
+            _fixture.Permissions.Table = Meshmakers.Octo.Runtime.Contracts.DataPermissions.RtDataPolicyTable.Empty;
+        }
+    }
+
+    [Fact]
+    public async Task Rename_WithWriteAndDeleteButNoRead_AnswersLikeAMissingFile_AndInsertStillWorks()
+    {
+        // AB#7213: a caller holding only files.manage-like grants (Write+Delete, no Read) loses update/delete of
+        // existing files (accepted behavior change of AB#7126), but still creates files and folders.
+        var root = await _helpers.CreateRootAsync();
+        var writer = FilesTestFixture.CreateUser("writer", "FileUser");
+        _fixture.Permissions.Table = WriteDeleteWithoutReadTable();
+        try
+        {
+            var existing = await _helpers.UploadAsync(root, "existing.txt", "x", FileConflictMode.Fail);
+            var created = await UploadAsAsync("writer", root, "created-by-writer.txt");
+            created.Name.Should().Be("created-by-writer.txt", "inserts are not subject to the visibility rule");
+
+            var hidden = await RunAsync(RenameMutation, new { rtId = existing.Id.RtId.ToString() }, writer);
+            var missing = await RunAsync(RenameMutation, new { rtId = Meshmakers.Octo.ConstructionKit.Contracts.OctoObjectId.GenerateNewId().ToString() }, writer);
+            ErrorCode(hidden).Should().NotBeNullOrEmpty().And.Be(ErrorCode(missing));
+            ErrorCode(hidden).Should().NotBe(FileSystemErrorCodes.Forbidden);
+        }
+        finally
+        {
+            _fixture.Permissions.Table = Meshmakers.Octo.Runtime.Contracts.DataPermissions.RtDataPolicyTable.Empty;
+        }
+    }
+
+    internal static Meshmakers.Octo.Runtime.Contracts.DataPermissions.RtDataPolicyTable ReadAllWriteOwnedFilesTable() =>
+        new([
+            new Meshmakers.Octo.Runtime.Contracts.DataPermissions.RtDataPolicyRule("files.read",
+                new HashSet<string> { FileSystemConstants.FileSystemItemCkTypeId },
+                [Meshmakers.Octo.Runtime.Contracts.DataPermissions.RtDataAction.Read],
+                OwnedOnly: false, AuditOnly: false, new HashSet<string> { "FileUser" }),
+            new Meshmakers.Octo.Runtime.Contracts.DataPermissions.RtDataPolicyRule("files.write.owned",
+                new HashSet<string> { FileSystemConstants.FileSystemItemCkTypeId },
+                [
+                    Meshmakers.Octo.Runtime.Contracts.DataPermissions.RtDataAction.Write,
+                    Meshmakers.Octo.Runtime.Contracts.DataPermissions.RtDataAction.Delete
+                ],
+                OwnedOnly: true, AuditOnly: false, new HashSet<string> { "FileUser" })
+        ]);
+
+    internal static Meshmakers.Octo.Runtime.Contracts.DataPermissions.RtDataPolicyTable WriteDeleteWithoutReadTable() =>
+        new([
+            new Meshmakers.Octo.Runtime.Contracts.DataPermissions.RtDataPolicyRule("files.manage",
+                new HashSet<string> { FileSystemConstants.FileSystemItemCkTypeId },
+                [
+                    Meshmakers.Octo.Runtime.Contracts.DataPermissions.RtDataAction.Write,
+                    Meshmakers.Octo.Runtime.Contracts.DataPermissions.RtDataAction.Delete
+                ],
+                OwnedOnly: false, AuditOnly: false, new HashSet<string> { "FileUser" })
+        ]);
 
     internal static Meshmakers.Octo.Runtime.Contracts.DataPermissions.RtDataPolicyTable OwnedFilesTable() =>
         new([

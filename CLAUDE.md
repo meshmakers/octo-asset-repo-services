@@ -401,6 +401,11 @@ nor creates the root. Model content:
   (tenant-aware: `available: false`, `reason: SYSTEM_FILES_MISSING` without System.Files; plus `maxDeleteEntries`).
   GraphQL writes on files and folders answer a data-permission denial with the code `FORBIDDEN`. Reads run in the caller's session
   (hidden = 404), writes through the engine's data-permission write guard (403 FORBIDDEN, message 4973).
+  Since AB#7126 the write guard asks for visibility first: update/replace/delete of a file the caller cannot see
+  (no Read grant, or owned-only Read and not the owner) answers like a missing file (404 / not found), and 403
+  FORBIDDEN is only given for a file the caller can see but may not write. A role with Write/Delete but no Read
+  (files.manage only) therefore cannot update/delete existing files, but still creates files and folders
+  (inserts are not subject to the visibility rule, nor is the parent link of the inserted entity, AB#7213).
   Problem details carry a stable `code` extension. Uploads are buffered to a temp file (the engine needs a
   seekable stream) while `MaxUploadBytes` is enforced; Kestrel's body limit is raised per request.
 - **Role model (AB#6467).** The API scope only opens the door; the file roles decide. Built-in baseline
