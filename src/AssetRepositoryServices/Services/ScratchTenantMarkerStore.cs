@@ -43,6 +43,14 @@ internal sealed class ScratchTenantMarkerStore(IOctoService octoService) : IScra
     {
         var systemContext = octoService.SystemContext;
         using var session = await systemContext.GetAdminSessionAsync();
-        await systemContext.DeleteConfigurationAsync(session, ScratchTenantMarker.GetConfigurationKey(tenantId));
+        var key = ScratchTenantMarker.GetConfigurationKey(tenantId);
+
+        // The engine's delete of a configuration that does not exist throws ("Entity filter returns not exactly one
+        // entity"), and a missing marker is the normal case of every create / attach / delete without the scratch flag.
+        var existing = await systemContext.GetConfigurationAsync<ScratchTenantMarker>(session, key, defaultValue: null);
+        if (existing != null)
+        {
+            await systemContext.DeleteConfigurationAsync(session, key);
+        }
     }
 }
