@@ -21,3 +21,13 @@ public class BlueprintLockCollection : ICollectionFixture<BlueprintLockGraphQlTe
 {
     public const string Name = "BlueprintLock";
 }
+
+/// <summary>
+///     AB#7213: GraphQL against a tenant whose data policies grant Write/Delete on all <c>Customer</c> records but Read
+///     only on the caller's own (or not at all).
+/// </summary>
+[CollectionDefinition(Name)]
+public class HiddenRecordCollection : ICollectionFixture<HiddenRecordGraphQlTestFixture>
+{
+    public const string Name = "HiddenRecord";
+}
