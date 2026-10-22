@@ -406,6 +406,10 @@ nor creates the root. Model content:
   FORBIDDEN is only given for a file the caller can see but may not write. A role with Write/Delete but no Read
   (files.manage only) therefore cannot update/delete existing files, but still creates files and folders
   (inserts are not subject to the visibility rule, nor is the parent link of the inserted entity, AB#7213).
+  The same rule holds for the generic GraphQL `runtimeEntities.update` / `delete` of any CK type: a record the caller
+  may write but not see answers with the not-found error `ASSET1001`, identical to a non-existent rtId, and stays
+  untouched. Pinned by `GraphQL/HiddenRecords/HiddenRecordMutationGraphQlTests` (fixture `HiddenRecordGraphQlTestFixture`:
+  P1 Write+Delete on all records, P2 Read on own records, variant with P1 only; AB#7213).
   Problem details carry a stable `code` extension. Uploads are buffered to a temp file (the engine needs a
   seekable stream) while `MaxUploadBytes` is enforced; Kestrel's body limit is raised per request.
 - **Role model (AB#6467).** The API scope only opens the door; the file roles decide. Built-in baseline
