@@ -1139,7 +1139,7 @@ it up without a human login (identity side: octo-identity-services `CLAUDE.md`, 
 
 - Accepted only for a token that is a client-credentials token (no `sub`) with a `client_id`, issued for **the route tenant itself** (the direct
   parent), and the role `TenantManagement` (the endpoint's `TenantAdministrationPolicy`). Anything else: `403` with the reason, nothing written.
-  The decision is `ScratchTenantMarker.TryCreateForCaller` (octo-sdk), shared with the bot service's restore.
+  The decision is `ScratchTenantMarker.TryCreateForCaller` (octo-sdk).
 - The `ScratchTenantMarker` (creator client, parent, time) is written to the system tenant configuration **before** `CreateChildTenantAsync`
   (identity sets the tenant up on `PosCreateTenant` and must find it then) and taken back when the create fails by a **compare-and-delete**
   (`DeleteIfMatchesAsync`: only the exact marker this request wrote - creator client and creation time - so a parallel request for the same tenant id

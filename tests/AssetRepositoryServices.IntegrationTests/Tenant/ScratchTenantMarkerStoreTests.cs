@@ -105,4 +105,38 @@ public class ScratchTenantMarkerStoreTests(AssetRepoFixture fixture)
             new ScratchTenantMarker { ParentTenantId = "p", CreatorClientId = "same", CreatedAtUtc = at })).Should().BeFalse();
         await store.DeleteAsync(tenantId);
     }
+
+    /// <summary>
+    ///     A restore drops the tenant and re-creates it from the dump (<c>RestoreTenantAsync</c>: <c>DropChildTenantAsync</c>
+    ///     then attach). The scratch marker lives in the system tenant configuration, so the drop must leave it in place -
+    ///     that is why a restore into a tenant created with <c>Create --scratch</c> keeps its creator as administrator.
+    /// </summary>
+    [Fact]
+    public async Task Marker_SurvivesTheDropOfTheTenant_AsDoneByARestore()
+    {
+        var systemContext = fixture.GetSystemContext();
+        var store = NewStore();
+        var tenantId = $"scr-restore-{Guid.NewGuid():N}"[..24];
+        await store.SetAsync(tenantId, new ScratchTenantMarker
+        {
+            ParentTenantId = systemContext.TenantId, CreatorClientId = "agent", CreatedAtUtc = DateTime.UtcNow
+        });
+
+        using (var session = await systemContext.GetAdminSessionAsync())
+        {
+            session.StartTransaction();
+            await systemContext.CreateChildTenantAsync(session, tenantId, tenantId);
+            await session.CommitTransactionAsync();
+        }
+
+        using (var session = await systemContext.GetAdminSessionAsync())
+        {
+            session.StartTransaction();
+            await systemContext.DropChildTenantAsync(session, tenantId);
+            await session.CommitTransactionAsync();
+        }
+
+        (await store.GetAsync(tenantId)).Should().NotBeNull("the drop of a restore must not take the marker with it");
+        await store.DeleteAsync(tenantId);
+    }
 }
