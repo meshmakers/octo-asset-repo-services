@@ -281,7 +281,7 @@ public class TenantsController : ControllerBase
     [Authorize(AssetRepositoryServiceConstants.TenantAssetApiReadOnlyPolicy)]
     [ProducesResponseType(typeof(IEnumerable<TenantDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(OperationFailedErrorDto), StatusCodes.Status400BadRequest)]
-    [ProducesResponseType(typeof(OperationFailedErrorDto), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ForbiddenErrorDto), StatusCodes.Status403Forbidden)]
     [ProducesResponseType(typeof(InternalServerErrorDto), StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> GetAll([FromQuery] PagingParams? pagingParams)
     {
@@ -455,7 +455,7 @@ public class TenantsController : ControllerBase
                 {
                     _logger.LogWarning("Refused scratch creation of tenant '{TenantId}' in '{ParentTenantId}': {Reason}",
                         normalizedChildTenantId, tenantContext.TenantId, refusal);
-                    return StatusCode(StatusCodes.Status403Forbidden, new OperationFailedErrorDto(refusal));
+                    return StatusCode(StatusCodes.Status403Forbidden, new ForbiddenErrorDto(refusal));
                 }
             }
 

@@ -819,8 +819,9 @@ public class TenantsControllerTests
 
         var forbidden = result.Should().BeOfType<ObjectResult>().Subject;
         forbidden.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
-        forbidden.Value.Should().BeOfType<OperationFailedErrorDto>().Subject.Message
-            .Should().Contain("client-credentials");
+        var body = forbidden.Value.Should().BeOfType<ForbiddenErrorDto>().Subject;
+        body.StatusCode.Should().Be(403, "the body agrees with the HTTP status");
+        body.Message.Should().Contain("client-credentials");
         A.CallTo(() => _scratchTenantMarkerStore.SetAsync(A<string>._, A<ScratchTenantMarker>._)).MustNotHaveHappened();
         A.CallTo(() => _tenantContext.CreateChildTenantAsync(A<IOctoAdminSession>._, A<string>._, A<string>._))
             .MustNotHaveHappened();
