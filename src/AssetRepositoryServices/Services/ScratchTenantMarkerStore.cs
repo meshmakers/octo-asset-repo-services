@@ -1,0 +1,81 @@
+using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
+
+namespace Meshmakers.Octo.Backend.AssetRepositoryServices.Services;
+
+/// <summary>
+///     Reads and writes the <see cref="ScratchTenantMarker" /> of a scratch tenant (AB#7192) in the configuration of the
+///     system tenant, keyed by the tenant id. See the marker for why it lives there and not in the tenant's own database.
+/// </summary>
+public interface IScratchTenantMarkerStore
+{
+    /// <summary>The marker of the tenant, or <c>null</c> when it is not a scratch tenant.</summary>
+    Task<ScratchTenantMarker?> GetAsync(string tenantId);
+
+    /// <summary>Records <paramref name="marker" /> for the tenant, replacing a previous one.</summary>
+    Task SetAsync(string tenantId, ScratchTenantMarker marker);
+
+    /// <summary>Removes the marker of the tenant; a no-op when there is none.</summary>
+    Task DeleteAsync(string tenantId);
+
+    /// <summary>
+    ///     Removes the marker of the tenant only when it is exactly <paramref name="expected" /> (same creator client and
+    ///     creation time): the compare-and-delete of a failed create, which must never remove a marker that a parallel
+    ///     request wrote for the same tenant id. Returns <c>true</c> when the marker was removed.
+    /// </summary>
+    Task<bool> DeleteIfMatchesAsync(string tenantId, ScratchTenantMarker expected);
+}
+
+/// <inheritdoc />
+internal sealed class ScratchTenantMarkerStore(IOctoService octoService) : IScratchTenantMarkerStore
+{
+    /// <inheritdoc />
+    public async Task<ScratchTenantMarker?> GetAsync(string tenantId)
+    {
+        var systemContext = octoService.SystemContext;
+        using var session = await systemContext.GetAdminSessionAsync();
+        return await systemContext.GetConfigurationAsync<ScratchTenantMarker>(session,
+            ScratchTenantMarker.GetConfigurationKey(tenantId), defaultValue: null);
+    }
+
+    /// <inheritdoc />
+    public async Task SetAsync(string tenantId, ScratchTenantMarker marker)
+    {
+        var systemContext = octoService.SystemContext;
+        using var session = await systemContext.GetAdminSessionAsync();
+        await systemContext.SetConfigurationAsync(session, ScratchTenantMarker.GetConfigurationKey(tenantId), marker);
+    }
+
+    /// <inheritdoc />
+    public async Task<bool> DeleteIfMatchesAsync(string tenantId, ScratchTenantMarker expected)
+    {
+        var systemContext = octoService.SystemContext;
+        using var session = await systemContext.GetAdminSessionAsync();
+        var key = ScratchTenantMarker.GetConfigurationKey(tenantId);
+        var stored = await systemContext.GetConfigurationAsync<ScratchTenantMarker>(session, key, defaultValue: null);
+        if (stored == null ||
+            !string.Equals(stored.CreatorClientId, expected.CreatorClientId, StringComparison.Ordinal) ||
+            stored.CreatedAtUtc != expected.CreatedAtUtc)
+        {
+            return false;
+        }
+
+        await systemContext.DeleteConfigurationAsync(session, key);
+        return true;
+    }
+
+    /// <inheritdoc />
+    public async Task DeleteAsync(string tenantId)
+    {
+        var systemContext = octoService.SystemContext;
+        using var session = await systemContext.GetAdminSessionAsync();
+        var key = ScratchTenantMarker.GetConfigurationKey(tenantId);
+
+        // The engine's delete of a configuration that does not exist throws ("Entity filter returns not exactly one
+        // entity"), and a missing marker is the normal case of every create / attach / delete without the scratch flag.
+        var existing = await systemContext.GetConfigurationAsync<ScratchTenantMarker>(session, key, defaultValue: null);
+        if (existing != null)
+        {
+            await systemContext.DeleteConfigurationAsync(session, key);
+        }
+    }
+}

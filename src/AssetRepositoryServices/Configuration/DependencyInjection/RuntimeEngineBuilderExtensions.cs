@@ -437,6 +437,9 @@ public static class RuntimeEngineBuilderExtensions
         }
         builder.Services.AddSingleton<IOctoService, OctoService>();
 
+        // AB#7192: the scratch marker of tenants created with the opt-in scratch flag (system tenant configuration).
+        builder.Services.AddSingleton<IScratchTenantMarkerStore, ScratchTenantMarkerStore>();
+
         // AB#5432: CK model health as a platform function instead of a blueprint pipeline.
         //
         // The status service is the piece the REST endpoint and the sweep share — transient because

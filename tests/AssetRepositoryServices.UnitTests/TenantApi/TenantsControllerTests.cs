@@ -5,6 +5,7 @@ using Meshmakers.Octo.Backend.AssetRepositoryServices.TenantApi.v1.Controllers;
 using Meshmakers.Octo.Common.DistributionEventHub.Services;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects.ApiErrors;
+using System.Security.Claims;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb.DisplayRules;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb.Repositories;
@@ -30,6 +31,7 @@ public class TenantsControllerTests
     private readonly ITenantSetupRetryStore _tenantSetupRetryStore;
     private readonly ITenantCapabilityStateReader _capabilityStateReader;
     private readonly IDisplayRuleRecomputeService _displayRuleRecomputeService;
+    private readonly IScratchTenantMarkerStore _scratchTenantMarkerStore;
     private readonly TenantsController _controller;
 
     public TenantsControllerTests()
@@ -53,6 +55,9 @@ public class TenantsControllerTests
             .Returns(Array.Empty<TenantCapability>());
 
         _displayRuleRecomputeService = A.Fake<IDisplayRuleRecomputeService>();
+        // FakeItEasy hands out a dummy marker for a Task<ScratchTenantMarker?> by default; "no marker" is the rule.
+        _scratchTenantMarkerStore = A.Fake<IScratchTenantMarkerStore>();
+        A.CallTo(() => _scratchTenantMarkerStore.GetAsync(A<string>._)).Returns((ScratchTenantMarker?)null);
 
         _controller = new TenantsController(
             _octoService,
@@ -61,7 +66,8 @@ public class TenantsControllerTests
             _tenantSetupRetryStore,
             A.Fake<ILogger<TenantsController>>(),
             _capabilityStateReader,
-            _displayRuleRecomputeService);
+            _displayRuleRecomputeService,
+            _scratchTenantMarkerStore);
 
         var httpContext = new DefaultHttpContext();
         httpContext.Request.RouteValues["tenantId"] = OwnTenantId;
@@ -775,5 +781,257 @@ public class TenantsControllerTests
         var result = await _controller.RecomputeDisplayNames(OwnTenantId, "X/Nope");
 
         result.Should().BeOfType<BadRequestObjectResult>();
+    }
+
+    // --- AB#7192: scratch tenants ---
+
+    private const string CreatorClientId = "agent-client";
+
+    private void SignInAsServiceToken(string? tenantId = OwnTenantId, string? clientId = CreatorClientId)
+    {
+        var claims = new List<Claim>();
+        if (tenantId != null)
+        {
+            claims.Add(new Claim("tenant_id", tenantId));
+        }
+
+        if (clientId != null)
+        {
+            claims.Add(new Claim("client_id", clientId));
+        }
+
+        _controller.ControllerContext.HttpContext.User = new ClaimsPrincipal(new ClaimsIdentity(claims, "Bearer"));
+    }
+
+    private void SignInAsUser()
+    {
+        _controller.ControllerContext.HttpContext.User = new ClaimsPrincipal(new ClaimsIdentity(
+            [new Claim("sub", "user-1"), new Claim("tenant_id", OwnTenantId), new Claim("client_id", "octo-cli")],
+            "Bearer"));
+    }
+
+    [Fact]
+    public async Task Post_Scratch_ByAUserToken_Is403_AndWritesNoMarkerAndCreatesNothing()
+    {
+        SignInAsUser();
+
+        var result = await _controller.Post("child-a", "child-a-db", scratch: true);
+
+        var forbidden = result.Should().BeOfType<ObjectResult>().Subject;
+        forbidden.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
+        var body = forbidden.Value.Should().BeOfType<ForbiddenErrorDto>().Subject;
+        body.StatusCode.Should().Be(403, "the body agrees with the HTTP status");
+        body.Message.Should().Contain("client-credentials");
+        A.CallTo(() => _scratchTenantMarkerStore.SetAsync(A<string>._, A<ScratchTenantMarker>._)).MustNotHaveHappened();
+        A.CallTo(() => _tenantContext.CreateChildTenantAsync(A<IOctoAdminSession>._, A<string>._, A<string>._))
+            .MustNotHaveHappened();
+    }
+
+    [Fact]
+    public async Task Post_Scratch_ByAServiceTokenOfAnotherTenant_Is403()
+    {
+        SignInAsServiceToken(tenantId: "some-other-tenant");
+
+        var result = await _controller.Post("child-a", "child-a-db", scratch: true);
+
+        result.Should().BeOfType<ObjectResult>().Which.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
+        A.CallTo(() => _scratchTenantMarkerStore.SetAsync(A<string>._, A<ScratchTenantMarker>._)).MustNotHaveHappened();
+    }
+
+    [Fact]
+    public async Task Post_Scratch_ByAServiceTokenWithoutTenantClaim_Is403()
+    {
+        SignInAsServiceToken(tenantId: null);
+
+        var result = await _controller.Post("child-a", "child-a-db", scratch: true);
+
+        result.Should().BeOfType<ObjectResult>().Which.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
+    }
+
+    [Fact]
+    public async Task Post_Scratch_ByAServiceTokenWithoutClientId_Is403()
+    {
+        SignInAsServiceToken(clientId: null);
+
+        var result = await _controller.Post("child-a", "child-a-db", scratch: true);
+
+        result.Should().BeOfType<ObjectResult>().Which.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
+    }
+
+    [Fact]
+    public async Task Post_Scratch_ByAServiceTokenOfTheParent_RecordsTheCreator_BeforeTheTenantExists()
+    {
+        SignInAsServiceToken();
+        ScratchTenantMarker? written = null;
+        A.CallTo(() => _scratchTenantMarkerStore.SetAsync("child-a", A<ScratchTenantMarker>._))
+            .Invokes((string _, ScratchTenantMarker m) => written = m);
+
+        var result = await _controller.Post("Child-A", "child-a-db", scratch: true);
+
+        result.Should().BeOfType<NoContentResult>();
+        written.Should().NotBeNull();
+        written!.ParentTenantId.Should().Be(OwnTenantId);
+        written.CreatorClientId.Should().Be(CreatorClientId);
+        written.CreatedAtUtc.Should().BeCloseTo(DateTime.UtcNow, TimeSpan.FromMinutes(1));
+        written.GrantedAtUtc.Should().BeNull();
+        written.RevokedAtUtc.Should().BeNull();
+        // Identity sets the tenant up the moment it is created and must find the marker then.
+        A.CallTo(() => _scratchTenantMarkerStore.SetAsync("child-a", A<ScratchTenantMarker>._))
+            .MustHaveHappened()
+            .Then(A.CallTo(() => _tenantContext.CreateChildTenantAsync(A<IOctoAdminSession>._, "child-a-db",
+                "Child-A")).MustHaveHappened());
+    }
+
+    [Fact]
+    public async Task Post_Scratch_ForATakenTenantId_IsTheGenericConflict_AndLeavesTheExistingMarkerAlone()
+    {
+        SignInAsServiceToken();
+        A.CallTo(() => _systemContext.IsTenantRegisteredAsync("child-a")).Returns(true);
+
+        var result = await _controller.Post("child-a", "child-a-db", scratch: true);
+
+        result.Should().BeOfType<ConflictObjectResult>().Subject.Value.Should()
+            .BeOfType<OperationFailedErrorDto>().Subject.Message.Should().Be(GenericTenantIdConflict("child-a"));
+        A.CallTo(() => _scratchTenantMarkerStore.SetAsync(A<string>._, A<ScratchTenantMarker>._)).MustNotHaveHappened();
+        A.CallTo(() => _scratchTenantMarkerStore.DeleteAsync(A<string>._)).MustNotHaveHappened();
+    }
+
+    [Fact]
+    public async Task Post_Scratch_WhenTheCreateFails_RemovesTheMarkerAgain()
+    {
+        SignInAsServiceToken();
+        A.CallTo(() => _tenantContext.CreateChildTenantAsync(A<IOctoAdminSession>._, A<string>._, A<string>._))
+            .Throws(new InvalidOperationException("boom"));
+
+        var result = await _controller.Post("child-a", "child-a-db", scratch: true);
+
+        result.Should().BeOfType<BadRequestObjectResult>();
+        A.CallTo(() => _scratchTenantMarkerStore.DeleteIfMatchesAsync("child-a",
+            A<ScratchTenantMarker>.That.Matches(m => m.CreatorClientId == CreatorClientId))).MustHaveHappened();
+        A.CallTo(() => _scratchTenantMarkerStore.DeleteAsync(A<string>._)).MustNotHaveHappened();
+    }
+
+    [Fact]
+    public async Task Post_WithoutTheFlag_WritesNoMarker_AndClearsAStaleOneOfAGoneTenant()
+    {
+        SignInAsServiceToken();
+
+        var result = await _controller.Post("child-a", "child-a-db");
+
+        result.Should().BeOfType<NoContentResult>();
+        A.CallTo(() => _scratchTenantMarkerStore.SetAsync(A<string>._, A<ScratchTenantMarker>._)).MustNotHaveHappened();
+        A.CallTo(() => _scratchTenantMarkerStore.DeleteAsync("child-a")).MustHaveHappened();
+    }
+
+    [Fact]
+    public async Task Post_WithoutTheFlag_ForARegisteredTenantId_TouchesNoMarker()
+    {
+        A.CallTo(() => _systemContext.IsTenantRegisteredAsync("child-a")).Returns(true);
+
+        await _controller.Post("child-a", "child-a-db");
+
+        A.CallTo(() => _scratchTenantMarkerStore.DeleteAsync(A<string>._)).MustNotHaveHappened();
+    }
+
+    [Fact]
+    public async Task Delete_RemovesTheScratchMarker()
+    {
+        const string childTenantId = "child-a";
+        SetupOwnChild(childTenantId);
+
+        var result = await _controller.Delete(childTenantId);
+
+        result.Should().BeOfType<OkResult>();
+        A.CallTo(() => _scratchTenantMarkerStore.DeleteAsync(childTenantId)).MustHaveHappened();
+    }
+
+    [Fact]
+    public async Task Delete_Refused_KeepsTheScratchMarker()
+    {
+        const string childTenantId = "child-a";
+        SetupOwnChild(childTenantId, TenantCapability.StreamData);
+
+        var result = await _controller.Delete(childTenantId);
+
+        result.Should().BeOfType<ConflictObjectResult>();
+        A.CallTo(() => _scratchTenantMarkerStore.DeleteAsync(A<string>._)).MustNotHaveHappened();
+    }
+
+    [Fact]
+    public async Task Detach_RemovesTheScratchMarker()
+    {
+        const string childTenantId = "child-a";
+        SetupOwnChild(childTenantId);
+
+        var result = await _controller.Detach(childTenantId);
+
+        result.Should().BeOfType<NoContentResult>();
+        A.CallTo(() => _scratchTenantMarkerStore.DeleteAsync(childTenantId)).MustHaveHappened();
+    }
+
+    [Fact]
+    public async Task Get_Children_ShowsTheScratchMarker_OnlyOnTheScratchTenant()
+    {
+        SetupChildTenants(2, new OctoTenant("child-a", "child-a-db"), new OctoTenant("child-b", "child-b-db"));
+        var createdAt = new DateTime(2026, 10, 22, 9, 0, 0, DateTimeKind.Utc);
+        A.CallTo(() => _scratchTenantMarkerStore.GetAsync("child-a")).Returns(new ScratchTenantMarker
+        {
+            ParentTenantId = OwnTenantId, CreatorClientId = CreatorClientId, CreatedAtUtc = createdAt,
+            RevokedAtUtc = createdAt.AddHours(1)
+        });
+
+        var result = await _controller.Get((PagingParams?)null);
+
+        var list = result.Should().BeOfType<OkObjectResult>().Subject
+            .Value.Should().BeAssignableTo<IEnumerable<TenantDto>>().Subject.ToList();
+        var scratch = list.Single(t => t.TenantId == "child-a");
+        scratch.IsScratch.Should().BeTrue();
+        scratch.ScratchCreatorClientId.Should().Be(CreatorClientId);
+        scratch.ScratchCreatedAtUtc.Should().Be(createdAt);
+        scratch.ScratchAccessRevoked.Should().BeTrue();
+        var plain = list.Single(t => t.TenantId == "child-b");
+        plain.IsScratch.Should().BeFalse();
+        plain.ScratchCreatorClientId.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Get_Children_StillListsWhenTheMarkerCannotBeRead()
+    {
+        SetupChildTenants(1, new OctoTenant("child-a", "child-a-db"));
+        A.CallTo(() => _scratchTenantMarkerStore.GetAsync(A<string>._)).Throws(new InvalidOperationException("db"));
+
+        var result = await _controller.Get((PagingParams?)null);
+
+        result.Should().BeOfType<OkObjectResult>().Subject.Value.Should()
+            .BeAssignableTo<IEnumerable<TenantDto>>().Subject.Should().ContainSingle()
+            .Which.IsScratch.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task Get_ById_ShowsTheScratchMarker()
+    {
+        A.CallTo(() => _tenantContext.IsChildTenantExistingAsync(A<IOctoAdminSession>._, "child-a")).Returns(true);
+        A.CallTo(() => _tenantContext.GetChildTenantAsync(A<IOctoAdminSession>._, "child-a"))
+            .Returns(new OctoTenant("child-a", "child-a-db"));
+        A.CallTo(() => _scratchTenantMarkerStore.GetAsync("child-a")).Returns(new ScratchTenantMarker
+        {
+            ParentTenantId = OwnTenantId, CreatorClientId = CreatorClientId, CreatedAtUtc = DateTime.UtcNow
+        });
+
+        var result = await _controller.Get("child-a");
+
+        var dto = result.Should().BeOfType<OkObjectResult>().Subject.Value.Should().BeOfType<TenantDto>().Subject;
+        dto.IsScratch.Should().BeTrue();
+        dto.ScratchAccessRevoked.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task Attach_OfAGoneTenantId_DropsAStaleScratchMarker()
+    {
+        var result = await _controller.Attach("child-a", "child-a-db");
+
+        result.Should().BeOfType<NoContentResult>();
+        A.CallTo(() => _scratchTenantMarkerStore.DeleteAsync("child-a")).MustHaveHappened();
+        A.CallTo(() => _scratchTenantMarkerStore.SetAsync(A<string>._, A<ScratchTenantMarker>._)).MustNotHaveHappened();
     }
 }

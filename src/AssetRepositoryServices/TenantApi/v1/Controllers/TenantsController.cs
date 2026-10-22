@@ -41,6 +41,7 @@ public class TenantsController : ControllerBase
     private readonly ITenantSetupRetryStore _tenantSetupRetryStore;
     private readonly ITenantCapabilityStateReader _capabilityStateReader;
     private readonly IDisplayRuleRecomputeService _displayRuleRecomputeService;
+    private readonly IScratchTenantMarkerStore _scratchTenantMarkerStore;
 
     /// <summary>
     ///     Constructor
@@ -48,8 +49,10 @@ public class TenantsController : ControllerBase
     public TenantsController(IOctoService octoService, IDistributionEventHubService distributionEventHubService,
         ITenantLifecycleStore tenantLifecycleStore, ITenantSetupRetryStore tenantSetupRetryStore,
         ILogger<TenantsController> logger, ITenantCapabilityStateReader capabilityStateReader,
-        IDisplayRuleRecomputeService displayRuleRecomputeService)
+        IDisplayRuleRecomputeService displayRuleRecomputeService,
+        IScratchTenantMarkerStore scratchTenantMarkerStore)
     {
+        _scratchTenantMarkerStore = scratchTenantMarkerStore;
         _octoService = octoService;
         _distributionEventHubService = distributionEventHubService;
         _tenantLifecycleStore = tenantLifecycleStore;
@@ -160,10 +163,11 @@ public class TenantsController : ControllerBase
             session.StartTransaction();
 
             var result = await tenantContext.GetChildTenantsAsync(session, pagingParams?.Skip, pagingParams?.Take);
+            var children = await CreateTenantDtosWithScratchAsync(result.Items);
 
             if (pagingParams != null)
             {
-                var pagedResult = new PagedResult<TenantDto>(result.Items.Select(CreateTenantDto),
+                var pagedResult = new PagedResult<TenantDto>(children,
                     pagingParams.Skip, pagingParams.Take, result.TotalCount);
 
                 Response.Headers.Append("X-Pagination", pagedResult.GetHeader().ToJson());
@@ -175,7 +179,7 @@ public class TenantsController : ControllerBase
 
             await session.CommitTransactionAsync();
 
-            return Ok(result.Items.Select(CreateTenantDto));
+            return Ok(children);
         }
         catch (Exception ex)
         {
@@ -235,7 +239,7 @@ public class TenantsController : ControllerBase
                         continue;
                     }
 
-                    var dto = CreateTenantDto(child);
+                    var dto = await CreateTenantDtoWithScratchAsync(child);
                     dto.ParentTenantId = parentId;
                     result.Add(dto);
 
@@ -395,7 +399,7 @@ public class TenantsController : ControllerBase
 
             var octoTenant = await tenantContext.GetChildTenantAsync(session, id);
             await session.CommitTransactionAsync();
-            return Ok(CreateTenantDto(octoTenant));
+            return Ok(await CreateTenantDtoWithScratchAsync(octoTenant));
         }
         catch (Exception ex)
         {
@@ -410,23 +414,50 @@ public class TenantsController : ControllerBase
     /// <param name="childTenantId">ID of the child tenant to create</param>
     /// <param name="databaseName">Name of the database</param>
     /// <param name="blueprintId">Optional blueprint ID to apply</param>
+    /// <param name="scratch">
+    ///     Opt-in (AB#7192): create the tenant as a scratch tenant. Only a client-credentials token of this tenant with the
+    ///     role <c>TenantManagement</c> is accepted (<c>403</c> otherwise). The tenant records the creating client and
+    ///     identity makes that client's mirror administrator (<c>TenantOwners</c>) of the new tenant, so an agent can work in
+    ///     it and clean it up without a human login. The client has to be flagged <c>AutoProvisionInChildTenants</c>, or it
+    ///     has no mirror in the child and gets nothing. Without the flag nothing changes.
+    /// </param>
     [HttpPost]
     [Authorize(AssetRepositoryServiceConstants.TenantAdministrationPolicy)]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(typeof(OperationFailedErrorDto), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ForbiddenErrorDto), StatusCodes.Status403Forbidden)]
     [ProducesResponseType(typeof(OperationFailedErrorDto), StatusCodes.Status409Conflict)]
     [ProducesResponseType(typeof(InternalServerErrorDto), StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> Post(
         [Required] string childTenantId,
         [Required] string databaseName,
-        string? blueprintId = null)
+        string? blueprintId = null,
+        bool scratch = false)
     {
+        // AB#7192: the marker is written BEFORE the tenant exists (identity sets a tenant up the moment it is created and
+        // must find it then) and removed again when the create fails. Never touches the marker of a tenant that exists.
+        var markerWritten = false;
+        ScratchTenantMarker? writtenMarker = null;
+        var created = false;
+        var normalizedChildTenantId = childTenantId.NormalizeString();
         try
         {
             var tenantContext = await GetTenantContextAsync();
             if (tenantContext == null)
             {
                 return BadRequest(new OperationFailedErrorDto("TenantId is required"));
+            }
+
+            ScratchTenantMarker? scratchMarker = null;
+            if (scratch)
+            {
+                var refusal = ScratchTenantMarker.TryCreateForCaller(User, tenantContext.TenantId, out scratchMarker);
+                if (refusal != null)
+                {
+                    _logger.LogWarning("Refused scratch creation of tenant '{TenantId}' in '{ParentTenantId}': {Reason}",
+                        normalizedChildTenantId, tenantContext.TenantId, refusal);
+                    return StatusCode(StatusCodes.Status403Forbidden, new ForbiddenErrorDto(refusal));
+                }
             }
 
             // Serialize against an in-flight deletion: if the lifecycle store still records this tenant as
@@ -446,6 +477,26 @@ public class TenantsController : ControllerBase
 
                 return Conflict(new OperationFailedErrorDto(
                     TenantException.TenantIdNotAvailable(childTenantId).Message));
+            }
+
+            // The marker of an existing tenant is not ours to touch: a create of a taken id answers the engine's
+            // generic conflict, and a stale marker of a tenant that is gone must not hand its creator the new one.
+            var alreadyRegistered = await _octoService.SystemContext.IsTenantRegisteredAsync(normalizedChildTenantId);
+            if (scratchMarker != null && alreadyRegistered)
+            {
+                return Conflict(new OperationFailedErrorDto(
+                    TenantException.TenantIdNotAvailable(childTenantId).Message));
+            }
+
+            if (scratchMarker != null)
+            {
+                await _scratchTenantMarkerStore.SetAsync(normalizedChildTenantId, scratchMarker);
+                markerWritten = true;
+                writtenMarker = scratchMarker;
+            }
+            else if (!alreadyRegistered)
+            {
+                await _scratchTenantMarkerStore.DeleteAsync(normalizedChildTenantId);
             }
 
             using var session = await tenantContext.GetAdminSessionAsync();
@@ -492,6 +543,7 @@ public class TenantsController : ControllerBase
                 throw;
             }
 
+            created = true;
             return NoContent();
         }
         catch (TenantException e) when (e.IsConflict)
@@ -517,6 +569,13 @@ public class TenantsController : ControllerBase
         catch (Exception ex)
         {
             return StatusCode(StatusCodes.Status500InternalServerError, new InternalServerErrorDto(ex.Message));
+        }
+        finally
+        {
+            if (markerWritten && !created && writtenMarker != null)
+            {
+                await RemoveMarkerOfFailedCreateAsync(normalizedChildTenantId, writtenMarker);
+            }
         }
     }
 
@@ -557,6 +616,13 @@ public class TenantsController : ControllerBase
 
                 return Conflict(new OperationFailedErrorDto(
                     TenantException.TenantIdNotAvailable(childTenantId).Message));
+            }
+
+            // AB#7192: an attach never makes a scratch tenant. A marker left behind by a tenant of this id that is gone
+            // is dropped, so its creator does not get the attached tenant.
+            if (!await _octoService.SystemContext.IsTenantRegisteredAsync(normalizedChildTenantId))
+            {
+                await _scratchTenantMarkerStore.DeleteAsync(normalizedChildTenantId);
             }
 
             using var session = await tenantContext.GetAdminSessionAsync();
@@ -640,6 +706,7 @@ public class TenantsController : ControllerBase
 
             await tenantContext.DetachChildTenantAsync(session, childTenantId);
             await session.CommitTransactionAsync();
+            await RemoveScratchMarkerAsync(childTenantId.NormalizeString());
             return NoContent();
         }
         catch (TenantException e) when (e.IsConflict)
@@ -866,6 +933,7 @@ public class TenantsController : ControllerBase
                 dropStreamData: true);
             await session.CommitTransactionAsync();
             await tenantContext.DropTenantDatabaseAsync(deletion, childTenantId);
+            await RemoveScratchMarkerAsync(normalizedTenantId);
 
             // Take the tenant's pending setup retries with it. Otherwise every service's retry loop
             // keeps calling SetupAsync for a tenant that no longer exists, and that setup re-creates
@@ -1042,5 +1110,79 @@ public class TenantsController : ControllerBase
             TenantId = octoTenant.TenantId,
             Database = octoTenant.DatabaseName
         };
+    }
+
+    /// <summary>
+    ///     The tenant as a DTO, with the scratch marker (AB#7192) when it is a scratch tenant. A marker that cannot be
+    ///     read leaves the DTO plain: the marker is information here, never a reason to fail the listing.
+    /// </summary>
+    private async Task<TenantDto> CreateTenantDtoWithScratchAsync(OctoTenant octoTenant)
+    {
+        var dto = CreateTenantDto(octoTenant);
+        try
+        {
+            var marker = await _scratchTenantMarkerStore.GetAsync(octoTenant.TenantId.NormalizeString());
+            if (marker != null)
+            {
+                dto.IsScratch = true;
+                dto.ScratchCreatorClientId = marker.CreatorClientId;
+                dto.ScratchCreatedAtUtc = marker.CreatedAtUtc;
+                dto.ScratchAccessRevoked = marker.RevokedAtUtc != null;
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Could not read the scratch marker of tenant '{TenantId}'", octoTenant.TenantId);
+        }
+
+        return dto;
+    }
+
+    private async Task<List<TenantDto>> CreateTenantDtosWithScratchAsync(IEnumerable<OctoTenant> tenants)
+    {
+        var dtos = new List<TenantDto>();
+        foreach (var tenant in tenants)
+        {
+            dtos.Add(await CreateTenantDtoWithScratchAsync(tenant));
+        }
+
+        return dtos;
+    }
+
+    /// <summary>
+    ///     Takes back the marker of a create that failed: a compare-and-delete that removes the stored marker only when it is
+    ///     exactly the one this request wrote (creator client and creation time). A parallel request that wrote its own
+    ///     marker for the same tenant id, or a tenant that exists after all, keeps its marker, whether or not the id is
+    ///     registered at that moment.
+    /// </summary>
+    private async Task RemoveMarkerOfFailedCreateAsync(string normalizedTenantId, ScratchTenantMarker writtenMarker)
+    {
+        try
+        {
+            await _scratchTenantMarkerStore.DeleteIfMatchesAsync(normalizedTenantId, writtenMarker);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex,
+                "Could not remove the scratch marker of tenant '{TenantId}' after a failed create; it is replaced by the " +
+                "next create of that id", normalizedTenantId);
+        }
+    }
+
+    /// <summary>
+    ///     Removes the marker of a tenant that is gone (deleted, detached). Best-effort: the tenant is already gone, and a
+    ///     marker that outlives it is ignored by identity (it only honours a marker whose parent is the tenant's actual
+    ///     parent) and removed by the next create of that id.
+    /// </summary>
+    private async Task RemoveScratchMarkerAsync(string normalizedTenantId)
+    {
+        try
+        {
+            await _scratchTenantMarkerStore.DeleteAsync(normalizedTenantId);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Could not remove the scratch marker of tenant '{TenantId}'", normalizedTenantId);
+        }
     }
 }
