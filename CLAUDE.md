@@ -1131,3 +1131,20 @@ Write operations on CK model catalogs (import, refresh) are gated by the `DataMo
 | ImportFromCatalog, ImportFromCatalogBatch (incl. `forceBreakingUpdate`) | `DataModelManagementPolicy` |
 | ResolveDependencies | `TenantAssetApiReadOnlyPolicy` |
 | CheckUpgrade | `TenantAssetApiReadOnlyPolicy` |
+## Scratch tenants (AB#7192)
+
+`POST {tenantId}/v1/tenants?childTenantId=..&databaseName=..&scratch=true` creates a child as a **scratch tenant**: the creating
+client-credentials client of the direct parent becomes administrator (`TenantOwners`) of it, so an agent can work in the tenant and clean
+it up without a human login (identity side: octo-identity-services `CLAUDE.md`, "Scratch tenants").
+
+- Accepted only for a token that is a client-credentials token (no `sub`) with a `client_id`, issued for **the route tenant itself** (the direct
+  parent), and the role `TenantManagement` (the endpoint's `TenantAdministrationPolicy`). Anything else: `403` with the reason, nothing written.
+  The decision is `ScratchTenantMarker.TryCreateForCaller` (octo-sdk), shared with the bot service's restore.
+- The `ScratchTenantMarker` (creator client, parent, time) is written to the system tenant configuration **before** `CreateChildTenantAsync`
+  (identity sets the tenant up on `PosCreateTenant` and must find it then) and removed again when the create fails - never when the tenant is
+  registered after all (a create of a taken id answers the generic conflict and leaves the existing marker alone). A create without the flag clears a
+  stale marker of an id that is gone; `Attach` does the same; `Delete` and `Detach` remove the marker with the tenant. `IScratchTenantMarkerStore`.
+- `GET tenants`, `GET tenants/{id}` and `GET tenants/descendants` carry `isScratch`, `scratchCreatorClientId`, `scratchCreatedAtUtc` and
+  `scratchAccessRevoked` on the tenant DTO (not `tenants/all`: it would read one marker per tenant of the installation).
+- Tests: `TenantsControllerTests` (user token, token of another tenant, no tenant / no client, creator recorded before the create, taken id, failed
+  create, plain create, delete / detach / attach, listing and details).
