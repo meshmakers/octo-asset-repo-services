@@ -67,4 +67,42 @@ public class ScratchTenantMarkerStoreTests(AssetRepoFixture fixture)
         (await store.GetAsync(tenantId))!.CreatorClientId.Should().Be("second");
         await store.DeleteAsync(tenantId);
     }
+
+    [Fact]
+    public async Task DeleteIfMatches_RemovesOnlyTheExactMarker_NotTheOneOfAParallelRequest()
+    {
+        var store = NewStore();
+        var tenantId = $"race-{Guid.NewGuid():N}";
+        var at = DateTime.UtcNow;
+        var mine = new ScratchTenantMarker { ParentTenantId = "p", CreatorClientId = "client-a", CreatedAtUtc = at };
+        var theirs = new ScratchTenantMarker
+        {
+            ParentTenantId = "p", CreatorClientId = "client-b", CreatedAtUtc = at.AddMilliseconds(5)
+        };
+
+        // Request A wrote its marker, then request B overwrote it for the same tenant id.
+        await store.SetAsync(tenantId, mine);
+        await store.SetAsync(tenantId, theirs);
+
+        (await store.DeleteIfMatchesAsync(tenantId, mine)).Should().BeFalse("the stored marker is B's, not A's");
+        (await store.GetAsync(tenantId))!.CreatorClientId.Should().Be("client-b");
+
+        (await store.DeleteIfMatchesAsync(tenantId, theirs)).Should().BeTrue();
+        (await store.GetAsync(tenantId)).Should().BeNull();
+        (await store.DeleteIfMatchesAsync(tenantId, theirs)).Should().BeFalse("nothing stored any more");
+    }
+
+    [Fact]
+    public async Task DeleteIfMatches_SameClientButOtherCreationTime_KeepsTheMarker()
+    {
+        var store = NewStore();
+        var tenantId = $"race2-{Guid.NewGuid():N}";
+        var at = DateTime.UtcNow;
+        await store.SetAsync(tenantId,
+            new ScratchTenantMarker { ParentTenantId = "p", CreatorClientId = "same", CreatedAtUtc = at.AddSeconds(1) });
+
+        (await store.DeleteIfMatchesAsync(tenantId,
+            new ScratchTenantMarker { ParentTenantId = "p", CreatorClientId = "same", CreatedAtUtc = at })).Should().BeFalse();
+        await store.DeleteAsync(tenantId);
+    }
 }

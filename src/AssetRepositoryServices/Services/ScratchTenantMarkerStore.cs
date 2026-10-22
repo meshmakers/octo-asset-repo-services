@@ -16,6 +16,13 @@ public interface IScratchTenantMarkerStore
 
     /// <summary>Removes the marker of the tenant; a no-op when there is none.</summary>
     Task DeleteAsync(string tenantId);
+
+    /// <summary>
+    ///     Removes the marker of the tenant only when it is exactly <paramref name="expected" /> (same creator client and
+    ///     creation time): the compare-and-delete of a failed create, which must never remove a marker that a parallel
+    ///     request wrote for the same tenant id. Returns <c>true</c> when the marker was removed.
+    /// </summary>
+    Task<bool> DeleteIfMatchesAsync(string tenantId, ScratchTenantMarker expected);
 }
 
 /// <inheritdoc />
@@ -36,6 +43,24 @@ internal sealed class ScratchTenantMarkerStore(IOctoService octoService) : IScra
         var systemContext = octoService.SystemContext;
         using var session = await systemContext.GetAdminSessionAsync();
         await systemContext.SetConfigurationAsync(session, ScratchTenantMarker.GetConfigurationKey(tenantId), marker);
+    }
+
+    /// <inheritdoc />
+    public async Task<bool> DeleteIfMatchesAsync(string tenantId, ScratchTenantMarker expected)
+    {
+        var systemContext = octoService.SystemContext;
+        using var session = await systemContext.GetAdminSessionAsync();
+        var key = ScratchTenantMarker.GetConfigurationKey(tenantId);
+        var stored = await systemContext.GetConfigurationAsync<ScratchTenantMarker>(session, key, defaultValue: null);
+        if (stored == null ||
+            !string.Equals(stored.CreatorClientId, expected.CreatorClientId, StringComparison.Ordinal) ||
+            stored.CreatedAtUtc != expected.CreatedAtUtc)
+        {
+            return false;
+        }
+
+        await systemContext.DeleteConfigurationAsync(session, key);
+        return true;
     }
 
     /// <inheritdoc />

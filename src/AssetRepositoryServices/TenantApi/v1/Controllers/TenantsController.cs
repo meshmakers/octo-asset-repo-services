@@ -437,6 +437,7 @@ public class TenantsController : ControllerBase
         // AB#7192: the marker is written BEFORE the tenant exists (identity sets a tenant up the moment it is created and
         // must find it then) and removed again when the create fails. Never touches the marker of a tenant that exists.
         var markerWritten = false;
+        ScratchTenantMarker? writtenMarker = null;
         var created = false;
         var normalizedChildTenantId = childTenantId.NormalizeString();
         try
@@ -491,6 +492,7 @@ public class TenantsController : ControllerBase
             {
                 await _scratchTenantMarkerStore.SetAsync(normalizedChildTenantId, scratchMarker);
                 markerWritten = true;
+                writtenMarker = scratchMarker;
             }
             else if (!alreadyRegistered)
             {
@@ -570,9 +572,9 @@ public class TenantsController : ControllerBase
         }
         finally
         {
-            if (markerWritten && !created)
+            if (markerWritten && !created && writtenMarker != null)
             {
-                await RemoveMarkerOfFailedCreateAsync(normalizedChildTenantId);
+                await RemoveMarkerOfFailedCreateAsync(normalizedChildTenantId, writtenMarker);
             }
         }
     }
@@ -1148,17 +1150,16 @@ public class TenantsController : ControllerBase
     }
 
     /// <summary>
-    ///     Removes the marker of a create that failed - unless the tenant is registered after all (the failure was a
-    ///     conflict with an existing tenant, whose marker is not ours to remove).
+    ///     Takes back the marker of a create that failed: a compare-and-delete that removes the stored marker only when it is
+    ///     exactly the one this request wrote (creator client and creation time). A parallel request that wrote its own
+    ///     marker for the same tenant id, or a tenant that exists after all, keeps its marker, whether or not the id is
+    ///     registered at that moment.
     /// </summary>
-    private async Task RemoveMarkerOfFailedCreateAsync(string normalizedTenantId)
+    private async Task RemoveMarkerOfFailedCreateAsync(string normalizedTenantId, ScratchTenantMarker writtenMarker)
     {
         try
         {
-            if (!await _octoService.SystemContext.IsTenantRegisteredAsync(normalizedTenantId))
-            {
-                await _scratchTenantMarkerStore.DeleteAsync(normalizedTenantId);
-            }
+            await _scratchTenantMarkerStore.DeleteIfMatchesAsync(normalizedTenantId, writtenMarker);
         }
         catch (Exception ex)
         {

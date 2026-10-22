@@ -1141,8 +1141,9 @@ it up without a human login (identity side: octo-identity-services `CLAUDE.md`, 
   parent), and the role `TenantManagement` (the endpoint's `TenantAdministrationPolicy`). Anything else: `403` with the reason, nothing written.
   The decision is `ScratchTenantMarker.TryCreateForCaller` (octo-sdk), shared with the bot service's restore.
 - The `ScratchTenantMarker` (creator client, parent, time) is written to the system tenant configuration **before** `CreateChildTenantAsync`
-  (identity sets the tenant up on `PosCreateTenant` and must find it then) and removed again when the create fails - never when the tenant is
-  registered after all (a create of a taken id answers the generic conflict and leaves the existing marker alone). A create without the flag clears a
+  (identity sets the tenant up on `PosCreateTenant` and must find it then) and taken back when the create fails by a **compare-and-delete**
+  (`DeleteIfMatchesAsync`: only the exact marker this request wrote - creator client and creation time - so a parallel request for the same tenant id
+  keeps its own; a create of a taken id answers the generic conflict and leaves the existing marker alone). A create without the flag clears a
   stale marker of an id that is gone; `Attach` does the same; `Delete` and `Detach` remove the marker with the tenant. `IScratchTenantMarkerStore`.
 - `GET tenants`, `GET tenants/{id}` and `GET tenants/descendants` carry `isScratch`, `scratchCreatorClientId`, `scratchCreatedAtUtc` and
   `scratchAccessRevoked` on the tenant DTO (not `tenants/all`: it would read one marker per tenant of the installation).

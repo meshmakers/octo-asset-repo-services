@@ -906,7 +906,9 @@ public class TenantsControllerTests
         var result = await _controller.Post("child-a", "child-a-db", scratch: true);
 
         result.Should().BeOfType<BadRequestObjectResult>();
-        A.CallTo(() => _scratchTenantMarkerStore.DeleteAsync("child-a")).MustHaveHappened();
+        A.CallTo(() => _scratchTenantMarkerStore.DeleteIfMatchesAsync("child-a",
+            A<ScratchTenantMarker>.That.Matches(m => m.CreatorClientId == CreatorClientId))).MustHaveHappened();
+        A.CallTo(() => _scratchTenantMarkerStore.DeleteAsync(A<string>._)).MustNotHaveHappened();
     }
 
     [Fact]
