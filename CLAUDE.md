@@ -707,6 +707,13 @@ who passed. The refusal log line (Information) names method id, tenant and the r
 mutations (F3.7, AB#6884) must call `ICkMethodGateway`, pass its tenant-repository lookup as `targetExists`, and register `AddCkMethodDispatcher()`,
 `AddCkMethodAuthorization()` and `AddCkMethodGateway()`. Gateway-side parameter validation (between target load and dispatch) is part of that resolver.
 The generated fields exist since AB#5670 (next section); the resolver (AB#7026) replaces `CkMethodFieldResolver`.
+**One method call per request (AB#7020):** `GraphQL/RequestHandling/OneMethodCallPerRequestRule.cs` is a GraphQL.NET `IValidationRule`
+(registered with `AddValidationRule<>(useForCachedDocuments: true)` next to `MutationScopeListener` in `RuntimeEngineBuilderExtensions`). It judges only the
+selected mutation operation (aliases, fragments, inline fragments resolved; `@skip`/`@include` not evaluated) and refuses a method field next to a generic
+mutation or two method fields with ONE error `ONE_METHOD_CALL_PER_REQUEST` (`Statics.GraphQlOneMethodCallPerRequest`, `extensions.parameters`: `reason`,
+`methodIds`), before any resolver runs. A method field is found by the `Statics.CkMethodCall` marker; which method counts is the single function
+`OneMethodCallPerRequestRule.CountsAsMethodCall` (async counts until AB#7021 is decided). Navigation fields of the mutation tree are object types the query
+tree does not reach; every other field is a generic mutation. The code is a GraphQL-layer code, not part of the `METHOD_*` wire contract.
 
 ### Typed method mutations (AB#5670, F3.7)
 

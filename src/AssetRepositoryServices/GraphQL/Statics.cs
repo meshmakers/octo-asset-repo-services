@@ -104,6 +104,14 @@ internal static class Statics
     public const string GraphQlGenericCreateReplacedByMethod = "GENERIC_CREATE_REPLACED_BY_METHOD";
 
     /// <summary>
+    ///     AB#7020 (OD-1 option C + OD-2 option A): a mutation request that mixes a CK method call with generic mutations
+    ///     or carries two or more method calls is refused as a whole, in the validation phase, before anything runs.
+    ///     Extensions: <c>code</c> and <c>parameters</c> (<c>reason</c>, <c>methodIds</c>). A GraphQL-layer code, not a
+    ///     code of the method response envelope.
+    /// </summary>
+    public const string GraphQlOneMethodCallPerRequest = "ONE_METHOD_CALL_PER_REQUEST";
+
+    /// <summary>
     ///     CK v2 (AB#5668): a query used a <c>Hidden</c> attribute as column, filter, sort, search, aggregation or
     ///     group-by path.
     /// </summary>
