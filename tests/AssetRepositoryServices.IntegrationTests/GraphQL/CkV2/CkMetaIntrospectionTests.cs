@@ -201,8 +201,18 @@ public class CkMetaIntrospectionTests
         ranges.Should().OnlyContain(r => !string.IsNullOrWhiteSpace(r["floor"]!.Value<string>()));
 
         var system = models["System"];
-        system["ckLanguage"]!.Value<int>().Should().Be(1, "a v1 model reports the default");
-        system["minEngineVersion"]!.Type.Should().Be(JTokenType.Null);
+        // System moved to ckLanguage 2 with 2.6.0 (AB#6928); older packages still report the v1 default. A v1 model
+        // reports 1 and no minEngineVersion, a v2 model reports 2 and carries one.
+        var systemLanguage = system["ckLanguage"]!.Value<int>();
+        systemLanguage.Should().BeOneOf(1, 2);
+        if (systemLanguage == 1)
+        {
+            system["minEngineVersion"]!.Type.Should().Be(JTokenType.Null);
+        }
+        else
+        {
+            system["minEngineVersion"]!.Value<string>().Should().NotBeNullOrWhiteSpace();
+        }
     }
 
     // AB#6674: the new field is additive and nullable; a healthy model reports null, existing selections are unaffected.
