@@ -1,0 +1,9 @@
+$schema: https://schemas.meshmakers.cloud/construction-kit-elements.schema.json
+interfaces:
+  - interfaceId: Operable-1
+    description: "AB#5670 test interface: carries the instance method Restart-1 that implementing and derived types inherit."
+    methods:
+      - methodId: Restart-1
+        description: "Restarts the operable thing."
+        authorization:
+          roles: [ AccessTestAdmin ]

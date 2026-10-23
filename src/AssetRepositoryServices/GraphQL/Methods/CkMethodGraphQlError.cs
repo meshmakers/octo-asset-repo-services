@@ -17,18 +17,34 @@ internal static class CkMethodGraphQlError
     /// <summary>Extension member with the language-neutral error parameters.</summary>
     public const string ParametersKey = "parameters";
 
+    /// <summary>Extension member with the per-item details (AB#5670), present only when the response carries some.</summary>
+    public const string DetailsKey = "details";
+
     public static ExecutionError Create(CkMethodError error)
     {
         ArgumentNullException.ThrowIfNull(error);
+        var extensions = new Dictionary<string, object?>
+        {
+            [CodeKey] = error.Code,
+            [ParametersKey] = Parameters(error.Parameters)
+        };
+        if (error.Details is { Count: > 0 })
+        {
+            extensions[DetailsKey] = error.Details.Select(d => (object)new Dictionary<string, object?>
+            {
+                [CodeKey] = d.Code,
+                [ParametersKey] = Parameters(d.Parameters)
+            }).ToList();
+        }
+
         return new ExecutionError($"The CK method call failed: {error.Code}")
         {
             Code = error.Code,
-            Extensions = new Dictionary<string, object?>
-            {
-                [CodeKey] = error.Code,
-                [ParametersKey] = error.Parameters.OrderBy(p => p.Key, StringComparer.Ordinal)
-                    .ToDictionary(p => p.Key, p => (object?)p.Value, StringComparer.Ordinal)
-            }
+            Extensions = extensions
         };
     }
+
+    private static Dictionary<string, object?> Parameters(IReadOnlyDictionary<string, string> parameters) =>
+        parameters.OrderBy(p => p.Key, StringComparer.Ordinal)
+            .ToDictionary(p => p.Key, p => (object?)p.Value, StringComparer.Ordinal);
 }

@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using GraphQL.Types;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.Configuration.DependencyInjection.Options;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Methods;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Enums;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Inputs;
@@ -36,6 +37,7 @@ internal class GraphTypesCache : IGraphTypesCache
     private readonly string _tenantId;
     private readonly ConcurrentDictionary<RtCkId<CkTypeId>, RtEntityDtoType> _types;
     private readonly ConcurrentDictionary<(RtCkId<CkTypeId>, string, string), DynamicConnectionType> _interfaceAssociationConnections;
+    private readonly ConcurrentDictionary<string, CkMethodGraphTypes> _methodTypes = new(StringComparer.Ordinal);
 
 
     /// <summary>
@@ -255,6 +257,18 @@ internal class GraphTypesCache : IGraphTypesCache
         }
     }
 
+    /// <inheritdoc />
+    public IReadOnlyList<CkMethodGraph> GetMethods(RtCkId<CkTypeId> ckTypeId)
+    {
+        return _ckCacheService.GetRtCkType(_tenantId, ckTypeId).AllMethods.Values.ToList();
+    }
+
+    /// <inheritdoc />
+    public CkMethodGraphTypes GetMethodTypes(CkMethodGraph method)
+    {
+        return _methodTypes.GetOrAdd(method.QualifiedMethodId, _ => CkMethodGraphTypes.Create(this, method));
+    }
+
     public RtEntityDtoInputType GetInputType(RtCkId<CkTypeId> ckTypeId)
     {
         return _inputTypes[ckTypeId];
@@ -338,6 +352,16 @@ internal class GraphTypesCache : IGraphTypesCache
         inputTypes.AddRange(_enumTypes.Values);
         inputTypes.AddRange(_recordTypes.Values);
         inputTypes.AddRange(_inputRecordTypes.Values);
+        // AB#5670: the input and result types of the CK method mutation fields.
+        foreach (var methodTypes in _methodTypes.Values)
+        {
+            if (methodTypes.Input != null)
+            {
+                inputTypes.Add(methodTypes.Input);
+            }
+
+            inputTypes.Add(methodTypes.Result);
+        }
 
         // Register query row types implementing the RtQueryRow interface
         inputTypes.Add(new RtSimpleQueryRowDtoType());
@@ -352,7 +376,8 @@ internal class GraphTypesCache : IGraphTypesCache
     /// </summary>
     public GraphTypesCacheStatistics GetStatistics()
     {
-        return new GraphTypesCacheStatistics(_types.Count, CkInterfaceCount: _ckInterfaceTypes.Count);
+        return new GraphTypesCacheStatistics(_types.Count, CkInterfaceCount: _ckInterfaceTypes.Count,
+            MethodCount: _methodTypes.Count);
     }
 
     public async Task PopulateAsync()
@@ -465,4 +490,5 @@ internal class GraphTypesCache : IGraphTypesCache
 /// </summary>
 /// <param name="CkTypeCount">Number of CK entity object types</param>
 /// <param name="CkInterfaceCount">Number of CK v2 interfaces mapped to GraphQL interface types</param>
-internal sealed record GraphTypesCacheStatistics(int CkTypeCount, int CkInterfaceCount);
+/// <param name="MethodCount">Number of CK methods with generated input and result types (AB#5670)</param>
+internal sealed record GraphTypesCacheStatistics(int CkTypeCount, int CkInterfaceCount, int MethodCount = 0);

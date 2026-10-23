@@ -27,6 +27,19 @@ public class OctoGraphQLException : Exception
     {
     }
 
+    /// <summary>
+    ///     AB#5670: a generated CK method mutation field would replace or duplicate a field of the type's mutation
+    ///     type. The schema of the tenant is not built (never a silent overwrite). The message names the type and
+    ///     the method.
+    /// </summary>
+    internal static Exception CkMethodFieldNameClash(string ckTypeId, string qualifiedMethodId, string fieldName)
+    {
+        return new OctoGraphQLException(
+            $"The GraphQL field '{fieldName}' generated for the method '{qualifiedMethodId}' of the CK type " +
+            $"'{ckTypeId}' clashes with another field of the mutation type of '{ckTypeId}'. " +
+            "Rename the method so that its field name is unique.");
+    }
+
     internal static Exception AttributeValueTypeNotSupported(AttributeValueTypesDto valueType)
     {
         return new OctoGraphQLException($"Attribute value type {valueType} is not supported.");

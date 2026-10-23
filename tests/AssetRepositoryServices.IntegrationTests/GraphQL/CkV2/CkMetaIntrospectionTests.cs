@@ -137,7 +137,7 @@ public class CkMetaIntrospectionTests
 
         answer.SelectTokens("data.constructionKit.interfaces.items[*].rtCkInterfaceId").Values<string>().Should()
             .BeEquivalentTo("AssetRepositoryIntegrationTest/Labeled", "AssetRepositoryIntegrationTest/Labeled-2",
-                "AssetRepositoryIntegrationTest/Member");
+                "AssetRepositoryIntegrationTest/Member", "AssetRepositoryIntegrationTest/Operable");
     }
 
     [Fact]
@@ -225,21 +225,20 @@ public class CkMetaIntrospectionTests
     }
 
     [Fact]
-    public async Task Schema_HasNoMethodRuntime()
+    public async Task Schema_HasNoMethodErrorTypes()
     {
-        // F1.5-S1 (AB#5920): method definitions are meta data only - no method mutation fields and no invocation
-        // result types until the method runtime (CK v2 Phase 3).
+        // AB#5670: a failed method call is ONE GraphQL error (extensions.code / parameters), so the schema carries no
+        // invocation error types and no result type has an error member.
         var answer = await ExecuteAsync("""
             query {
-              mutations: __type(name: "AssetRepositoryIntegrationTestAccessTestAccountMutations") { fields { name } }
+              result: __type(name: "AssetRepositoryIntegrationTestAccessTestAccountResetPasswordMethodResult") { fields { name } }
               schema: __schema { types { name } }
             }
             """);
 
-        answer.SelectTokens("data.mutations.fields[*].name").Values<string>().Should().BeEquivalentTo("create", "update");
+        answer.SelectTokens("data.result.fields[*].name").Values<string>().Should().BeEquivalentTo("invocationId");
         var typeNames = answer.SelectTokens("data.schema.types[*].name").Values<string>().ToList();
         typeNames.Should().NotContain(["CkMethodError", "CkMethodErrorDetail"]);
-        typeNames.Should().NotContain(n => n!.EndsWith("ResetPasswordResult") || n.EndsWith("ResetPasswordInput"));
     }
 
     private static IEnumerable<string> Ids(JToken interfaces) =>

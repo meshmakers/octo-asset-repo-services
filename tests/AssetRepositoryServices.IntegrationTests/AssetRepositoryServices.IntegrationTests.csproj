@@ -40,6 +40,10 @@
         <None Update="xunit.runner.json">
             <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
         </None>
+        <!-- AB#5670: introspection snapshot of types without methods (taken before the method mutations existed). -->
+        <None Update="GraphQL\Methods\MethodLessTypes.golden.graphql">
+            <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+        </None>
         <None Update="testData\sampleRtModel.yaml">
             <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
         </None>

@@ -84,9 +84,9 @@ internal class SchemaContext(
 
                 var statistics = graphTypesCache.GetStatistics();
                 logger.LogInformation(
-                    "GraphQL schema for tenant {TenantId} built in {ElapsedMs} ms ({TypeCount} types, {InterfaceCount} CK interfaces; populate {PopulateMs} ms, initialize {InitializeMs} ms)",
+                    "GraphQL schema for tenant {TenantId} built in {ElapsedMs} ms ({TypeCount} types, {InterfaceCount} CK interfaces, {MethodCount} CK methods; populate {PopulateMs} ms, initialize {InitializeMs} ms)",
                     tenantId, stopwatch.ElapsedMilliseconds, createdSchema.AllTypes.Count, statistics.CkInterfaceCount,
-                    populateMs, stopwatch.ElapsedMilliseconds - populateMs);
+                    statistics.MethodCount, populateMs, stopwatch.ElapsedMilliseconds - populateMs);
 
                 return createdSchema;
             });

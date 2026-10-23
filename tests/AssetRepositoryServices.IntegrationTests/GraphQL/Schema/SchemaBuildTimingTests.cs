@@ -16,7 +16,7 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Graph
 [Collection(GraphQlCollection.Name)]
 public class SchemaBuildTimingTests
 {
-    private const int Runs = 3;
+    private const int Runs = 11;
 
     private readonly GraphQlTestFixture _fixture;
     private readonly ITestOutputHelper _output;
@@ -49,9 +49,12 @@ public class SchemaBuildTimingTests
         schema!.Initialized.Should().BeTrue();
         schema.AllTypes.Count.Should().BeGreaterThan(0);
 
+        // The first run includes JIT warm-up of the schema classes; the steady state is the median of the rest.
+        var steady = timings.Skip(1).OrderBy(t => t).ToList();
         _output.WriteLine(
             $"[G0 baseline] cold schema build for the integration test model: {string.Join(", ", timings)} ms " +
-            $"({schema.AllTypes.Count} types)");
+            $"({schema.AllTypes.Count} types); first {timings[0]} ms, steady-state median {steady[steady.Count / 2]} ms " +
+            $"(min {steady[0]}, max {steady[^1]})");
 
         // A cached schema is returned without rebuilding.
         (await schemaContext.GetOrCreateAsync(tenantId)).Should().BeSameAs(schema);
