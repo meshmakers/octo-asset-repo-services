@@ -24,6 +24,7 @@ internal static class Statics
     internal const string RelatedRtId = "relatedRtId";
     internal const string ValuesArg = "values";
     internal const string OptionsArg = "options";
+    internal const string InputArg = "input";
 
     internal const string UpdateTypesArg = "updateTypes";
     internal const string SearchFilterArg = "searchFilter";
@@ -58,6 +59,13 @@ internal static class Statics
     internal const string GraphDirection = "GraphDirection";
     internal const string AllowedTypes = "AllowedTypes";
     internal const string QueryBaseType = "QueryBaseType";
+
+    /// <summary>
+    ///     AB#5670: metadata key on every generated CK method mutation field. The value is a <c>CkMethodCallInfo</c>
+    ///     (concrete CK type, method id, qualified method id, kind). The gateway rules (one method call per request,
+    ///     AB#7020; the resolver, AB#7026) find a method call by this key, never by the field name.
+    /// </summary>
+    internal const string CkMethodCall = "CkMethodCall";
 
     public const string GraphQlConnectionSuffix = "Connection";
     public const string GraphQlEdgeSuffix = "Edge";

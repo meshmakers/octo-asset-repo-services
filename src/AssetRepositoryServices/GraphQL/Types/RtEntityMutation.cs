@@ -41,6 +41,10 @@ internal class RtEntityMutation : RtMutationBase
                 new ListGraphType(outputType),
                 new QueryArguments(updateArgument), ResolveUpdate)
             .AddMetadata(Statics.CkId, rtCkTypeId);
+
+        // AB#5670 (F3.7): one typed mutation per CK method of the type, including inherited ones.
+        CkMethodMutationFields.Add(this, rtCkTypeId, graphTypesCache.GetMethods(rtCkTypeId),
+            graphTypesCache.GetMethodTypes);
     }
 
     private async ValueTask<object?> ResolveCreate(IResolveFieldContext<object?> arg)

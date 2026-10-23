@@ -57,7 +57,7 @@ types:
         allowSelf: true
     - methodId: Lookup-1
       kind: Static
-      description: "Static methods get no GraphQL field in Phase 0."
+      description: "Static method: no target, no parameters (AB#5670: a mutation field without arguments)."
       authorization:
         roles: [ AccessTestAdmin ]
 - typeId: AccessTestGroup

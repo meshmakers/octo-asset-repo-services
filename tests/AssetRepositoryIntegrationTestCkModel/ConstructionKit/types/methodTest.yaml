@@ -1,0 +1,52 @@
+$schema: https://schemas.meshmakers.cloud/construction-kit-elements.schema.json
+types:
+# AB#5670: typed GraphQL method mutations. OperableThing declares its own methods and inherits Restart-1 from the
+# interface Operable-1; OperableThingChild inherits all of them through the base type.
+- typeId: OperableThing
+  derivedFromCkTypeId: ${System}/Entity
+  description: "AB#5670 test type with instance and static methods (enum, record and list parameters, record result)."
+  implements:
+    - ${this}/Operable-1
+  attributes:
+    - id: ${System}/Name
+      name: Name
+  methods:
+    - methodId: Calibrate-1
+      description: "Instance method with required and optional parameters of several value types and a record result."
+      parameters:
+        - { name: target, valueType: Double, description: "Target value." }
+        - { name: mode, valueType: Enum, valueCkEnumId: "${this}/OperatingStatus", isOptional: true }
+        - { name: specification, valueType: Record, valueCkRecordId: "${this}/Specification", isOptional: true }
+        - { name: tags, valueType: StringArray, isOptional: true }
+      result:
+        valueType: Record
+        valueCkRecordId: "${this}/Specification"
+      errors:
+        - code: CALIBRATION_OUT_OF_RANGE
+      authorization:
+        roles: [ AccessTestAdmin ]
+    - methodId: Calibrate-2
+      description: "Second version of Calibrate: only optional parameters, scalar result."
+      parameters:
+        - { name: count, valueType: Int, isOptional: true }
+      result:
+        valueType: Int
+      authorization:
+        roles: [ AccessTestAdmin ]
+    - methodId: Probe-1
+      kind: Static
+      description: "Static method without a target and without parameters, enum result."
+      result:
+        valueType: Enum
+        valueCkEnumId: "${this}/OperatingStatus"
+      authorization:
+        roles: [ AccessTestAdmin ]
+- typeId: OperableThingChild
+  derivedFromCkTypeId: ${this}/OperableThing
+  description: "AB#5670: concrete type derived from OperableThing; shows the inherited methods once."
+- typeId: PlainThing
+  derivedFromCkTypeId: ${System}/Entity
+  description: "AB#5670: a concrete type without methods; its GraphQL types stay unchanged."
+  attributes:
+    - id: ${System}/Name
+      name: Name

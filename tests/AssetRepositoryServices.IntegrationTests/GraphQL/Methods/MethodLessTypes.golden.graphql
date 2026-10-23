@@ -1,0 +1,165 @@
+type SystemTenantConfigurationMutations {
+  "Creates new entities of type 'SystemTenantConfiguration'."
+  create(entities: [SystemTenantConfigurationInput]!): [SystemTenantConfiguration]
+  "Updates existing entity of type 'SystemTenantConfiguration'."
+  update(entities: [SystemTenantConfigurationInputUpdate]!): [SystemTenantConfiguration]
+}
+
+input SystemTenantConfigurationInput {
+  rtWellKnownName: String
+  configurationValue: String
+  rtBlueprintSource: String
+  rtBlueprintLocked: Boolean
+  rtBlueprintAppliedAt: DateTime
+  relatesTo: [RtAssociationInput]
+  relatesFrom: [RtAssociationInput]
+  labeledLinkedFrom: [RtAssociationInput]
+}
+
+type SystemAutoIncrementMutations {
+  "Creates new entities of type 'SystemAutoIncrement'."
+  create(entities: [SystemAutoIncrementInput]!): [SystemAutoIncrement]
+  "Updates existing entity of type 'SystemAutoIncrement'."
+  update(entities: [SystemAutoIncrementInputUpdate]!): [SystemAutoIncrement]
+}
+
+input SystemAutoIncrementInput {
+  rtWellKnownName: String
+  end: Int
+  format: String
+  currentValue: Int
+  rtBlueprintSource: String
+  rtBlueprintLocked: Boolean
+  rtBlueprintAppliedAt: DateTime
+  relatesTo: [RtAssociationInput]
+  relatesFrom: [RtAssociationInput]
+  labeledLinkedFrom: [RtAssociationInput]
+}
+
+type SystemBlueprintHistoryMutations {
+  "Creates new entities of type 'SystemBlueprintHistory'."
+  create(entities: [SystemBlueprintHistoryInput]!): [SystemBlueprintHistory]
+  "Updates existing entity of type 'SystemBlueprintHistory'."
+  update(entities: [SystemBlueprintHistoryInputUpdate]!): [SystemBlueprintHistory]
+}
+
+input SystemBlueprintHistoryInput {
+  rtWellKnownName: String
+  blueprintName: String
+  blueprintVersion: String
+  appliedAt: DateTime
+  applicationMode: String
+  previousBlueprintName: String
+  previousVersion: String
+  entitiesCreated: Int
+  entitiesUpdated: Int
+  entitiesDeleted: Int
+  seedDataChecksum: String
+  rtBlueprintSource: String
+  rtBlueprintLocked: Boolean
+  rtBlueprintAppliedAt: DateTime
+  relatesTo: [RtAssociationInput]
+  relatesFrom: [RtAssociationInput]
+  labeledLinkedFrom: [RtAssociationInput]
+}
+
+type SystemSimpleRtQueryMutations {
+  "Creates new entities of type 'SystemSimpleRtQuery'."
+  create(entities: [SystemSimpleRtQueryInput]!): [SystemSimpleRtQuery]
+  "Updates existing entity of type 'SystemSimpleRtQuery'."
+  update(entities: [SystemSimpleRtQueryInputUpdate]!): [SystemSimpleRtQuery]
+}
+
+input SystemSimpleRtQueryInput {
+  rtWellKnownName: String
+  columns: [String!]
+  sorting: [SystemSortOrderItemInput]
+  fieldFilter: [SystemFieldFilterInput]
+  textSearchFilter: SystemTextSearchFilterInput
+  attributeSearchFilter: SystemAttributeSearchFilterInput
+  rtBlueprintSource: String
+  rtBlueprintLocked: Boolean
+  rtBlueprintAppliedAt: DateTime
+  name: String
+  description: String
+  queryCkTypeId: String
+  navigationFilterMode: SystemNavigationFilterModes
+  relatesTo: [RtAssociationInput]
+  relatesFrom: [RtAssociationInput]
+  labeledLinkedFrom: [RtAssociationInput]
+}
+
+type AssetRepositoryIntegrationTestPlainThingMutations {
+  "Creates new entities of type 'AssetRepositoryIntegrationTestPlainThing'."
+  create(entities: [AssetRepositoryIntegrationTestPlainThingInput]!): [AssetRepositoryIntegrationTestPlainThing]
+  "Updates existing entity of type 'AssetRepositoryIntegrationTestPlainThing'."
+  update(entities: [AssetRepositoryIntegrationTestPlainThingInputUpdate]!): [AssetRepositoryIntegrationTestPlainThing]
+}
+
+input AssetRepositoryIntegrationTestPlainThingInput {
+  rtWellKnownName: String
+  name: String
+  rtBlueprintSource: String
+  rtBlueprintLocked: Boolean
+  rtBlueprintAppliedAt: DateTime
+  relatesTo: [RtAssociationInput]
+  relatesFrom: [RtAssociationInput]
+  labeledLinkedFrom: [RtAssociationInput]
+}
+
+type AssetRepositoryIntegrationTestCustomerMutations {
+  "Creates new entities of type 'AssetRepositoryIntegrationTestCustomer'."
+  create(entities: [AssetRepositoryIntegrationTestCustomerInput]!): [AssetRepositoryIntegrationTestCustomer]
+  "Updates existing entity of type 'AssetRepositoryIntegrationTestCustomer'."
+  update(entities: [AssetRepositoryIntegrationTestCustomerInputUpdate]!): [AssetRepositoryIntegrationTestCustomer]
+}
+
+input AssetRepositoryIntegrationTestCustomerInput {
+  rtWellKnownName: String
+  firstName: String
+  lastName: String
+  companyName: String
+  street: String
+  postalCode: String
+  city: String
+  country: String
+  eMailAddress: String
+  dateOfBirth: DateTime
+  phoneNumberMobile: String
+  phoneNumberLandLine: String
+  rtBlueprintSource: String
+  rtBlueprintLocked: Boolean
+  rtBlueprintAppliedAt: DateTime
+  relatesTo: [RtAssociationInput]
+  owns: [RtAssociationInput]
+  ownsVehicles: [RtAssociationInput]
+  relatesFrom: [RtAssociationInput]
+  labeledLinkedFrom: [RtAssociationInput]
+}
+
+type AssetRepositoryIntegrationTestProductMutations {
+  "Creates new entities of type 'AssetRepositoryIntegrationTestProduct'."
+  create(entities: [AssetRepositoryIntegrationTestProductInput]!): [AssetRepositoryIntegrationTestProduct]
+  "Updates existing entity of type 'AssetRepositoryIntegrationTestProduct'."
+  update(entities: [AssetRepositoryIntegrationTestProductInputUpdate]!): [AssetRepositoryIntegrationTestProduct]
+}
+
+input AssetRepositoryIntegrationTestProductInput {
+  rtWellKnownName: String
+  productName: String
+  productCode: String
+  productDescription: String
+  mainSpecification: AssetRepositoryIntegrationTestSpecificationInput
+  manufacturerContact: AssetRepositoryIntegrationTestContactInput
+  technicalSpecifications: [AssetRepositoryIntegrationTestSpecificationInput]
+  contacts: [AssetRepositoryIntegrationTestContactInput]
+  thumbnail: [Byte]
+  productImage: LargeBinary
+  productDatasheet: LargeBinary
+  rtBlueprintSource: String
+  rtBlueprintLocked: Boolean
+  rtBlueprintAppliedAt: DateTime
+  relatesTo: [RtAssociationInput]
+  relatesFrom: [RtAssociationInput]
+  labeledLinkedFrom: [RtAssociationInput]
+}

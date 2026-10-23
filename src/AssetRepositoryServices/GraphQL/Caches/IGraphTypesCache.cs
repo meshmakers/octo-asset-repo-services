@@ -2,7 +2,9 @@ using GraphQL.Types;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Enums;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Inputs;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Methods;
 using Meshmakers.Octo.ConstructionKit.Contracts;
+using Meshmakers.Octo.ConstructionKit.Contracts.DependencyGraph;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Caches;
 
@@ -49,6 +51,18 @@ internal interface IGraphTypesCache
     /// </summary>
     /// <returns></returns>
     RtEntityDtoInputType GetInputType(RtCkId<CkTypeId> ckTypeId);
+
+    /// <summary>
+    ///     AB#5670: the CK methods of a concrete CK type including the inherited ones (the type's method graph
+    ///     resolves the declaring element, so a method appears once).
+    /// </summary>
+    IReadOnlyList<CkMethodGraph> GetMethods(RtCkId<CkTypeId> ckTypeId);
+
+    /// <summary>
+    ///     AB#5670: the GraphQL input and result type of a CK method, created on first use and shared by every type
+    ///     that has the method.
+    /// </summary>
+    CkMethodGraphTypes GetMethodTypes(CkMethodGraph method);
 
     /// <summary>
     ///     Returns an array of known construction kit record graph types

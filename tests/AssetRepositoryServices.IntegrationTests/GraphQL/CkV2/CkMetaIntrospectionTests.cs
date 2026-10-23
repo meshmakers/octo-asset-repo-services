@@ -137,7 +137,7 @@ public class CkMetaIntrospectionTests
 
         answer.SelectTokens("data.constructionKit.interfaces.items[*].rtCkInterfaceId").Values<string>().Should()
             .BeEquivalentTo("AssetRepositoryIntegrationTest/Labeled", "AssetRepositoryIntegrationTest/Labeled-2",
-                "AssetRepositoryIntegrationTest/Member");
+                "AssetRepositoryIntegrationTest/Member", "AssetRepositoryIntegrationTest/Operable");
     }
 
     [Fact]
@@ -201,8 +201,18 @@ public class CkMetaIntrospectionTests
         ranges.Should().OnlyContain(r => !string.IsNullOrWhiteSpace(r["floor"]!.Value<string>()));
 
         var system = models["System"];
-        system["ckLanguage"]!.Value<int>().Should().Be(1, "a v1 model reports the default");
-        system["minEngineVersion"]!.Type.Should().Be(JTokenType.Null);
+        // System moved to ckLanguage 2 with 2.6.0 (AB#6928); older packages still report the v1 default. A v1 model
+        // reports 1 and no minEngineVersion, a v2 model reports 2 and carries one.
+        var systemLanguage = system["ckLanguage"]!.Value<int>();
+        systemLanguage.Should().BeOneOf(1, 2);
+        if (systemLanguage == 1)
+        {
+            system["minEngineVersion"]!.Type.Should().Be(JTokenType.Null);
+        }
+        else
+        {
+            system["minEngineVersion"]!.Value<string>().Should().NotBeNullOrWhiteSpace();
+        }
     }
 
     // AB#6674: the new field is additive and nullable; a healthy model reports null, existing selections are unaffected.
@@ -225,21 +235,20 @@ public class CkMetaIntrospectionTests
     }
 
     [Fact]
-    public async Task Schema_HasNoMethodRuntime()
+    public async Task Schema_HasNoMethodErrorTypes()
     {
-        // F1.5-S1 (AB#5920): method definitions are meta data only - no method mutation fields and no invocation
-        // result types until the method runtime (CK v2 Phase 3).
+        // AB#5670: a failed method call is ONE GraphQL error (extensions.code / parameters), so the schema carries no
+        // invocation error types and no result type has an error member.
         var answer = await ExecuteAsync("""
             query {
-              mutations: __type(name: "AssetRepositoryIntegrationTestAccessTestAccountMutations") { fields { name } }
+              result: __type(name: "AssetRepositoryIntegrationTestAccessTestAccountResetPasswordMethodResult") { fields { name } }
               schema: __schema { types { name } }
             }
             """);
 
-        answer.SelectTokens("data.mutations.fields[*].name").Values<string>().Should().BeEquivalentTo("create", "update");
+        answer.SelectTokens("data.result.fields[*].name").Values<string>().Should().BeEquivalentTo("invocationId");
         var typeNames = answer.SelectTokens("data.schema.types[*].name").Values<string>().ToList();
         typeNames.Should().NotContain(["CkMethodError", "CkMethodErrorDetail"]);
-        typeNames.Should().NotContain(n => n!.EndsWith("ResetPasswordResult") || n.EndsWith("ResetPasswordInput"));
     }
 
     private static IEnumerable<string> Ids(JToken interfaces) =>

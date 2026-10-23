@@ -1,0 +1,511 @@
+$schema: https://schemas.meshmakers.cloud/construction-kit-elements.schema.json
+types:
+# AB#5670 / risk R8: 50 methods on one type, used to measure the schema build time.
+- typeId: MethodLoadThing
+  derivedFromCkTypeId: ${System}/Entity
+  description: "AB#5670: 50 methods for the schema build time measurement (risk R8)."
+  attributes:
+    - id: ${System}/Name
+      name: Name
+  methods:
+    - methodId: Load01-1
+      parameters:
+        - { name: text, valueType: String }
+        - { name: count, valueType: Int, isOptional: true }
+        - { name: mode, valueType: Enum, valueCkEnumId: "${this}/OperatingStatus", isOptional: true }
+      result:
+        valueType: String
+      authorization:
+        roles: [ AccessTestAdmin ]
+    - methodId: Load02-1
+      kind: Static
+      parameters:
+        - { name: text, valueType: String }
+        - { name: count, valueType: Int, isOptional: true }
+        - { name: mode, valueType: Enum, valueCkEnumId: "${this}/OperatingStatus", isOptional: true }
+      result:
+        valueType: String
+      authorization:
+        roles: [ AccessTestAdmin ]
+    - methodId: Load03-1
+      parameters:
+        - { name: text, valueType: String }
+        - { name: count, valueType: Int, isOptional: true }
+        - { name: mode, valueType: Enum, valueCkEnumId: "${this}/OperatingStatus", isOptional: true }
+        - { name: specification, valueType: Record, valueCkRecordId: "${this}/Specification", isOptional: true }
+      result:
+        valueType: String
+      authorization:
+        roles: [ AccessTestAdmin ]
+    - methodId: Load04-1
+      kind: Static
+      parameters:
+        - { name: text, valueType: String }
+        - { name: count, valueType: Int, isOptional: true }
+        - { name: mode, valueType: Enum, valueCkEnumId: "${this}/OperatingStatus", isOptional: true }
+      result:
+        valueType: String
+      authorization:
+        roles: [ AccessTestAdmin ]
+    - methodId: Load05-1
+      parameters:
+        - { name: text, valueType: String }
+        - { name: count, valueType: Int, isOptional: true }
+        - { name: mode, valueType: Enum, valueCkEnumId: "${this}/OperatingStatus", isOptional: true }
+      result:
+        valueType: Record
+        valueCkRecordId: "${this}/Specification"
+      authorization:
+        roles: [ AccessTestAdmin ]
+    - methodId: Load06-1
+      kind: Static
+      parameters:
+        - { name: text, valueType: String }
+        - { name: count, valueType: Int, isOptional: true }
+        - { name: mode, valueType: Enum, valueCkEnumId: "${this}/OperatingStatus", isOptional: true }
+        - { name: specification, valueType: Record, valueCkRecordId: "${this}/Specification", isOptional: true }
+      result:
+        valueType: String
+      authorization:
+        roles: [ AccessTestAdmin ]
+    - methodId: Load07-1
+      parameters:
+        - { name: text, valueType: String }
+        - { name: count, valueType: Int, isOptional: true }
+        - { name: mode, valueType: Enum, valueCkEnumId: "${this}/OperatingStatus", isOptional: true }
+      result:
+        valueType: String
+      authorization:
+        roles: [ AccessTestAdmin ]
+    - methodId: Load08-1
+      kind: Static
+      parameters:
+        - { name: text, valueType: String }
+        - { name: count, valueType: Int, isOptional: true }
+        - { name: mode, valueType: Enum, valueCkEnumId: "${this}/OperatingStatus", isOptional: true }
+      result:
+        valueType: String
+      authorization:
+        roles: [ AccessTestAdmin ]
+    - methodId: Load09-1
+      parameters:
+        - { name: text, valueType: String }
+        - { name: count, valueType: Int, isOptional: true }
+        - { name: mode, valueType: Enum, valueCkEnumId: "${this}/OperatingStatus", isOptional: true }
+        - { name: specification, valueType: Record, valueCkRecordId: "${this}/Specification", isOptional: true }
+      result:
+        valueType: String
+      authorization:
+        roles: [ AccessTestAdmin ]
+    - methodId: Load10-1
+      kind: Static
+      parameters:
+        - { name: text, valueType: String }
+        - { name: count, valueType: Int, isOptional: true }
+        - { name: mode, valueType: Enum, valueCkEnumId: "${this}/OperatingStatus", isOptional: true }
+      result:
+        valueType: Record
+        valueCkRecordId: "${this}/Specification"
+      authorization:
+        roles: [ AccessTestAdmin ]
+    - methodId: Load11-1
+      parameters:
+        - { name: text, valueType: String }
+        - { name: count, valueType: Int, isOptional: true }
+        - { name: mode, valueType: Enum, valueCkEnumId: "${this}/OperatingStatus", isOptional: true }
+      result:
+        valueType: String
+      authorization:
+        roles: [ AccessTestAdmin ]
+    - methodId: Load12-1
+      kind: Static
+      parameters:
+        - { name: text, valueType: String }
+        - { name: count, valueType: Int, isOptional: true }
+        - { name: mode, valueType: Enum, valueCkEnumId: "${this}/OperatingStatus", isOptional: true }
+        - { name: specification, valueType: Record, valueCkRecordId: "${this}/Specification", isOptional: true }
+      result:
+        valueType: String
+      authorization:
+        roles: [ AccessTestAdmin ]
+    - methodId: Load13-1
+      parameters:
+        - { name: text, valueType: String }
+        - { name: count, valueType: Int, isOptional: true }
+        - { name: mode, valueType: Enum, valueCkEnumId: "${this}/OperatingStatus", isOptional: true }
+      result:
+        valueType: String
+      authorization:
+        roles: [ AccessTestAdmin ]
+    - methodId: Load14-1
+      kind: Static
+      parameters:
+        - { name: text, valueType: String }
+        - { name: count, valueType: Int, isOptional: true }
+        - { name: mode, valueType: Enum, valueCkEnumId: "${this}/OperatingStatus", isOptional: true }
+      result:
+        valueType: String
+      authorization:
+        roles: [ AccessTestAdmin ]
+    - methodId: Load15-1
+      parameters:
+        - { name: text, valueType: String }
+        - { name: count, valueType: Int, isOptional: true }
+        - { name: mode, valueType: Enum, valueCkEnumId: "${this}/OperatingStatus", isOptional: true }
+        - { name: specification, valueType: Record, valueCkRecordId: "${this}/Specification", isOptional: true }
+      result:
+        valueType: Record
+        valueCkRecordId: "${this}/Specification"
+      authorization:
+        roles: [ AccessTestAdmin ]
+    - methodId: Load16-1
+      kind: Static
+      parameters:
+        - { name: text, valueType: String }
+        - { name: count, valueType: Int, isOptional: true }
+        - { name: mode, valueType: Enum, valueCkEnumId: "${this}/OperatingStatus", isOptional: true }
+      result:
+        valueType: String
+      authorization:
+        roles: [ AccessTestAdmin ]
+    - methodId: Load17-1
+      parameters:
+        - { name: text, valueType: String }
+        - { name: count, valueType: Int, isOptional: true }
+        - { name: mode, valueType: Enum, valueCkEnumId: "${this}/OperatingStatus", isOptional: true }
+      result:
+        valueType: String
+      authorization:
+        roles: [ AccessTestAdmin ]
+    - methodId: Load18-1
+      kind: Static
+      parameters:
+        - { name: text, valueType: String }
+        - { name: count, valueType: Int, isOptional: true }
+        - { name: mode, valueType: Enum, valueCkEnumId: "${this}/OperatingStatus", isOptional: true }
+        - { name: specification, valueType: Record, valueCkRecordId: "${this}/Specification", isOptional: true }
+      result:
+        valueType: String
+      authorization:
+        roles: [ AccessTestAdmin ]
+    - methodId: Load19-1
+      parameters:
+        - { name: text, valueType: String }
+        - { name: count, valueType: Int, isOptional: true }
+        - { name: mode, valueType: Enum, valueCkEnumId: "${this}/OperatingStatus", isOptional: true }
+      result:
+        valueType: String
+      authorization:
+        roles: [ AccessTestAdmin ]
+    - methodId: Load20-1
+      kind: Static
+      parameters:
+        - { name: text, valueType: String }
+        - { name: count, valueType: Int, isOptional: true }
+        - { name: mode, valueType: Enum, valueCkEnumId: "${this}/OperatingStatus", isOptional: true }
+      result:
+        valueType: Record
+        valueCkRecordId: "${this}/Specification"
+      authorization:
+        roles: [ AccessTestAdmin ]
+    - methodId: Load21-1
+      parameters:
+        - { name: text, valueType: String }
+        - { name: count, valueType: Int, isOptional: true }
+        - { name: mode, valueType: Enum, valueCkEnumId: "${this}/OperatingStatus", isOptional: true }
+        - { name: specification, valueType: Record, valueCkRecordId: "${this}/Specification", isOptional: true }
+      result:
+        valueType: String
+      authorization:
+        roles: [ AccessTestAdmin ]
+    - methodId: Load22-1
+      kind: Static
+      parameters:
+        - { name: text, valueType: String }
+        - { name: count, valueType: Int, isOptional: true }
+        - { name: mode, valueType: Enum, valueCkEnumId: "${this}/OperatingStatus", isOptional: true }
+      result:
+        valueType: String
+      authorization:
+        roles: [ AccessTestAdmin ]
+    - methodId: Load23-1
+      parameters:
+        - { name: text, valueType: String }
+        - { name: count, valueType: Int, isOptional: true }
+        - { name: mode, valueType: Enum, valueCkEnumId: "${this}/OperatingStatus", isOptional: true }
+      result:
+        valueType: String
+      authorization:
+        roles: [ AccessTestAdmin ]
+    - methodId: Load24-1
+      kind: Static
+      parameters:
+        - { name: text, valueType: String }
+        - { name: count, valueType: Int, isOptional: true }
+        - { name: mode, valueType: Enum, valueCkEnumId: "${this}/OperatingStatus", isOptional: true }
+        - { name: specification, valueType: Record, valueCkRecordId: "${this}/Specification", isOptional: true }
+      result:
+        valueType: String
+      authorization:
+        roles: [ AccessTestAdmin ]
+    - methodId: Load25-1
+      parameters:
+        - { name: text, valueType: String }
+        - { name: count, valueType: Int, isOptional: true }
+        - { name: mode, valueType: Enum, valueCkEnumId: "${this}/OperatingStatus", isOptional: true }
+      result:
+        valueType: Record
+        valueCkRecordId: "${this}/Specification"
+      authorization:
+        roles: [ AccessTestAdmin ]
+    - methodId: Load26-1
+      kind: Static
+      parameters:
+        - { name: text, valueType: String }
+        - { name: count, valueType: Int, isOptional: true }
+        - { name: mode, valueType: Enum, valueCkEnumId: "${this}/OperatingStatus", isOptional: true }
+      result:
+        valueType: String
+      authorization:
+        roles: [ AccessTestAdmin ]
+    - methodId: Load27-1
+      parameters:
+        - { name: text, valueType: String }
+        - { name: count, valueType: Int, isOptional: true }
+        - { name: mode, valueType: Enum, valueCkEnumId: "${this}/OperatingStatus", isOptional: true }
+        - { name: specification, valueType: Record, valueCkRecordId: "${this}/Specification", isOptional: true }
+      result:
+        valueType: String
+      authorization:
+        roles: [ AccessTestAdmin ]
+    - methodId: Load28-1
+      kind: Static
+      parameters:
+        - { name: text, valueType: String }
+        - { name: count, valueType: Int, isOptional: true }
+        - { name: mode, valueType: Enum, valueCkEnumId: "${this}/OperatingStatus", isOptional: true }
+      result:
+        valueType: String
+      authorization:
+        roles: [ AccessTestAdmin ]
+    - methodId: Load29-1
+      parameters:
+        - { name: text, valueType: String }
+        - { name: count, valueType: Int, isOptional: true }
+        - { name: mode, valueType: Enum, valueCkEnumId: "${this}/OperatingStatus", isOptional: true }
+      result:
+        valueType: String
+      authorization:
+        roles: [ AccessTestAdmin ]
+    - methodId: Load30-1
+      kind: Static
+      parameters:
+        - { name: text, valueType: String }
+        - { name: count, valueType: Int, isOptional: true }
+        - { name: mode, valueType: Enum, valueCkEnumId: "${this}/OperatingStatus", isOptional: true }
+        - { name: specification, valueType: Record, valueCkRecordId: "${this}/Specification", isOptional: true }
+      result:
+        valueType: Record
+        valueCkRecordId: "${this}/Specification"
+      authorization:
+        roles: [ AccessTestAdmin ]
+    - methodId: Load31-1
+      parameters:
+        - { name: text, valueType: String }
+        - { name: count, valueType: Int, isOptional: true }
+        - { name: mode, valueType: Enum, valueCkEnumId: "${this}/OperatingStatus", isOptional: true }
+      result:
+        valueType: String
+      authorization:
+        roles: [ AccessTestAdmin ]
+    - methodId: Load32-1
+      kind: Static
+      parameters:
+        - { name: text, valueType: String }
+        - { name: count, valueType: Int, isOptional: true }
+        - { name: mode, valueType: Enum, valueCkEnumId: "${this}/OperatingStatus", isOptional: true }
+      result:
+        valueType: String
+      authorization:
+        roles: [ AccessTestAdmin ]
+    - methodId: Load33-1
+      parameters:
+        - { name: text, valueType: String }
+        - { name: count, valueType: Int, isOptional: true }
+        - { name: mode, valueType: Enum, valueCkEnumId: "${this}/OperatingStatus", isOptional: true }
+        - { name: specification, valueType: Record, valueCkRecordId: "${this}/Specification", isOptional: true }
+      result:
+        valueType: String
+      authorization:
+        roles: [ AccessTestAdmin ]
+    - methodId: Load34-1
+      kind: Static
+      parameters:
+        - { name: text, valueType: String }
+        - { name: count, valueType: Int, isOptional: true }
+        - { name: mode, valueType: Enum, valueCkEnumId: "${this}/OperatingStatus", isOptional: true }
+      result:
+        valueType: String
+      authorization:
+        roles: [ AccessTestAdmin ]
+    - methodId: Load35-1
+      parameters:
+        - { name: text, valueType: String }
+        - { name: count, valueType: Int, isOptional: true }
+        - { name: mode, valueType: Enum, valueCkEnumId: "${this}/OperatingStatus", isOptional: true }
+      result:
+        valueType: Record
+        valueCkRecordId: "${this}/Specification"
+      authorization:
+        roles: [ AccessTestAdmin ]
+    - methodId: Load36-1
+      kind: Static
+      parameters:
+        - { name: text, valueType: String }
+        - { name: count, valueType: Int, isOptional: true }
+        - { name: mode, valueType: Enum, valueCkEnumId: "${this}/OperatingStatus", isOptional: true }
+        - { name: specification, valueType: Record, valueCkRecordId: "${this}/Specification", isOptional: true }
+      result:
+        valueType: String
+      authorization:
+        roles: [ AccessTestAdmin ]
+    - methodId: Load37-1
+      parameters:
+        - { name: text, valueType: String }
+        - { name: count, valueType: Int, isOptional: true }
+        - { name: mode, valueType: Enum, valueCkEnumId: "${this}/OperatingStatus", isOptional: true }
+      result:
+        valueType: String
+      authorization:
+        roles: [ AccessTestAdmin ]
+    - methodId: Load38-1
+      kind: Static
+      parameters:
+        - { name: text, valueType: String }
+        - { name: count, valueType: Int, isOptional: true }
+        - { name: mode, valueType: Enum, valueCkEnumId: "${this}/OperatingStatus", isOptional: true }
+      result:
+        valueType: String
+      authorization:
+        roles: [ AccessTestAdmin ]
+    - methodId: Load39-1
+      parameters:
+        - { name: text, valueType: String }
+        - { name: count, valueType: Int, isOptional: true }
+        - { name: mode, valueType: Enum, valueCkEnumId: "${this}/OperatingStatus", isOptional: true }
+        - { name: specification, valueType: Record, valueCkRecordId: "${this}/Specification", isOptional: true }
+      result:
+        valueType: String
+      authorization:
+        roles: [ AccessTestAdmin ]
+    - methodId: Load40-1
+      kind: Static
+      parameters:
+        - { name: text, valueType: String }
+        - { name: count, valueType: Int, isOptional: true }
+        - { name: mode, valueType: Enum, valueCkEnumId: "${this}/OperatingStatus", isOptional: true }
+      result:
+        valueType: Record
+        valueCkRecordId: "${this}/Specification"
+      authorization:
+        roles: [ AccessTestAdmin ]
+    - methodId: Load41-1
+      parameters:
+        - { name: text, valueType: String }
+        - { name: count, valueType: Int, isOptional: true }
+        - { name: mode, valueType: Enum, valueCkEnumId: "${this}/OperatingStatus", isOptional: true }
+      result:
+        valueType: String
+      authorization:
+        roles: [ AccessTestAdmin ]
+    - methodId: Load42-1
+      kind: Static
+      parameters:
+        - { name: text, valueType: String }
+        - { name: count, valueType: Int, isOptional: true }
+        - { name: mode, valueType: Enum, valueCkEnumId: "${this}/OperatingStatus", isOptional: true }
+        - { name: specification, valueType: Record, valueCkRecordId: "${this}/Specification", isOptional: true }
+      result:
+        valueType: String
+      authorization:
+        roles: [ AccessTestAdmin ]
+    - methodId: Load43-1
+      parameters:
+        - { name: text, valueType: String }
+        - { name: count, valueType: Int, isOptional: true }
+        - { name: mode, valueType: Enum, valueCkEnumId: "${this}/OperatingStatus", isOptional: true }
+      result:
+        valueType: String
+      authorization:
+        roles: [ AccessTestAdmin ]
+    - methodId: Load44-1
+      kind: Static
+      parameters:
+        - { name: text, valueType: String }
+        - { name: count, valueType: Int, isOptional: true }
+        - { name: mode, valueType: Enum, valueCkEnumId: "${this}/OperatingStatus", isOptional: true }
+      result:
+        valueType: String
+      authorization:
+        roles: [ AccessTestAdmin ]
+    - methodId: Load45-1
+      parameters:
+        - { name: text, valueType: String }
+        - { name: count, valueType: Int, isOptional: true }
+        - { name: mode, valueType: Enum, valueCkEnumId: "${this}/OperatingStatus", isOptional: true }
+        - { name: specification, valueType: Record, valueCkRecordId: "${this}/Specification", isOptional: true }
+      result:
+        valueType: Record
+        valueCkRecordId: "${this}/Specification"
+      authorization:
+        roles: [ AccessTestAdmin ]
+    - methodId: Load46-1
+      kind: Static
+      parameters:
+        - { name: text, valueType: String }
+        - { name: count, valueType: Int, isOptional: true }
+        - { name: mode, valueType: Enum, valueCkEnumId: "${this}/OperatingStatus", isOptional: true }
+      result:
+        valueType: String
+      authorization:
+        roles: [ AccessTestAdmin ]
+    - methodId: Load47-1
+      parameters:
+        - { name: text, valueType: String }
+        - { name: count, valueType: Int, isOptional: true }
+        - { name: mode, valueType: Enum, valueCkEnumId: "${this}/OperatingStatus", isOptional: true }
+      result:
+        valueType: String
+      authorization:
+        roles: [ AccessTestAdmin ]
+    - methodId: Load48-1
+      kind: Static
+      parameters:
+        - { name: text, valueType: String }
+        - { name: count, valueType: Int, isOptional: true }
+        - { name: mode, valueType: Enum, valueCkEnumId: "${this}/OperatingStatus", isOptional: true }
+        - { name: specification, valueType: Record, valueCkRecordId: "${this}/Specification", isOptional: true }
+      result:
+        valueType: String
+      authorization:
+        roles: [ AccessTestAdmin ]
+    - methodId: Load49-1
+      parameters:
+        - { name: text, valueType: String }
+        - { name: count, valueType: Int, isOptional: true }
+        - { name: mode, valueType: Enum, valueCkEnumId: "${this}/OperatingStatus", isOptional: true }
+      result:
+        valueType: String
+      authorization:
+        roles: [ AccessTestAdmin ]
+    - methodId: Load50-1
+      kind: Static
+      parameters:
+        - { name: text, valueType: String }
+        - { name: count, valueType: Int, isOptional: true }
+        - { name: mode, valueType: Enum, valueCkEnumId: "${this}/OperatingStatus", isOptional: true }
+      result:
+        valueType: Record
+        valueCkRecordId: "${this}/Specification"
+      authorization:
+        roles: [ AccessTestAdmin ]

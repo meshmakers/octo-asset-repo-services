@@ -502,8 +502,8 @@ N:M associations are exposed as query columns with `::totalCount` (INT64) and `:
 - Schema invalidation happens via `SchemaContext.Invalidate(tenantId)`
 - The schema is **initialized eagerly** inside `SchemaContext.GetOrCreateAsync` (not lazily on the first request),
   so an invalid schema is never cached and the build time is measured completely. Every build logs at Information:
-  `GraphQL schema for tenant {TenantId} built in {ElapsedMs} ms ({TypeCount} types, {InterfaceCount} CK interfaces;
-  populate {PopulateMs} ms, initialize {InitializeMs} ms)` (CK v2 risk R8)
+  `GraphQL schema for tenant {TenantId} built in {ElapsedMs} ms ({TypeCount} types, {InterfaceCount} CK interfaces,
+  {MethodCount} CK methods; populate {PopulateMs} ms, initialize {InitializeMs} ms)` (CK v2 risk R8)
 - **Exception details in GraphQL errors** (`extensions.details`: exception text, inner exceptions, stack trace) are
   exposed only in the `Development` environment or with the explicit opt-in `GraphQl:ExposeExceptionDetails`
   (`OCTO_GraphQl__ExposeExceptionDetails`; an explicit value wins over the environment) — `GraphQlErrorExposure`,
@@ -706,6 +706,34 @@ who passed. The refusal log line (Information) names method id, tenant and the r
 `extensions.parameters` and a fixed message. **Not wired yet:** no method mutation exists on main; the resolver that generates the per-type
 mutations (F3.7, AB#6884) must call `ICkMethodGateway`, pass its tenant-repository lookup as `targetExists`, and register `AddCkMethodDispatcher()`,
 `AddCkMethodAuthorization()` and `AddCkMethodGateway()`. Gateway-side parameter validation (between target load and dispatch) is part of that resolver.
+The generated fields exist since AB#5670 (next section); the resolver (AB#7026) replaces `CkMethodFieldResolver`.
+
+### Typed method mutations (AB#5670, F3.7)
+
+Every concrete CK type with methods gets one mutation field per method **next to `create`/`update`** in its per-type mutation type
+(`runtime { {type}s { {method}(rtId, input) { invocationId result } } }`). Code: `GraphQL/Methods/CkMethodMutationFields` (adds the fields, called from
+`RtEntityMutation`), `CkMethodGraphTypes` (input and result type of one method), `CkMethodResponseMapper` + `CkMethodResultConverter` (gateway response -> value or error),
+`CkMethodCallInfo` (the marker). `IGraphTypesCache.GetMethods(type)` reads `CkTypeGraph.AllMethods` (inherited and interface methods included, so a method appears
+**once** on the derived concrete type) and `GetMethodTypes(method)` caches the types per qualified method id (shared by all derived types).
+
+- **Field name** = `CkMethodIds.MethodClassName(methodId)` camelCase (`ResetPassword-2` -> `resetPassword2`). A name that equals an existing field of the type
+  (`create`, `update`, another method) throws `OctoGraphQLException.CkMethodFieldNameClash` (names type and qualified method id): the schema of that tenant is not built.
+- **Arguments**: instance methods `rtId: OctoObjectId!`; static none. `input: {Declaring}{Method}MethodInput`, built with `OctoValueTypeMapper` (the attribute mapping),
+  required parameter = non-null; the argument is non-null only if a parameter is required, absent without parameters. **Result** `{Declaring}{Method}MethodResult`:
+  `invocationId: ID!` and `result` (declared value type) - no error/success member. The field itself is nullable.
+- **Marker**: the field metadata key `Statics.CkMethodCall` (`"CkMethodCall"`) holds a `CkMethodCallInfo` (concrete type, method id, qualified id, kind); `Statics.CkId` holds the
+  type. The gateway rules (AB#7020 one call per request, AB#7026) find a method call by this key, never by field name.
+- **Errors**: `CkMethodResponseMapper.Map` returns the typed value for a success; for every failed response ONE `ExecutionError` via `CkMethodGraphQlError.Create` (`extensions.code`,
+  `extensions.parameters`, plus `extensions.details` when the response carries details). Declared handler codes keep their own code. An accepted async response (F3.6) maps to the
+  invocation id without result. A result that does not fit its declaration (`ResultJson`) becomes `METHOD_HANDLER_FAILED` with `methodId` and `correlationId`, never the value.
+  The result JSON is the camelCase `CkMethodJson` wire form; enums may be the member name (any spelling) or the key; records are built as `RtRecord` from the record graph.
+- **Resolver (placeholder)**: `CkMethodFieldResolver` answers `METHOD_HANDLER_NOT_AVAILABLE` (reason `GATEWAY_RESOLVER_PENDING`) without touching target, parameters or handler, until AB#7026
+  wires the gateway (authorize first, target lookup, scope, validation, dispatch).
+- **Schema build time (risk R8)**: the log line carries the CK method count; see the numbers in the PR of AB#5670 (`SchemaBuildTimingTests`, 11 runs, median, with the 50-method type
+  `MethodLoadThing` in the test model).
+- Tests: `CkMethodMutationFieldsTests`, `CkMethodResponseMapperTests` (unit); `GraphQL/CkV2/TypedMethodMutationTests` (integration: introspection of instance/static/versioned/inherited
+  methods, input and result types, marker, 50 methods, snapshot `GraphQL/Methods/MethodLessTypes.golden.graphql` of the mutation and input types of method-less types taken before this
+  change, call answer). Test model: `types/methodTest.yaml`, `types/methodLoadTest.yaml`, `interfaces/operable.yaml`.
 
 ### In-process handlers never see the request session (AB#7023, OD-8 part 2)
 
