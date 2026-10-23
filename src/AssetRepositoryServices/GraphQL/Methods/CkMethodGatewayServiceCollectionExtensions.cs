@@ -19,6 +19,8 @@ public static class CkMethodGatewayServiceCollectionExtensions
     public static IServiceCollection AddCkMethodGateway(this IServiceCollection services)
     {
         services.TryAddScoped<ICkMethodGateway, CkMethodGateway>();
+        // The resolver forwards the raw bearer token of the request to the handler (AB#7026).
+        services.AddHttpContextAccessor();
         services.AddOctoSessionAmbientStateProbe();
         return services;
     }

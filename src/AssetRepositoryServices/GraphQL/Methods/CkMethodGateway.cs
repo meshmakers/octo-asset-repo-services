@@ -36,7 +36,8 @@ public sealed record CkMethodGatewayCall(
 /// <remarks>
 ///     Order: authorize with the shared <see cref="ICkMethodAuthorizationEvaluator" /> (the same instance and rules as the
 ///     pipeline filter at band 200: roles, <c>allowSelf</c> on the id from the request, scopes, <c>octo_api</c> always,
-///     default-deny), then load the target, then dispatch. A refusal is <c>METHOD_FORBIDDEN</c> with the method id and a
+///     default-deny), then load the target, then validate the parameters (<c>METHOD_VALIDATION_FAILED</c>, AB#7026), then
+///     dispatch. A refusal is <c>METHOD_FORBIDDEN</c> with the method id and a
 ///     fixed reason and is a pure function of the method: it is the same whether the target exists or not, and the gate
 ///     does not touch the target before. <c>METHOD_TARGET_NOT_FOUND</c> is only returned to a caller who passed the
 ///     check. The scope <c>octo_api</c> is required for method calls independent of <c>GraphQl:EnforceMutationScope</c>
@@ -99,7 +100,19 @@ internal sealed class CkMethodGateway(
                     (CkMethodErrorParameters.MethodId, call.MethodId)));
         }
 
-        // 3. dispatch. The principal travels in the ambient scope, so the filter (second line) judges the same caller.
+        // 3. validate the parameters against the declaration. After authorization and the target lookup, so a caller who
+        // may not call the method learns nothing about its parameters, and before dispatch, so nothing invalid leaves.
+        // The error names the members and a fixed reason, never a value.
+        var invalid = CkMethodParameterValidator.Validate(call.MethodId, definition!, call.ParametersJson);
+        if (invalid != null)
+        {
+            logger.LogInformation(
+                "CK method {MethodId} invocation {InvocationId} in tenant {TenantId}: parameters rejected ({Reason})",
+                call.MethodId, invocationId, call.TenantId, invalid.Parameters.GetValueOrDefault(CkMethodErrorParameters.Reason));
+            return CkMethodResponse.Failed(invocationId, string.Empty, invalid);
+        }
+
+        // 4. dispatch. The principal travels in the ambient scope, so the filter (second line) judges the same caller.
         var request = new CkMethodRequest(call.TenantId)
         {
             InvocationId = invocationId,

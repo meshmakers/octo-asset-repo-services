@@ -21,8 +21,7 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Graph
 public class TypedMethodMutationTests
 {
     private const string Prefix = "AssetRepositoryIntegrationTest";
-    private const string UnknownRtId = "5f9b3b3b3b3b3b3b3b3b3b3b";
-
+    
     private readonly GraphQlTestFixture _fixture;
 
     public TypedMethodMutationTests(GraphQlTestFixture fixture, ITestOutputHelper output)
@@ -164,30 +163,6 @@ public class TypedMethodMutationTests
         var fields = await FieldsAsync($"{Prefix}MethodLoadThingMutations");
 
         fields.Keys.Count(n => n.StartsWith("load", StringComparison.Ordinal)).Should().Be(50);
-    }
-
-    [Fact]
-    public async Task CallingAMethod_AnswersOneErrorWithCodeAndParameters_UntilTheGatewayResolverIsWired()
-    {
-        var result = await _fixture.ExecuteGraphQlAsync($$"""
-            mutation {
-              runtime {
-                assetRepositoryIntegrationTestAccessTestAccounts {
-                  resetPassword(rtId: "{{UnknownRtId}}", input: { newPassword: "x" }) { invocationId }
-                }
-              }
-            }
-            """);
-
-        var json = _fixture.SerializeGraphQl(result);
-        result.Errors.Should().HaveCount(1, json);
-        var error = result.Errors![0];
-        error.Code.Should().Be("METHOD_HANDLER_NOT_AVAILABLE");
-        error.Extensions!["code"].Should().Be("METHOD_HANDLER_NOT_AVAILABLE");
-        error.Extensions["parameters"].Should().BeAssignableTo<IDictionary<string, object?>>();
-        json.Should().NotContain("\"x\"", "parameters never come back in an error");
-        JObject.Parse(json).SelectToken("data.runtime.assetRepositoryIntegrationTestAccessTestAccounts.resetPassword")!
-            .Type.Should().Be(JTokenType.Null);
     }
 
     private async Task<Dictionary<string, JToken>> ResultFieldsAsync(string typeName)

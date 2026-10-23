@@ -272,6 +272,66 @@ public class CkMethodGatewayTests
     }
 
     [Fact]
+    public async Task InvalidParameters_AreRefusedAfterTheTargetLookup_NothingIsDispatched_AndNoValueIsInTheError()
+    {
+        var gateway = Gateway(new CkMethodAuthorizationDto { Roles = ["AssetManagement"] });
+        var reader = new Counter();
+        var call = Call(User(Other, ["AssetManagement"]), Owner) with
+        {
+            ParametersJson = "{\"newPassword\":123,\"surprise\":\"CANARY-SECRET-123\"}"
+        };
+
+        var response = await gateway.InvokeAsync(call, reader.ExistsAsync, TestContext.Current.CancellationToken);
+
+        Assert.Equal(CkMethodErrorCodes.MethodValidationFailed, response.Error!.Code);
+        Assert.Equal("newPassword,surprise", response.Error.Parameters[CkMethodErrorParameters.Field]);
+        Assert.Equal("unknown-member,wrong-type", response.Error.Parameters[CkMethodErrorParameters.Reason]);
+        Assert.Equal(1, reader.Reads); // validation runs after the lookup
+        Assert.Empty(_dispatched);
+        Assert.DoesNotContain("CANARY-SECRET-123", GraphQl(response));
+        Assert.DoesNotContain("CANARY-SECRET-123", string.Join("\n", _logs));
+    }
+
+    [Fact]
+    public async Task InvalidParameters_ForACallerWithoutTheRight_AreNeverJudged_TheAnswerIsForbidden()
+    {
+        var gateway = Gateway(new CkMethodAuthorizationDto { Roles = ["AssetManagement"] });
+        var reader = new Counter();
+        var call = Call(User(Other, ["Nobody"]), Owner) with { ParametersJson = "{}" };
+
+        var response = await gateway.InvokeAsync(call, reader.ExistsAsync, TestContext.Current.CancellationToken);
+
+        Assert.Equal(CkMethodErrorCodes.MethodForbidden, response.Error!.Code);
+        Assert.Equal(0, reader.Reads);
+    }
+
+    [Fact]
+    public async Task InvalidParameters_ForAMissingTarget_AnswerTargetNotFound_NotValidation()
+    {
+        var gateway = Gateway(new CkMethodAuthorizationDto { Roles = ["AssetManagement"] });
+        var reader = new Counter { Exists = false };
+        var call = Call(User(Other, ["AssetManagement"]), Missing) with { ParametersJson = "{}" };
+
+        var response = await gateway.InvokeAsync(call, reader.ExistsAsync, TestContext.Current.CancellationToken);
+
+        Assert.Equal(CkMethodErrorCodes.MethodTargetNotFound, response.Error!.Code);
+    }
+
+    [Fact]
+    public async Task MissingRequiredParameter_IsNamed()
+    {
+        var gateway = Gateway(new CkMethodAuthorizationDto { Roles = ["AssetManagement"] });
+
+        var response = await gateway.InvokeAsync(
+            Call(User(Other, ["AssetManagement"]), Owner) with { ParametersJson = "{}" },
+            new Counter().ExistsAsync, TestContext.Current.CancellationToken);
+
+        Assert.Equal(CkMethodErrorCodes.MethodValidationFailed, response.Error!.Code);
+        Assert.Equal("newPassword", response.Error.Parameters[CkMethodErrorParameters.Field]);
+        Assert.Equal("missing-required", response.Error.Parameters[CkMethodErrorParameters.Reason]);
+    }
+
+    [Fact]
     public void GraphQlError_CarriesCodeAndParametersInExtensions_AndNoStackOrData()
     {
         var error = CkMethodAuthorizationErrors.Forbidden(MethodId);

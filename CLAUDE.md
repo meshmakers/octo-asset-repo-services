@@ -703,10 +703,8 @@ depends on the method and the caller only, so it is identical for an existing an
 who passed. The refusal log line (Information) names method id, tenant and the rule, never the target id, parameters or token.
 `octo_api` is required for every method call independent of `GraphQl:EnforceMutationScope` (the gate never reads the flag; the generic
 `MutationScopeListener` is unchanged). `CkMethodGraphQlError.Create` turns a failed response into ONE `ExecutionError` with `extensions.code` and
-`extensions.parameters` and a fixed message. **Not wired yet:** no method mutation exists on main; the resolver that generates the per-type
-mutations (F3.7, AB#6884) must call `ICkMethodGateway`, pass its tenant-repository lookup as `targetExists`, and register `AddCkMethodDispatcher()`,
-`AddCkMethodAuthorization()` and `AddCkMethodGateway()`. Gateway-side parameter validation (between target load and dispatch) is part of that resolver.
-The generated fields exist since AB#5670 (next section); the resolver (AB#7026) replaces `CkMethodFieldResolver`.
+`extensions.parameters` and a fixed message. Since AB#7026 the gateway also validates the parameters (see "Method mutation resolver" below). The only
+production caller is the resolver of the typed method mutations (`CkMethodFieldResolver`).
 **One method call per request (AB#7020):** `GraphQL/RequestHandling/OneMethodCallPerRequestRule.cs` is a GraphQL.NET `IValidationRule`
 (registered with `AddValidationRule<>(useForCachedDocuments: true)` next to `MutationScopeListener` in `RuntimeEngineBuilderExtensions`). It judges only the
 selected mutation operation (aliases, fragments, inline fragments resolved; `@skip`/`@include` not evaluated) and refuses a method field next to a generic
@@ -734,13 +732,44 @@ Every concrete CK type with methods gets one mutation field per method **next to
   `extensions.parameters`, plus `extensions.details` when the response carries details). Declared handler codes keep their own code. An accepted async response (F3.6) maps to the
   invocation id without result. A result that does not fit its declaration (`ResultJson`) becomes `METHOD_HANDLER_FAILED` with `methodId` and `correlationId`, never the value.
   The result JSON is the camelCase `CkMethodJson` wire form; enums may be the member name (any spelling) or the key; records are built as `RtRecord` from the record graph.
-- **Resolver (placeholder)**: `CkMethodFieldResolver` answers `METHOD_HANDLER_NOT_AVAILABLE` (reason `GATEWAY_RESOLVER_PENDING`) without touching target, parameters or handler, until AB#7026
-  wires the gateway (authorize first, target lookup, scope, validation, dispatch).
+- **Resolver**: `CkMethodFieldResolver` goes through the gateway (AB#7026, next section).
 - **Schema build time (risk R8)**: the log line carries the CK method count; see the numbers in the PR of AB#5670 (`SchemaBuildTimingTests`, 11 runs, median, with the 50-method type
   `MethodLoadThing` in the test model).
 - Tests: `CkMethodMutationFieldsTests`, `CkMethodResponseMapperTests` (unit); `GraphQL/CkV2/TypedMethodMutationTests` (integration: introspection of instance/static/versioned/inherited
   methods, input and result types, marker, 50 methods, snapshot `GraphQL/Methods/MethodLessTypes.golden.graphql` of the mutation and input types of method-less types taken before this
   change, call answer). Test model: `types/methodTest.yaml`, `types/methodLoadTest.yaml`, `interfaces/operable.yaml`.
+
+### Method mutation resolver (AB#7026, F3.7)
+
+`GraphQL/Methods/CkMethodFieldResolver` is the resolver of every generated method field. It does no authorization or loading itself: it builds a
+`CkMethodGatewayCall` and lets `ICkMethodGateway` decide. **Order of checks (owned by the gateway):** authenticate (no authenticated principal = no
+principal, default-deny) -> authorize (roles any-of, `allowSelf` on the target id **as the client sent it**, declared scopes, `octo_api` always,
+default-deny) -> load the target (`targetExists` callback, instance methods only) -> validate the parameters -> dispatch -> map the envelope.
+
+- **Same answer whether the target exists or not.** A caller who fails the authorization gets `METHOD_FORBIDDEN` (code, message, `parameters`, `errors[].extensions.code`
+  identical) for an existing and a missing target, because nothing about the target is read before the check. Only an authorized caller can get
+  `METHOD_TARGET_NOT_FOUND` (`methodId` as parameter). `allowSelf` compares the ids case-insensitively.
+- **Call**: tenant, concrete CK type (`RtCkId.FullName`), qualified method id, `rtId.ToString()` (instance), parameters JSON, the request principal
+  (`GraphQlUserContext.User`), the raw bearer token (read from the `Authorization` header via `IHttpContextAccessor`; forwarded to the handler, never logged)
+  and, for an instance method, the `targetExists` callback. `CkMethodParameterJson` turns the parsed `input` dictionary into the wire form of `CkMethodJson` (enum as key,
+  dates ISO 8601, time spans in the `c` format, binaries base64, records as objects of their attributes).
+- **Target lookup is caller-scoped and outside the request transaction**: `repository.GetSession(Helpers.GetSecurityContext(userContext))` is a plain read in a
+  session of its own, never part of the request's Mongo transaction (methods run outside it, decision 2026-10-07). The caller's `RtSecurityContext` applies, so
+  data permissions hide a record from an authorized caller as "not found"; the data-permission step proper is AB#7037 (plugs into this callback, no signature change).
+- **Parameter validation** (`CkMethodParameterValidator`, in the gateway between target lookup and dispatch, so it runs only for an authorized caller and an existing target):
+  `METHOD_VALIDATION_FAILED` with `methodId`, `field` (offending members, sorted, comma separated) and `reason` (distinct fixed reasons `missing-required`, `unknown-member`,
+  `wrong-type`, sorted, comma separated). No value ever appears in the error or a log line. Nothing is dispatched. GraphQL already rejects most type errors of the typed `input`
+  before the resolver runs; this check also protects the gateway for every other caller.
+- **Response mapping**: `CkMethodResponseMapper.Map` -> the typed result (`invocationId`, `result`) or ONE error (declared handler errors, `METHOD_HANDLER_NOT_AVAILABLE`,
+  `METHOD_TIMEOUT`, `METHOD_HANDLER_FAILED` alike) and `data.<field>` = null. An exception is mapped through `HandleException`.
+- **Logging**: the resolver logs nothing; the gateway logs method id, tenant, invocation id and the rule/reason at Information, never target id, parameters or token.
+- **Scope**: a token without `octo_api` is refused for a method mutation (`METHOD_FORBIDDEN`) while the generic mutations keep following `GraphQl:EnforceMutationScope`.
+- **Registration** (`RuntimeEngineBuilderExtensions.AddServices`): `AddCkMethodDispatcher()`, `AddCkMethodAuthorization()`, `AddCkMethodGateway()` (which also adds
+  `AddHttpContextAccessor()` and the in-process session tripwire) and `AddCkMethodHandlerRegistryFeed()` in the event-hub configuration, so the dispatcher learns the live handlers from
+  their announcements. These options bind from configuration; a host without `IConfiguration` (integration-test service collections) gets an empty one from `ServiceCollectionFixture`.
+- Tests: `CkMethodGatewayTests` (validation order, no value in error or log), `CkMethodParameterValidatorTests`, `CkMethodParameterJsonTests` (unit);
+  `GraphQL/CkV2/MethodMutationGatewayTests` (integration, fixture `MethodGatewayGraphQlTestFixture`: real schema, gateway and MongoDB, scripted dispatcher and log capture: forbidden is identical
+  for an existing and a missing target, target not found, `allowSelf` across letter case, typed result, static method, each failure code, missing `octo_api`, no secret/target id in logs or errors).
 
 ### In-process handlers never see the request session (AB#7023, OD-8 part 2)
 
