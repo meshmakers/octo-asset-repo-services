@@ -281,6 +281,8 @@ public static class RuntimeEngineBuilderExtensions
             .AddDocumentListener<OctoSessionListener>()
             .AddDocumentListener<MutationScopeListener>()
             .AddDocumentListener<MongoStatsListener>()
+            // AB#7020: one method call per mutation request, refused in the validation phase (also for cached documents).
+            .AddValidationRule<OneMethodCallPerRequestRule>(useForCachedDocuments: true)
             .Services.Register<IOctoSessionAccessor, OctoSessionAccessor>(GraphQL.DI.ServiceLifetime.Singleton)
         );
 
