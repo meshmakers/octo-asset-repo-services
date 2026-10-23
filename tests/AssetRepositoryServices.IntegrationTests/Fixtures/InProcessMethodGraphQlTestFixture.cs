@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using GraphQL;
 using GraphQL.Execution;
 using GraphQL.Validation;
@@ -5,6 +6,7 @@ using GraphQLParser.AST;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.RequestHandling;
 using Meshmakers.Octo.Services.Contracts.DistributionEventHub.Methods;
 using Meshmakers.Octo.Services.Methods;
+using Meshmakers.Octo.Services.Methods.Authorization;
 using Meshmakers.Octo.Services.Methods.Handlers;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -30,6 +32,8 @@ public class InProcessMethodGraphQlTestFixture : GraphQlTestFixture
         Services.AddScoped<ObservedHandler>();
         Services.AddCkInProcessMethodHandlers(m => m.Handle<ObservedHandler>(MethodId));
         Services.AddOctoSessionAmbientStateProbe();
+        // AB#7026: the authorization filter is part of every host now; the harness method is not declared in the CK model.
+        Services.AddSingleton<ICkMethodAuthorizationDefinitionSource, OpenDefinitionSource>();
         // Registered after OctoSessionListener (ctor of the base), so it runs once the session and the transaction exist.
         Services.AddGraphQL(b => b.AddDocumentListener<StartMethodListener>());
     }
@@ -79,6 +83,12 @@ public class InProcessMethodGraphQlTestFixture : GraphQlTestFixture
 
             var accessor = context.RequestServices!.GetRequiredService<IOctoSessionAccessor>();
             observation.HasSessionInResolver = accessor.HasSession;
+            // AB#7026: every host now registers the authorization filter of the invocation pipeline (band 200), so the
+            // harness that plays the resolver calls as an authorized principal, like the gateway does.
+            var caller = new ClaimsPrincipal(new ClaimsIdentity(
+                [new Claim("sub", "sub-1"), new Claim("scope", "octo_api"), new Claim("role", "AdminPanelManagement")],
+                "test"));
+            using var principalScope = CkMethodPrincipalScope.Begin(CkMethodPrincipal.FromClaimsPrincipal(caller));
             Response = await context.RequestServices!.GetRequiredService<ICkInProcessMethodTransport>()
                 .InvokeAsync(new CkMethodRequest("meshtest")
                 {
@@ -96,6 +106,17 @@ public class InProcessMethodGraphQlTestFixture : GraphQlTestFixture
         }
 
         public Task AfterExecutionAsync(IExecutionContext context) => Task.CompletedTask;
+    }
+
+    private sealed class OpenDefinitionSource : ICkMethodAuthorizationDefinitionSource
+    {
+        public Meshmakers.Octo.ConstructionKit.Contracts.DataTransferObjects.CkMethodDto? Find(string tenantId,
+            string ckTypeId, string qualifiedMethodId) => new()
+        {
+            MethodId = "Touch-1",
+            Authorization = new Meshmakers.Octo.ConstructionKit.Contracts.DataTransferObjects.CkMethodAuthorizationDto
+                { Roles = ["AdminPanelManagement"] }
+        };
     }
 
     public sealed record TouchParameters

@@ -74,7 +74,7 @@ internal static class CkMethodMutationFields
                 Description = Describe(method),
                 ResolvedType = types.Result,
                 Arguments = arguments,
-                Resolver = new FuncFieldResolver<object?, object?>(CkMethodFieldResolver.ResolveAsync)
+                Resolver = new FuncFieldResolver<object?, object?>(context => CkMethodFieldResolver.ResolveAsync(context, method))
             };
             field.Metadata[Statics.CkId] = rtCkTypeId;
             field.Metadata[Statics.CkMethodCall] = new CkMethodCallInfo(rtCkTypeId, method.Definition.MethodId,
@@ -89,27 +89,5 @@ internal static class CkMethodMutationFields
         return string.IsNullOrWhiteSpace(method.Definition.Description)
             ? text
             : $"{method.Definition.Description} {text}";
-    }
-}
-
-/// <summary>
-///     The resolver of the generated method fields. AB#5670 only maps a response to the field value or the error;
-///     the resolver that authorizes through the gateway, loads the target and dispatches is AB#7026. Until then
-///     every call answers <c>METHOD_HANDLER_NOT_AVAILABLE</c> without touching any target, parameter or handler.
-/// </summary>
-internal static class CkMethodFieldResolver
-{
-    /// <summary>Fixed reason of the placeholder answer until the gateway resolver (AB#7026) is wired.</summary>
-    public const string GatewayPendingReason = "GATEWAY_RESOLVER_PENDING";
-
-    public static ValueTask<object?> ResolveAsync(IResolveFieldContext<object?> context)
-    {
-        var info = context.FieldDefinition.GetMetadata<CkMethodCallInfo>(Statics.CkMethodCall);
-        var response = CkMethodResponse.Failed(Guid.NewGuid(), string.Empty,
-            CkMethodError.Create(CkMethodErrorCodes.MethodHandlerNotAvailable,
-                (CkMethodErrorParameters.MethodId, info.QualifiedMethodId),
-                (CkMethodErrorParameters.Reason, GatewayPendingReason)));
-        context.Errors.Add(CkMethodGraphQlError.Create(response.Error!));
-        return ValueTask.FromResult<object?>(null);
     }
 }

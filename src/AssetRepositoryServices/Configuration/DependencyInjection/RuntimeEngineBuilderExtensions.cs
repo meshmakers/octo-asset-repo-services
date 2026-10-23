@@ -369,7 +369,14 @@ public static class RuntimeEngineBuilderExtensions
             c.AddCommandClient<ImportCkBatchCommandRequest>(QueueNames.ImportCkBatchCommand);
             c.AddBroadcastEventConsumer<TenantManagementConsumer, PosUpdateTenant>();
             c.AddBroadcastEventConsumer<TenantManagementConsumer, PreDeleteTenant>();
+            // AB#7026: the dispatcher of the method resolver learns the live handlers from their announcements.
+            c.AddCkMethodHandlerRegistryFeed();
         });
+
+        // AB#7026 (F3.7): the typed method mutations call CK methods through the authorize-first gateway.
+        builder.Services.AddCkMethodDispatcher();
+        builder.Services.AddCkMethodAuthorization();
+        builder.Services.AddCkMethodGateway();
 
         // Mongo-backed repositories + blueprint history/installations.
         // Don't call AddRuntimeEngine() here: Program.cs already does, and

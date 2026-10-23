@@ -6,7 +6,9 @@ using Meshmakers.Octo.Runtime.Contracts.MongoDb.Configuration;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb.Services;
 using Meshmakers.Octo.Runtime.Engine.MongoDb.Services.Defaults;
 using Meshmakers.Octo.Runtime.Engine.Secrets;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Xunit;
 using ITestOutputHelper = Xunit.ITestOutputHelper;
@@ -29,6 +31,9 @@ public abstract class ServiceCollectionFixture : ITestOutputHelperAccessor, IAsy
             .AddOctoAssetRepositoryServices(
                 _ => new OctoSystemConfiguration(),
                 _ => new OctoAssetRepositoryServicesOptions());
+
+        // AB#7026: the method gateway options bind from configuration; a fixture without a host has an empty one.
+        Services.TryAddSingleton<IConfiguration>(new ConfigurationBuilder().Build());
 
         // AB#5528: Secret attributes need a key ring. Tests use a key generated per fixture - never a real key.
         Services.Configure<SecretEncryptionOptions>(options =>
