@@ -107,7 +107,8 @@ public class CkModelLibraryStatusItemDto
     /// <summary>
     ///     AB#6868: true when the installed model declares dependency ranges (range-retaining, CK language 2), so
     ///     operators can see which installed models are still exact-pinned without database access (F2.6, AB#6708).
-    ///     <c>false</c> for exact-pinned classic models and for catalog-only rows.
+    ///     <c>false</c> for exact-pinned classic models. For catalog-only rows it reports the range retention of the
+    ///     catalog model (AB#7408).
     /// </summary>
     public bool IsRangeRetaining { get; set; }
 }

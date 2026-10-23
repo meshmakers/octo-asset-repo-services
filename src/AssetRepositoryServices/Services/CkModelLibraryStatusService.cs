@@ -610,10 +610,22 @@ public sealed class CkModelLibraryStatusService : ICkModelLibraryStatusService
             {
                 if (installedSystemVersions.TryGetValue(dep.Name, out var installedVersion))
                 {
-                    // Strict version check: compiled models contain exact CkTypeId
+                    // AB#7408: a range-retaining model (CK v2) declares the range it compiled against in
+                    // DependencyRanges; any installed version inside the range (and at or above the floor)
+                    // satisfies it. The exact pin in Dependencies is only the floor there.
+                    var range = compiled.DependencyRanges?.FirstOrDefault(r => r.Range.Name == dep.Name);
+                    if (range != null)
+                    {
+                        if (!range.IsSatisfiedBy(new CkModelId(dep.Name, installedVersion)))
+                        {
+                            return (false,
+                                $"Requires {range.GetEffectiveRange().FullName}, but {dep.Name}-{installedVersion} is installed");
+                        }
+                    }
+                    // Classic exact-pinned model: compiled models contain exact CkTypeId
                     // references (e.g. System-2.0.7/Entity-1) so the installed
                     // system version must match exactly.
-                    if (installedVersion.CompareTo(dep.Version) != 0)
+                    else if (installedVersion.CompareTo(dep.Version) != 0)
                     {
                         return (false,
                             $"Requires {dep.FullName}, but {dep.Name}-{installedVersion} is installed");
@@ -755,6 +767,9 @@ public sealed class CkModelLibraryStatusService : ICkModelLibraryStatusService
                     unresolvedDeps, memo, cancellationToken);
             }
 
+            // AB#7408: report range retention of the catalog model (memoized, already fetched by the check).
+            var (found, compiled) = await memo.GetAsync(_catalogService, cm.ModelId, cancellationToken);
+
             return new CkModelLibraryStatusItemDto
             {
                 Name = name,
@@ -765,7 +780,8 @@ public sealed class CkModelLibraryStatusService : ICkModelLibraryStatusService
                 IsCompatible = isCompatible,
                 IncompatibilityReason = incompatibilityReason,
                 UnresolvedDependencies = unresolvedDeps,
-                HasCatalogInconsistency = unresolvedDeps.Count > 0
+                HasCatalogInconsistency = unresolvedDeps.Count > 0,
+                IsRangeRetaining = found && compiled is { IsRangeRetaining: true }
             };
         }
         catch (Exception ex)
