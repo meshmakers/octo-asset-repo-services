@@ -4,6 +4,7 @@ using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Caches;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Utils;
 using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.ConstructionKit.Contracts.DataTransferObjects;
+using Meshmakers.Octo.Runtime.Contracts.DataPermissions;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb.Repositories;
 using Meshmakers.Octo.ConstructionKit.Contracts.DependencyGraph;
 using Meshmakers.Octo.Runtime.Contracts;
@@ -15,14 +16,15 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Methods;
 /// <summary>
 ///     AB#7026 (F3.7): the resolver of the generated method fields. It hands the call to the authorize-first
 ///     <see cref="ICkMethodGateway" /> and maps the answer. Order, owned by the gateway: authenticate, authorize (roles,
-///     <c>allowSelf</c>, scopes, <c>octo_api</c>), load the target, validate the parameters, dispatch. A refused call is
-///     the same <c>METHOD_FORBIDDEN</c> whether the target exists or not, because the resolver reads nothing before the
-///     gateway has authorized: the existence read is a callback the gateway calls after authorization.
+///     <c>allowSelf</c>, scopes, <c>octo_api</c>), load the target and check the data permission (AB#7037), validate the
+///     parameters, dispatch. A refused call is the same <c>METHOD_FORBIDDEN</c> whether the target exists or not, because
+///     the resolver reads nothing before the gateway has authorized: the load and the check are a callback the gateway
+///     calls after authorization.
 /// </summary>
 /// <remarks>
-///     The existence read is a plain read of its own session with the caller's security context
+///     The target is loaded by a session of its own with the caller's security context
 ///     (<see cref="RtSecurityContext" />), not part of the request's Mongo transaction (decision 2026-10-07: methods run
-///     outside the request transaction). Nothing of the parameters, the token or the target id of a refused call reaches a
+///     outside the request transaction); see <see cref="CkMethodTargetAccessChecker" />. Nothing of the parameters, the token or the target id of a refused call reaches a
 ///     log line or an error: the resolver itself logs nothing, the gateway logs method id and invocation id.
 /// </remarks>
 internal static class CkMethodFieldResolver
@@ -51,22 +53,16 @@ internal static class CkMethodFieldResolver
                 userContext.User ?? new ClaimsPrincipal(new ClaimsIdentity()),
                 BearerTokenOf(context));
 
-            Func<CancellationToken, Task<bool>>? targetExists = null;
-            if (isInstance)
-            {
-                var securityContext = Helpers.GetSecurityContext(context.UserContext);
-                var repository = userContext.TenantContext.GetTenantRepository();
-                targetExists = async _ =>
-                {
-                    // Own session without a transaction: the method runs outside the request transaction.
-                    using var session = repository.GetSession(securityContext);
-                    var found = await repository.GetRtEntitiesByIdAsync(session, info.CkTypeId, [rtId],
-                        RtEntityQueryOptions.Create()).ConfigureAwait(false);
-                    return found.Items.Any();
-                };
-            }
+            // Own session without a transaction: the method runs outside the request transaction. Declared authorization
+            // runs in the gateway before anything is read; the check below is only called once the caller passed it.
+            var securityContext = Helpers.GetSecurityContext(context.UserContext);
+            var repository = userContext.TenantContext.GetTenantRepository();
+            var evaluator = context.RequestServices!.GetRequiredService<IRtDataPermissionEvaluator>();
+            var targetAccess = isInstance
+                ? CkMethodTargetAccessChecker.ForInstance(repository, securityContext, evaluator, info.CkTypeId, rtId)
+                : CkMethodTargetAccessChecker.ForStatic(repository, securityContext, evaluator, info.CkTypeId);
 
-            var response = await gateway.InvokeAsync(call, targetExists, context.CancellationToken)
+            var response = await gateway.InvokeAsync(call, targetAccess, context.CancellationToken)
                 .ConfigureAwait(false);
 
             var outcome = CkMethodResponseMapper.Map(response, method, context.GetCkCacheService(), userContext.TenantId);

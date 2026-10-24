@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using Meshmakers.Octo.ConstructionKit.Contracts.DataTransferObjects;
 using Meshmakers.Octo.Services.Contracts.DistributionEventHub.Methods;
 using Meshmakers.Octo.Services.Methods;
 using Meshmakers.Octo.Services.Methods.Authorization;
@@ -36,7 +37,9 @@ public sealed record CkMethodGatewayCall(
 /// <remarks>
 ///     Order: authorize with the shared <see cref="ICkMethodAuthorizationEvaluator" /> (the same instance and rules as the
 ///     pipeline filter at band 200: roles, <c>allowSelf</c> on the id from the request, scopes, <c>octo_api</c> always,
-///     default-deny), then load the target, then validate the parameters (<c>METHOD_VALIDATION_FAILED</c>, AB#7026), then
+///     default-deny), then load the target with the caller's rights and check the data permission (AB#7037:
+///     <c>Write</c>, or <c>Read</c> if the method declares <c>authorization.dataAccess: Read</c>; <c>allowSelf</c> does not
+///     exempt it; a hidden target is <c>METHOD_TARGET_NOT_FOUND</c>, a visible protected one <c>METHOD_FORBIDDEN</c>), then validate the parameters (<c>METHOD_VALIDATION_FAILED</c>, AB#7026), then
 ///     dispatch. A refusal is <c>METHOD_FORBIDDEN</c> with the method id and a
 ///     fixed reason and is a pure function of the method: it is the same whether the target exists or not, and the gate
 ///     does not touch the target before. <c>METHOD_TARGET_NOT_FOUND</c> is only returned to a caller who passed the
@@ -50,12 +53,13 @@ public interface ICkMethodGateway
     ///     Runs the call. Never throws for a refused or failing call; only cancellation surfaces.
     /// </summary>
     /// <param name="call">The call.</param>
-    /// <param name="targetExists">
-    ///     Looks the target up (after authorization only). Not called for a static method or when the call is refused.
-    ///     <c>null</c> skips the existence check (static methods only).
+    /// <param name="targetAccess">
+    ///     Loads the target with the rights of the caller and judges the data permission (after authorization only; never
+    ///     called for a refused call). For a static method it judges the declaring type. Required: there is no way to skip
+    ///     the data-permission check.
     /// </param>
     /// <param name="cancellationToken">The caller's token.</param>
-    Task<CkMethodResponse> InvokeAsync(CkMethodGatewayCall call, Func<CancellationToken, Task<bool>>? targetExists,
+    Task<CkMethodResponse> InvokeAsync(CkMethodGatewayCall call, CkMethodTargetAccessCheck targetAccess,
         CancellationToken cancellationToken = default);
 }
 
@@ -66,10 +70,11 @@ internal sealed class CkMethodGateway(
     ICkMethodDispatcher dispatcher,
     ILogger<CkMethodGateway> logger) : ICkMethodGateway
 {
-    public async Task<CkMethodResponse> InvokeAsync(CkMethodGatewayCall call,
-        Func<CancellationToken, Task<bool>>? targetExists, CancellationToken cancellationToken = default)
+    public async Task<CkMethodResponse> InvokeAsync(CkMethodGatewayCall call, CkMethodTargetAccessCheck targetAccess,
+        CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(call);
+        ArgumentNullException.ThrowIfNull(targetAccess);
 
         var invocationId = Guid.NewGuid();
         var principal = call.User.Identity?.IsAuthenticated == true ? CkMethodPrincipal.FromClaimsPrincipal(call.User) : null;
@@ -88,22 +93,44 @@ internal sealed class CkMethodGateway(
             return CkMethodResponse.Failed(invocationId, string.Empty, CkMethodAuthorizationErrors.Forbidden(call.MethodId));
         }
 
-        // 2. load the target (instance methods only). Only an authorized caller can learn that it is missing.
-        if (call.TargetRtId != null && targetExists != null &&
-            !await targetExists(cancellationToken).ConfigureAwait(false))
+        // 2. load the target with the caller's rights and check the data permission (AB#7037). The data action is Write
+        // unless the method declares Read. allowSelf does not exempt this check. A target the caller cannot read is
+        // answered exactly like a missing one; a visible target the caller may not change is METHOD_FORBIDDEN with a
+        // fixed reason. A static method has no target: only the declaring type is judged. A fault in the check fails the
+        // call (the exception surfaces), it never lets it pass.
+        var dataAccess = CkMethodAuthorization.Resolve(definition!.Authorization);
+        var access = await targetAccess(dataAccess, cancellationToken).ConfigureAwait(false);
+        switch (access.Outcome)
         {
-            logger.LogInformation(
-                "CK method {MethodId} invocation {InvocationId} in tenant {TenantId}: target not found",
-                call.MethodId, invocationId, call.TenantId);
-            return CkMethodResponse.Failed(invocationId, string.Empty,
-                CkMethodError.Create(CkMethodErrorCodes.MethodTargetNotFound,
-                    (CkMethodErrorParameters.MethodId, call.MethodId)));
+            case CkMethodTargetAccessOutcome.Allowed:
+                if (access.AuditOnlyViolation)
+                {
+                    // AuditOnly policy: the call passes and the signal is logged (method and action only, never the target).
+                    logger.LogInformation(
+                        "CK method {MethodId} invocation {InvocationId} in tenant {TenantId}: data permission would refuse {DataAccess} access (audit only)",
+                        call.MethodId, invocationId, call.TenantId, dataAccess);
+                }
+
+                break;
+            case CkMethodTargetAccessOutcome.NotVisible when call.TargetRtId != null:
+                logger.LogInformation(
+                    "CK method {MethodId} invocation {InvocationId} in tenant {TenantId}: target not found",
+                    call.MethodId, invocationId, call.TenantId);
+                return CkMethodResponse.Failed(invocationId, string.Empty,
+                    CkMethodError.Create(CkMethodErrorCodes.MethodTargetNotFound,
+                        (CkMethodErrorParameters.MethodId, call.MethodId)));
+            default:
+                // NotPermitted, or a static method whose declaring type the caller cannot read at all.
+                logger.LogInformation(
+                    "CK method {MethodId} invocation {InvocationId} refused by a data permission in tenant {TenantId} ({DataAccess})",
+                    call.MethodId, invocationId, call.TenantId, dataAccess);
+                return CkMethodResponse.Failed(invocationId, string.Empty, CkMethodDataPermissionErrors.Forbidden(call.MethodId));
         }
 
         // 3. validate the parameters against the declaration. After authorization and the target lookup, so a caller who
         // may not call the method learns nothing about its parameters, and before dispatch, so nothing invalid leaves.
         // The error names the members and a fixed reason, never a value.
-        var invalid = CkMethodParameterValidator.Validate(call.MethodId, definition!, call.ParametersJson);
+        var invalid = CkMethodParameterValidator.Validate(call.MethodId, definition, call.ParametersJson);
         if (invalid != null)
         {
             logger.LogInformation(

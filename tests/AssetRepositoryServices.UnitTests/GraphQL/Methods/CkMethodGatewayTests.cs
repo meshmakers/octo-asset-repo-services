@@ -4,6 +4,7 @@ using FakeItEasy;
 using GraphQL;
 using GraphQL.SystemTextJson;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Methods;
+using Meshmakers.Octo.Runtime.Contracts.DataPermissions;
 using Meshmakers.Octo.ConstructionKit.Contracts.DataTransferObjects;
 using Meshmakers.Octo.Services.Contracts.DistributionEventHub.Methods;
 using Meshmakers.Octo.Services.Methods;
@@ -51,10 +52,22 @@ public class CkMethodGatewayTests
 
         public bool Exists = true;
 
-        public Task<bool> ExistsAsync(CancellationToken _)
+        public CkMethodTargetAccess? Verdict;
+
+        public List<CkMethodDataAccessDto> Actions { get; } = [];
+
+        public Exception? Throw;
+
+        public Task<CkMethodTargetAccess> CheckAsync(CkMethodDataAccessDto dataAccess, CancellationToken _)
         {
             Interlocked.Increment(ref Reads);
-            return Task.FromResult(Exists);
+            Actions.Add(dataAccess);
+            if (Throw != null)
+            {
+                throw Throw;
+            }
+
+            return Task.FromResult(Verdict ?? (Exists ? CkMethodTargetAccess.Allowed : CkMethodTargetAccess.NotVisible));
         }
     }
 
@@ -127,9 +140,9 @@ public class CkMethodGatewayTests
         var reader = new Counter();
         var user = User(Other, ["Nobody"]);
 
-        var existing = await gateway.InvokeAsync(Call(user, Owner), reader.ExistsAsync, TestContext.Current.CancellationToken);
+        var existing = await gateway.InvokeAsync(Call(user, Owner), reader.CheckAsync, TestContext.Current.CancellationToken);
         reader.Exists = false;
-        var missing = await gateway.InvokeAsync(Call(user, Missing), reader.ExistsAsync, TestContext.Current.CancellationToken);
+        var missing = await gateway.InvokeAsync(Call(user, Missing), reader.CheckAsync, TestContext.Current.CancellationToken);
 
         Assert.Equal(CkMethodErrorCodes.MethodForbidden, existing.Error!.Code);
         Assert.Equal(CkMethodErrorCodes.MethodForbidden, missing.Error!.Code);
@@ -147,8 +160,8 @@ public class CkMethodGatewayTests
     {
         var gateway = Gateway(new CkMethodAuthorizationDto { Roles = ["AssetManagement"] });
 
-        await gateway.InvokeAsync(Call(User(Other, ["Nobody"]), Owner), new Counter().ExistsAsync, TestContext.Current.CancellationToken);
-        await gateway.InvokeAsync(Call(User(Other, ["Nobody"]), Missing), new Counter().ExistsAsync, TestContext.Current.CancellationToken);
+        await gateway.InvokeAsync(Call(User(Other, ["Nobody"]), Owner), new Counter().CheckAsync, TestContext.Current.CancellationToken);
+        await gateway.InvokeAsync(Call(User(Other, ["Nobody"]), Missing), new Counter().CheckAsync, TestContext.Current.CancellationToken);
 
         Assert.NotEmpty(_logs);
         var all = string.Join("\n", _logs);
@@ -165,7 +178,7 @@ public class CkMethodGatewayTests
         var gateway = Gateway(new CkMethodAuthorizationDto { Roles = ["AssetManagement"] });
         var reader = new Counter { Exists = false };
 
-        var response = await gateway.InvokeAsync(Call(User(Other, ["AssetManagement"]), Missing), reader.ExistsAsync,
+        var response = await gateway.InvokeAsync(Call(User(Other, ["AssetManagement"]), Missing), reader.CheckAsync,
             TestContext.Current.CancellationToken);
 
         Assert.Equal(CkMethodErrorCodes.MethodTargetNotFound, response.Error!.Code);
@@ -180,7 +193,7 @@ public class CkMethodGatewayTests
         var gateway = Gateway(new CkMethodAuthorizationDto { Roles = ["AssetManagement"] });
         var reader = new Counter();
 
-        var response = await gateway.InvokeAsync(Call(User(Other, ["assetmanagement"]), Owner), reader.ExistsAsync,
+        var response = await gateway.InvokeAsync(Call(User(Other, ["assetmanagement"]), Owner), reader.CheckAsync,
             TestContext.Current.CancellationToken);
 
         Assert.True(response.Success);
@@ -201,9 +214,9 @@ public class CkMethodGatewayTests
         var gateway = Gateway(new CkMethodAuthorizationDto { AllowSelf = true });
         var reader = new Counter();
 
-        var self = await gateway.InvokeAsync(Call(User(OwnerUpper, []), Owner), reader.ExistsAsync, TestContext.Current.CancellationToken);
+        var self = await gateway.InvokeAsync(Call(User(OwnerUpper, []), Owner), reader.CheckAsync, TestContext.Current.CancellationToken);
         var reads = reader.Reads;
-        var stranger = await gateway.InvokeAsync(Call(User(Other, []), Owner), reader.ExistsAsync, TestContext.Current.CancellationToken);
+        var stranger = await gateway.InvokeAsync(Call(User(Other, []), Owner), reader.CheckAsync, TestContext.Current.CancellationToken);
 
         Assert.True(self.Success, self.Error?.Code);
         Assert.Equal(1, reads);
@@ -219,7 +232,7 @@ public class CkMethodGatewayTests
         var reader = new Counter();
 
         var response = await gateway.InvokeAsync(Call(User(Other, ["AssetManagement"], scope: "openid profile"), Owner),
-            reader.ExistsAsync, TestContext.Current.CancellationToken);
+            reader.CheckAsync, TestContext.Current.CancellationToken);
 
         Assert.Equal(CkMethodErrorCodes.MethodForbidden, response.Error!.Code);
         Assert.Equal(0, reader.Reads);
@@ -232,11 +245,11 @@ public class CkMethodGatewayTests
         var gateway = Gateway(new CkMethodAuthorizationDto { Roles = ["AssetManagement"] });
         var reader = new Counter();
 
-        var anonymous = await gateway.InvokeAsync(Call(new ClaimsPrincipal(new ClaimsIdentity()), Owner), reader.ExistsAsync,
+        var anonymous = await gateway.InvokeAsync(Call(new ClaimsPrincipal(new ClaimsIdentity()), Owner), reader.CheckAsync,
             TestContext.Current.CancellationToken);
         var unknown = await gateway.InvokeAsync(
             Call(User(Other, ["AssetManagement"])) with { MethodId = "Sample.Accounts/Account.Nope-1" },
-            reader.ExistsAsync, TestContext.Current.CancellationToken);
+            reader.CheckAsync, TestContext.Current.CancellationToken);
 
         Assert.Equal(CkMethodErrorCodes.MethodForbidden, anonymous.Error!.Code);
         Assert.Equal(CkMethodErrorCodes.MethodForbidden, unknown.Error!.Code);
@@ -249,26 +262,13 @@ public class CkMethodGatewayTests
         var gateway = Gateway(authorization: null);
         var reader = new Counter();
 
-        var owner = await gateway.InvokeAsync(Call(User(Owner, []), Owner), reader.ExistsAsync, TestContext.Current.CancellationToken);
-        var admin = await gateway.InvokeAsync(Call(User(Other, ["AdminPanelManagement"]), Owner), reader.ExistsAsync,
+        var owner = await gateway.InvokeAsync(Call(User(Owner, []), Owner), reader.CheckAsync, TestContext.Current.CancellationToken);
+        var admin = await gateway.InvokeAsync(Call(User(Other, ["AdminPanelManagement"]), Owner), reader.CheckAsync,
             TestContext.Current.CancellationToken);
 
         Assert.Equal(CkMethodErrorCodes.MethodForbidden, owner.Error!.Code);
         Assert.True(admin.Success);
         Assert.Equal(1, reader.Reads);
-    }
-
-    [Fact]
-    public async Task StaticMethod_NeverReadsATarget()
-    {
-        var gateway = Gateway(new CkMethodAuthorizationDto { Roles = ["R"] });
-        var reader = new Counter();
-
-        var response = await gateway.InvokeAsync(Call(User(Other, ["R"]), target: null!) with { TargetRtId = null },
-            reader.ExistsAsync, TestContext.Current.CancellationToken);
-
-        Assert.True(response.Success);
-        Assert.Equal(0, reader.Reads);
     }
 
     [Fact]
@@ -281,7 +281,7 @@ public class CkMethodGatewayTests
             ParametersJson = "{\"newPassword\":123,\"surprise\":\"CANARY-SECRET-123\"}"
         };
 
-        var response = await gateway.InvokeAsync(call, reader.ExistsAsync, TestContext.Current.CancellationToken);
+        var response = await gateway.InvokeAsync(call, reader.CheckAsync, TestContext.Current.CancellationToken);
 
         Assert.Equal(CkMethodErrorCodes.MethodValidationFailed, response.Error!.Code);
         Assert.Equal("newPassword,surprise", response.Error.Parameters[CkMethodErrorParameters.Field]);
@@ -299,7 +299,7 @@ public class CkMethodGatewayTests
         var reader = new Counter();
         var call = Call(User(Other, ["Nobody"]), Owner) with { ParametersJson = "{}" };
 
-        var response = await gateway.InvokeAsync(call, reader.ExistsAsync, TestContext.Current.CancellationToken);
+        var response = await gateway.InvokeAsync(call, reader.CheckAsync, TestContext.Current.CancellationToken);
 
         Assert.Equal(CkMethodErrorCodes.MethodForbidden, response.Error!.Code);
         Assert.Equal(0, reader.Reads);
@@ -312,7 +312,7 @@ public class CkMethodGatewayTests
         var reader = new Counter { Exists = false };
         var call = Call(User(Other, ["AssetManagement"]), Missing) with { ParametersJson = "{}" };
 
-        var response = await gateway.InvokeAsync(call, reader.ExistsAsync, TestContext.Current.CancellationToken);
+        var response = await gateway.InvokeAsync(call, reader.CheckAsync, TestContext.Current.CancellationToken);
 
         Assert.Equal(CkMethodErrorCodes.MethodTargetNotFound, response.Error!.Code);
     }
@@ -324,7 +324,7 @@ public class CkMethodGatewayTests
 
         var response = await gateway.InvokeAsync(
             Call(User(Other, ["AssetManagement"]), Owner) with { ParametersJson = "{}" },
-            new Counter().ExistsAsync, TestContext.Current.CancellationToken);
+            new Counter().CheckAsync, TestContext.Current.CancellationToken);
 
         Assert.Equal(CkMethodErrorCodes.MethodValidationFailed, response.Error!.Code);
         Assert.Equal("newPassword", response.Error.Parameters[CkMethodErrorParameters.Field]);
@@ -344,5 +344,214 @@ public class CkMethodGatewayTests
         var parameters = first.GetProperty("extensions").GetProperty("parameters");
         Assert.Equal(MethodId, parameters.GetProperty(CkMethodErrorParameters.MethodId).GetString());
         Assert.Equal("not-authorized", parameters.GetProperty(CkMethodErrorParameters.Reason).GetString());
+    }
+
+    // ---- AB#7037: the data-permission check after the target load ----
+
+    private static string Text(CkMethodResponse response) => JsonSerializer.Serialize(response.Error) + GraphQl(response);
+
+    [Fact]
+    public async Task HiddenTarget_AnswersExactlyLikeAMissingOne_NothingIsDispatched()
+    {
+        var gateway = Gateway(new CkMethodAuthorizationDto { Roles = ["AssetManagement"] });
+        var caller = User(Other, ["AssetManagement"]);
+        // A hidden and a missing record both reach the gateway as "not visible"; the answer must not carry the target.
+        var hidden = new Counter { Verdict = CkMethodTargetAccess.NotVisible };
+        var missing = new Counter { Exists = false };
+
+        var forHidden = await gateway.InvokeAsync(Call(caller, Owner), hidden.CheckAsync, TestContext.Current.CancellationToken);
+        var forMissing = await gateway.InvokeAsync(Call(caller, Missing), missing.CheckAsync, TestContext.Current.CancellationToken);
+
+        Assert.Equal(CkMethodErrorCodes.MethodTargetNotFound, forHidden.Error!.Code);
+        Assert.Equal(ErrorJson(forHidden), ErrorJson(forMissing));
+        Assert.Equal(GraphQl(forHidden), GraphQl(forMissing));
+        Assert.Empty(_dispatched);
+    }
+
+    [Fact]
+    public async Task VisibleTargetWithoutWritePermission_IsForbiddenWithAFixedReason_NothingIsDispatched()
+    {
+        var gateway = Gateway(new CkMethodAuthorizationDto { Roles = ["AssetManagement"] });
+        var check = new Counter { Verdict = CkMethodTargetAccess.NotPermitted };
+
+        var response = await gateway.InvokeAsync(Call(User(Other, ["AssetManagement"]), Owner), check.CheckAsync,
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(CkMethodErrorCodes.MethodForbidden, response.Error!.Code);
+        Assert.Equal("data-permission", response.Error.Parameters[CkMethodErrorParameters.Reason]);
+        Assert.Equal(MethodId, response.Error.Parameters[CkMethodErrorParameters.MethodId]);
+        Assert.Empty(_dispatched);
+        Assert.DoesNotContain(Owner, Text(response));
+    }
+
+    [Fact]
+    public async Task WithAWriteGrant_TheCallIsDispatched()
+    {
+        var gateway = Gateway(new CkMethodAuthorizationDto { Roles = ["AssetManagement"] });
+        var check = new Counter();
+
+        var response = await gateway.InvokeAsync(Call(User(Other, ["AssetManagement"]), Owner), check.CheckAsync,
+            TestContext.Current.CancellationToken);
+
+        Assert.True(response.Success);
+        Assert.Single(_dispatched);
+    }
+
+    [Fact]
+    public async Task DataAction_IsWriteByDefault_AndReadWhenTheMethodDeclaresRead()
+    {
+        var undeclared = new Counter();
+        var declaredWrite = new Counter();
+        var declaredRead = new Counter();
+        var caller = User(Other, ["AssetManagement"]);
+
+        await Gateway(new CkMethodAuthorizationDto { Roles = ["AssetManagement"] })
+            .InvokeAsync(Call(caller, Owner), undeclared.CheckAsync, TestContext.Current.CancellationToken);
+        await Gateway(new CkMethodAuthorizationDto { Roles = ["AssetManagement"], DataAccess = CkMethodDataAccessDto.Write })
+            .InvokeAsync(Call(caller, Owner), declaredWrite.CheckAsync, TestContext.Current.CancellationToken);
+        await Gateway(new CkMethodAuthorizationDto { Roles = ["AssetManagement"], DataAccess = CkMethodDataAccessDto.Read })
+            .InvokeAsync(Call(caller, Owner), declaredRead.CheckAsync, TestContext.Current.CancellationToken);
+
+        Assert.Equal([CkMethodDataAccessDto.Write], undeclared.Actions);
+        Assert.Equal([CkMethodDataAccessDto.Write], declaredWrite.Actions);
+        Assert.Equal([CkMethodDataAccessDto.Read], declaredRead.Actions);
+    }
+
+    [Fact]
+    public async Task DataAction_WithoutAnyAuthorizationBlock_IsWrite()
+    {
+        var check = new Counter();
+
+        await Gateway(authorization: null).InvokeAsync(Call(User(Other, ["AdminPanelManagement"]), Owner), check.CheckAsync,
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal([CkMethodDataAccessDto.Write], check.Actions);
+    }
+
+    [Fact]
+    public async Task AllowSelf_DoesNotExemptTheDataPermissionCheck()
+    {
+        var gateway = Gateway(new CkMethodAuthorizationDto { AllowSelf = true });
+        var refused = new Counter { Verdict = CkMethodTargetAccess.NotPermitted };
+        var granted = new Counter();
+
+        var withoutGrant = await gateway.InvokeAsync(Call(User(Owner, []), Owner), refused.CheckAsync, TestContext.Current.CancellationToken);
+        var withGrant = await gateway.InvokeAsync(Call(User(Owner, []), Owner), granted.CheckAsync, TestContext.Current.CancellationToken);
+
+        Assert.Equal(1, refused.Reads); // the check ran although the caller is the target
+        Assert.Equal("data-permission", withoutGrant.Error!.Parameters[CkMethodErrorParameters.Reason]);
+        Assert.True(withGrant.Success);
+        Assert.Single(_dispatched);
+    }
+
+    [Fact]
+    public async Task StaticMethod_IsJudgedByTheTypeLevelCheck_Only()
+    {
+        var gateway = Gateway(new CkMethodAuthorizationDto { Roles = ["R"] });
+        var allowed = new Counter();
+        var refused = new Counter { Verdict = CkMethodTargetAccess.NotPermitted };
+        var unreadable = new Counter { Verdict = CkMethodTargetAccess.NotVisible };
+        var caller = User(Other, ["R"]);
+        var call = Call(caller) with { TargetRtId = null };
+
+        var pass = await gateway.InvokeAsync(call, allowed.CheckAsync, TestContext.Current.CancellationToken);
+        var noGrant = await gateway.InvokeAsync(call, refused.CheckAsync, TestContext.Current.CancellationToken);
+        var typeHidden = await gateway.InvokeAsync(call, unreadable.CheckAsync, TestContext.Current.CancellationToken);
+
+        Assert.True(pass.Success);
+        Assert.Equal(CkMethodErrorCodes.MethodForbidden, noGrant.Error!.Code);
+        // there is no target to hide: a static method on a type the caller cannot read is a refusal, not "not found"
+        Assert.Equal(CkMethodErrorCodes.MethodForbidden, typeHidden.Error!.Code);
+        Assert.Single(_dispatched);
+    }
+
+    [Fact]
+    public async Task AuditOnlyViolation_Passes_AndTheSignalIsLogged_WithoutTheTarget()
+    {
+        var gateway = Gateway(new CkMethodAuthorizationDto { Roles = ["AssetManagement"] });
+        var check = new Counter { Verdict = new CkMethodTargetAccess(CkMethodTargetAccessOutcome.Allowed, AuditOnlyViolation: true) };
+
+        var response = await gateway.InvokeAsync(Call(User(Other, ["AssetManagement"]), Owner), check.CheckAsync,
+            TestContext.Current.CancellationToken);
+
+        Assert.True(response.Success);
+        Assert.Single(_dispatched);
+        var all = string.Join("\n", _logs);
+        Assert.Contains("audit only", all);
+        Assert.Contains(MethodId, all);
+        Assert.DoesNotContain(Owner, all);
+        Assert.DoesNotContain("CANARY-SECRET-123", all);
+        Assert.DoesNotContain("CANARY-TOKEN", all);
+    }
+
+    [Fact]
+    public async Task AFaultInTheCheck_FailsTheCall_ItNeverPasses()
+    {
+        var gateway = Gateway(new CkMethodAuthorizationDto { Roles = ["AssetManagement"] });
+        var check = new Counter { Throw = new InvalidOperationException("boom") };
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => gateway.InvokeAsync(
+            Call(User(Other, ["AssetManagement"]), Owner), check.CheckAsync, TestContext.Current.CancellationToken));
+
+        Assert.Empty(_dispatched);
+    }
+
+    [Fact]
+    public async Task RefusedByDataPermission_LogsAtInformationLevel_WithoutTheTargetTheParametersOrTheToken()
+    {
+        var gateway = Gateway(new CkMethodAuthorizationDto { Roles = ["AssetManagement"] });
+
+        await gateway.InvokeAsync(Call(User(Other, ["AssetManagement"]), Owner),
+            new Counter { Verdict = CkMethodTargetAccess.NotPermitted }.CheckAsync, TestContext.Current.CancellationToken);
+        await gateway.InvokeAsync(Call(User(Other, ["AssetManagement"]), Missing),
+            new Counter { Exists = false }.CheckAsync, TestContext.Current.CancellationToken);
+
+        var all = string.Join("\n", _logs);
+        Assert.Contains("refused by a data permission", all);
+        Assert.DoesNotContain(Owner, all);
+        Assert.DoesNotContain(Missing, all);
+        Assert.DoesNotContain("CANARY-SECRET-123", all);
+        Assert.DoesNotContain("CANARY-TOKEN", all);
+    }
+
+    [Fact]
+    public async Task RoleRefusal_NeverCallsTheCheck_ForAnExistingOrAMissingTarget()
+    {
+        var gateway = Gateway(new CkMethodAuthorizationDto { Roles = ["AssetManagement"] });
+        var check = new Counter();
+
+        await gateway.InvokeAsync(Call(User(Other, ["Nobody"]), Owner), check.CheckAsync, TestContext.Current.CancellationToken);
+        await gateway.InvokeAsync(Call(User(Other, ["Nobody"]), Missing), check.CheckAsync, TestContext.Current.CancellationToken);
+
+        Assert.Equal(0, check.Reads);
+    }
+
+    [Fact]
+    public async Task InvalidParameters_AreOnlyJudgedAfterTheDataPermission()
+    {
+        var gateway = Gateway(new CkMethodAuthorizationDto { Roles = ["AssetManagement"] });
+
+        var response = await gateway.InvokeAsync(
+            Call(User(Other, ["AssetManagement"]), Owner) with { ParametersJson = "{}" },
+            new Counter { Verdict = CkMethodTargetAccess.NotPermitted }.CheckAsync, TestContext.Current.CancellationToken);
+
+        Assert.Equal(CkMethodErrorCodes.MethodForbidden, response.Error!.Code);
+    }
+
+    [Fact]
+    public void Checker_MapsTheEngineVerdict_AndTheDataAction()
+    {
+        Assert.Equal(CkMethodTargetAccessOutcome.Allowed, CkMethodTargetAccessChecker.Map(
+            new RtDataPermissionVerdict(RtDataPermissionDecision.Allowed, RtDataPermissionReason.Granted)).Outcome);
+        Assert.True(CkMethodTargetAccessChecker.Map(new RtDataPermissionVerdict(RtDataPermissionDecision.Allowed,
+            RtDataPermissionReason.AuditOnly, true)).AuditOnlyViolation);
+        Assert.Equal(CkMethodTargetAccessOutcome.NotVisible, CkMethodTargetAccessChecker.Map(
+            new RtDataPermissionVerdict(RtDataPermissionDecision.NotVisible, RtDataPermissionReason.NoGrant)).Outcome);
+        Assert.Equal(CkMethodTargetAccessOutcome.NotPermitted, CkMethodTargetAccessChecker.Map(
+            new RtDataPermissionVerdict(RtDataPermissionDecision.NotPermitted, RtDataPermissionReason.NotOwner)).Outcome);
+        Assert.Equal(CkMethodTargetAccessOutcome.NotPermitted, CkMethodTargetAccessChecker.Map(
+            new RtDataPermissionVerdict((RtDataPermissionDecision)99, RtDataPermissionReason.Open)).Outcome);
+        Assert.Equal(RtDataAction.Read, CkMethodTargetAccessChecker.ActionOf(CkMethodDataAccessDto.Read));
+        Assert.Equal(RtDataAction.Write, CkMethodTargetAccessChecker.ActionOf(CkMethodDataAccessDto.Write));
     }
 }
