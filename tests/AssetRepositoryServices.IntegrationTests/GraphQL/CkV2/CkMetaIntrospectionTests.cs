@@ -55,7 +55,7 @@ public class CkMetaIntrospectionTests
               methodId qualifiedMethodId kind description visibility
               declaringCkTypeId { semanticVersionedFullName }
               parameters { name valueType isOptional sensitive }
-              result { valueType }
+              result { valueType sensitive }
               errors { code }
               authorization { roles allowSelf scopes }
               execution { timeoutSeconds idempotent handler }
@@ -63,7 +63,7 @@ public class CkMetaIntrospectionTests
             """);
 
         var methods = type["methods"]!.ToDictionary(m => m["methodId"]!.Value<string>()!);
-        methods.Keys.Should().BeEquivalentTo("Lookup-1", "ResetPassword-1", "ResetPassword-2", "Touch-1");
+        methods.Keys.Should().BeEquivalentTo("IssueToken-1", "Lookup-1", "ResetPassword-1", "ResetPassword-2", "Touch-1");
 
         var reset = methods["ResetPassword-1"];
         reset["qualifiedMethodId"]!.Value<string>().Should().Be(AccountType + ".ResetPassword-1");
@@ -88,6 +88,10 @@ public class CkMetaIntrospectionTests
         methods["ResetPassword-2"].SelectToken("execution.timeoutSeconds")!.Value<int>().Should().Be(30);
         methods["Touch-1"].SelectToken("execution.handler")!.Value<string>().Should()
             .Be("service", "an undeclared handler reads as the default 'service'");
+        methods["IssueToken-1"].SelectToken("result.valueType")!.Value<string>().Should().Be("STRING");
+        methods["IssueToken-1"].SelectToken("result.sensitive")!.Value<bool>().Should().BeTrue();
+        methods["ResetPassword-2"].SelectToken("result.sensitive")!.Value<bool>().Should()
+            .BeFalse("a result without the marker reads as not sensitive");
         methods["Lookup-1"]["kind"]!.Value<string>().Should().Be("Static");
     }
 

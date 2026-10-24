@@ -51,6 +51,15 @@ types:
       execution:
         timeoutSeconds: 30
         handler: pipeline
+    - methodId: IssueToken-1
+      description: "Returns a one-time token; the result is sensitive (AB#7008) and a pipeline handler would be refused."
+      result:
+        valueType: String
+        sensitive: true
+      authorization:
+        roles: [ AccessTestAdmin ]
+      execution:
+        handler: service
     - methodId: Touch-1
       description: "Parameterless instance method."
       authorization:
