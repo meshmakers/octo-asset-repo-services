@@ -35,7 +35,7 @@ public class TypedMethodMutationTests
     {
         var fields = await FieldsAsync($"{Prefix}AccessTestAccountMutations");
 
-        fields.Keys.Should().BeEquivalentTo("create", "update", "resetPassword", "resetPassword2", "touch", "lookup");
+        fields.Keys.Should().BeEquivalentTo("create", "update", "resetPassword", "resetPassword2", "issueToken", "touch", "lookup");
     }
 
     [Fact]

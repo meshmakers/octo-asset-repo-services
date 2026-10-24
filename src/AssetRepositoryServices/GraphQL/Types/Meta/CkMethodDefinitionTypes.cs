@@ -111,6 +111,10 @@ internal sealed class CkMethodResultDefinitionDtoType : ObjectGraphType<CkMethod
         Field<NonNullGraphType<AttributeValueTypesDtoType>>("valueType").Resolve(ctx => ctx.Source.ValueType);
         Field<CkIdGraph<CkRecordId>>("valueCkRecordId").Resolve(ctx => ctx.Source.ValueCkRecordId);
         Field<CkIdGraph<CkEnumId>>("valueCkEnumId").Resolve(ctx => ctx.Source.ValueCkEnumId);
+        Field<NonNullGraphType<BooleanGraphType>>("sensitive")
+            .Description("A sensitive result is never logged, audited or traced, and cannot be used in filters; " +
+                         "clients should hide it in their own logs and UIs. False when the marker is not declared.")
+            .Resolve(ctx => ctx.Source.Sensitive);
     }
 }
 
