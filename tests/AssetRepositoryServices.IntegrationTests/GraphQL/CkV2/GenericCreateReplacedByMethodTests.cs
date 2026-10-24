@@ -231,6 +231,91 @@ public class GenericCreateReplacedByMethodTests
         v1.SelectToken("data.constructionKit.types.items[0].rtCkTypeId").Should().NotBeNull();
     }
 
+    [Theory]
+    [InlineData(ManagedThing, "assetRepositoryIntegrationTestManagedThing")]
+    [InlineData(ManagedThingChild, "assetRepositoryIntegrationTestManagedThingChild")]
+    public async Task QueryRowCreate_OfFlaggedOrDerivedType_IsRefusedWithTheSameError_AndWritesNothing(
+        string ckTypeId, string countField)
+    {
+        var queryRtId = await CreatePersistentQueryAsync(ckTypeId);
+        var before = await CountAsync(countField);
+
+        var answer = await ExecuteAsync(QueryRowCreate(queryRtId, ckTypeId, "row-refused"));
+
+        AssertRefusal(answer, ckTypeId, ManagedThingMethod);
+        (await CountAsync(countField)).Should().Be(before);
+        var generic = await ExecuteAsync(UntypedCreate, EntityVariables(ckTypeId, "x"));
+        answer.SelectToken("errors")!.ToString().Should().Be(generic.SelectToken("errors")!.ToString());
+    }
+
+    [Fact]
+    public async Task QueryRowCreate_WithRowTypeOutsideTheQuery_IsStillRefused()
+    {
+        // The row ckTypeId is not validated against the query type: a query on ToolThing must not be a bypass.
+        var queryRtId = await CreatePersistentQueryAsync(ToolThing);
+        var before = await CountAsync("assetRepositoryIntegrationTestManagedThing");
+
+        var answer = await ExecuteAsync(QueryRowCreate(queryRtId, ManagedThing, "row-bypass"));
+
+        AssertRefusal(answer, ManagedThing, ManagedThingMethod);
+        (await CountAsync("assetRepositoryIntegrationTestManagedThing")).Should().Be(before);
+    }
+
+    [Fact]
+    public async Task QueryRowCreate_OfTypeWithoutTheFlag_WorksAsBefore_AndUpdateDeleteAreNotRefused()
+    {
+        var queryRtId = await CreatePersistentQueryAsync(ToolThing);
+
+        var created = await ExecuteAsync(QueryRowCreate(queryRtId, ToolThing, "row-tool"));
+        created.SelectToken("errors").Should().BeNull(created.ToString());
+
+        var rtId = (await ExecuteAsync("""
+            query { runtime { assetRepositoryIntegrationTestToolThing(first: 1,
+              fieldFilter: [{ attributePath: "name", operator: EQUALS, comparisonValue: "row-tool" }]) { items { rtId } } } }
+            """)).SelectToken("data.runtime.assetRepositoryIntegrationTestToolThing.items[0].rtId")!.Value<string>()!;
+
+        var updated = await ExecuteAsync($$"""
+            mutation {
+              runtime { runtimeQuery(rtId: "{{queryRtId}}") {
+                update(entities: [{ rtId: "{{rtId}}", item: { ckTypeId: "{{ToolThing}}", cells: [
+                  { attributePath: "name", value: "row-tool-renamed" }] } }]) { ckTypeId }
+              } }
+            }
+            """);
+        var deleted = await ExecuteAsync($$"""
+            mutation {
+              runtime { runtimeQuery(rtId: "{{queryRtId}}") {
+                delete(entities: [{ rtId: "{{rtId}}", ckTypeId: "{{ToolThing}}" }])
+              } }
+            }
+            """);
+
+        updated.SelectToken("errors").Should().BeNull(updated.ToString());
+        deleted.SelectToken("errors").Should().BeNull(deleted.ToString());
+    }
+
+    private static string QueryRowCreate(string queryRtId, string ckTypeId, string name) =>
+        $$"""
+        mutation {
+          runtime { runtimeQuery(rtId: "{{queryRtId}}") {
+            create(entities: [{ ckTypeId: "{{ckTypeId}}", cells: [{ attributePath: "name", value: "{{name}}" }] }]) { ckTypeId }
+          } }
+        }
+        """;
+
+    private async Task<string> CreatePersistentQueryAsync(string queryCkTypeId)
+    {
+        var answer = await ExecuteAsync($$"""
+            mutation {
+              runtime { systemSimpleRtQuerys {
+                create(entities: [{ name: "rows-{{Guid.NewGuid():N}}", queryCkTypeId: "{{queryCkTypeId}}", columns: ["name"] }]) { rtId }
+              } }
+            }
+            """);
+        answer.SelectToken("errors").Should().BeNull(answer.ToString());
+        return answer.SelectToken("data.runtime.systemSimpleRtQuerys.create[0].rtId")!.Value<string>()!;
+    }
+
     private static void AssertRefusal(JObject answer, string ckTypeId, string methodId)
     {
         var errors = answer.SelectToken("errors")!;
