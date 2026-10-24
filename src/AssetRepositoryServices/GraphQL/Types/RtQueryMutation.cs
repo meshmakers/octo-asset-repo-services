@@ -1,6 +1,7 @@
 using GraphQL;
 using GraphQL.Types;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Mapping;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Methods;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.RequestHandling;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Inputs;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Utils;
@@ -62,6 +63,20 @@ internal sealed class RtQueryMutation : RtMutationBase
             if (rtQuery == null)
             {
                 throw AssetRepositoryException.QueryNotFound(queryRtId);
+            }
+
+            // The row ckTypeId is not validated against the query's type, so every row type is checked here: a type
+            // whose method replaces the generic create is created through that method only (same refusal as the
+            // generic creates, one shared check). Refused before anything is mapped or written.
+            foreach (var rowCkTypeId in inputObjects.Select(r => r.CkTypeId).Distinct())
+            {
+                var replacedByMethod = GenericCreateReplacedByMethodGraphQlError.TryCreate(ckCacheService,
+                    graphQlUserContext.TenantId, rowCkTypeId);
+                if (replacedByMethod != null)
+                {
+                    context.Errors.Add(replacedByMethod);
+                    return null;
+                }
             }
 
             QueryMapperEngine queryMapperEngine = new QueryMapperEngine();
