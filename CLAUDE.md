@@ -696,11 +696,11 @@ CK v2 test model's runtime types); the Studio's own `schema.graphql` stays an in
 is the one place that decides, **before the target entity is loaded**, whether a caller may call a CK method. Order: authenticate
 (unauthenticated = no principal) -> authorize with the shared `ICkMethodAuthorizationEvaluator` of octo-common-services (AB#6911: roles any-of,
 `allowSelf` on the parsed id from the request, declared scopes, `octo_api` always, default-deny; **one enforcement code path**, the pipeline filter at
-band 200 stays as second line) -> load the target through the `targetExists` delegate the caller passes in (instance methods only) -> dispatch via
+band 200 stays as second line) -> load the target and check the data permission through the `CkMethodTargetAccessCheck` delegate the caller passes in (AB#7037, see "Method data permissions" below) -> dispatch via
 `ICkMethodDispatcher` with `CkMethodPrincipalScope` open. A refusal is `METHOD_FORBIDDEN` with `methodId` and the fixed reason `not-authorized`: it
 depends on the method and the caller only, so it is identical for an existing and a missing target, and the target is never read before the check
-(`Refusal_IsByteIdentical_ForAnExistingAndAMissingTarget_AndReadsNothing` uses a counting reader). `METHOD_TARGET_NOT_FOUND` is returned only to a caller
-who passed. The refusal log line (Information) names method id, tenant and the rule, never the target id, parameters or token.
+(`Refusal_IsByteIdentical_ForAnExistingAndAMissingTarget_AndReadsNothing` uses a counting check). `METHOD_TARGET_NOT_FOUND` is returned only to a caller
+who passed the declared check. The refusal log line (Information) names method id, tenant and the rule, never the target id, parameters or token.
 `octo_api` is required for every method call independent of `GraphQl:EnforceMutationScope` (the gate never reads the flag; the generic
 `MutationScopeListener` is unchanged). `CkMethodGraphQlError.Create` turns a failed response into ONE `ExecutionError` with `extensions.code` and
 `extensions.parameters` and a fixed message. Since AB#7026 the gateway also validates the parameters (see "Method mutation resolver" below). The only
@@ -744,19 +744,19 @@ Every concrete CK type with methods gets one mutation field per method **next to
 `GraphQL/Methods/CkMethodFieldResolver` is the resolver of every generated method field. It does no authorization or loading itself: it builds a
 `CkMethodGatewayCall` and lets `ICkMethodGateway` decide. **Order of checks (owned by the gateway):** authenticate (no authenticated principal = no
 principal, default-deny) -> authorize (roles any-of, `allowSelf` on the target id **as the client sent it**, declared scopes, `octo_api` always,
-default-deny) -> load the target (`targetExists` callback, instance methods only) -> validate the parameters -> dispatch -> map the envelope.
+default-deny) -> load the target and check the data permission (`CkMethodTargetAccessCheck` callback, AB#7037) -> validate the parameters -> dispatch -> map the envelope.
 
 - **Same answer whether the target exists or not.** A caller who fails the authorization gets `METHOD_FORBIDDEN` (code, message, `parameters`, `errors[].extensions.code`
   identical) for an existing and a missing target, because nothing about the target is read before the check. Only an authorized caller can get
   `METHOD_TARGET_NOT_FOUND` (`methodId` as parameter). `allowSelf` compares the ids case-insensitively.
 - **Call**: tenant, concrete CK type (`RtCkId.FullName`), qualified method id, `rtId.ToString()` (instance), parameters JSON, the request principal
   (`GraphQlUserContext.User`), the raw bearer token (read from the `Authorization` header via `IHttpContextAccessor`; forwarded to the handler, never logged)
-  and, for an instance method, the `targetExists` callback. `CkMethodParameterJson` turns the parsed `input` dictionary into the wire form of `CkMethodJson` (enum as key,
+  and the `CkMethodTargetAccessCheck` callback (instance and static). `CkMethodParameterJson` turns the parsed `input` dictionary into the wire form of `CkMethodJson` (enum as key,
   dates ISO 8601, time spans in the `c` format, binaries base64, records as objects of their attributes).
 - **Target lookup is caller-scoped and outside the request transaction**: `repository.GetSession(Helpers.GetSecurityContext(userContext))` is a plain read in a
   session of its own, never part of the request's Mongo transaction (methods run outside it, decision 2026-10-07). The caller's `RtSecurityContext` applies, so
-  data permissions hide a record from an authorized caller as "not found"; the data-permission step proper is AB#7037 (plugs into this callback, no signature change).
-- **Parameter validation** (`CkMethodParameterValidator`, in the gateway between target lookup and dispatch, so it runs only for an authorized caller and an existing target):
+  data permissions hide a record from an authorized caller as "not found"; the data-permission check proper is AB#7037 (next section).
+- **Parameter validation** (`CkMethodParameterValidator`, in the gateway between the data-permission check and dispatch, so it runs only for an authorized caller and a visible, permitted target):
   `METHOD_VALIDATION_FAILED` with `methodId`, `field` (offending members, sorted, comma separated) and `reason` (distinct fixed reasons `missing-required`, `unknown-member`,
   `wrong-type`, sorted, comma separated). No value ever appears in the error or a log line. Nothing is dispatched. GraphQL already rejects most type errors of the typed `input`
   before the resolver runs; this check also protects the gateway for every other caller.
@@ -770,6 +770,30 @@ default-deny) -> load the target (`targetExists` callback, instance methods only
 - Tests: `CkMethodGatewayTests` (validation order, no value in error or log), `CkMethodParameterValidatorTests`, `CkMethodParameterJsonTests` (unit);
   `GraphQL/CkV2/MethodMutationGatewayTests` (integration, fixture `MethodGatewayGraphQlTestFixture`: real schema, gateway and MongoDB, scripted dispatcher and log capture: forbidden is identical
   for an existing and a missing target, target not found, `allowSelf` across letter case, typed result, static method, each failure code, missing `octo_api`, no secret/target id in logs or errors).
+
+### Method data permissions (AB#7037, F3.4b)
+
+A method call never touches a record that data permissions hide or protect from the caller. Order: authenticate -> declared authorization (a pure function of method
+and caller: `METHOD_FORBIDDEN`, `not-authorized`, identical for an existing and a missing target) -> **load the target + data-permission check** -> parameter validation -> dispatch.
+Code: `GraphQL/Methods/CkMethodTargetAccess.cs` (the delegate `CkMethodTargetAccessCheck(CkMethodDataAccessDto, ct)`, its result `CkMethodTargetAccess` with `Allowed`/`NotVisible`/`NotPermitted`
+plus the audit flag, and the error `CkMethodDataPermissionErrors`), `CkMethodTargetAccessChecker` (the production check), gateway step 2 in `CkMethodGateway`.
+
+- **Parameter is required.** `ICkMethodGateway.InvokeAsync(call, targetAccess, ct)` takes a non-null check for instance **and** static methods; there is no way to skip the data-permission check.
+  A fault in the check (exception) fails the call, it never lets it pass.
+- **Caller-scoped load.** `CkMethodTargetAccessChecker.ForInstance` loads the target in a session of its own bound to the caller's `RtSecurityContext` (`Helpers.GetSecurityContext`), outside the request
+  transaction. No result = `NotVisible` = `METHOD_TARGET_NOT_FOUND` with `methodId` only, byte-identical to a missing target. It then asks the engine's public check
+  `IRtDataPermissionEvaluator.EvaluateAsync` (AB#7035; the rules the repository enforces) for the data action on the **stored** type of the loaded entity (not the type of the field: a derived type may be
+  protected by its own policy). `NotVisible` -> not found; `NotPermitted` -> `METHOD_FORBIDDEN` with `methodId` and the fixed reason `data-permission`; `Allowed` -> go on. An unknown decision refuses.
+- **Data action** = `CkMethodAuthorization.Resolve(definition.Authorization)`: `Write` by default, `Read` if the method declares `authorization.dataAccess: Read` (AB#7036; the declaration only reaches a
+  tenant's CK cache once engine-mongodb persists it, until then every method is `Write`, the stricter default).
+- **`allowSelf` does not exempt the check.** A user whose role has no grant on the record is refused on their own record; the model must grant it (e.g. OwnedOnly).
+- **Static methods** (no target): `EvaluateTypeAsync` on the declaring type only. A type the caller cannot read at all is `METHOD_FORBIDDEN` (there is no target to hide), not "not found".
+- **Audit-only policy**: the call passes; the engine publishes its audit event (`publishAudit: true`) and the gateway logs one Information line (method id, invocation id, tenant, action).
+- **No leaks**: refusal log lines name method id, invocation id, tenant and action, never the target id, parameters or token; error texts are fixed.
+- Handlers keep running with service rights in Phase 3 (option A); the caller-bound handler session is the later end state.
+- Tests: `CkMethodGatewayTests` (unit: hidden = missing, no write grant, data action write/read, `allowSelf`, static, audit-only, fault, logs, check never called for a role refusal) and
+  `GraphQL/CkV2/MethodDataPermissionGatewayTests` (integration, fixture `MethodDataPermissionGraphQlTestFixture`: policies on `AccessTestAccount` through the `IDataPermissionResolver` seam, real
+  MongoDB and engine; the generic mutation gives the same verdict). The `Read`-declared case runs against a real tenant only after engine-mongodb persists `dataAccess` (unit-tested until then).
 
 ### In-process handlers never see the request session (AB#7023, OD-8 part 2)
 
