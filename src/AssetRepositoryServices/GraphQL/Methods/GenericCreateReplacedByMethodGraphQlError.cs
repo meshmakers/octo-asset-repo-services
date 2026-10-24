@@ -56,18 +56,9 @@ internal static class GenericCreateReplacedByMethodGraphQlError
     public static ExecutionError? TryCreate(ICkCacheService ckCacheService, string tenantId,
         RtCkId<CkTypeId> rtCkTypeId)
     {
-        ArgumentNullException.ThrowIfNull(ckCacheService);
-        if (!ckCacheService.TryGetRtCkType(tenantId, rtCkTypeId, out var typeGraph) || typeGraph == null)
-        {
-            return null;
-        }
-
-        var replacing = typeGraph.AllMethods.Values
-            .Where(m => m.ReplacesGenericCreate)
-            .OrderBy(m => m.QualifiedMethodId, StringComparer.Ordinal)
-            .FirstOrDefault();
-        return replacing == null
-            ? null
-            : Create(rtCkTypeId.SemanticVersionedFullName, replacing.QualifiedMethodId);
+        // AB#7448: the lookup is the shared engine helper (AB#7121), the same one MCP and blueprint apply use.
+        return GenericCreateReplacement.TryGetReplacingMethod(ckCacheService, tenantId, rtCkTypeId, out var replacing)
+            ? Create(rtCkTypeId.SemanticVersionedFullName, replacing.QualifiedMethodId)
+            : null;
     }
 }
