@@ -818,7 +818,7 @@ A static CK method with `replacesGenericCreate: true` (AB#7024; engine/engine-mo
 type derived from it** are created only through that method. All three create paths - the per-type `create` of `RtEntityMutation`, the untyped
 `runtimeEntities.create` of `RtEntityMutationGeneric` and the query-row `runtimeQuery(rtId).create` of `RtQueryMutation` (AB#7116; the row `ckTypeId` is not
 validated against the query's type, so every distinct row type is checked before the query mapper runs) - call `GraphQL/Methods/GenericCreateReplacedByMethodGraphQlError.TryCreate` first (before any
-entity is built, so nothing is written). It reads the type by its **version-less** `RtCkId` (`ICkCacheService.TryGetRtCkType`; never a generated
+entity is built, so nothing is written). The lookup is the shared engine helper `GenericCreateReplacement.TryGetReplacingMethod` (`ConstructionKit.Contracts.DependencyGraph`, AB#7121/AB#7448; MCP and blueprint apply use the same one - no private copy here). It reads the type by its **version-less** `RtCkId` (`ICkCacheService.TryGetRtCkType`; never a generated
 versioned id) and looks for a `CkMethodGraph` with `ReplacesGenericCreate` in `CkTypeGraph.AllMethods`, which already includes the inherited methods
 (the compiler allows at most one such method per concrete type, inherited ones included). The answer is ONE GraphQL error, `data.<field>` = null:
 `extensions.code` = `GENERIC_CREATE_REPLACED_BY_METHOD` (`Statics.GraphQlGenericCreateReplacedByMethod`, a GraphQL-layer code, not a code of the method
