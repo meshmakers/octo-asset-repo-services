@@ -1074,6 +1074,7 @@ version; `RequiredRange` (new, display only) carries the declared range + floor 
 batch tree correction works on the typed model id, never on the display strings (re-review N1). Installed versions come from
 `ICkModelLibraryStatusService.GetInstalledModelVersionsAsync` (highest `Available` version per name).
 `CkModelLibraryStatusService.CheckSystemCompatibilityAsync` still compares service-managed versions exactly.
+Since AB#7408 it compares exactly only for classic (exact-pinned) catalog models; a range-retaining model is judged by its `dependencyRanges` (inside the range, at or above the floor). Row-level proof for `octo-cli FixAll` (AB#7567, `CkModelLibraryStatusDependencyRangeTests`): a `ResolveFailed` classic model with a range-retaining catalog successor is `IsCompatible` + `NeedsAction`; a classic successor pinned to another System stays incompatible; the upgrade guard still removes `NeedsAction`.
 
 #### Tenant upgrade guard in LibraryStatus and CheckUpgrade (CK v2 F2.5, AB#6868)
 
