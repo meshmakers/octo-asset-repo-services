@@ -294,6 +294,13 @@ Time-series data support (`StreamData/`):
     active one. The status endpoint (ReadOnly) returns `Pending|Running|Done|Failed` with the final report; unknown id = 404. No
     `rollupRtId` = every rollup. A repository without the feature answers 400. Tests: `StreamDataControllerRollupConsistencyTests`.
     A rollup the validator cannot check is an entry with `isNotChecked: true`, `notChecked: {cause, reason, isBlocking}` (NoLiveTable|NeverActivated|SourceMissing). `isBlocking` is false only for NeverActivated (informational: `isOk` stays true, the report stays ok); a blocking gap makes `isOk` false (`isBlockedByNotChecked`). The report carries `hasNotChecked` (any) and `hasBlockingNotChecked`. Fields are additive.
+  - `POST archives/{archiveRtId}/insertTimeRange` (ReadWrite) — **origin, writer, reason (AB#5356, AB#7593, AB#7596)**:
+    each point may carry `origin` (`manual` | `automated`, case-insensitive; absent = automated, so existing callers are
+    unchanged) and, only with `manual`, an optional `reason`. The writer of a manual row is the caller's token
+    (`sub`, else `ClaimTypes.NameIdentifier`, else `client_id` — the identity `RtCreatedBy` uses), **never** a body field;
+    the platform time is set by the repository. 400 for an unknown origin (names the valid values), a reason without
+    `manual`, and a manual write whose token names no identity; nothing of the batch is written. Tests:
+    `StreamDataControllerInsertTimeRangeTests`. SDK: `IStreamDataServicesClient.InsertTimeRangeAsync` (`TimeRangePointDto`).
 - **TenantManager** - Manages stream data tenant contexts
 - **StreamDataDatabaseManager** - Database operations for time-series data
 - **StreamDataTenantContext** - Per-tenant stream data context

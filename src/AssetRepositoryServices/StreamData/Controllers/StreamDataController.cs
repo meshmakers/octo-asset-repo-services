@@ -557,7 +557,30 @@ public class StreamDataController : ControllerBase
                     "discarded. Send the ckTypeId in its unversioned form, e.g. 'Model/Type'.");
             }
 
-            var domainPoints = points.Select(p => new TimeRangeStreamDataPoint
+            // AB#5356 / AB#7593 / AB#7596: the caller declares the origin; the writer of a manual row is
+            // the authenticated caller, never a value from the body.
+            var origins = new ArchiveRowOrigin[points.Count];
+            for (var i = 0; i < points.Count; i++)
+            {
+                if (!TryParseOrigin(points[i].Origin, out origins[i]))
+                {
+                    return BadRequest(
+                        $"Point {i}: origin '{points[i].Origin}' is not valid. Use 'manual' or 'automated', or leave it out for automated.");
+                }
+
+                if (origins[i] != ArchiveRowOrigin.Manual && !string.IsNullOrEmpty(points[i].Reason))
+                {
+                    return BadRequest($"Point {i}: a reason is only recorded for a manual write; set origin 'manual' or remove the reason.");
+                }
+            }
+
+            var writer = origins.Contains(ArchiveRowOrigin.Manual) ? CallerIdentity(User) : null;
+            if (origins.Contains(ArchiveRowOrigin.Manual) && writer is null)
+            {
+                return BadRequest("A manual write records who wrote it, and the caller's token names no subject or client.");
+            }
+
+            var domainPoints = points.Select((p, i) => new TimeRangeStreamDataPoint
             {
                 RtId = new OctoObjectId(p.RtId),
                 CkTypeId = new RtCkId<CkTypeId>(p.CkTypeId),
@@ -565,6 +588,9 @@ public class StreamDataController : ControllerBase
                 To = p.To,
                 RtWellKnownName = p.RtWellKnownName,
                 Attributes = p.Attributes,
+                Origin = origins[i],
+                ManualWrittenBy = origins[i] == ArchiveRowOrigin.Manual ? writer : null,
+                ManualReason = origins[i] == ArchiveRowOrigin.Manual ? p.Reason : null,
             }).ToList();
 
             await repository.InsertTimeRangeAsync(new OctoObjectId(archiveRtId), domainPoints);
@@ -588,6 +614,37 @@ public class StreamDataController : ControllerBase
             return BadRequest(e.Message);
         }
     }
+
+    /// <summary>
+    /// Parses the optional origin of a REST point: absent or empty is automated, otherwise <c>manual</c> or
+    /// <c>automated</c>, case-insensitive. Numbers are refused on purpose: the wire value is the name.
+    /// </summary>
+    internal static bool TryParseOrigin(string? value, out ArchiveRowOrigin origin)
+    {
+        origin = ArchiveRowOrigin.Automated;
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return true;
+        }
+
+        if (string.Equals(value, "manual", StringComparison.OrdinalIgnoreCase))
+        {
+            origin = ArchiveRowOrigin.Manual;
+            return true;
+        }
+
+        return string.Equals(value, "automated", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// The identity a manual row records as its writer (AB#7593): the token's subject, or the client id of a
+    /// client-credentials token — the same identity <c>RtCreatedBy</c> is stamped with. <c>null</c> when the
+    /// token names neither.
+    /// </summary>
+    internal static string? CallerIdentity(System.Security.Claims.ClaimsPrincipal? user)
+        => user?.FindFirst("sub")?.Value
+           ?? user?.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
+           ?? user?.FindFirst("client_id")?.Value;
 
     /// <summary>
     /// The distinct <c>ckTypeId</c> values in an insert batch that are not the archive's target,
