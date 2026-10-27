@@ -141,7 +141,8 @@ public class CkMetaIntrospectionTests
 
         answer.SelectTokens("data.constructionKit.interfaces.items[*].rtCkInterfaceId").Values<string>().Should()
             .BeEquivalentTo("AssetRepositoryIntegrationTest/Labeled", "AssetRepositoryIntegrationTest/Labeled-2",
-                "AssetRepositoryIntegrationTest/Member", "AssetRepositoryIntegrationTest/Operable");
+                "AssetRepositoryIntegrationTest/Member", "AssetRepositoryIntegrationTest/Operable",
+                "AssetRepositoryIntegrationTest/Ranked", "AssetRepositoryIntegrationTest/Guarded");
     }
 
     [Fact]

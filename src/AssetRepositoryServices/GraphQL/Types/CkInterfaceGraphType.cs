@@ -15,8 +15,8 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
 ///     <c>System.Identity/Named-1</c>). Unlike abstract-type interfaces (<c>&lt;Type&gt;Interface</c>) a CK interface
 ///     has no name suffix; compiler rule I-5 prevents collisions with type names of the same model. It carries the
 ///     system fields and the interface's attribute members; concrete types that implement the CK interface list it.
-///     No query field returns it yet (<c>runtime.byInterface</c> is CK v2 Phase 4); it is visible through
-///     introspection and usable in fragments.
+///     No query field returns it directly: <c>runtime.byInterface</c> (AB#6932) returns the union of the implementing
+///     object types; select the members of this interface there with a fragment on it.
 /// </summary>
 [DoNotRegister]
 internal sealed class CkInterfaceGraphType : InterfaceGraphType<RtEntityDto>

@@ -1,0 +1,50 @@
+$schema: https://schemas.meshmakers.cloud/construction-kit-elements.schema.json
+types:
+# AB#6932: A and B are independent collection roots, BChild is derived from B and shares its collection.
+- typeId: InterfaceQueryA
+  derivedFromCkTypeId: ${System}/Entity
+  description: "AB#6932: implements Ranked-1, own collection"
+  implements:
+    - ${this}/Ranked-1
+  attributes:
+    - id: ${System}/Name
+      name: Name
+    - id: ${this}/InterfaceQueryRank
+      name: Rank
+    - id: ${this}/InterfaceQueryExtra
+      name: ExtraA
+      isOptional: true
+- typeId: InterfaceQueryB
+  derivedFromCkTypeId: ${System}/Entity
+  description: "AB#6932: implements Ranked-1, own collection"
+  implements:
+    - ${this}/Ranked-1
+  attributes:
+    - id: ${System}/Name
+      name: Name
+    - id: ${this}/InterfaceQueryRank
+      name: Rank
+- typeId: InterfaceQueryBChild
+  derivedFromCkTypeId: ${this}/InterfaceQueryB
+  description: "AB#6932: derived from B, inherits Ranked-1, shares the collection of B"
+  attributes:
+    - id: ${this}/InterfaceQueryExtra
+      name: ExtraChild
+      isOptional: true
+- typeId: InterfaceQueryOther
+  derivedFromCkTypeId: ${System}/Entity
+  description: "AB#6932: does NOT implement Ranked-1 (must never appear in an interface query)"
+  attributes:
+    - id: ${System}/Name
+      name: Name
+- typeId: InterfaceQueryGuarded
+  derivedFromCkTypeId: ${System}/Entity
+  description: "AB#6932: implements Guarded-1 with a Secret member"
+  implements:
+    - ${this}/Guarded-1
+  attributes:
+    - id: ${System}/Name
+      name: Name
+    - id: ${this}/InterfaceQueryToken
+      name: Token
+      isOptional: true

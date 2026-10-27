@@ -33,6 +33,12 @@ internal interface IGraphTypesCache
     RtEntityDtoType GetType(RtCkId<CkTypeId> ckTypeId);
 
     /// <summary>
+    ///     AB#6932: the concrete (non-abstract) object types that implement at least one CK interface - the possible
+    ///     types of the result of <c>runtime.byInterface</c>. Empty for a tenant without implemented CK interfaces.
+    /// </summary>
+    IReadOnlyList<RtEntityDtoType> GetCkInterfaceImplementers();
+
+    /// <summary>
     ///     Returns the interface types that a given type implements (based on its type hierarchy).
     /// </summary>
     /// <param name="ckTypeId">The construction kit type id</param>

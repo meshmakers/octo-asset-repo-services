@@ -9,6 +9,7 @@ using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.ConstructionKit.Contracts.Services;
 using Meshmakers.Octo.Runtime.Contracts;
 using Meshmakers.Octo.Runtime.Contracts.Geospatial.Geometry;
+using Meshmakers.Octo.Runtime.Contracts.MongoDb;
 using Meshmakers.Octo.Runtime.Contracts.Repositories;
 using Meshmakers.Octo.Runtime.Contracts.Repositories.Query;
 using Meshmakers.Octo.Runtime.Contracts.Secrets;
@@ -39,6 +40,15 @@ internal static class ResolveConnectionContextExtensions
         }
 
         return streamDataDatabaseClient;
+    }
+
+    /// <summary>
+    ///     True when the selection set of the field selects <paramref name="fieldName" /> (directly or through a
+    ///     fragment). Used to run expensive parts of a resolver (the count of an interface query) only when asked for.
+    /// </summary>
+    internal static bool IsFieldSelected(this IResolveFieldContext context, string fieldName)
+    {
+        return context.SubFields?.ContainsKey(fieldName) == true;
     }
 
     internal static IOctoSessionAccessor GetSessionAccessor(this IResolveFieldContext context)
@@ -167,6 +177,19 @@ internal static class ResolveConnectionContextExtensions
             error.Extensions[Statics.GraphQlDetails] = assetRepositoryException.Details;
             context.Errors.Add(error);
         }
+        else if (exception is InterfaceQueryException interfaceQueryException)
+        {
+            // AB#6932: before the PersistenceException branch (the exception derives from it).
+            context.Errors.Add(CreateInterfaceQueryError(interfaceQueryException));
+        }
+        else if (exception is InterfaceQueryArgumentException argumentException)
+        {
+            context.Errors.Add(new ExecutionError(argumentException.Message, argumentException)
+            {
+                Code = Statics.GraphQlInvalidArgument,
+                Extensions = new Dictionary<string, object?> { ["argument"] = argumentException.Argument }
+            });
+        }
         else if (exception is PersistenceException persistenceException)
         {
             context.Errors.Add(new ExecutionError(persistenceException.Message, persistenceException)
@@ -223,6 +246,25 @@ internal static class ResolveConnectionContextExtensions
                     })
                     .ToList(),
                 [Statics.GraphQlDetails] = exception.Details
+            }
+        };
+    }
+
+    /// <summary>
+    ///     AB#6932: the stable error of a refused interface query - code <c>INTERFACE_QUERY_REFUSED</c> with the engine
+    ///     message number (7019), the reason token and the parameters, passed through unchanged (no per-reason mapping
+    ///     table). Clients read the extensions, never the message text.
+    /// </summary>
+    internal static ExecutionError CreateInterfaceQueryError(InterfaceQueryException exception)
+    {
+        return new ExecutionError(exception.Message, exception)
+        {
+            Code = Statics.GraphQlInterfaceQuery,
+            Extensions = new Dictionary<string, object?>
+            {
+                ["messageNumber"] = exception.MessageNumber,
+                ["reason"] = exception.Reason,
+                ["parameters"] = exception.Parameters.ToDictionary(p => p.Key, p => (object?)p.Value)
             }
         };
     }
@@ -389,7 +431,7 @@ internal static class ResolveConnectionContextExtensions
         return false;
     }
 
-    internal static RtEntityQueryOptions GetQueryOptions<TEntity>(this IResolveConnectionContext<TEntity> ctx,
+    internal static RtEntityQueryOptions GetQueryOptions(this IResolveFieldContext ctx,
         RtEntityQueryOptions? operation = null)
     {
         var queryOptions = operation ?? RtEntityQueryOptions.Create();

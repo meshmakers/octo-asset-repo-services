@@ -9,6 +9,8 @@ using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Scalars;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Utils;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
 using Meshmakers.Octo.ConstructionKit.Contracts;
+using Meshmakers.Octo.ConstructionKit.Contracts.DependencyGraph;
+using Meshmakers.Octo.ConstructionKit.Contracts.Services;
 using Meshmakers.Octo.ConstructionKit.Models.System.Generated.System.v2;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL;
@@ -47,6 +49,8 @@ internal sealed class RuntimeModelQuery : ObjectGraphType
             .Description("Transient runtime queries")
             .Resolve(_ => new { });
 
+        AddByInterfaceField(graphTypesCache);
+
         foreach (var rtEntityDtoType in graphTypesCache.GetTypes())
         {
             this.Connection<object?, IGraphType, RtEntityDto>(graphTypesCache, rtEntityDtoType, rtEntityDtoType.Name)
@@ -65,6 +69,125 @@ internal sealed class RuntimeModelQuery : ObjectGraphType
                 .Argument<ListGraphType<FieldFilterDtoType>>(Statics.FieldFilterArg,
                     "Filters items based on field compare")
                 .ResolveAsync(ResolveRtEntitiesQuery);
+        }
+    }
+
+    /// <summary>
+    ///     AB#6932: <c>runtime.byInterface</c>, a thin layer over the one engine method
+    ///     <c>ITenantRepository.GetRtEntitiesByInterfaceAsync</c> (AB#7019): no fan-out, merge or security logic here.
+    ///     Added only when at least one concrete type implements a CK interface, so the schema of a tenant without
+    ///     interfaces does not change.
+    /// </summary>
+    private void AddByInterfaceField(IGraphTypesCache graphTypesCache)
+    {
+        var implementers = graphTypesCache.GetCkInterfaceImplementers();
+        if (implementers.Count == 0)
+        {
+            return;
+        }
+
+        var unionType = new RtEntityByInterfaceUnionType(implementers);
+        var connectionType = new RtEntityByInterfaceConnectionType(unionType);
+
+        Field(Statics.ByInterfaceField, connectionType)
+            .Description("Entities of all types that implement a CK interface, in one global order. Filter and sort " +
+                         "only on members of the interface (or system fields). 'take' is required; skip + take is at " +
+                         "most 1000. Text search, aggregations, navigation and geospatial filters are refused with " +
+                         "the error code INTERFACE_QUERY_REFUSED (extensions: messageNumber 7019, reason, parameters).")
+            .Argument<NonNullGraphType<StringGraphType>>(Statics.CkInterfaceIdArg,
+                "The runtime id of the CK interface, for example \"System.Identity/Named-1\".")
+            .Argument<NonNullGraphType<IntGraphType>>(Statics.TakeArg,
+                "Number of entities to return (required). skip + take must not exceed 1000.")
+            .Argument<IntGraphType>(Statics.SkipArg, "Number of entities to skip in the global order (default 0).",
+                argument => argument.DefaultValue = 0)
+            .Argument<GlobalQueryOptionsDtoType>(Statics.OptionsArg,
+                "Global options to apply to the query, for example to include archived items.")
+            .Argument<ListGraphType<SortDtoType>>(Statics.SortOrderArg, "Sort order for items")
+            .Argument<ListGraphType<FieldFilterDtoType>>(Statics.FieldFilterArg,
+                "Filters items based on field compare")
+            .Argument<SearchFilterDtoType>(Statics.SearchFilterArg, "Not supported: refused with INTERFACE_QUERY_REFUSED.")
+            .Argument<ResultAggregationInputDtoType>(Statics.AggregationsArg,
+                "Not supported: refused with INTERFACE_QUERY_REFUSED.")
+            .Argument<NearGeospatialFilterDtoType>(Statics.GeoNearFilterArg,
+                "Not supported: refused with INTERFACE_QUERY_REFUSED.")
+            .ResolveAsync(ResolveByInterfaceAsync);
+    }
+
+    private async Task<object?> ResolveByInterfaceAsync(IResolveFieldContext arg)
+    {
+        try
+        {
+            _logger.LogDebug("GraphQL query handling for runtime.byInterface started");
+
+            var sessionAccessor = arg.GetSessionAccessor();
+            var graphQlUserContext = (GraphQlUserContext)arg.UserContext;
+
+            var ckInterfaceIdText = arg.GetArgument<string>(Statics.CkInterfaceIdArg);
+            RtCkId<CkInterfaceId> ckInterfaceId;
+            try
+            {
+                ckInterfaceId = new RtCkId<CkInterfaceId>(ckInterfaceIdText);
+            }
+            catch (Exception e) when (e is ArgumentException or FormatException)
+            {
+                throw new InterfaceQueryArgumentException(Statics.CkInterfaceIdArg,
+                    $"'{ckInterfaceIdText}' is not a runtime CK interface id (expected 'Model/Interface-Version').");
+            }
+
+            var take = arg.GetArgument<int>(Statics.TakeArg);
+            var skip = arg.GetArgument<int?>(Statics.SkipArg) ?? 0;
+            if (take < 0)
+            {
+                throw new InterfaceQueryArgumentException(Statics.TakeArg, "take must not be negative.");
+            }
+
+            if (skip < 0)
+            {
+                throw new InterfaceQueryArgumentException(Statics.SkipArg, "skip must not be negative.");
+            }
+
+            var queryOptions = arg.GetQueryOptions();
+
+            // The attribute guards (secret, hidden) are bound to one type graph: apply them to every implementing
+            // type, so no type's secret or hidden attribute can be used as a filter or sort oracle through the interface.
+            var ckCacheService = arg.GetCkCacheService();
+            var ckInterfaceGraph = TryGetCkInterface(ckCacheService, graphQlUserContext.TenantId, ckInterfaceId);
+            if (ckInterfaceGraph != null)
+            {
+                foreach (var implementingType in ckInterfaceGraph.ImplementingTypes)
+                {
+                    SecretQueryGuard.EnsureQueryable(ckCacheService, graphQlUserContext.TenantId,
+                        implementingType.ToRtCkId(), queryOptions);
+                }
+            }
+
+            var includeTotalCount = arg.IsFieldSelected("totalCount");
+            var tenantRepository = graphQlUserContext.TenantContext.GetTenantRepository();
+            var result = await tenantRepository.GetRtEntitiesByInterfaceAsync(sessionAccessor.Session, ckInterfaceId,
+                queryOptions, skip, take, includeTotalCount);
+
+            _logger.LogDebug("GraphQL query handling returning data");
+            return new RtEntityByInterfaceConnection(
+                result.Items.Select(RtEntityDtoType.CreateRtEntityDto).ToList(),
+                result.TotalCount is { } total ? (int)Math.Min(total, int.MaxValue) : null);
+        }
+        catch (Exception e)
+        {
+            return arg.HandleException(e);
+        }
+    }
+
+    // An unknown interface is reported by the engine (reason UnknownInterface); the guard never turns it into another error.
+    private static CkInterfaceGraph? TryGetCkInterface(ICkCacheService ckCacheService, string tenantId,
+        RtCkId<CkInterfaceId> ckInterfaceId)
+    {
+        try
+        {
+            return ckCacheService.GetRtCkInterface(tenantId, ckInterfaceId);
+        }
+        catch (Exception e) when (e is CkCacheException or KeyNotFoundException)
+        {
+            return null;
         }
     }
 

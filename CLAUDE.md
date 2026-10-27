@@ -659,8 +659,8 @@ schema initialization.
 - When the field alignment in `RtEntityDtoType` still fails, `ReportInterfaceNotImplemented` logs a **Warning** for CK
   interfaces (Debug for abstract-type interfaces, where it is expected for overridden associations) instead of
   skipping silently.
-- `runtime.byInterface` and `GetRtEntitiesByType ckInterfaceId` are CK v2 Phase 4 (no field returns an interface
-  type yet; the interfaces serve introspection and fragments).
+- `runtime.byInterface` returns entities by CK interface (AB#6932, see "Query by interface" below);
+  `GetRtEntitiesByType ckInterfaceId` (pipeline node) is AB#6933.
 - Tests: `CkInterfaceSchemaTests` (unit), `GraphQL/CkV2/CkInterfaceIntrospectionTests` (integration, test interfaces
   `AssetRepositoryIntegrationTest/Labeled-1` implemented by `AccessTestAccount` and `AccessTestGroup`, and `Member-1`
   extending `Labeled-1` with the `AccessTestMembership` association member, implemented by `AccessTestAccount`;
@@ -690,6 +690,71 @@ invocation types until the method runtime lands). **Schema export for frontend c
 `OCTO_SCHEMA_EXPORT_PATH=<file> dotnet test tests/AssetRepositoryServices.IntegrationTests -c DebugL --filter
 "FullyQualifiedName~SchemaExportTests"` — writes the SDL of the integration-test tenant (all CK meta types plus the
 CK v2 test model's runtime types); the Studio's own `schema.graphql` stays an introspection of a real tenant.
+
+### Query by interface: `runtime.byInterface` (AB#6932, F4.1)
+
+A thin GraphQL layer over the ONE engine method `ITenantRepository.GetRtEntitiesByInterfaceAsync` (AB#7019,
+octo-construction-kit-engine-mongodb, `docs/interface-query.md`): **no fan-out, merge or security logic here**. Decision of
+the spike AB#6930 (Gerald, option A); budget, v1 scope and the refusal cases belong to AB#7019.
+
+- **Schema** (`RuntimeModelQuery.AddByInterfaceField`, `Types/RtEntityByInterfaceTypes.cs`): field
+  `runtime.byInterface(ckInterfaceId: String!, take: Int!, skip: Int = 0, fieldFilter, sortOrder, options, searchFilter,
+  aggregations, geoNearFilter)` returns `RtEntityByInterfaceConnection { totalCount: Int, items: [RtEntityByInterface!]! }`.
+  The item type is the **union** `RtEntityByInterface` of all concrete object types that implement at least one CK
+  interface (`IGraphTypesCache.GetCkInterfaceImplementers`): a union, so that no existing type of the schema changes (the
+  schema of a tenant gets exactly the field and two types). The union resolves the type by the entity's **exact** `ckTypeId`
+  (not by `IsTypeOf`, which would report a derived entity as its base type). Interface members are selected with a fragment
+  on the CK interface, type specific fields with a fragment on the object type. The field is **absent** when no concrete type
+  implements a CK interface (a union needs members); every tenant with the System model has implementers today.
+  `take` is required (non-null), `skip` defaults to 0 (schema default `0`); `searchFilter`, `aggregations` and
+  `geoNearFilter` are accepted only to be refused by the engine with the stable error (a missing argument would be a
+  GraphQL validation error instead of the contract).
+- **`totalCount` only when selected**: `ResolveConnectionContextExtensions.IsFieldSelected("totalCount")` decides
+  `includeTotalCount` (no count query otherwise). No `pageInfo` (the engine does not report "has more"; a page shorter than
+  `take` is the last).
+- **Guards**: the attribute guards are bound to one type graph, so the resolver runs `SecretQueryGuard.EnsureQueryable` against
+  **every** implementing type of the interface (`CkInterfaceGraph.ImplementingTypes`) before the engine call, like the
+  per-type query. (`access: Hidden` attributes cannot be interface members: compiler rule 99.) Data permissions run in the
+  engine per collection (a denied type never appears and is not counted).
+- **Errors** (`HandleException`, before the `PersistenceException` branch): `InterfaceQueryException` ->
+  code **`INTERFACE_QUERY_REFUSED`** (`Statics.GraphQlInterfaceQuery`) with `extensions.messageNumber` (always 7019),
+  `extensions.reason` (a token of `InterfaceQueryReasons`) and `extensions.parameters` (dictionary of strings), passed
+  through unchanged: no per-reason code, no mapping table, the message text is not a contract. A malformed argument
+  (`ckInterfaceId` no runtime CK id, negative `skip`/`take`) is `INVALID_ARGUMENT` with `extensions.argument`
+  (`InterfaceQueryArgumentException`).
+- **Transactions**: queries run in a session without transaction in the GraphQL pipeline (`OctoSessionListener` only
+  starts one for mutations). Inside a transaction session (pipeline nodes, in-process callers) the engine queries the
+  collections sequentially; the result is identical (test `QueryInATransactionSession_ReturnsTheSameResultAsWithout`).
+- **Cost** (documented in octo-documentation `graphql.md`): index the sort field in the implementing type, no default
+  index on `name` (Gerald 2026-10-19); a page costs about `(skip + take) x number of implementer collections`,
+  `skip + take <= 1000`, so filter and keep pages small instead of paging deep.
+- **Tests**: unit `ByInterfaceSchemaTests`; integration `GraphQL/ByInterface/ByInterfaceQueryTests` (fixture
+  `ByInterfaceGraphQlTestFixture`: types `InterfaceQueryA`, `InterfaceQueryB`, `InterfaceQueryBChild` (shares the collection of
+  B), `InterfaceQueryOther` (not an implementer), `InterfaceQueryGuarded` with a Secret member, interfaces `Ranked-1` and
+  `Guarded-1` in the integration test CK model; a data policy protects A) and `ByInterfacePerformanceTests` (fixture
+  `ByInterfaceWideGraphQlTestFixture`: generated models `Perf` with 30 roots and `Wide` with 65 roots).
+- **Budget check** (`ByInterfacePerformanceTests`, trait `Category=Performance`, non-flaky style of the dispatcher
+  performance test: warm-up, median / p95 of 20 runs, ratios and named-constant ceilings): the same first page through the
+  bare engine call and through GraphQL (parse, validate, resolve 50 items with an interface fragment, serialize); asserts
+  GraphQL median <= engine median + 25 ms, end-to-end indexed first page p95 <= 100 ms (decision budget b), and one collection
+  through GraphQL <= 1.25x of the GraphQL type query (budget a, 10 ms slack). 100 000 entities by default, 1 000 000 with
+  `OCTO_TEST_INTERFACE_QUERY_ENTITIES=1000000`. Measured end to end (MongoDB 8.0 Testcontainer, Mac mini, 30 collection
+  roots, page 50, index `(ckTypeId, attributes.name, rtState)` on every root, run 2026-10-27):
+
+  | Entities | Engine first page (median / p95) | GraphQL first page (median / p95) | GraphQL skip 450 | GraphQL with count | GraphQL unindexed sort (rank) | One collection: interface vs type query |
+  |---|---|---|---|---|---|---|
+  | 100 000 | 6.2 / 6.8 ms | 7.4 / 8.3 ms | 52.6 / 65.0 ms | 10.1 / 12.9 ms | 45 / 46 ms | 1.2 vs 3.5 ms |
+  | 1 000 000 | 6.6 / 9.1 ms | 7.3 / 7.9 ms | 52.6 / 63.7 ms | 23.8 / 25.5 ms | 417 / 418 ms | 5.7 vs 29.5 ms |
+
+  The GraphQL path adds about 1 ms to the engine call. The unindexed sort is O(matching rows) and carries no promise.
+- **Schema compatibility** (verified 2026-10-27 by full introspection of the integration tenant and of a tenant with only the
+  System model, with and without the field): the schema is identical except for the field `RuntimeModelQuery.byInterface` and the
+  two types `RtEntityByInterface` and `RtEntityByInterfaceConnection` (877 -> 879 and 395 -> 397 types). The schema build
+  time did not change measurably (877 types, median of 25 builds: 122 ms with the field, 122 ms without). The unit test
+  `ByInterfaceSchemaTests` guards the "no implementer, no field" rule; `Schema_GainsExactlyTheFieldAndTwoTypes_...` the
+  additions.
+- **Studio codegen**: the field and the two new types change `schema.graphql`; Studio needs a refresh
+  (`npm run codegen` in octo-frontend-refinery-studio) only if it wants to use `byInterface`, nothing breaks without it.
 
 ### CK method gateway gate (AB#6912, F3.4)
 

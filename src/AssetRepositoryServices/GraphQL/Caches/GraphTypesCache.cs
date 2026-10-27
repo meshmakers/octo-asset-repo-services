@@ -101,6 +101,20 @@ internal class GraphTypesCache : IGraphTypesCache
     }
 
     /// <inheritdoc />
+    public IReadOnlyList<RtEntityDtoType> GetCkInterfaceImplementers()
+    {
+        if (_ckInterfaceTypes.IsEmpty)
+        {
+            return [];
+        }
+
+        return _types.Values
+            .Where(t => !t.IsAbstract && t.ResolvedInterfaces.Any(i => i is CkInterfaceGraphType))
+            .OrderBy(t => t.Name, StringComparer.Ordinal)
+            .ToList();
+    }
+
+    /// <inheritdoc />
     public IReadOnlyList<IInterfaceGraphType> GetImplementedInterfaces(RtCkId<CkTypeId> ckTypeId)
     {
         var interfaces = new List<IInterfaceGraphType>();
