@@ -305,6 +305,12 @@ Time-series data support (`StreamData/`):
     `skippedByReason` — `LowerPrecedence` / `ManualValueProtected` / `CkTypeMismatch` —, `skippedRows` up to 1,000);
     an empty batch stays 204. A manual row the archive did not store (`ManualStreamDataNotAppliedException`) answers
     **409** `{ message, result }` — never success. Callers that ignore the body behave as before.
+  - **Reading the origin (AB#7616)**: the GraphQL stream-data queries (`streamData.transientStreamDataQuery` /
+    persisted queries: simple, groupingAggregation, downsampling, fieldFilter) accept `row_origin` (`manual` |
+    `automated`; rows written before AB#5356 read `automated`), `manual_written_by`, `manual_written_at`,
+    `manual_reason` as column / filter / groupBy paths on raw and time-range archives — the engine resolver
+    (`StreamDataFieldResolver.CreateForArchive`) provides them, no asset-repo code. Rollup archives refuse them. There
+    is no REST read endpoint for stream data. Test: `StreamData/StreamDataRowOriginQueryTests`.
 - **TenantManager** - Manages stream data tenant contexts
 - **StreamDataDatabaseManager** - Database operations for time-series data
 - **StreamDataTenantContext** - Per-tenant stream data context
