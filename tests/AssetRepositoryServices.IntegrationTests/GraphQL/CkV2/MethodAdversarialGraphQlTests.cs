@@ -22,6 +22,8 @@ public class MethodAdversarialGraphQlTests
     private const string Admin = "65f0c0ffee65f0c0ffee65f1";
     private const string Secret = "CANARY-SECRET-6915";
 
+    private static bool _logStarted;
+
     private readonly MethodGatewayGraphQlTestFixture _fixture;
 
     public MethodAdversarialGraphQlTests(MethodGatewayGraphQlTestFixture fixture, ITestOutputHelper output)
@@ -56,7 +58,14 @@ public class MethodAdversarialGraphQlTests
         lock (typeof(MethodAdversarialGraphQlTests))
         {
             var path = Path.Combine(AppContext.BaseDirectory, "adversarial-results.md");
-            var header = File.Exists(path) ? string.Empty : "| Case | Attack | Test | Observed | Side effect |\n|------|--------|------|----------|-------------|\n";
+            // a fresh table per test process: stale results of an earlier run must not sit beside current ones
+            var header = _logStarted ? string.Empty : "| Case | Attack | Test | Observed | Side effect |\n|------|--------|------|----------|-------------|\n";
+            if (!_logStarted)
+            {
+                _logStarted = true;
+                File.WriteAllText(path, string.Empty);
+            }
+
             File.AppendAllText(path, header + $"| {caseId} | {attack} | `MethodAdversarialGraphQlTests.{test}` | {observed} | {sideEffect} |\n", Encoding.UTF8);
         }
     }
@@ -73,8 +82,10 @@ public class MethodAdversarialGraphQlTests
             """, user: User(Admin.Replace('1', '2'), ["Nobody"]));
 
         var json = _fixture.SerializeGraphQl(result);
-        result.Errors.Should().NotBeNullOrEmpty(json);
-        Record("C01", "Caller DTO as a member of the mutation input (administrator)", "GraphQL validation error: " + result.Errors![0].Code);
+        var error = result.Errors.Should().NotBeNullOrEmpty(json).And.Subject.First();
+        error.Code.Should().NotBe(CkMethodErrorCodes.MethodForbidden); // rejected by GraphQL validation, not by the gateway
+        (error.Message + error.InnerException).Should().Contain("caller");
+        Record("C01", "Caller DTO as a member of the mutation input (administrator)", "GraphQL validation error: " + error.Code);
         _fixture.Dispatcher.Requests.Should().BeEmpty();
         json.Should().NotContain(Secret);
     }
@@ -84,21 +95,25 @@ public class MethodAdversarialGraphQlTests
     {
         var rtId = await CreateAccountAsync();
 
-        var forged = await _fixture.ExecuteGraphQlAsync($$"""
-            mutation { runtime { {{Field}} {
-              resetPassword(rtId: "{{rtId}}", input: { newPassword: "x", deadlineUtc: "9999-12-31T23:59:59Z", timeoutSeconds: 86400 }) { invocationId }
-            } } }
-            """, user: User(Admin, ["AccessTestAdmin"]));
+        var startedAt = DateTime.UtcNow;
         var normal = await _fixture.ExecuteGraphQlAsync($$"""
             mutation { runtime { {{Field}} { resetPassword(rtId: "{{rtId}}", input: { newPassword: "x" }) { invocationId } } } }
             """, user: User(Admin, ["AccessTestAdmin"]));
+        var finishedAt = DateTime.UtcNow;
+        foreach (var member in new[] { "deadlineUtc: \"9999-12-31T23:59:59Z\"", "timeoutSeconds: 86400" })
+        {
+            var forged = await _fixture.ExecuteGraphQlAsync($$"""
+                mutation { runtime { {{Field}} { resetPassword(rtId: "{{rtId}}", input: { newPassword: "x", {{member}} }) { invocationId } } } }
+                """, user: User(Admin, ["AccessTestAdmin"]));
+            var error = forged.Errors.Should().NotBeNullOrEmpty().And.Subject.First();
+            (error.Message + error.InnerException).Should().Contain(member.Split(':')[0]); // no such input member
+        }
 
-        forged.Errors.Should().NotBeNullOrEmpty(); // no such input member
         normal.Errors.Should().BeNullOrEmpty(_fixture.SerializeGraphQl(normal));
         var request = _fixture.Dispatcher.Requests.Should().ContainSingle().Subject;
-        request.DeadlineUtc.Should().BeAfter(DateTime.UtcNow).And.BeBefore(DateTime.UtcNow.AddSeconds(30)); // timeoutSeconds: 5 in the model
+        request.DeadlineUtc.Should().BeOnOrAfter(startedAt.AddSeconds(5)).And.BeOnOrBefore(finishedAt.AddSeconds(5)); // timeoutSeconds: 5 in the model
         Record("C11", "deadlineUtc / timeoutSeconds as members of the input; deadline of a regular call = now + 5 s (definition)",
-            "input member rejected; server deadline " + (request.DeadlineUtc - DateTime.UtcNow).TotalSeconds.ToString("F0") + " s");
+            "input members rejected; server deadline start + " + (request.DeadlineUtc - startedAt).TotalSeconds.ToString("F0") + " s");
     }
 
     [Fact]
