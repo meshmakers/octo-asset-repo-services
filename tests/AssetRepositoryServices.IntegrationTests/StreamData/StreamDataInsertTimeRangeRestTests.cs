@@ -143,6 +143,109 @@ public class StreamDataInsertTimeRangeRestTests(StreamDataFixture fixture, ITest
         }
     }
 
+    /// <summary>
+    /// A value that does not fit its column (text for an integer column, an unknown name for an enum column)
+    /// used to reach CrateDB, which refused the statement, and the endpoint answered 500. It now answers 400
+    /// naming the point, the column and the expected type, and writes nothing of the batch.
+    /// </summary>
+    [Fact]
+    public async Task InsertTimeRange_AValueOfTheWrongType_Answers400NamingPointColumnAndType_AndWritesNothing()
+    {
+        fixture.OutputHelper = output;
+        const string childTenantId = "restmismatch";
+        await CreateChildAsync(childTenantId);
+
+        try
+        {
+            var child = await PrepareChildAsync(childTenantId);
+            var archiveRtId = await CreateAndActivateTimeRangeArchiveAsync(child);
+            var body = $$"""
+                [{
+                  "rtId": "{{OctoObjectId.GenerateNewId()}}",
+                  "ckTypeId": "{{fixture.TestCkTypeId}}",
+                  "from": "{{WindowStart:O}}",
+                  "to": "{{WindowEnd:O}}",
+                  "attributes": { "MeterReading": 4711, "OperatingStatus": "OK" }
+                },
+                {
+                  "rtId": "{{OctoObjectId.GenerateNewId()}}",
+                  "ckTypeId": "{{fixture.TestCkTypeId}}",
+                  "from": "{{WindowStart:O}}",
+                  "to": "{{WindowEnd:O}}",
+                  "attributes": { "MeterReading": "kWh", "OperatingStatus": "Running" }
+                }]
+                """;
+            var points = JsonSerializer.Deserialize<IReadOnlyList<InsertTimeRangePointRestDto>>(body, MvcBodyOptions)
+                ?? throw new InvalidOperationException("The body deserialized to null.");
+            var controller = new StreamDataController(
+                A.Fake<ILogger<StreamDataController>>(), fixture.GetSystemContext(), A.Fake<IHostApplicationLifetime>());
+
+            var result = await controller.InsertTimeRange(childTenantId, archiveRtId.ToString(), points);
+
+            var message = result.Should().BeOfType<BadRequestObjectResult>().Which.Value.Should().BeOfType<string>().Subject;
+            message.Should().Contain("point 1: column 'MeterReading' expects an integer, got text 'kWh'");
+            message.Should().Contain("point 1: column 'OperatingStatus' expects a value of enum");
+            message.Should().Contain("OK (1)", "the caller learns the valid values");
+            message.Should().NotContain("point 0", "the first point fits its columns");
+            (await CountRowsAsync(childTenantId, archiveRtId)).Should().Be(0, "the batch was refused, not partially applied");
+        }
+        finally
+        {
+            await DropChildIfExistingAsync(childTenantId);
+        }
+    }
+
+    /// <summary>
+    /// An enum column takes the member name (case-insensitive) or the key, as the pipeline write path does;
+    /// the name is stored as its key.
+    /// </summary>
+    [Fact]
+    public async Task InsertTimeRange_AnEnumMemberName_IsStoredAsItsKey()
+    {
+        fixture.OutputHelper = output;
+        const string childTenantId = "restenumname";
+        await CreateChildAsync(childTenantId);
+
+        try
+        {
+            var child = await PrepareChildAsync(childTenantId);
+            var archiveRtId = await CreateAndActivateTimeRangeArchiveAsync(child);
+            var byName = OctoObjectId.GenerateNewId();
+            var byKey = OctoObjectId.GenerateNewId();
+            var body = $$"""
+                [{
+                  "rtId": "{{byName}}",
+                  "ckTypeId": "{{fixture.TestCkTypeId}}",
+                  "from": "{{WindowStart:O}}",
+                  "to": "{{WindowEnd:O}}",
+                  "attributes": { "OperatingStatus": "maintenance" }
+                },
+                {
+                  "rtId": "{{byKey}}",
+                  "ckTypeId": "{{fixture.TestCkTypeId}}",
+                  "from": "{{WindowStart:O}}",
+                  "to": "{{WindowEnd:O}}",
+                  "attributes": { "OperatingStatus": 1 }
+                }]
+                """;
+            var points = JsonSerializer.Deserialize<IReadOnlyList<InsertTimeRangePointRestDto>>(body, MvcBodyOptions)
+                ?? throw new InvalidOperationException("The body deserialized to null.");
+            var controller = new StreamDataController(
+                A.Fake<ILogger<StreamDataController>>(), fixture.GetSystemContext(), A.Fake<IHostApplicationLifetime>());
+
+            var result = await controller.InsertTimeRange(childTenantId, archiveRtId.ToString(), points);
+
+            result.Should().BeOfType<OkObjectResult>().Which.Value
+                .Should().BeOfType<StreamDataWriteResultRestDto>().Which.Stored.Should().Be(2);
+            (await ReadOperatingStatusAsync(childTenantId, archiveRtId, byName)).Should().Be(2);
+            (await ReadOperatingStatusAsync(childTenantId, archiveRtId, byKey)).Should().Be(1);
+        }
+        finally
+        {
+            await DropChildIfExistingAsync(childTenantId);
+        }
+    }
+
     // ── helpers ───────────────────────────────────────────────────────────────────────────────
 
     /// <summary>Enables stream data on the child and imports the test CK model.</summary>
@@ -158,7 +261,8 @@ public class StreamDataInsertTimeRangeRestTests(StreamDataFixture fixture, ITest
 
     /// <summary>
     /// One column per CK value type the acceptance criteria name: Int, Double, String and Boolean
-    /// attributes of the test MeteringPoint type, provisioned as a windowed CrateDB table.
+    /// attributes of the test MeteringPoint type, plus the Enum attribute OperatingStatus (Unknown 0, OK 1,
+    /// Maintenance 2), provisioned as a windowed CrateDB table.
     /// </summary>
     private async Task<OctoObjectId> CreateAndActivateTimeRangeArchiveAsync(ITenantContext child)
     {
@@ -173,6 +277,7 @@ public class StreamDataInsertTimeRangeRestTests(StreamDataFixture fixture, ITest
                 new("Voltage", Indexed: true, Required: false),
                 new("MeteringPointNumber", Indexed: true, Required: false),
                 new("IsEstimated", Indexed: true, Required: false),
+                new("OperatingStatus", Indexed: true, Required: false),
             },
             TimeSpan.FromDays(1));
 
@@ -211,6 +316,23 @@ public class StreamDataInsertTimeRangeRestTests(StreamDataFixture fixture, ITest
 
         (await reader.ReadAsync()).Should().BeFalse("exactly one window was posted");
         return row;
+    }
+
+    /// <summary>The stored OperatingStatus key of the posted window of <paramref name="rtId" />.</summary>
+    private async Task<int?> ReadOperatingStatusAsync(string schema, OctoObjectId archiveRtId, OctoObjectId rtId)
+    {
+        var table = $"\"{schema}\".\"archive_{archiveRtId}\"";
+        await using var connection = new NpgsqlConnection(fixture.CrateDbConnectionString);
+        await connection.OpenAsync();
+        await using (var refresh = new NpgsqlCommand($"REFRESH TABLE {table}", connection))
+        {
+            await refresh.ExecuteNonQueryAsync();
+        }
+
+        await using var select = new NpgsqlCommand($"SELECT \"operatingstatus\" FROM {table} WHERE \"rtid\" = @rtid", connection);
+        select.Parameters.AddWithValue("rtid", rtId.ToString());
+        var value = await select.ExecuteScalarAsync();
+        return value is null or DBNull ? null : Convert.ToInt32(value);
     }
 
     /// <summary>Row count of the archive table after a refresh — 0 when a batch was refused.</summary>
