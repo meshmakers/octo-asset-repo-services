@@ -6,6 +6,8 @@ using Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Collectio
 using Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Fixtures;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.StreamData.Controllers;
 using Meshmakers.Octo.ConstructionKit.Contracts;
+using Meshmakers.Octo.ConstructionKit.Models.StreamData.Generated.System.StreamData.v1;
+using Meshmakers.Octo.Runtime.Contracts.RepositoryEntities;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb;
 using Meshmakers.Octo.Runtime.Contracts.StreamData;
 using Microsoft.AspNetCore.Mvc;
@@ -295,6 +297,74 @@ public class StreamDataInsertTimeRangeRestTests(StreamDataFixture fixture, ITest
         }
     }
 
+    /// <summary>
+    /// AB#7656: a manual correction wins and stays protected by default — the archive here declares no conflict
+    /// precedence at all. A manual write replaces a delivered value, a later automated delivery is answered as
+    /// skipped with <c>ManualValueProtected</c> and leaves the correction in place, another manual write replaces it.
+    /// </summary>
+    [Fact]
+    public async Task InsertTimeRange_WithoutPrecedence_AManualValueWinsAndStaysProtected()
+    {
+        fixture.OutputHelper = output;
+        const string childTenantId = "restorigindefault";
+        await CreateChildAsync(childTenantId);
+
+        try
+        {
+            var child = await PrepareChildAsync(childTenantId);
+            var archiveRtId = await CreateAndActivateTimeRangeArchiveAsync(child);
+            var rtId = OctoObjectId.GenerateNewId();
+            var controller = ControllerFor(childTenantId, ("sub", "8a4c1f00-0000-4000-8000-000000000002"));
+
+            (await WriteReadingAsync(controller, childTenantId, archiveRtId, rtId, 100, manual: false)).Stored.Should().Be(1);
+            (await WriteReadingAsync(controller, childTenantId, archiveRtId, rtId, 200, manual: true)).Stored.Should().Be(1);
+
+            var automated = await WriteReadingAsync(controller, childTenantId, archiveRtId, rtId, 300, manual: false);
+            automated.Stored.Should().Be(0);
+            automated.SkippedByReason.Should().ContainKey(nameof(StreamDataSkipReason.ManualValueProtected))
+                .WhoseValue.Should().Be(1);
+            (await ReadMeterReadingAsync(childTenantId, archiveRtId, rtId)).Should().Be(200);
+
+            (await WriteReadingAsync(controller, childTenantId, archiveRtId, rtId, 250, manual: true)).Stored.Should().Be(1);
+            (await ReadMeterReadingAsync(childTenantId, archiveRtId, rtId)).Should().Be(250);
+        }
+        finally
+        {
+            await DropChildIfExistingAsync(childTenantId);
+        }
+    }
+
+    /// <summary>
+    /// AB#7656: an archive opts out with <c>$Origin</c> declared as <c>Ignore</c> — a manual value then has no
+    /// priority, and without other keys the last write wins.
+    /// </summary>
+    [Fact]
+    public async Task InsertTimeRange_WithTheOriginIgnored_AnAutomatedWriteReplacesAManualValue()
+    {
+        fixture.OutputHelper = output;
+        const string childTenantId = "restoriginignore";
+        await CreateChildAsync(childTenantId);
+
+        try
+        {
+            var child = await PrepareChildAsync(childTenantId);
+            var archiveRtId = await CreateAndActivateTimeRangeArchiveAsync(child, ignoreOrigin: true);
+            var rtId = OctoObjectId.GenerateNewId();
+            var controller = ControllerFor(childTenantId, ("sub", "8a4c1f00-0000-4000-8000-000000000003"));
+
+            (await WriteReadingAsync(controller, childTenantId, archiveRtId, rtId, 200, manual: true)).Stored.Should().Be(1);
+            var automated = await WriteReadingAsync(controller, childTenantId, archiveRtId, rtId, 300, manual: false);
+
+            automated.Stored.Should().Be(1);
+            automated.Skipped.Should().Be(0);
+            (await ReadMeterReadingAsync(childTenantId, archiveRtId, rtId)).Should().Be(300);
+        }
+        finally
+        {
+            await DropChildIfExistingAsync(childTenantId);
+        }
+    }
+
     // ── helpers ───────────────────────────────────────────────────────────────────────────────
 
     /// <summary>Enables stream data on the child and imports the test CK model.</summary>
@@ -313,7 +383,7 @@ public class StreamDataInsertTimeRangeRestTests(StreamDataFixture fixture, ITest
     /// attributes of the test MeteringPoint type, plus the Enum attribute OperatingStatus (Unknown 0, OK 1,
     /// Maintenance 2), provisioned as a windowed CrateDB table.
     /// </summary>
-    private async Task<OctoObjectId> CreateAndActivateTimeRangeArchiveAsync(ITenantContext child)
+    private async Task<OctoObjectId> CreateAndActivateTimeRangeArchiveAsync(ITenantContext child, bool ignoreOrigin = false)
     {
         var store = child.GetTimeRangeArchiveRuntimeStore()
             ?? throw new InvalidOperationException("TimeRangeArchiveRuntimeStore not available.");
@@ -329,6 +399,22 @@ public class StreamDataInsertTimeRangeRestTests(StreamDataFixture fixture, ITest
                 new("OperatingStatus", Indexed: true, Required: false),
             },
             TimeSpan.FromDays(1));
+
+        if (ignoreOrigin)
+        {
+            // The opt-out of AB#7656: $Origin declared with Order Ignore.
+            var repository = child.GetTenantRepository();
+            using var session = await repository.GetSessionAsync();
+            session.StartTransaction();
+            var archive = await repository.GetRtEntityByRtIdAsync<RtTimeRangeArchive>(session, archiveRtId)
+                ?? throw new InvalidOperationException("The archive was not stored.");
+            archive.ConflictPrecedence = new AttributeRecordValueList<RtCkArchiveConflictKeyRecord>
+            {
+                new() { Column = ArchiveConflictKey.OriginKey, Order = RtCkConflictKeyOrderEnum.Ignore }
+            };
+            await repository.ReplaceOneRtEntityByIdAsync(session, archiveRtId, archive);
+            await session.CommitTransactionAsync();
+        }
 
         var lifecycle = child.GetArchiveLifecycleService()
             ?? throw new InvalidOperationException("ArchiveLifecycleService not registered.");
@@ -396,6 +482,37 @@ public class StreamDataInsertTimeRangeRestTests(StreamDataFixture fixture, ITest
             HttpContext = new Microsoft.AspNetCore.Http.DefaultHttpContext { User = new ClaimsPrincipal(identity) }
         };
         return controller;
+    }
+
+    /// <summary>Posts one window of <paramref name="rtId" /> with the given reading and returns the write result.</summary>
+    private async Task<StreamDataWriteResultRestDto> WriteReadingAsync(StreamDataController controller, string tenantId,
+        OctoObjectId archiveRtId, OctoObjectId rtId, int reading, bool manual)
+    {
+        var origin = manual ? "\"origin\": \"manual\"," : "";
+        var body = $$"""
+            [{
+              {{origin}}
+              "rtId": "{{rtId}}",
+              "ckTypeId": "{{fixture.TestCkTypeId}}",
+              "from": "{{WindowStart:O}}",
+              "to": "{{WindowEnd:O}}",
+              "attributes": { "MeterReading": {{reading}} }
+            }]
+            """;
+        var points = JsonSerializer.Deserialize<IReadOnlyList<InsertTimeRangePointRestDto>>(body, MvcBodyOptions)
+            ?? throw new InvalidOperationException("The body deserialized to null.");
+
+        var result = await controller.InsertTimeRange(tenantId, archiveRtId.ToString(), points);
+
+        return result.Should().BeOfType<OkObjectResult>().Subject.Value
+            .Should().BeOfType<StreamDataWriteResultRestDto>().Subject;
+    }
+
+    /// <summary>The stored MeterReading of the window of <paramref name="rtId" />, after a table refresh.</summary>
+    private async Task<int?> ReadMeterReadingAsync(string schema, OctoObjectId archiveRtId, OctoObjectId rtId)
+    {
+        await CountRowsAsync(schema, archiveRtId);   // refreshes the table
+        return await ReadMeterReadingWithoutRefreshAsync(schema, archiveRtId, rtId);
     }
 
     /// <summary>The stored MeterReading of the window of <paramref name="rtId" />, read WITHOUT a table refresh.</summary>
