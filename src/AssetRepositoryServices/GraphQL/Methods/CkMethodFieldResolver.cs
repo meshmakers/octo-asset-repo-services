@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using Microsoft.Extensions.Logging;
 using GraphQL;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Caches;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Utils;
@@ -65,7 +66,8 @@ internal static class CkMethodFieldResolver
             var response = await gateway.InvokeAsync(call, targetAccess, context.CancellationToken)
                 .ConfigureAwait(false);
 
-            var outcome = CkMethodResponseMapper.Map(response, method, context.GetCkCacheService(), userContext.TenantId);
+            var outcome = CkMethodResponseMapper.Map(response, method, context.GetCkCacheService(), userContext.TenantId,
+                context.RequestServices!.GetService<ILoggerFactory>()?.CreateLogger(typeof(CkMethodResponseMapper)));
             if (outcome.Error != null)
             {
                 context.Errors.Add(outcome.Error);

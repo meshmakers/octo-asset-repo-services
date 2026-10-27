@@ -1,11 +1,15 @@
 using System.Runtime.CompilerServices;
 using System.Security.Claims;
+using System.Text;
 using System.Text.Json;
 using FakeItEasy;
 using GraphQL;
 using GraphQL.SystemTextJson;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Methods;
+using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.ConstructionKit.Contracts.DataTransferObjects;
+using Meshmakers.Octo.ConstructionKit.Contracts.DependencyGraph;
+using Meshmakers.Octo.ConstructionKit.Contracts.Services;
 using Meshmakers.Octo.Services.Contracts.DistributionEventHub.Methods;
 using Meshmakers.Octo.Services.Methods;
 using Meshmakers.Octo.Services.Methods.Authorization;
@@ -285,23 +289,10 @@ public class CkMethodGatewayAdversarialTests
     private const int HugeNoteBytes = 8 * 1024 * 1024;
 
     /// <summary>
-    ///     GAP (finding F-2): neither the gateway nor the validator limits the size of the parameters. The pin keeps the
-    ///     observation; <see cref="C12_ParametersFarAboveTheLimit_AreRefused_AndNotDispatched" /> is the expected behavior.
+    ///     F-2 (AB#6915, fixed by AB#7665): parameters above the limit are refused with
+    ///     <c>METHOD_PARAMETERS_TOO_LARGE</c> before the validator runs; nothing is dispatched.
     /// </summary>
     [Fact]
-    public async Task C12_Gap_ParametersOf8MiB_AreValidatedAndDispatched_BecauseThereIsNoSizeLimit()
-    {
-        var gateway = Gateway(new CkMethodAuthorizationDto { Roles = ["AssetManagement"] });
-        var parameters = "{\"newPassword\":\"x\",\"note\":\"" + new string('n', HugeNoteBytes) + "\"}";
-
-        var response = await InvokeAsync(gateway, Call(User(Other, ["AssetManagement"]), Owner, parameters));
-
-        Record("C12", "parameter payload of 8 MiB (no size limit exists) - GAP F-2", response);
-        Assert.True(response.Success);
-        Assert.Equal(HugeNoteBytes, Assert.Single(_dispatched).ParametersJson.Length - "{\"newPassword\":\"x\",\"note\":\"\"}".Length);
-    }
-
-    [Fact(Skip = "AB#6915 finding F-2: the method path has no parameter size limit and no documented code; enable when the limit exists")]
     public async Task C12_ParametersFarAboveTheLimit_AreRefused_AndNotDispatched()
     {
         var gateway = Gateway(new CkMethodAuthorizationDto { Roles = ["AssetManagement"] });
@@ -309,8 +300,43 @@ public class CkMethodGatewayAdversarialTests
 
         var response = await InvokeAsync(gateway, Call(User(Other, ["AssetManagement"]), Owner, parameters));
 
+        Record("C12", "parameter payload of 8 MiB", response);
         Assert.False(response.Success);
-        Assert.Equal(CkMethodErrorCodes.MethodValidationFailed, response.Error!.Code);
+        Assert.Equal(CkMethodErrorCodes.MethodParametersTooLarge, response.Error!.Code);
+        Assert.Equal("1048576", response.Error.Parameters[CkMethodErrorParameters.MaxBytes]);
+        Assert.Equal(Encoding.UTF8.GetByteCount(parameters).ToString(), response.Error.Parameters[CkMethodErrorParameters.ActualBytes]);
+        Assert.Equal(0, _target.Reads);
+        Assert.Empty(_dispatched);
+    }
+
+    [Fact]
+    public async Task C12_ExactlyTheLimitPasses_OneByteMoreIsRefused_BeforeValidation()
+    {
+        var gateway = Gateway(new CkMethodAuthorizationDto { Roles = ["AssetManagement"] });
+        var user = User(Other, ["AssetManagement"]);
+        var overhead = Encoding.UTF8.GetByteCount("{\"newPassword\":\"x\",\"note\":\"\"}");
+        string Json(int bytes) => "{\"newPassword\":\"x\",\"note\":\"" + new string('n', bytes - overhead) + "\"}";
+
+        var exact = await InvokeAsync(gateway, Call(user, Owner, Json(1024 * 1024)));
+        var over = await InvokeAsync(gateway, Call(user, Owner, Json(1024 * 1024 + 1)));
+
+        Assert.True(exact.Success, exact.Error?.Code);
+        Assert.Equal(CkMethodErrorCodes.MethodParametersTooLarge, over.Error!.Code);
+        Assert.Single(_dispatched);
+    }
+
+    [Fact]
+    public async Task C12_OversizedAndMalformed_IsTooLarge_NotAValidationFailure_AndRefusedCallersLearnNothing()
+    {
+        var gateway = Gateway(new CkMethodAuthorizationDto { Roles = ["AssetManagement"] });
+
+        // malformed JSON above the limit: the size check comes first
+        var malformed = await InvokeAsync(gateway, Call(User(Other, ["AssetManagement"]), Owner, "{" + new string('x', HugeNoteBytes)));
+        // a caller without the role gets the authorization refusal, not the size answer
+        var forbidden = await InvokeAsync(gateway, Call(User(Other, ["Reporting"]), Owner, "{" + new string('x', HugeNoteBytes)));
+
+        Assert.Equal(CkMethodErrorCodes.MethodParametersTooLarge, malformed.Error!.Code);
+        Assert.Equal(CkMethodErrorCodes.MethodForbidden, forbidden.Error!.Code);
         Assert.Empty(_dispatched);
     }
 
@@ -339,33 +365,49 @@ public class CkMethodGatewayAdversarialTests
     }
 
     /// <summary>
-    ///     GAP (finding F-3, low): the GraphQL error maps whatever code the responder wrote. An SDK handler cannot write a
-    ///     <c>METHOD_</c> code that is not a platform code (<c>CkMethodFailure</c> refuses it, see the common-services suite
-    ///     C13); a participant of the bus that answers on the method queue can.
+    ///     F-3 (AB#6915, fixed by AB#7665): a code a responder wrote that is neither a platform code nor declared by the
+    ///     method becomes <c>METHOD_HANDLER_FAILED</c> with the correlation id; the original code is logged, never returned.
     /// </summary>
-    [Fact]
-    public void C13_Gap_AResponderCode_WithTheReservedPrefixButNoPlatformCode_IsForwardedToTheClient()
+    [Theory]
+    [InlineData("METHOD_BOGUS_CODE")]
+    [InlineData("UNDECLARED_CODE")]
+    public void C13_AResponderCode_ThatIsNeitherPlatformNorDeclared_IsMappedToHandlerFailed(string code)
     {
-        var response = CkMethodResponse.Failed(Guid.NewGuid(), "rogue",
-            CkMethodError.Create("METHOD_BOGUS_CODE", (CkMethodErrorParameters.MethodId, MethodId)));
+        var invocation = Guid.NewGuid();
+        var response = CkMethodResponse.Failed(invocation, "rogue",
+            CkMethodError.Create(code, (CkMethodErrorParameters.MethodId, MethodId)));
+        var method = new CkMethodGraph(new CkId<CkTypeId>("Sample.Accounts-1.0.0/Account-1"),
+            new CkMethodDto { MethodId = "ChangePassword-1", Kind = CkMethodKindDto.Instance, Errors = [new CkMethodErrorDto { Code = "DECLARED_CODE" }] });
+        var logs = new List<string>();
+        var logger = LoggerFactory.Create(b => b.SetMinimumLevel(LogLevel.Trace).AddProvider(new ListLoggerProvider(logs)))
+            .CreateLogger("test");
 
-        var error = CkMethodGraphQlError.Create(response.Error!);
+        var outcome = CkMethodResponseMapper.Map(response, method, A.Fake<ICkCacheService>(), Tenant, logger);
 
-        AdversarialCaseLog.Record("C13", "responder answers with code METHOD_BOGUS_CODE - GAP F-3",
-            "CkMethodGatewayAdversarialTests." + nameof(C13_Gap_AResponderCode_WithTheReservedPrefixButNoPlatformCode_IsForwardedToTheClient),
-            error.Code ?? "-", "none (GraphQL error only)");
-        Assert.Equal("METHOD_BOGUS_CODE", error.Code);
+        AdversarialCaseLog.Record("C13", $"responder answers with code {code}",
+            "CkMethodGatewayAdversarialTests." + nameof(C13_AResponderCode_ThatIsNeitherPlatformNorDeclared_IsMappedToHandlerFailed),
+            outcome.Error!.Code ?? "-", "none (GraphQL error only)");
+        Assert.Equal(CkMethodErrorCodes.MethodHandlerFailed, outcome.Error.Code);
+        Assert.Equal(invocation.ToString("D"),
+            ((IDictionary<string, object?>)outcome.Error.Extensions!["parameters"]!)[CkMethodErrorParameters.CorrelationId]);
+        Assert.DoesNotContain(code, JsonSerializer.Serialize(outcome.Error.Extensions));
+        Assert.Contains(logs, l => l.Contains(code));
     }
 
-    [Fact(Skip = "AB#6915 finding F-3: the GraphQL error forwards any code of the responder; enable when unknown METHOD_ codes map to METHOD_HANDLER_FAILED")]
-    public void C13_AResponderCode_WithTheReservedPrefixButNoPlatformCode_IsMappedToHandlerFailed()
+    [Theory]
+    [InlineData(CkMethodErrorCodes.MethodForbidden)]
+    [InlineData(CkMethodErrorCodes.MethodParametersTooLarge)]
+    [InlineData("DECLARED_CODE")]
+    public void C13_CatalogCodes_AndDeclaredCodes_PassUnchanged(string code)
     {
-        var response = CkMethodResponse.Failed(Guid.NewGuid(), "rogue",
-            CkMethodError.Create("METHOD_BOGUS_CODE", (CkMethodErrorParameters.MethodId, MethodId)));
+        var response = CkMethodResponse.Failed(Guid.NewGuid(), "h1",
+            CkMethodError.Create(code, (CkMethodErrorParameters.MethodId, MethodId)));
+        var method = new CkMethodGraph(new CkId<CkTypeId>("Sample.Accounts-1.0.0/Account-1"),
+            new CkMethodDto { MethodId = "ChangePassword-1", Kind = CkMethodKindDto.Instance, Errors = [new CkMethodErrorDto { Code = "DECLARED_CODE" }] });
 
-        var error = CkMethodGraphQlError.Create(response.Error!);
+        var outcome = CkMethodResponseMapper.Map(response, method, A.Fake<ICkCacheService>(), Tenant);
 
-        Assert.Equal(CkMethodErrorCodes.MethodHandlerFailed, error.Code);
+        Assert.Equal(code, outcome.Error!.Code);
     }
 
     [Fact]

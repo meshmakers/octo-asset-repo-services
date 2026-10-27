@@ -205,7 +205,11 @@ public class CkMethodResponseMapperTests
 
     private static CkMethodGraph Method(CkMethodResultDto? result = null) =>
         new(new CkId<CkTypeId>("Sample-1.0.0/Thing-1"),
-            new CkMethodDto { MethodId = "Do-1", Kind = CkMethodKindDto.Instance, Result = result });
+            new CkMethodDto
+            {
+                MethodId = "Do-1", Kind = CkMethodKindDto.Instance, Result = result,
+                Errors = [new CkMethodErrorDto { Code = "PASSWORD_POLICY_VIOLATION" }]
+            });
 
     private static CkTypeAttributeGraph Attribute(string name, AttributeValueTypesDto type, CkId<CkEnumId>? enumId = null) =>
         new(new CkId<CkAttributeId>($"Sample-1.0.0/{name}-1"), name, null, type, null, enumId, null, null, null, true, null);

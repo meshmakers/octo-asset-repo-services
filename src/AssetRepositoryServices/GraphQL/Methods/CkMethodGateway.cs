@@ -4,6 +4,7 @@ using Meshmakers.Octo.Services.Contracts.DistributionEventHub.Methods;
 using Meshmakers.Octo.Services.Methods;
 using Meshmakers.Octo.Services.Methods.Authorization;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Methods;
 
@@ -68,7 +69,8 @@ internal sealed class CkMethodGateway(
     ICkMethodAuthorizationDefinitionSource definitionSource,
     ICkMethodTimeoutResolver timeoutResolver,
     ICkMethodDispatcher dispatcher,
-    ILogger<CkMethodGateway> logger) : ICkMethodGateway
+    ILogger<CkMethodGateway> logger,
+    IOptions<CkMethodLimitsOptions>? limits = null) : ICkMethodGateway
 {
     public async Task<CkMethodResponse> InvokeAsync(CkMethodGatewayCall call, CkMethodTargetAccessCheck targetAccess,
         CancellationToken cancellationToken = default)
@@ -91,6 +93,17 @@ internal sealed class CkMethodGateway(
                 "CK method {MethodId} invocation {InvocationId} refused at the gateway in tenant {TenantId}: {Denial}",
                 call.MethodId, invocationId, call.TenantId, decision.Denial);
             return CkMethodResponse.Failed(invocationId, string.Empty, CkMethodAuthorizationErrors.Forbidden(call.MethodId));
+        }
+
+        // 1b. the size of the parameters (AB#7665, F-2): after authorization (a caller who may not call the method learns
+        // nothing about it), before the target is loaded and long before the parameters are parsed or validated.
+        if (CkMethodParameterLimit.Exceeds(call.ParametersJson, limits?.Value, out var actualBytes))
+        {
+            logger.LogWarning(
+                "CK method {MethodId} invocation {InvocationId} in tenant {TenantId}: parameters of {ActualBytes} bytes exceed the limit, refused",
+                call.MethodId, invocationId, call.TenantId, actualBytes);
+            return CkMethodResponse.Failed(invocationId, string.Empty,
+                CkMethodParameterLimit.TooLarge(call.MethodId, limits?.Value, actualBytes));
         }
 
         // 2. load the target with the caller's rights and check the data permission (AB#7037). The data action is Write

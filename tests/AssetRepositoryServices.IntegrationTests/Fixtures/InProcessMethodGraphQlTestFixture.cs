@@ -88,6 +88,13 @@ public class InProcessMethodGraphQlTestFixture : GraphQlTestFixture
             var caller = new ClaimsPrincipal(new ClaimsIdentity(
                 [new Claim("sub", "sub-1"), new Claim("scope", "octo_api"), new Claim("role", "AdminPanelManagement")],
                 "test"));
+            // AB#7664: the host refuses a registration without a definition; the harness method is not in the CK model, so
+            // it gets a bare one (no authorization: default-deny admits the administrator role used here).
+            foreach (var registration in context.RequestServices!.GetRequiredService<CkInProcessMethodRegistrations>().Handlers.Values)
+            {
+                registration.Definition ??= new Meshmakers.Octo.ConstructionKit.Contracts.DataTransferObjects.CkMethodDto { MethodId = "Touch-1" };
+            }
+
             using var principalScope = CkMethodPrincipalScope.Begin(CkMethodPrincipal.FromClaimsPrincipal(caller));
             Response = await context.RequestServices!.GetRequiredService<ICkInProcessMethodTransport>()
                 .InvokeAsync(new CkMethodRequest("meshtest")
