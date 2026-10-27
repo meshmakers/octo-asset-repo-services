@@ -1,7 +1,7 @@
 using System.Security.Claims;
-using Duende.IdentityModel;
 using Meshmakers.Octo.Communication.Contracts;
 using Meshmakers.Octo.Services.Infrastructure;
+using Meshmakers.Octo.Services.Infrastructure.Authorization;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
@@ -19,9 +19,8 @@ internal static class AssetRepositoryAuthorizationPolicies
     /// </summary>
     /// <remarks>
     ///     <see cref="AssetRepositoryServiceConstants.TenantAdministrationPolicy" /> (AB#4497) is the full-access scope plus
-    ///     the tenant role <c>TenantManagement</c>. The role is one <c>role</c> claim per role name in the token; the JWT
-    ///     bearer handler may rename it to <see cref="ClaimTypes.Role" />, so both spellings are probed (platform convention,
-    ///     see the bot and identity services). A token without the role gets <c>403</c>.
+    ///     the tenant role <c>TenantManagement</c>, defined centrally by <c>AddTenantRolePolicy</c> (octo-common-services,
+    ///     AB#7319: both <c>role</c> claim spellings are probed). A token without the role gets <c>403</c> with a reason.
     /// </remarks>
     public static void AddAssetRepositoryPolicies(this AuthorizationOptions options)
     {
@@ -65,13 +64,10 @@ internal static class AssetRepositoryAuthorizationPolicies
                     CommonConstants.OctoApiReadOnly);
             });
 
-        options.AddPolicy(AssetRepositoryServiceConstants.TenantAdministrationPolicy,
-            authorizationPolicyBuilder =>
-            {
-                authorizationPolicyBuilder.RequireClaim(InfrastructureCommon.ClaimScope,
-                        CommonConstants.OctoApiFullAccess)
-                    .RequireAssertion(context => HasTenantRole(context.User, CommonConstants.TenantManagementRole));
-            });
+        // The central scope-plus-role definition of octo-common-services (AB#7319); the host registers its handlers
+        // with AddOctoTenantRoleAuthorization().
+        options.AddTenantRolePolicy(AssetRepositoryServiceConstants.TenantAdministrationPolicy,
+            CommonConstants.TenantManagementRole);
 
         options.AddPolicy(AssetRepositoryServiceConstants.DataModelManagementPolicy,
             authorizationPolicyBuilder =>
@@ -80,17 +76,5 @@ internal static class AssetRepositoryAuthorizationPolicies
                     CommonConstants.OctoApiFullAccess,
                     CommonConstants.OctoApiDataModelManagement);
             });
-    }
-
-    /// <summary>
-    ///     Whether the principal carries the tenant role under the identity's role claim type, the raw JWT
-    ///     <c>role</c> claim or the inbound-mapped <see cref="ClaimTypes.Role" /> claim.
-    /// </summary>
-    internal static bool HasTenantRole(ClaimsPrincipal principal, string roleName)
-    {
-        return principal.IsInRole(roleName) ||
-               principal.Claims.Any(c =>
-                   (c.Type == JwtClaimTypes.Role || c.Type == ClaimTypes.Role) &&
-                   string.Equals(c.Value, roleName, StringComparison.Ordinal));
     }
 }
