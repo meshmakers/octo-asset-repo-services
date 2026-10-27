@@ -50,7 +50,7 @@ public class StreamDataController : ControllerBase
     /// Enables stream data for a given tenant
     /// </summary>
     [HttpPost("enable")]
-    [Microsoft.AspNetCore.Authorization.Authorize(AssetRepositoryServiceConstants.TenantAssetApiReadWritePolicy)]
+    [Microsoft.AspNetCore.Authorization.Authorize(AssetRepositoryServiceConstants.TenantAdministrationPolicy)]
     public async Task<IActionResult> Enable([Required] string tenantId)
     {
         try
@@ -97,7 +97,7 @@ public class StreamDataController : ControllerBase
     ///     which also drops the CrateDB tables of its archives.
     /// </remarks>
     [HttpPost("disable")]
-    [Microsoft.AspNetCore.Authorization.Authorize(AssetRepositoryServiceConstants.TenantAssetApiReadWritePolicy)]
+    [Microsoft.AspNetCore.Authorization.Authorize(AssetRepositoryServiceConstants.TenantAdministrationPolicy)]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(typeof(string), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(OperationFailedErrorDto), StatusCodes.Status409Conflict)]

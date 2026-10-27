@@ -8,6 +8,7 @@ using Meshmakers.Octo.Backend.AssetRepositoryServices.Configuration;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.TenantApi.v1.Controllers;
 using Meshmakers.Octo.Communication.Contracts;
 using Meshmakers.Octo.Services.Infrastructure;
+using Meshmakers.Octo.Services.Infrastructure.Authorization;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
@@ -58,6 +59,7 @@ public class TenantAdministrationAuthorizationTests
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddAuthorization(o => o.AddAssetRepositoryPolicies());
+        services.AddOctoTenantRoleAuthorization();
         await using var provider = services.BuildServiceProvider();
         var result = await provider.GetRequiredService<IAuthorizationService>().AuthorizeAsync(user, policy);
         return result.Succeeded;
@@ -129,6 +131,7 @@ public class TenantAdministrationAuthorizationTests
         var code = Regex.Replace(source, @"//.*?$", string.Empty, RegexOptions.Multiline);
 
         code.Should().Contain("options.AddAssetRepositoryPolicies()");
+        code.Should().Contain("AddOctoTenantRoleAuthorization()");
         code.Should().Contain("AssetRepositoryServiceConstants.TenantAdministrationPolicy");
     }
 

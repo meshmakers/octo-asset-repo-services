@@ -29,6 +29,7 @@ using Meshmakers.Octo.Runtime.Engine.Configuration.DependencyInjection;
 using Meshmakers.Octo.Services.Contracts.DistributionEventHub.Commands;
 using Meshmakers.Octo.Services.Contracts.DistributionEventHub.Messages;
 using Meshmakers.Octo.Services.Infrastructure;
+using Meshmakers.Octo.Services.Infrastructure.Authorization;
 using Meshmakers.Octo.Services.Infrastructure.Migrations;
 using Meshmakers.Octo.ConstructionKit.Models.System.Files.Generated.System.Files.v1;
 using Microsoft.AspNetCore.Authentication;
@@ -151,6 +152,8 @@ public static class RuntimeEngineBuilderExtensions
 
 
         builder.Services.AddAuthorization(options => options.AddAssetRepositoryPolicies());
+        // AB#7319: handler and 403 reason writer of the central tenant role policies (TenantAdministrationPolicy).
+        builder.Services.AddOctoTenantRoleAuthorization();
 
         // AB#6385: REST answers a blueprint-lock refusal with 403 problem details (code BLUEPRINT_LOCKED).
         builder.Services.AddMvcCore(options => options.Filters.Add<BlueprintLockedExceptionFilter>())
