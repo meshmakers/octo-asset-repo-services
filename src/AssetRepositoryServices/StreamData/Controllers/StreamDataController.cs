@@ -649,14 +649,26 @@ public class StreamDataController : ControllerBase
     }
 
     /// <summary>
-    /// The identity a manual row records as its writer (AB#7593): the token's subject, or the client id of a
-    /// client-credentials token — the same identity <c>RtCreatedBy</c> is stamped with. <c>null</c> when the
-    /// token names neither.
+    /// The writer a manual row records (AB#7593, AB#7647), taken from the verified token, never from the body.
+    /// For a user token the readable name: <c>preferred_username</c>, else <c>name</c>, else the subject id. A
+    /// client-credentials token (no subject) records its client id. <c>null</c> when the token names neither.
     /// </summary>
     internal static string? CallerIdentity(System.Security.Claims.ClaimsPrincipal? user)
-        => user?.FindFirst("sub")?.Value
-           ?? user?.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
-           ?? user?.FindFirst("client_id")?.Value;
+    {
+        var subject = NonEmpty(user?.FindFirst("sub")?.Value)
+                      ?? NonEmpty(user?.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value);
+        if (subject is null)
+        {
+            return NonEmpty(user?.FindFirst("client_id")?.Value);
+        }
+
+        return NonEmpty(user?.FindFirst("preferred_username")?.Value)
+               ?? NonEmpty(user?.FindFirst("name")?.Value)
+               ?? NonEmpty(user?.FindFirst(System.Security.Claims.ClaimTypes.Name)?.Value)
+               ?? subject;
+
+        static string? NonEmpty(string? value) => string.IsNullOrWhiteSpace(value) ? null : value;
+    }
 
     /// <summary>
     /// The distinct <c>ckTypeId</c> values in an insert batch that are not the archive's target,

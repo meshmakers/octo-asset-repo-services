@@ -176,6 +176,41 @@ public class StreamDataControllerInsertTimeRangeTests
     }
 
     [Fact]
+    public async Task InsertTimeRange_ManualOrigin_RecordsTheReadableUserNameFromTheToken()
+    {
+        // AB#7647: the writer is the readable name of the verified user, not the opaque subject id.
+        SignInAs(new System.Security.Claims.Claim("sub", "8a4c1f00-0000-4000-8000-000000000001"),
+            new System.Security.Claims.Claim("preferred_username", "jane.doe"),
+            new System.Security.Claims.Claim("name", "Jane Doe"));
+
+        await _controller.InsertTimeRange(TenantId, _archiveRtId.ToString(), Bind(OnePoint(", \"origin\": \"manual\"")));
+
+        CapturedInsert().Points.Single().ManualWrittenBy.Should().Be("jane.doe");
+    }
+
+    [Fact]
+    public async Task InsertTimeRange_ManualOrigin_WithoutAPreferredUsername_RecordsTheName()
+    {
+        SignInAs(new System.Security.Claims.Claim("sub", "8a4c1f00-0000-4000-8000-000000000001"),
+            new System.Security.Claims.Claim("name", "Jane Doe"));
+
+        await _controller.InsertTimeRange(TenantId, _archiveRtId.ToString(), Bind(OnePoint(", \"origin\": \"manual\"")));
+
+        CapturedInsert().Points.Single().ManualWrittenBy.Should().Be("Jane Doe");
+    }
+
+    [Fact]
+    public async Task InsertTimeRange_ManualOrigin_ANameInTheBodyIsNeverTheWriter()
+    {
+        SignInAs(new System.Security.Claims.Claim("sub", "user-1"), new System.Security.Claims.Claim("preferred_username", "jane.doe"));
+
+        await _controller.InsertTimeRange(TenantId, _archiveRtId.ToString(),
+            Bind(OnePoint(", \"origin\": \"manual\", \"manualWrittenBy\": \"mallory\", \"writer\": \"mallory\"")));
+
+        CapturedInsert().Points.Single().ManualWrittenBy.Should().Be("jane.doe");
+    }
+
+    [Fact]
     public async Task InsertTimeRange_ManualOriginWithoutReason_IsAccepted()
     {
         SignInAs(new System.Security.Claims.Claim("sub", "user-1"));
