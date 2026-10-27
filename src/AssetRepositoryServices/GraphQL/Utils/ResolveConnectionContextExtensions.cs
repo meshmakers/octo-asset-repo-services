@@ -48,7 +48,8 @@ internal static class ResolveConnectionContextExtensions
     /// </summary>
     internal static bool IsFieldSelected(this IResolveFieldContext context, string fieldName)
     {
-        return context.SubFields?.ContainsKey(fieldName) == true;
+        // The keys of SubFields are response keys (aliases); the field name is on the AST node.
+        return context.SubFields?.Values.Any(f => f.Field.Name.Value == fieldName) == true;
     }
 
     internal static IOctoSessionAccessor GetSessionAccessor(this IResolveFieldContext context)

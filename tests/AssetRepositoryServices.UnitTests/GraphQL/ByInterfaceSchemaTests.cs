@@ -37,10 +37,12 @@ public class ByInterfaceSchemaTests
         var context = A.Fake<IResolveFieldContext>();
         A.CallTo(() => context.SubFields).Returns(new Dictionary<string, (GraphQLField Field, FieldType FieldType)>
         {
-            ["items"] = (null!, null!)
+            ["items"] = (new GraphQLField(new GraphQLName("items")), null!),
+            ["howMany"] = (new GraphQLField(new GraphQLName("totalCount")), null!)
         });
 
         context.IsFieldSelected("items").Should().BeTrue();
-        context.IsFieldSelected("totalCount").Should().BeFalse("the count is only issued when selected");
+        context.IsFieldSelected("totalCount").Should().BeTrue("an alias does not hide the selection");
+        context.IsFieldSelected("pageInfo").Should().BeFalse("the count is only issued when selected");
     }
 }

@@ -115,6 +115,15 @@ public class ByInterfaceQueryTests
     }
 
     [Fact]
+    public async Task TotalCount_UnderAnAlias_IsStillCounted()
+    {
+        var (json, result) = await RunAsync($"ckInterfaceId: \"{RankedId}\", take: 1", "howMany: totalCount");
+
+        result.Errors.Should().BeNullOrEmpty(json.ToString());
+        json.SelectToken("data.runtime.byInterface.howMany")!.Value<int>().Should().Be(9);
+    }
+
+    [Fact]
     public async Task InterfaceWithoutImplementers_ReturnsAnEmptyConnectionWithCountZero()
     {
         var (json, result) = await RunAsync($"ckInterfaceId: \"{Prefix}/Labeled-2\", take: 10", "totalCount items { __typename }");
