@@ -3,7 +3,6 @@ using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.RequestHandling;
 using Meshmakers.Octo.Runtime.Contracts;
 using Meshmakers.Octo.Services.Contracts.DistributionEventHub.Methods;
 using Meshmakers.Octo.Services.Methods;
-using Meshmakers.Octo.Services.Methods.Authorization;
 using Meshmakers.Octo.Services.Methods.Handlers;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -79,31 +78,6 @@ public class InProcessSessionIsolationTests
         public Task CommitAsync() => Task.CompletedTask;
     }
 
-    /// <summary>
-    ///     AB#7664: the host refuses a registration without a definition and a call without a caller. The harness method is
-    ///     not in a CK model: it gets a bare definition (default-deny admits the administrator) and an administrator.
-    /// </summary>
-    private sealed class AdministratorProvider : ICkMethodPrincipalProvider
-    {
-        public CkMethodPrincipal? GetPrincipal(CkMethodInvocationContext context) => new("0123456789abcdef01234567",
-            [CkMethodAuthorizationOptions.DefaultAdministratorRoles.First()], [CkMethodAuthorizationOptions.ApiScope]);
-    }
-
-    private static ServiceProvider Finish(IServiceCollection services)
-    {
-        services.AddSingleton<ICkMethodPrincipalProvider, AdministratorProvider>();
-        var provider = services.BuildServiceProvider();
-        foreach (var registration in provider.GetRequiredService<CkInProcessMethodRegistrations>().Handlers.Values)
-        {
-            registration.Definition = new Meshmakers.Octo.ConstructionKit.Contracts.DataTransferObjects.CkMethodDto
-            {
-                MethodId = "Touch-1"
-            };
-        }
-
-        return provider;
-    }
-
     private static (ServiceProvider Provider, Observation Observation) Build(IOctoSessionAccessor accessor)
     {
         var observation = new Observation();
@@ -121,7 +95,7 @@ public class InProcessSessionIsolationTests
         services.AddScoped<SessionBoundRepository>();
         services.AddCkInProcessMethodHandlers(m => m.Handle<TouchHandler>(MethodId));
         services.AddOctoSessionAmbientStateProbe();
-        return (Finish(services), observation);
+        return (services.BuildServiceProvider(), observation);
     }
 
     private static CkMethodRequest Request(string? note = null) => new("meshtest")
@@ -228,7 +202,7 @@ public class InProcessSessionIsolationTests
         services.AddScoped<TouchHandler>();
         services.AddCkInProcessMethodHandlers(m => m.Handle<TouchHandler>(MethodId));
         services.AddOctoSessionAmbientStateProbe();
-        using var provider = Finish(services);
+        using var provider = services.BuildServiceProvider();
 
         var response = await provider.GetRequiredService<ICkInProcessMethodTransport>()
             .InvokeAsync(Request(), TestContext.Current.CancellationToken);

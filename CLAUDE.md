@@ -831,7 +831,7 @@ test assembly. Tokens are generated per run (throw-away RSA key, fake identity s
 
 Rerun: `dotnet test tests/AssetRepositoryServices.UnitTests -c DebugL --filter "FullyQualifiedName~Adversarial"` and
 `dotnet test tests/AssetRepositoryServices.IntegrationTests -c DebugL --filter "FullyQualifiedName~MethodAdversarialGraphQlTests"`
-(Docker needed for the second). A closed gap turns its `_Gap_`/`_Limitation_` pin red; enable the skipped test next to it. Unit tests that start an in-process handler directly give its registration a definition (the host refuses one without, AB#7664): `CkInProcessMethodRegistrations` is visible to the test assemblies of this repo.
+(Docker needed for the second). A closed gap turns its `_Gap_`/`_Limitation_` pin red; enable the skipped test next to it.
 
 ### Generic create refused for types whose method replaces it (AB#7025, F3.7)
 
