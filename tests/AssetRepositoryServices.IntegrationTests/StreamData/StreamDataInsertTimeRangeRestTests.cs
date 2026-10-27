@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using System.Text.Json;
 using FakeItEasy;
 using FluentAssertions;
@@ -246,6 +247,54 @@ public class StreamDataInsertTimeRangeRestTests(StreamDataFixture fixture, ITest
         }
     }
 
+    /// <summary>
+    /// A manual correction is visible to the very next read: the write refreshes the table instead of leaving
+    /// it to CrateDB's asynchronous refresh, so a person who saves and reloads does not see the old value.
+    /// The read below deliberately issues no REFRESH of its own.
+    /// </summary>
+    [Fact]
+    public async Task InsertTimeRange_AManualCorrection_ReadsBackImmediately()
+    {
+        fixture.OutputHelper = output;
+        const string childTenantId = "restmanualread";
+        await CreateChildAsync(childTenantId);
+
+        try
+        {
+            var child = await PrepareChildAsync(childTenantId);
+            var archiveRtId = await CreateAndActivateTimeRangeArchiveAsync(child);
+            var rtId = OctoObjectId.GenerateNewId();
+            var controller = ControllerFor(childTenantId, ("sub", "8a4c1f00-0000-4000-8000-000000000001"));
+
+            foreach (var reading in new[] { 100, 200 })
+            {
+                var body = $$"""
+                    [{
+                      "rtId": "{{rtId}}",
+                      "ckTypeId": "{{fixture.TestCkTypeId}}",
+                      "from": "{{WindowStart:O}}",
+                      "to": "{{WindowEnd:O}}",
+                      "attributes": { "MeterReading": {{reading}} },
+                      "origin": "manual",
+                      "reason": "corrected"
+                    }]
+                    """;
+                var points = JsonSerializer.Deserialize<IReadOnlyList<InsertTimeRangePointRestDto>>(body, MvcBodyOptions)
+                    ?? throw new InvalidOperationException("The body deserialized to null.");
+
+                var result = await controller.InsertTimeRange(childTenantId, archiveRtId.ToString(), points);
+
+                result.Should().BeOfType<OkObjectResult>();
+                (await ReadMeterReadingWithoutRefreshAsync(childTenantId, archiveRtId, rtId))
+                    .Should().Be(reading, "the correction must be visible to the next read, without waiting for CrateDB");
+            }
+        }
+        finally
+        {
+            await DropChildIfExistingAsync(childTenantId);
+        }
+    }
+
     // ── helpers ───────────────────────────────────────────────────────────────────────────────
 
     /// <summary>Enables stream data on the child and imports the test CK model.</summary>
@@ -330,6 +379,32 @@ public class StreamDataInsertTimeRangeRestTests(StreamDataFixture fixture, ITest
         }
 
         await using var select = new NpgsqlCommand($"SELECT \"operatingstatus\" FROM {table} WHERE \"rtid\" = @rtid", connection);
+        select.Parameters.AddWithValue("rtid", rtId.ToString());
+        var value = await select.ExecuteScalarAsync();
+        return value is null or DBNull ? null : Convert.ToInt32(value);
+    }
+
+    /// <summary>A controller whose caller carries the given token claims.</summary>
+    private StreamDataController ControllerFor(string tenantId, params (string Type, string Value)[] claims)
+    {
+        var controller = new StreamDataController(
+            A.Fake<ILogger<StreamDataController>>(), fixture.GetSystemContext(), A.Fake<IHostApplicationLifetime>());
+        var identity = new ClaimsIdentity(
+            claims.Select(c => new Claim(c.Type, c.Value)), "Bearer");
+        controller.ControllerContext = new ControllerContext
+        {
+            HttpContext = new Microsoft.AspNetCore.Http.DefaultHttpContext { User = new ClaimsPrincipal(identity) }
+        };
+        return controller;
+    }
+
+    /// <summary>The stored MeterReading of the window of <paramref name="rtId" />, read WITHOUT a table refresh.</summary>
+    private async Task<int?> ReadMeterReadingWithoutRefreshAsync(string schema, OctoObjectId archiveRtId, OctoObjectId rtId)
+    {
+        var table = $"\"{schema}\".\"archive_{archiveRtId}\"";
+        await using var connection = new NpgsqlConnection(fixture.CrateDbConnectionString);
+        await connection.OpenAsync();
+        await using var select = new NpgsqlCommand($"SELECT \"meterreading\" FROM {table} WHERE \"rtid\" = @rtid", connection);
         select.Parameters.AddWithValue("rtid", rtId.ToString());
         var value = await select.ExecuteScalarAsync();
         return value is null or DBNull ? null : Convert.ToInt32(value);
