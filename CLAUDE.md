@@ -813,6 +813,26 @@ session flow, fail closed, registration once) and `IntegrationTests/GraphQL/Muta
 the real `OctoSessionListener` transaction; harness `InProcessMethodGraphQlTestFixture` starts the method from a document listener registered after
 `OctoSessionListener`, i.e. inside the session and the transaction of the mutation).
 
+### Adversarial suite for the method path (AB#6915, F3.4b exit)
+
+Attack tests for the asset-repo half of the method path; the bus half, the case table, the findings (F-1 .. F-3) and the accepted
+limitations are in `octo-common-services/docs/method-adversarial-suite.md`. Each run writes `adversarial-results.md` next to the
+test assembly. Tokens are generated per run (throw-away RSA key, fake identity service); no shared stack.
+
+- `tests/AssetRepositoryServices.UnitTests/Adversarial/BearerTokenAttackTests` - the **real** `ConfigureJwtBearerOptions`, the real
+  tenant gate (`Enforce`) and the real method authorization evaluator behind a minimal endpoint: other tenant, expired, wrong
+  signature, `alg: none`, key confusion, other issuer, no `octo_api`, missing role. Pins two limitations: another audience is accepted
+  (L-2) and the `LogOnly` code default lets a foreign-tenant token through (L-3).
+- `.../Adversarial/CkMethodGatewayAdversarialTests` - the real gateway with a counting target access: unauthenticated, allowSelf with
+  another id (also upper case), default-deny, identical refusals, malformed parameters, canary over logs and errors; pins the missing
+  parameter size limit (F-2) and the forwarded responder code (F-3).
+- `tests/AssetRepositoryServices.IntegrationTests/GraphQL/CkV2/MethodAdversarialGraphQlTests` - real schema and MongoDB: a `caller`
+  member in the mutation input, a client-chosen deadline, no user.
+
+Rerun: `dotnet test tests/AssetRepositoryServices.UnitTests -c DebugL --filter "FullyQualifiedName~Adversarial"` and
+`dotnet test tests/AssetRepositoryServices.IntegrationTests -c DebugL --filter "FullyQualifiedName~MethodAdversarialGraphQlTests"`
+(Docker needed for the second). A closed gap turns its `_Gap_`/`_Limitation_` pin red; enable the skipped test next to it.
+
 ### Generic create refused for types whose method replaces it (AB#7025, F3.7)
 
 A static CK method with `replacesGenericCreate: true` (AB#7024; engine/engine-mongodb >= 3.5.34) means entities of its declaring type **and of every
