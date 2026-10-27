@@ -3,6 +3,7 @@ using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.RequestHandling;
 using Meshmakers.Octo.Runtime.Contracts;
 using Meshmakers.Octo.Services.Contracts.DistributionEventHub.Methods;
 using Meshmakers.Octo.Services.Methods;
+using Meshmakers.Octo.Services.Methods.Authorization;
 using Meshmakers.Octo.Services.Methods.Handlers;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -93,9 +94,12 @@ public class InProcessSessionIsolationTests
                 sp.GetRequiredService<SessionBoundRepository>(), sp.GetRequiredService<Observation>());
         });
         services.AddScoped<SessionBoundRepository>();
+        services.AddFakeMethodDefinition(MethodId);
         services.AddCkInProcessMethodHandlers(m => m.Handle<TouchHandler>(MethodId));
         services.AddOctoSessionAmbientStateProbe();
-        return (services.BuildServiceProvider(), observation);
+        var provider = services.BuildServiceProvider();
+        provider.InitializeMethodsAsync().GetAwaiter().GetResult();
+        return (provider, observation);
     }
 
     private static CkMethodRequest Request(string? note = null) => new("meshtest")
@@ -123,7 +127,7 @@ public class InProcessSessionIsolationTests
         Assert.True(accessor.HasSession);
 
         var response = await provider.GetRequiredService<ICkInProcessMethodTransport>()
-            .InvokeAsync(Request(), TestContext.Current.CancellationToken);
+            .InvokeAsAuthorizedCallerAsync(Request(), TestContext.Current.CancellationToken);
 
         Assert.True(response.Success);
         Assert.Equal(1, observation.BodyRan);
@@ -146,7 +150,7 @@ public class InProcessSessionIsolationTests
         accessor.Session = session;
 
         var response = await provider.GetRequiredService<ICkInProcessMethodTransport>()
-            .InvokeAsync(Request("end-session"), TestContext.Current.CancellationToken);
+            .InvokeAsAuthorizedCallerAsync(Request("end-session"), TestContext.Current.CancellationToken);
 
         Assert.True(response.Success);
         Assert.Equal(1, observation.BodyRan);
@@ -166,7 +170,7 @@ public class InProcessSessionIsolationTests
         var requestRepository = requestScope.ServiceProvider.GetRequiredService<SessionBoundRepository>();
 
         var response = await provider.GetRequiredService<ICkInProcessMethodTransport>()
-            .InvokeAsync(Request(), TestContext.Current.CancellationToken);
+            .InvokeAsAuthorizedCallerAsync(Request(), TestContext.Current.CancellationToken);
 
         Assert.True(response.Success);
         Assert.True(requestRepository.CreatedWithSession);
@@ -182,7 +186,7 @@ public class InProcessSessionIsolationTests
         var request = Request();
 
         var response = await provider.GetRequiredService<ICkInProcessMethodTransport>()
-            .InvokeAsync(request, TestContext.Current.CancellationToken);
+            .InvokeAsAuthorizedCallerAsync(request, TestContext.Current.CancellationToken);
 
         Assert.False(response.Success);
         Assert.Equal(CkMethodErrorCodes.MethodHandlerFailed, response.Error!.Code);
@@ -200,12 +204,14 @@ public class InProcessSessionIsolationTests
         services.AddSingleton(new Observation());
         services.AddScoped<SessionBoundRepository>();
         services.AddScoped<TouchHandler>();
+        services.AddFakeMethodDefinition(MethodId);
         services.AddCkInProcessMethodHandlers(m => m.Handle<TouchHandler>(MethodId));
         services.AddOctoSessionAmbientStateProbe();
         using var provider = services.BuildServiceProvider();
+        await provider.InitializeMethodsAsync();
 
         var response = await provider.GetRequiredService<ICkInProcessMethodTransport>()
-            .InvokeAsync(Request(), TestContext.Current.CancellationToken);
+            .InvokeAsAuthorizedCallerAsync(Request(), TestContext.Current.CancellationToken);
 
         Assert.False(response.Success);
         Assert.Equal(CkMethodErrorCodes.MethodHandlerFailed, response.Error!.Code);
