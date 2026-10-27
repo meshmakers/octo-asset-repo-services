@@ -301,6 +301,10 @@ Time-series data support (`StreamData/`):
     the platform time is set by the repository. 400 for an unknown origin (names the valid values), a reason without
     `manual`, and a manual write whose token names no identity; nothing of the batch is written. Tests:
     `StreamDataControllerInsertTimeRangeTests`. SDK: `IStreamDataServicesClient.InsertTimeRangeAsync` (`TimeRangePointDto`).
+    **Write result (AB#7598):** answers **200** with `StreamDataWriteResultRestDto` (`stored`, `skipped`,
+    `skippedByReason` — `LowerPrecedence` / `ManualValueProtected` / `CkTypeMismatch` —, `skippedRows` up to 1,000);
+    an empty batch stays 204. A manual row the archive did not store (`ManualStreamDataNotAppliedException`) answers
+    **409** `{ message, result }` — never success. Callers that ignore the body behave as before.
 - **TenantManager** - Manages stream data tenant contexts
 - **StreamDataDatabaseManager** - Database operations for time-series data
 - **StreamDataTenantContext** - Per-tenant stream data context

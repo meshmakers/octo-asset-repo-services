@@ -66,7 +66,11 @@ public class StreamDataInsertTimeRangeRestTests(StreamDataFixture fixture, ITest
 
             var result = await controller.InsertTimeRange(childTenantId, archiveRtId.ToString(), points);
 
-            result.Should().BeOfType<NoContentResult>();
+            // AB#7598: the answer says what was stored.
+            var writeResult = result.Should().BeOfType<OkObjectResult>().Subject.Value
+                .Should().BeOfType<StreamDataWriteResultRestDto>().Subject;
+            writeResult.Stored.Should().Be(1);
+            writeResult.Skipped.Should().Be(0);
 
             // Storage typing: what CrateDB holds per column, read through the driver's native mapping.
             var stored = await ReadStoredRowAsync(childTenantId, archiveRtId, rtId);

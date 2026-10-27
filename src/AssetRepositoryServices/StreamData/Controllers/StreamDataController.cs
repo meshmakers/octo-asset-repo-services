@@ -520,9 +520,12 @@ public class StreamDataController : ControllerBase
     /// <c>TimeRangeArchive</c>. Each row covers a half-open <c>[from, to)</c> window;
     /// re-deliveries upsert via the natural key and set the row's <c>was_updated</c> flag to
     /// true. Time-range concept §3. The archive must be in <c>Activated</c> status; non-time-
-    /// range archives reject the call with HTTP 400.
+    /// range archives reject the call with HTTP 400. Answers 200 with the write result (rows stored, rows not
+    /// stored with the reason, AB#7598) — an empty batch still answers 204 — and 409 with the result when a
+    /// manual row could not be stored.
     /// </summary>
     [HttpPost("archives/{archiveRtId}/insertTimeRange")]
+    [ProducesResponseType(typeof(StreamDataWriteResultRestDto), StatusCodes.Status200OK)]
     [Microsoft.AspNetCore.Authorization.Authorize(AssetRepositoryServiceConstants.TenantAssetApiReadWritePolicy)]
     public async Task<IActionResult> InsertTimeRange(
         [Required] string tenantId,
@@ -593,8 +596,17 @@ public class StreamDataController : ControllerBase
                 ManualReason = origins[i] == ArchiveRowOrigin.Manual ? p.Reason : null,
             }).ToList();
 
-            await repository.InsertTimeRangeAsync(new OctoObjectId(archiveRtId), domainPoints);
-            return NoContent();
+            // AB#7598: the caller learns how many rows were stored and why the others were not.
+            var result = await repository.InsertTimeRangeAsync(new OctoObjectId(archiveRtId), domainPoints);
+            return Ok(StreamDataWriteResultRestDto.From(result));
+        }
+        catch (ManualStreamDataNotAppliedException e)
+        {
+            // A manual value that could not be stored is never a success; the body says what was stored.
+            _logger.LogWarning(
+                "InsertTimeRange for tenant '{TenantId}', archive '{ArchiveRtId}': {Skipped} manual row(s) not stored.",
+                tenantId, archiveRtId, e.Result.Skipped.Count(s => s.Origin == ArchiveRowOrigin.Manual));
+            return Conflict(new { message = e.Message, result = StreamDataWriteResultRestDto.From(e.Result) });
         }
         catch (ConfigurationException e)
         {

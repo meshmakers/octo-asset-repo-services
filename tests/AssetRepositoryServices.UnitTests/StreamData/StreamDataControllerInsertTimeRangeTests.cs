@@ -69,7 +69,7 @@ public class StreamDataControllerInsertTimeRangeTests
 
         var result = await _controller.InsertTimeRange(TenantId, _archiveRtId.ToString(), Bind(body));
 
-        result.Should().BeOfType<NoContentResult>();
+        result.Should().BeOfType<OkObjectResult>();
         var (archiveRtId, points) = CapturedInsert();
         archiveRtId.Should().Be(_archiveRtId);
         var point = points.Should().ContainSingle().Subject;
@@ -120,7 +120,7 @@ public class StreamDataControllerInsertTimeRangeTests
 
         var result = await _controller.InsertTimeRange(TenantId, _archiveRtId.ToString(), Bind(body));
 
-        result.Should().BeOfType<NoContentResult>();
+        result.Should().BeOfType<OkObjectResult>();
         var points = CapturedInsert().Points;
         points.Should().HaveCount(2);
         points.Should().OnlyContain(p => p.Attributes != null && p.Attributes.Count == 0);
@@ -168,7 +168,7 @@ public class StreamDataControllerInsertTimeRangeTests
         var result = await _controller.InsertTimeRange(TenantId, _archiveRtId.ToString(),
             Bind(OnePoint($", \"origin\": \"{origin}\", \"reason\": \"meter exchanged\"")));
 
-        result.Should().BeOfType<NoContentResult>();
+        result.Should().BeOfType<OkObjectResult>();
         var point = CapturedInsert().Points.Single();
         point.Origin.Should().Be(ArchiveRowOrigin.Manual);
         point.ManualWrittenBy.Should().Be("user-1");
@@ -182,7 +182,7 @@ public class StreamDataControllerInsertTimeRangeTests
 
         var result = await _controller.InsertTimeRange(TenantId, _archiveRtId.ToString(), Bind(OnePoint(", \"origin\": \"manual\"")));
 
-        result.Should().BeOfType<NoContentResult>();
+        result.Should().BeOfType<OkObjectResult>();
         CapturedInsert().Points.Single().ManualReason.Should().BeNull();
     }
 
@@ -240,6 +240,45 @@ public class StreamDataControllerInsertTimeRangeTests
             .Cast<Microsoft.AspNetCore.Authorization.AuthorizeAttribute>().Select(a => a.Policy);
 
         policies.Should().Contain(Meshmakers.Octo.Backend.AssetRepositoryServices.AssetRepositoryServiceConstants.TenantAssetApiReadWritePolicy);
+    }
+
+    // ---- AB#7598: the write result ---------------------------------------------------------------------------
+
+    [Fact]
+    public async Task InsertTimeRange_AnswersWithTheWriteResult()
+    {
+        SignInAs(new System.Security.Claims.Claim("sub", "user-1"));
+        A.CallTo(() => _repository.InsertTimeRangeAsync(A<OctoObjectId>._, A<IEnumerable<TimeRangeStreamDataPoint>>._, A<CancellationToken>._))
+            .Returns(new StreamDataWriteResult(1,
+            [
+                new StreamDataSkippedRow(_rtId, new DateTime(2026, 3, 1, 0, 0, 0, DateTimeKind.Utc), new DateTime(2026, 3, 1, 0, 15, 0, DateTimeKind.Utc),
+                    ArchiveRowOrigin.Automated, StreamDataSkipReason.ManualValueProtected)
+            ]));
+
+        var result = await _controller.InsertTimeRange(TenantId, _archiveRtId.ToString(), Bind(OnePoint("")));
+
+        var body = result.Should().BeOfType<OkObjectResult>().Subject.Value.Should().BeOfType<StreamDataWriteResultRestDto>().Subject;
+        body.Stored.Should().Be(1);
+        body.Skipped.Should().Be(1);
+        body.SkippedByReason.Should().ContainKey("ManualValueProtected").WhoseValue.Should().Be(1);
+        body.SkippedRows.Should().ContainSingle().Which.Reason.Should().Be("ManualValueProtected");
+    }
+
+    [Fact]
+    public async Task InsertTimeRange_AManualRowNotStored_Answers409WithTheResult()
+    {
+        SignInAs(new System.Security.Claims.Claim("sub", "user-1"));
+        var writeResult = new StreamDataWriteResult(0,
+        [
+            new StreamDataSkippedRow(_rtId, new DateTime(2026, 3, 1, 0, 0, 0, DateTimeKind.Utc), null,
+                ArchiveRowOrigin.Manual, StreamDataSkipReason.LowerPrecedence)
+        ]);
+        A.CallTo(() => _repository.InsertTimeRangeAsync(A<OctoObjectId>._, A<IEnumerable<TimeRangeStreamDataPoint>>._, A<CancellationToken>._))
+            .ThrowsAsync(new ManualStreamDataNotAppliedException(_archiveRtId, writeResult));
+
+        var result = await _controller.InsertTimeRange(TenantId, _archiveRtId.ToString(), Bind(OnePoint(", \"origin\": \"manual\"")));
+
+        result.Should().BeOfType<ConflictObjectResult>();
     }
 
     private static IReadOnlyList<InsertTimeRangePointRestDto> Bind(string body) =>
