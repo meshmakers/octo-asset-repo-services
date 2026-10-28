@@ -1,0 +1,11 @@
+$schema: https://schemas.meshmakers.cloud/construction-kit-elements.schema.json
+attributes:
+  - id: InterfaceQueryRank
+    valueType: Int
+    description: "AB#6932: sortable and filterable member of the Ranked-1 test interface"
+  - id: InterfaceQueryExtra
+    valueType: String
+    description: "AB#6932: type specific attribute reached through an inline fragment on the object type"
+  - id: InterfaceQueryToken
+    valueType: Secret
+    description: "AB#6932: interface member that the implementing type holds as a Secret"

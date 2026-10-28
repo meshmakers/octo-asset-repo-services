@@ -39,6 +39,11 @@ internal static class Statics
     internal const string SearchTermArg = "searchTerm";
     internal const string FieldBeforeFilterArg = "beforeFieldFilter";
     internal const string FieldFilterArg = "fieldFilter";
+    internal const string CkInterfaceIdArg = "ckInterfaceId";
+    internal const string SkipArg = "skip";
+    internal const string TakeArg = "take";
+    /// <summary>Name of the <c>runtime</c> field of the interface query (AB#6932).</summary>
+    internal const string ByInterfaceField = "byInterface";
     internal const string GeoNearFilterArg = "geoNearFilter";
     internal const string SortOrderArg = "sortOrder";
     internal const string AttributeGraphType = "AttributeGraphType";
@@ -123,6 +128,19 @@ internal static class Statics
     ///     <c>rtId</c>, <c>reason</c> and <c>items</c> (one entry per refused entity).
     /// </summary>
     public const string GraphQlBlueprintLocked = BlueprintLock.BlueprintLockError.Code;
+
+    /// <summary>
+    ///     AB#6932: the interface query (<c>runtime.byInterface</c>) refused the request (engine message number 7019).
+    ///     Extensions: <c>messageNumber</c> (7019), <c>reason</c> (a token of <c>InterfaceQueryReasons</c>) and
+    ///     <c>parameters</c> (the machine-readable values of the refusal). The message text is not part of the contract.
+    /// </summary>
+    public const string GraphQlInterfaceQuery = "INTERFACE_QUERY_REFUSED";
+
+    /// <summary>
+    ///     AB#6932: an argument of <c>runtime.byInterface</c> is malformed (<c>ckInterfaceId</c> is no runtime CK id,
+    ///     <c>skip</c> / <c>take</c> negative). Extensions: <c>argument</c>.
+    /// </summary>
+    public const string GraphQlInvalidArgument = "INVALID_ARGUMENT";
 
     /// <summary>
     ///     AB#5528: a secret was written while the service has no key ring (SecretEncryption) configured.
