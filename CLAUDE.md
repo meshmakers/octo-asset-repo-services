@@ -887,11 +887,10 @@ A method the asset repository implements itself (`handler: service`, e.g. the pl
 The dispatcher prefers the in-process transport, so such a method is never published to the bus and never announced as a remote handler; success, declared error,
 `METHOD_HANDLER_FAILED` and `METHOD_TIMEOUT` have the envelope of the bus path. **No bypass**: the transport runs the same invocation pipeline and the host evaluates the declared
 `authorization` before the handler is created; the principal comes from the gateway (`CkMethodPrincipalScope`), a call without one is `METHOD_FORBIDDEN`. `AddCkMethodCallerTokenValidation()`
-is deliberately not registered here: it validates the token of a call that arrives over the bus at a remote handler host, and the asset repository hosts none. If a
-test or a new host registers in-process handlers and gets `METHOD_FORBIDDEN`, the method definition (CK cache) is missing or declares no admitting role/scope
-(AB#7664 fixtures: `MethodCkCacheFake`, `InProcessMethodGraphQlTestFixture`). Guide with the sample: `docs/gateway-owned-method-handlers.md`.
+is deliberately not registered here: it validates the token of a call that arrives over the bus at a remote handler host, and the asset repository hosts none. `METHOD_FORBIDDEN` from an in-process call has three causes, check them in this order: the call has no principal (not started through the gateway, no `CkMethodPrincipalScope`), the principal lacks the
+role/scope the method declares, or the definition is missing from the CK cache or declares no admitting role/scope (AB#7664 fixtures: `MethodCkCacheFake`, `InProcessMethodGraphQlTestFixture`). Guide with the sample: `docs/gateway-owned-method-handlers.md`.
 Tests: `IntegrationTests/GraphQL/CkV2/GatewayOwnedMethodInProcessTests` (fixture `GatewayOwnedMethodGraphQlTestFixture`: real schema, gateway, dispatcher and authorization, bus double asserted untouched,
-the four envelopes compared with the remote handler host of the same handler class, no-bypass cases) and `UnitTests/GraphQL/Methods/GatewayOwnedMethodHandlersTests`.
+the four envelopes compared with the remote handler host of the same handler class, no-bypass cases) `GatewayOwnedMethodProductionRegistrationTests` (the production `AddServices` setup registers the transport and no remote host) and `UnitTests/GraphQL/Methods/GatewayOwnedMethodHandlersTests`.
 
 ### Adversarial suite for the method path (AB#6915, F3.4b exit)
 
