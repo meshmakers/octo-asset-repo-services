@@ -810,7 +810,7 @@ Every concrete CK type with methods gets one mutation field per method **next to
 `GraphQL/Methods/CkMethodFieldResolver` is the resolver of every generated method field. It does no authorization or loading itself: it builds a
 `CkMethodGatewayCall` and lets `ICkMethodGateway` decide. **Order of checks (owned by the gateway):** authenticate (no authenticated principal = no
 principal, default-deny) -> authorize (roles any-of, `allowSelf` on the target id **as the client sent it**, declared scopes, `octo_api` always,
-default-deny) -> load the target and check the data permission (`CkMethodTargetAccessCheck` callback, AB#7037) -> validate the parameters -> dispatch -> map the envelope.
+default-deny) -> **parameter size** (`METHOD_PARAMETERS_TOO_LARGE`, `Methods:MaxParametersBytes`, default 1 MiB, UTF-8 bytes of the parameter JSON, exactly the limit passes; `CkMethodParameterLimit` of common-services, AB#7665) -> load the target and check the data permission (`CkMethodTargetAccessCheck` callback, AB#7037) -> validate the parameters -> dispatch -> map the envelope. The mapper (`CkMethodResponseMapper`) applies the host's allow-list (AB#7665, F-3): platform catalog codes and codes the method declares pass, any other code (also an unknown `METHOD_` code) becomes `METHOD_HANDLER_FAILED` with the correlation id (invocation id) and the original code is logged, never returned.
 
 - **Same answer whether the target exists or not.** A caller who fails the authorization gets `METHOD_FORBIDDEN` (code, message, `parameters`, `errors[].extensions.code`
   identical) for an existing and a missing target, because nothing about the target is read before the check. Only an authorized caller can get
@@ -889,8 +889,8 @@ test assembly. Tokens are generated per run (throw-away RSA key, fake identity s
   signature, `alg: none`, key confusion, other issuer, no `octo_api`, missing role. Pins two limitations: another audience is accepted
   (L-2) and the `LogOnly` code default lets a foreign-tenant token through (L-3).
 - `.../Adversarial/CkMethodGatewayAdversarialTests` - the real gateway with a counting target access: unauthenticated, allowSelf with
-  another id (also upper case), default-deny, identical refusals, malformed parameters, canary over logs and errors; pins the missing
-  parameter size limit (F-2) and the forwarded responder code (F-3).
+  another id (also upper case), default-deny, identical refusals, malformed parameters, canary over logs and errors; the parameter size
+  limit (C12, F-2) and the responder code allow-list of the GraphQL error (C13, F-3) are enforced and tested (AB#7665).
 - `tests/AssetRepositoryServices.IntegrationTests/GraphQL/CkV2/MethodAdversarialGraphQlTests` - real schema and MongoDB: a `caller`
   member in the mutation input, a client-chosen deadline, no user.
 
