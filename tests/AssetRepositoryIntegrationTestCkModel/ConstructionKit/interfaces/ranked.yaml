@@ -1,0 +1,9 @@
+$schema: https://schemas.meshmakers.cloud/construction-kit-elements.schema.json
+interfaces:
+  - interfaceId: Ranked-1
+    description: "AB#6932 test interface for runtime.byInterface: a name and an integer rank."
+    attributes:
+      - id: ${System}/Name
+        name: Name
+      - id: ${this}/InterfaceQueryRank
+        name: Rank

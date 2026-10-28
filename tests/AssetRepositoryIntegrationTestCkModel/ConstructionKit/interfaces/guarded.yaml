@@ -1,0 +1,10 @@
+$schema: https://schemas.meshmakers.cloud/construction-kit-elements.schema.json
+interfaces:
+  - interfaceId: Guarded-1
+    description: "AB#6932 test interface with a Secret member: filter and sort on it through the interface must be refused like on the type."
+    attributes:
+      - id: ${System}/Name
+        name: Name
+      - id: ${this}/InterfaceQueryToken
+        name: Token
+        isOptional: true
