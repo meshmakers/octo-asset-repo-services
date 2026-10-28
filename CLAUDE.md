@@ -878,6 +878,21 @@ session flow, fail closed, registration once) and `IntegrationTests/GraphQL/Muta
 the real `OctoSessionListener` transaction; harness `InProcessMethodGraphQlTestFixture` starts the method from a document listener registered after
 `OctoSessionListener`, i.e. inside the session and the transaction of the mutation).
 
+### Gateway-owned methods run as in-process handlers (AB#6893, F3.7)
+
+A method the asset repository implements itself (`handler: service`, e.g. the planned `Tenant.*` / `Archive.*`) is registered in
+`GraphQL/Methods/GatewayOwnedMethodHandlers.Register` (empty today; one line per handler, version-less qualified method id). `AddGatewayOwnedCkMethodHandlers()`
+(`RuntimeEngineBuilderExtensions.AddServices`, after `AddCkMethodGateway()`) hands the list to `AddCkInProcessMethodHandlers`
+(octo-common-services >= 3.5.48, which contains the host-side authorization of AB#7664 and the limits of AB#7665) and adds the session tripwire once.
+The dispatcher prefers the in-process transport, so such a method is never published to the bus and never announced as a remote handler; success, declared error,
+`METHOD_HANDLER_FAILED` and `METHOD_TIMEOUT` have the envelope of the bus path. **No bypass**: the transport runs the same invocation pipeline and the host evaluates the declared
+`authorization` before the handler is created; the principal comes from the gateway (`CkMethodPrincipalScope`), a call without one is `METHOD_FORBIDDEN`. `AddCkMethodCallerTokenValidation()`
+is deliberately not registered here: it validates the token of a call that arrives over the bus at a remote handler host, and the asset repository hosts none. If a
+test or a new host registers in-process handlers and gets `METHOD_FORBIDDEN`, the method definition (CK cache) is missing or declares no admitting role/scope
+(AB#7664 fixtures: `MethodCkCacheFake`, `InProcessMethodGraphQlTestFixture`). Guide with the sample: `docs/gateway-owned-method-handlers.md`.
+Tests: `IntegrationTests/GraphQL/CkV2/GatewayOwnedMethodInProcessTests` (fixture `GatewayOwnedMethodGraphQlTestFixture`: real schema, gateway, dispatcher and authorization, bus double asserted untouched,
+the four envelopes compared with the remote handler host of the same handler class, no-bypass cases) and `UnitTests/GraphQL/Methods/GatewayOwnedMethodHandlersTests`.
+
 ### Adversarial suite for the method path (AB#6915, F3.4b exit)
 
 Attack tests for the asset-repo half of the method path; the bus half, the case table, the findings (F-1 .. F-3) and the accepted

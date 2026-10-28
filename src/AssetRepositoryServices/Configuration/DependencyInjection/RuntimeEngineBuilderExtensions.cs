@@ -382,6 +382,8 @@ public static class RuntimeEngineBuilderExtensions
         builder.Services.AddCkMethodDispatcher();
         builder.Services.AddCkMethodAuthorization();
         builder.Services.AddCkMethodGateway();
+        // AB#6893: methods the gateway owns itself run in-process (no bus hop, not announced), through the same pipeline.
+        builder.Services.AddGatewayOwnedCkMethodHandlers();
 
         // Mongo-backed repositories + blueprint history/installations.
         // Don't call AddRuntimeEngine() here: Program.cs already does, and
