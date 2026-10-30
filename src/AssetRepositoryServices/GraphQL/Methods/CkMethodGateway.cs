@@ -87,6 +87,30 @@ internal sealed class CkMethodGateway(
         var started = Stopwatch.GetTimestamp();
         var principal = call.User.Identity?.IsAuthenticated == true ? CkMethodPrincipal.FromClaimsPrincipal(call.User) : null;
 
+        try
+        {
+            return await InvokeCoreAsync(call, targetAccess, invocationId, started, principal, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (Exception e) when (e is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+        {
+            // AB#7907: a fault of the gateway itself (the target-access check, the validator, the dispatcher that throws
+            // against its contract) is no refusal and no answer, but the call must not vanish from the audit. It is recorded
+            // once here and rethrown, so the caller gets exactly the error it got before. The real dispatcher never throws
+            // for a failing call (the pipeline audits those through the band-100 filter); only a cancellation by the caller
+            // is not a fault and passes through unrecorded.
+            logger.LogError(
+                "CK method {MethodId} invocation {InvocationId} in tenant {TenantId}: the gateway faulted ({ExceptionType}), recorded in the audit",
+                call.MethodId, invocationId, call.TenantId, e.GetType().Name);
+            await RecordAsync(call, invocationId, principal, started, CkMethodErrorCodes.MethodHandlerFailed)
+                .ConfigureAwait(false);
+            throw;
+        }
+    }
+
+    private async Task<CkMethodResponse> InvokeCoreAsync(CkMethodGatewayCall call, CkMethodTargetAccessCheck targetAccess,
+        Guid invocationId, long started, CkMethodPrincipal? principal, CancellationToken cancellationToken)
+    {
         // 1. authorize. Nothing about the target has been read; the answer depends on the method and the caller only.
         var definition = definitionSource.Find(call.TenantId, call.CkTypeId, call.MethodId);
         var decision = definition == null
@@ -193,9 +217,24 @@ internal sealed class CkMethodGateway(
     ///     there is exactly one event per invocation id. A refusal is a call that did not run: when the tenant fails calls on an
     ///     audit failure the answer stays the refusal (the recorder has logged and counted the failure). The event is written
     ///     with a token that is not cancelled, like the filter does.
+    ///     AB#7907: a <b>fault</b> (an exception from the gateway's own steps or from a dispatcher that throws) is recorded the
+    ///     same way with outcome <c>METHOD_HANDLER_FAILED</c> (the audit filter uses the same outcome for an exception inside the
+    ///     pipeline; transport <c>gateway</c> and no handler instance say that it happened before the handler) and the
+    ///     exception surfaces unchanged. A cancellation by the caller is not a fault and is not recorded here.
     /// </summary>
     private async Task<CkMethodResponse> RefuseAsync(CkMethodGatewayCall call, Guid invocationId, CkMethodPrincipal? principal,
         long started, CkMethodResponse refusal)
+    {
+        await RecordAsync(call, invocationId, principal, started, CkMethodAuditRecord.OutcomeOf(refusal)).ConfigureAwait(false);
+        return refusal;
+    }
+
+    /// <summary>
+    ///     Writes the gateway event with the given outcome and never lets a failing recorder change what the caller gets
+    ///     (the refusal, or the exception of a fault).
+    /// </summary>
+    private async Task RecordAsync(CkMethodGatewayCall call, Guid invocationId, CkMethodPrincipal? principal, long started,
+        string outcome)
     {
         var record = new CkMethodAuditRecord
         {
@@ -205,7 +244,7 @@ internal sealed class CkMethodGateway(
             CkTypeId = call.CkTypeId,
             TargetRtId = call.TargetRtId,
             Transport = CkMethodAuditRecord.GatewayTransport,
-            Outcome = CkMethodAuditRecord.OutcomeOf(refusal),
+            Outcome = outcome,
             CallerSubject = principal?.SubjectId ?? call.User.FindFirst("client_id")?.Value,
             CallerName = call.User.FindFirst("name")?.Value,
             Duration = Stopwatch.GetElapsedTime(started)
@@ -216,7 +255,7 @@ internal sealed class CkMethodGateway(
         }
         catch (CkMethodAuditFailedException)
         {
-            // logged and counted by the recorder; the call did not run, so it stays the refusal it was
+            // logged and counted by the recorder; the call did not run, so it stays the refusal (or the fault) it was
         }
         catch (Exception e)
         {
@@ -224,8 +263,6 @@ internal sealed class CkMethodGateway(
             logger.LogError(e, "CK method {MethodId} invocation {InvocationId}: the audit recorder threw", call.MethodId,
                 invocationId);
         }
-
-        return refusal;
     }
 
     private static CkMethodCaller CallerOf(ClaimsPrincipal user, CkMethodPrincipal principal) => new()
