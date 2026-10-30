@@ -39,6 +39,10 @@ internal sealed class OctoQuery : ObjectGraphType
                          "attributes. Requires the AdminPanelManagement role. Never returns values.")
             .Resolve(SecretsQuery.Resolve);
 
+        // AB#7837 (F3.2): diagnostics of the CK method handler registry. System administrators only
+        // (SystemAdministratorGuard), checked on this root field.
+        MethodHandlersQuery.AddTo(this);
+
         Field<NonNullGraphType<ListGraphType<NonNullGraphType<ArchivePathInfoDtoType>>>>("availableArchivePaths")
             .Description("Returns the attribute paths reachable from the given CK type that may be used as columns in a CkArchive (concept §16). Bounded by maxDepth so deep records terminate predictably.")
             .Argument<NonNullGraphType<StringGraphType>>("ckTypeId", "The CK type id to introspect, e.g. \"Energy/Sensor\".")

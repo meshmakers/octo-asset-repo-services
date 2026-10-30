@@ -3,12 +3,12 @@ using Meshmakers.Common.Shared;
 using Meshmakers.Octo.Communication.Contracts;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb;
 
-namespace Meshmakers.Octo.Backend.AssetRepositoryServices.SystemApi.v1.Controllers;
+namespace Meshmakers.Octo.Backend.AssetRepositoryServices.Security;
 
 /// <summary>
-///     The system-level caller check of the system endpoints that cross tenant boundaries (GridFS orphan sweep,
-///     tenant registry reconcile): fail closed unless the token is signed in to the system tenant and, for a user token,
-///     carries the admin panel role.
+///     The system-level caller check of the endpoints and queries that cross tenant boundaries (GridFS orphan sweep,
+///     tenant registry reconcile, the <c>MethodHandlers</c> GraphQL diagnostics query): fail closed unless the token is
+///     signed in to the system tenant and, for a user token, carries the admin panel role.
 /// </summary>
 internal static class SystemAdministratorGuard
 {
