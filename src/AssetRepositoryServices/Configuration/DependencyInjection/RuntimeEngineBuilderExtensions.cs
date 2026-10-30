@@ -1,4 +1,5 @@
-﻿using System.IdentityModel.Tokens.Jwt;
+﻿using Meshmakers.Octo.Services.Methods.Idempotency;
+using System.IdentityModel.Tokens.Jwt;
 using System.Text.Json;
 using AssetRepositoryServices.Resources;
 using GraphQL;
@@ -382,6 +383,11 @@ public static class RuntimeEngineBuilderExtensions
         builder.Services.AddCkMethodDispatcher();
         builder.Services.AddCkMethodAuthorization();
         builder.Services.AddCkMethodGateway();
+        // AB#7824 (F3.5): keyed calls run at most once per tenant, method, caller and key, across all replicas. The claims live
+        // in the tenant database (collection MethodIdempotency, part of the tenant backup); the store fails closed.
+        builder.Services.AddCkMethodIdempotency();
+        builder.Services.AddSingleton<ICkMethodIdempotencyStore,
+            Meshmakers.Octo.Backend.AssetRepositoryServices.Services.Methods.MongoMethodIdempotencyStore>();
         // AB#6893: methods the gateway owns itself run in-process (no bus hop, not announced), through the same pipeline.
         builder.Services.AddGatewayOwnedCkMethodHandlers();
 

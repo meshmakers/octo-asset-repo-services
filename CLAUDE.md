@@ -932,6 +932,20 @@ types (never flagged). There is no REST endpoint that creates arbitrary runtime 
 `IntegrationTests/GraphQL/CkV2/GenericCreateReplacedByMethodTests` (incl. the query-row create) (test types `ManagedThing`, `ManagedThingChild`, `ToolThing` in
 `tests/AssetRepositoryIntegrationTestCkModel/ConstructionKit/types/replacesGenericCreateTest.yaml`).
 
+### Method idempotency store (AB#7824, F3.5)
+
+`Services/Methods/MongoMethodIdempotencyStore.cs` implements `ICkMethodIdempotencyStore` (octo-common-services, contract AB#7817) for
+the band-300 `CkMethodIdempotencyFilter`; registered in `RuntimeEngineBuilderExtensions` next to `AddCkMethodIdempotency()`.
+Collection `MethodIdempotency` in the **tenant database** (included in tenant backup, removed with the tenant); atomic claim = insert
+with unique `_id` (SHA-256 key id; the raw key and raw parameters are never stored, the fingerprint is stored as given); expired records
+are taken over with a conditional `findOneAndReplace`; TTL index `expiresAt_ttl` (`expireAfterSeconds: 0`) is housekeeping only, readers
+compare the per-document `expiresAt` themselves (lifetime `Methods:Idempotency:Ttl`, default 24 h, max 7 d, applies to new claims).
+**Fails closed**: every database problem is a `CkMethodIdempotencyStoreException` (unlike `MongoFileSystemNameLeaseStore`, no admin
+credentials is a refusal, not a pass). `Complete`/`Release` do not carry the tenant, so the store remembers the tenant of its own
+in-flight claims. Keyed calls need `Methods:Idempotency:Fingerprint:Current` (Id + base64 secret >= 32 bytes). The `idempotencyKey`
+GraphQL argument is AB#7825. Tests: `IntegrationTests/Methods/MongoMethodIdempotencyStoreTests` (private MongoDB; race, takeover,
+expiry, fail closed, stored document, benchmark). Details and latency: `docs/method-idempotency-store.md`.
+
 ### Method handler diagnostics: `methodHandlers` (AB#7837, F3.2)
 
 Root query field `MethodHandlers` (camelCase on the wire: `methodHandlers`; mounted by `GraphQL/MethodHandlersQuery.AddTo`, called from `OctoQuery`; types in
