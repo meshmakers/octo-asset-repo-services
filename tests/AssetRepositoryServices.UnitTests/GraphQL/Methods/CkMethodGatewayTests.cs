@@ -8,6 +8,7 @@ using Meshmakers.Octo.Runtime.Contracts.DataPermissions;
 using Meshmakers.Octo.ConstructionKit.Contracts.DataTransferObjects;
 using Meshmakers.Octo.Services.Contracts.DistributionEventHub.Methods;
 using Meshmakers.Octo.Services.Methods;
+using Meshmakers.Octo.Services.Methods.Audit;
 using Meshmakers.Octo.Services.Methods.Authorization;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -117,7 +118,8 @@ public class CkMethodGatewayTests
         var loggers = LoggerFactory.Create(b => b.SetMinimumLevel(LogLevel.Trace).AddProvider(new ListLoggerProvider(_logs)));
         return new CkMethodGateway(
             new CkMethodAuthorizationEvaluator(Options.Create(new CkMethodAuthorizationOptions())),
-            new Source(Definition(authorization)), timeout, _dispatcher, loggers.CreateLogger<CkMethodGateway>());
+            new Source(Definition(authorization)), timeout, _dispatcher, A.Fake<ICkMethodAuditRecorder>(),
+            loggers.CreateLogger<CkMethodGateway>());
     }
 
     private static ClaimsPrincipal User(string sub, string[] roles, string scope = "octo_api openid")

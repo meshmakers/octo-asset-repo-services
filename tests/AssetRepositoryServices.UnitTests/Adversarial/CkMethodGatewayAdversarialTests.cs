@@ -12,6 +12,7 @@ using Meshmakers.Octo.ConstructionKit.Contracts.DependencyGraph;
 using Meshmakers.Octo.ConstructionKit.Contracts.Services;
 using Meshmakers.Octo.Services.Contracts.DistributionEventHub.Methods;
 using Meshmakers.Octo.Services.Methods;
+using Meshmakers.Octo.Services.Methods.Audit;
 using Meshmakers.Octo.Services.Methods.Authorization;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -112,7 +113,7 @@ public class CkMethodGatewayAdversarialTests
         return new CkMethodGateway(
             new CkMethodAuthorizationEvaluator(Options.Create(new CkMethodAuthorizationOptions())),
             new Source(knownMethod ? Definition(authorization) : null), timeout, _dispatcher,
-            loggers.CreateLogger<CkMethodGateway>());
+            A.Fake<ICkMethodAuditRecorder>(), loggers.CreateLogger<CkMethodGateway>());
     }
 
     private static ClaimsPrincipal User(string sub, string[] roles, string scope = "octo_api openid", string? tenant = null)

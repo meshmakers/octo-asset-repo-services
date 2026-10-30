@@ -14,11 +14,16 @@ public static class CkMethodGatewayServiceCollectionExtensions
     ///     <c>AddCkMethodAuthorization()</c> (evaluator, definition source) in the same service; the resolver that
     ///     generates the per-type method mutations (F3.7) calls it. It also registers the request-session tripwire of the
     ///     in-process transport (AB#7023, OD-8): an in-process handler never runs with the GraphQL request session, and a
-    ///     call that would is refused with <c>METHOD_HANDLER_FAILED</c> before the handler body runs.
+    ///     call that would is refused with <c>METHOD_HANDLER_FAILED</c> before the handler body runs. It registers the method
+    ///     audit (<c>AddCkMethodAudit()</c>, AB#7826): the filter at band 100 and the recorder the gateway uses for its refusals.
     /// </summary>
     public static IServiceCollection AddCkMethodGateway(this IServiceCollection services)
     {
         services.TryAddScoped<ICkMethodGateway, CkMethodGateway>();
+        // AB#7826 (F3.5): the gateway records the calls it refuses before dispatch through the audit recorder, and the band-100
+        // audit filter records every call that enters the pipeline: one event per invocation. The sink is the event log
+        // after AddOctoNotification(); without it the engine's logging sink receives the events.
+        services.AddCkMethodAudit();
         // The resolver forwards the raw bearer token of the request to the handler (AB#7026).
         services.AddHttpContextAccessor();
         services.AddOctoSessionAmbientStateProbe();

@@ -966,6 +966,26 @@ GraphQL entry. After a schema change, Studio refreshes `schema.graphql` and runs
 (real schema, gateway, pipeline and in-process handler with `IdempotentMethodGraphQlTestFixture`: replay runs the handler once, other key / other caller run again, changed
 parameters, 129 characters, 128 accepted, forbidden stays forbidden, failed handler burns the key).
 
+### Gateway refusals are audited (AB#7826, F3.5)
+
+A call that the gateway refuses never enters the invocation pipeline, so the band-100 audit filter of octo-common-services (AB#6919) cannot see it.
+`CkMethodGateway.RefuseAsync` therefore records every pre-dispatch refusal through the same `ICkMethodAuditRecorder`: `METHOD_FORBIDDEN` (declared authorization,
+also an unknown method or an unauthenticated caller, and the data permission), `METHOD_PARAMETERS_TOO_LARGE`, `METHOD_TARGET_NOT_FOUND` and `METHOD_VALIDATION_FAILED`. The record is
+built in the gateway: transport `gateway` (`CkMethodAuditRecord.GatewayTransport`), the invocation id the gateway minted (the one in the response), outcome = the error code of the
+answer, no handler instance, caller subject (`sub`, else `client_id`) and `name` claim, method id, CK type, target id as the client sent it, duration. The record type has no place for
+parameters, the idempotency key or the token, so none can reach the event.
+
+- **Exactly one event per invocation id.** A call that passes the gateway is recorded by the filter only (transport `in-process` or `bus`); the gateway writes nothing for it.
+  The idempotency refusals of AB#7825 (`idempotency key too long`, `parameters-changed`, `METHOD_REQUEST_IN_PROGRESS`, `fingerprint-unavailable`, store unavailable ...) are answered by the
+  band-300 filter **inside** the pipeline, so the audit filter already records them (transport `in-process`/`bus`); the gateway does not answer any idempotency code itself.
+- **Registration.** `AddCkMethodGateway()` calls `AddCkMethodAudit()` (recorder + audit filter, safe to repeat). The sink is the event log after `AddOctoNotification()`.
+- **A failed audit write never turns a refusal into something else.** The recorder throws `CkMethodAuditFailedException` only when the tenant is configured to fail calls on audit failure
+  (`Methods:Audit:FailCallOnAuditFailure`); a refused call did not run, so the gateway keeps the refusal (the recorder has logged and counted the failure, meter
+  `Meshmakers.Octo.Methods`, `ck.method.audit.failures`). Any other recorder exception is logged and swallowed. The write uses `CancellationToken.None`, like the filter.
+- **Not audited (open, see PR AB#7826):** an exception from the target-access check or the dispatcher itself (a fault, not a refusal) surfaces as before and writes no event.
+- Tests: `GraphQL/Methods/CkMethodGatewayAuditTests` (parametrized over the five refusal paths: one record, transport `gateway`, code, invocation id; real recorder + capturing sink canary scan
+  for parameter value, token and idempotency key; real in-process pipeline for the no-duplicate case; audit failure; cancelled caller). User documentation: octo-documentation `ckLanguage2/methodConsistency.md#audit` (en + de).
+
 ### Method handler diagnostics: `methodHandlers` (AB#7837, F3.2)
 
 Root query field `MethodHandlers` (camelCase on the wire: `methodHandlers`; mounted by `GraphQL/MethodHandlersQuery.AddTo`, called from `OctoQuery`; types in
