@@ -69,7 +69,7 @@ public class StreamDataControllerInsertTimeRangeTests
 
         var result = await _controller.InsertTimeRange(TenantId, _archiveRtId.ToString(), Bind(body));
 
-        result.Should().BeOfType<NoContentResult>();
+        result.Should().BeOfType<OkObjectResult>();
         var (archiveRtId, points) = CapturedInsert();
         archiveRtId.Should().Be(_archiveRtId);
         var point = points.Should().ContainSingle().Subject;
@@ -120,10 +120,210 @@ public class StreamDataControllerInsertTimeRangeTests
 
         var result = await _controller.InsertTimeRange(TenantId, _archiveRtId.ToString(), Bind(body));
 
-        result.Should().BeOfType<NoContentResult>();
+        result.Should().BeOfType<OkObjectResult>();
         var points = CapturedInsert().Points;
         points.Should().HaveCount(2);
         points.Should().OnlyContain(p => p.Attributes != null && p.Attributes.Count == 0);
+    }
+
+    // ---- AB#5356 / AB#7593 / AB#7596: origin, reason and writer --------------------------------------------
+
+    private string OnePoint(string extra) => $$"""
+        [{ "rtId": "{{_rtId}}", "ckTypeId": "{{CkTypeId}}",
+           "from": "2026-08-31T22:00:00Z", "to": "2026-09-01T22:00:00Z",
+           "attributes": { "Amount.Value": 1.5 } {{extra}} }]
+        """;
+
+    private void SignInAs(params System.Security.Claims.Claim[] claims)
+    {
+        _controller.ControllerContext = new ControllerContext
+        {
+            HttpContext = new Microsoft.AspNetCore.Http.DefaultHttpContext
+            {
+                User = new System.Security.Claims.ClaimsPrincipal(new System.Security.Claims.ClaimsIdentity(claims, "Bearer"))
+            }
+        };
+    }
+
+    [Fact]
+    public async Task InsertTimeRange_WithoutOrigin_WritesAnAutomatedRowWithoutWriter()
+    {
+        SignInAs(new System.Security.Claims.Claim("sub", "user-1"));
+
+        await _controller.InsertTimeRange(TenantId, _archiveRtId.ToString(), Bind(OnePoint("")));
+
+        var point = CapturedInsert().Points.Single();
+        point.Origin.Should().Be(ArchiveRowOrigin.Automated);
+        point.ManualWrittenBy.Should().BeNull();
+        point.ManualReason.Should().BeNull();
+    }
+
+    [Theory]
+    [InlineData("manual")]
+    [InlineData("Manual")]
+    public async Task InsertTimeRange_ManualOrigin_RecordsTheTokenSubjectAsWriterAndTheReasonAsGiven(string origin)
+    {
+        SignInAs(new System.Security.Claims.Claim("sub", "user-1"));
+
+        var result = await _controller.InsertTimeRange(TenantId, _archiveRtId.ToString(),
+            Bind(OnePoint($", \"origin\": \"{origin}\", \"reason\": \"meter exchanged\"")));
+
+        result.Should().BeOfType<OkObjectResult>();
+        var point = CapturedInsert().Points.Single();
+        point.Origin.Should().Be(ArchiveRowOrigin.Manual);
+        point.ManualWrittenBy.Should().Be("user-1");
+        point.ManualReason.Should().Be("meter exchanged");
+    }
+
+    [Fact]
+    public async Task InsertTimeRange_ManualOrigin_RecordsTheReadableUserNameFromTheToken()
+    {
+        // AB#7647: the writer is the readable name of the verified user, not the opaque subject id.
+        SignInAs(new System.Security.Claims.Claim("sub", "8a4c1f00-0000-4000-8000-000000000001"),
+            new System.Security.Claims.Claim("preferred_username", "jane.doe"),
+            new System.Security.Claims.Claim("name", "Jane Doe"));
+
+        await _controller.InsertTimeRange(TenantId, _archiveRtId.ToString(), Bind(OnePoint(", \"origin\": \"manual\"")));
+
+        CapturedInsert().Points.Single().ManualWrittenBy.Should().Be("jane.doe");
+    }
+
+    [Fact]
+    public async Task InsertTimeRange_ManualOrigin_WithoutAPreferredUsername_RecordsTheName()
+    {
+        SignInAs(new System.Security.Claims.Claim("sub", "8a4c1f00-0000-4000-8000-000000000001"),
+            new System.Security.Claims.Claim("name", "Jane Doe"));
+
+        await _controller.InsertTimeRange(TenantId, _archiveRtId.ToString(), Bind(OnePoint(", \"origin\": \"manual\"")));
+
+        CapturedInsert().Points.Single().ManualWrittenBy.Should().Be("Jane Doe");
+    }
+
+    [Fact]
+    public async Task InsertTimeRange_ManualOrigin_ANameInTheBodyIsNeverTheWriter()
+    {
+        SignInAs(new System.Security.Claims.Claim("sub", "user-1"), new System.Security.Claims.Claim("preferred_username", "jane.doe"));
+
+        await _controller.InsertTimeRange(TenantId, _archiveRtId.ToString(),
+            Bind(OnePoint(", \"origin\": \"manual\", \"manualWrittenBy\": \"mallory\", \"writer\": \"mallory\"")));
+
+        CapturedInsert().Points.Single().ManualWrittenBy.Should().Be("jane.doe");
+    }
+
+    [Fact]
+    public async Task InsertTimeRange_ManualOriginWithoutReason_IsAccepted()
+    {
+        SignInAs(new System.Security.Claims.Claim("sub", "user-1"));
+
+        var result = await _controller.InsertTimeRange(TenantId, _archiveRtId.ToString(), Bind(OnePoint(", \"origin\": \"manual\"")));
+
+        result.Should().BeOfType<OkObjectResult>();
+        CapturedInsert().Points.Single().ManualReason.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task InsertTimeRange_AClientCredentialsToken_IsRecordedByItsClientId()
+    {
+        SignInAs(new System.Security.Claims.Claim("client_id", "import-service"));
+
+        await _controller.InsertTimeRange(TenantId, _archiveRtId.ToString(), Bind(OnePoint(", \"origin\": \"manual\"")));
+
+        CapturedInsert().Points.Single().ManualWrittenBy.Should().Be("import-service");
+    }
+
+    [Theory]
+    [InlineData("Manuel")]
+    [InlineData("1")]
+    [InlineData("corrected")]
+    public async Task InsertTimeRange_AnInvalidOrigin_IsRefusedAndNamesTheValidValues(string origin)
+    {
+        SignInAs(new System.Security.Claims.Claim("sub", "user-1"));
+
+        var result = await _controller.InsertTimeRange(TenantId, _archiveRtId.ToString(),
+            Bind(OnePoint($", \"origin\": \"{origin}\"")));
+
+        var badRequest = result.Should().BeOfType<BadRequestObjectResult>().Subject;
+        badRequest.Value!.ToString().Should().Contain(origin).And.Contain("'manual' or 'automated'");
+        Fake.GetCalls(_repository).Should().NotContain(c => c.Method.Name == nameof(IStreamDataRepository.InsertTimeRangeAsync));
+    }
+
+    [Fact]
+    public async Task InsertTimeRange_AReasonOnAnAutomatedPoint_IsRefused()
+    {
+        SignInAs(new System.Security.Claims.Claim("sub", "user-1"));
+
+        var result = await _controller.InsertTimeRange(TenantId, _archiveRtId.ToString(), Bind(OnePoint(", \"reason\": \"why\"")));
+
+        result.Should().BeOfType<BadRequestObjectResult>();
+    }
+
+    [Fact]
+    public async Task InsertTimeRange_AManualWriteWithoutCallerIdentity_IsRefused()
+    {
+        SignInAs();
+
+        var result = await _controller.InsertTimeRange(TenantId, _archiveRtId.ToString(), Bind(OnePoint(", \"origin\": \"manual\"")));
+
+        result.Should().BeOfType<BadRequestObjectResult>();
+    }
+
+    [Fact]
+    public void InsertTimeRange_RequiresTheReadWritePolicy_SoACallerWithoutWritePermissionCannotWriteManualRows()
+    {
+        var method = typeof(StreamDataController).GetMethod(nameof(StreamDataController.InsertTimeRange))!;
+        var policies = method.GetCustomAttributes(typeof(Microsoft.AspNetCore.Authorization.AuthorizeAttribute), false)
+            .Cast<Microsoft.AspNetCore.Authorization.AuthorizeAttribute>().Select(a => a.Policy);
+
+        policies.Should().Contain(Meshmakers.Octo.Backend.AssetRepositoryServices.AssetRepositoryServiceConstants.TenantAssetApiReadWritePolicy);
+    }
+
+    // ---- AB#7598: the write result ---------------------------------------------------------------------------
+
+    [Fact]
+    public async Task InsertTimeRange_AnswersWithTheWriteResult()
+    {
+        SignInAs(new System.Security.Claims.Claim("sub", "user-1"));
+        A.CallTo(() => _repository.InsertTimeRangeAsync(A<OctoObjectId>._, A<IEnumerable<TimeRangeStreamDataPoint>>._, A<CancellationToken>._))
+            .Returns(new StreamDataWriteResult(1,
+            [
+                new StreamDataSkippedRow(_rtId, new DateTime(2026, 3, 1, 0, 0, 0, DateTimeKind.Utc), new DateTime(2026, 3, 1, 0, 15, 0, DateTimeKind.Utc),
+                    ArchiveRowOrigin.Automated, StreamDataSkipReason.ManualValueProtected)
+            ]));
+
+        var result = await _controller.InsertTimeRange(TenantId, _archiveRtId.ToString(), Bind(OnePoint("")));
+
+        var body = result.Should().BeOfType<OkObjectResult>().Subject.Value.Should().BeOfType<StreamDataWriteResultRestDto>().Subject;
+        body.Stored.Should().Be(1);
+        body.Skipped.Should().Be(1);
+        body.SkippedByReason.Should().ContainKey("ManualValueProtected").WhoseValue.Should().Be(1);
+        body.SkippedRows.Should().ContainSingle().Which.Reason.Should().Be("ManualValueProtected");
+    }
+
+    [Fact]
+    public async Task InsertTimeRange_AManualRowNotStored_Answers409WithTheResult()
+    {
+        SignInAs(new System.Security.Claims.Claim("sub", "user-1"));
+        var writeResult = new StreamDataWriteResult(0,
+        [
+            new StreamDataSkippedRow(_rtId, new DateTime(2026, 3, 1, 0, 0, 0, DateTimeKind.Utc), null,
+                ArchiveRowOrigin.Manual, StreamDataSkipReason.LowerPrecedence)
+        ]);
+        A.CallTo(() => _repository.InsertTimeRangeAsync(A<OctoObjectId>._, A<IEnumerable<TimeRangeStreamDataPoint>>._, A<CancellationToken>._))
+            .ThrowsAsync(new ManualStreamDataNotAppliedException(_archiveRtId, writeResult));
+
+        var result = await _controller.InsertTimeRange(TenantId, _archiveRtId.ToString(), Bind(OnePoint(", \"origin\": \"manual\"")));
+
+        var conflict = result.Should().BeOfType<ConflictObjectResult>().Subject;
+
+        // The SDK and the energy pipelines read this body: the property names are the wire contract.
+        using var body = JsonDocument.Parse(JsonSerializer.Serialize(conflict.Value, new JsonSerializerOptions(JsonSerializerDefaults.Web)));
+        body.RootElement.EnumerateObject().Select(p => p.Name).Should().BeEquivalentTo("message", "result");
+        body.RootElement.GetProperty("message").GetString().Should().NotBeNullOrEmpty();
+        var writeResultBody = body.RootElement.GetProperty("result");
+        writeResultBody.GetProperty("stored").GetInt32().Should().Be(0);
+        writeResultBody.GetProperty("skipped").GetInt32().Should().Be(1);
+        writeResultBody.GetProperty("skippedByReason").GetProperty("LowerPrecedence").GetInt32().Should().Be(1);
+        writeResultBody.GetProperty("skippedRows")[0].GetProperty("origin").GetString().Should().Be("manual");
     }
 
     private static IReadOnlyList<InsertTimeRangePointRestDto> Bind(string body) =>

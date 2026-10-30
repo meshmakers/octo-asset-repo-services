@@ -520,9 +520,15 @@ public class StreamDataController : ControllerBase
     /// <c>TimeRangeArchive</c>. Each row covers a half-open <c>[from, to)</c> window;
     /// re-deliveries upsert via the natural key and set the row's <c>was_updated</c> flag to
     /// true. Time-range concept §3. The archive must be in <c>Activated</c> status; non-time-
-    /// range archives reject the call with HTTP 400.
+    /// range archives reject the call with HTTP 400. Answers 200 with the write result (rows stored, rows not
+    /// stored with the reason, AB#7598) — an empty batch still answers 204 — and 409 with the result when a
+    /// manual row could not be stored.
     /// </summary>
     [HttpPost("archives/{archiveRtId}/insertTimeRange")]
+    [ProducesResponseType(typeof(StreamDataWriteResultRestDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(typeof(string), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ManualWriteNotStoredRestDto), StatusCodes.Status409Conflict)]
     [Microsoft.AspNetCore.Authorization.Authorize(AssetRepositoryServiceConstants.TenantAssetApiReadWritePolicy)]
     public async Task<IActionResult> InsertTimeRange(
         [Required] string tenantId,
@@ -557,7 +563,30 @@ public class StreamDataController : ControllerBase
                     "discarded. Send the ckTypeId in its unversioned form, e.g. 'Model/Type'.");
             }
 
-            var domainPoints = points.Select(p => new TimeRangeStreamDataPoint
+            // AB#5356 / AB#7593 / AB#7596: the caller declares the origin; the writer of a manual row is
+            // the authenticated caller, never a value from the body.
+            var origins = new ArchiveRowOrigin[points.Count];
+            for (var i = 0; i < points.Count; i++)
+            {
+                if (!TryParseOrigin(points[i].Origin, out origins[i]))
+                {
+                    return BadRequest(
+                        $"Point {i}: origin '{points[i].Origin}' is not valid. Use 'manual' or 'automated', or leave it out for automated.");
+                }
+
+                if (origins[i] != ArchiveRowOrigin.Manual && !string.IsNullOrEmpty(points[i].Reason))
+                {
+                    return BadRequest($"Point {i}: a reason is only recorded for a manual write; set origin 'manual' or remove the reason.");
+                }
+            }
+
+            var writer = origins.Contains(ArchiveRowOrigin.Manual) ? CallerIdentity(User) : null;
+            if (origins.Contains(ArchiveRowOrigin.Manual) && writer is null)
+            {
+                return BadRequest("A manual write records who wrote it, and the caller's token names no subject or client.");
+            }
+
+            var domainPoints = points.Select((p, i) => new TimeRangeStreamDataPoint
             {
                 RtId = new OctoObjectId(p.RtId),
                 CkTypeId = new RtCkId<CkTypeId>(p.CkTypeId),
@@ -565,10 +594,26 @@ public class StreamDataController : ControllerBase
                 To = p.To,
                 RtWellKnownName = p.RtWellKnownName,
                 Attributes = p.Attributes,
+                Origin = origins[i],
+                ManualWrittenBy = origins[i] == ArchiveRowOrigin.Manual ? writer : null,
+                ManualReason = origins[i] == ArchiveRowOrigin.Manual ? p.Reason : null,
             }).ToList();
 
-            await repository.InsertTimeRangeAsync(new OctoObjectId(archiveRtId), domainPoints);
-            return NoContent();
+            // AB#7598: the caller learns how many rows were stored and why the others were not.
+            var result = await repository.InsertTimeRangeAsync(new OctoObjectId(archiveRtId), domainPoints);
+            return Ok(StreamDataWriteResultRestDto.From(result));
+        }
+        catch (ManualStreamDataNotAppliedException e)
+        {
+            // A manual value that could not be stored is never a success; the body says what was stored.
+            _logger.LogWarning(
+                "InsertTimeRange for tenant '{TenantId}', archive '{ArchiveRtId}': {Skipped} manual row(s) not stored.",
+                tenantId, archiveRtId, e.Result.Skipped.Count(s => s.Origin == ArchiveRowOrigin.Manual));
+            return Conflict(new ManualWriteNotStoredRestDto
+            {
+                Message = e.Message,
+                Result = StreamDataWriteResultRestDto.From(e.Result)
+            });
         }
         catch (ConfigurationException e)
         {
@@ -587,6 +632,49 @@ public class StreamDataController : ControllerBase
             // CrateDbStreamDataRepository.InsertTimeRangeAsync.
             return BadRequest(e.Message);
         }
+    }
+
+    /// <summary>
+    /// Parses the optional origin of a REST point: absent or empty is automated, otherwise <c>manual</c> or
+    /// <c>automated</c>, case-insensitive. Numbers are refused on purpose: the wire value is the name.
+    /// </summary>
+    internal static bool TryParseOrigin(string? value, out ArchiveRowOrigin origin)
+    {
+        origin = ArchiveRowOrigin.Automated;
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return true;
+        }
+
+        if (string.Equals(value, "manual", StringComparison.OrdinalIgnoreCase))
+        {
+            origin = ArchiveRowOrigin.Manual;
+            return true;
+        }
+
+        return string.Equals(value, "automated", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// The writer a manual row records (AB#7593, AB#7647), taken from the verified token, never from the body.
+    /// For a user token the readable name: <c>preferred_username</c>, else <c>name</c>, else the subject id. A
+    /// client-credentials token (no subject) records its client id. <c>null</c> when the token names neither.
+    /// </summary>
+    internal static string? CallerIdentity(System.Security.Claims.ClaimsPrincipal? user)
+    {
+        var subject = NonEmpty(user?.FindFirst("sub")?.Value)
+                      ?? NonEmpty(user?.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value);
+        if (subject is null)
+        {
+            return NonEmpty(user?.FindFirst("client_id")?.Value);
+        }
+
+        return NonEmpty(user?.FindFirst("preferred_username")?.Value)
+               ?? NonEmpty(user?.FindFirst("name")?.Value)
+               ?? NonEmpty(user?.FindFirst(System.Security.Claims.ClaimTypes.Name)?.Value)
+               ?? subject;
+
+        static string? NonEmpty(string? value) => string.IsNullOrWhiteSpace(value) ? null : value;
     }
 
     /// <summary>

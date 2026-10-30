@@ -294,6 +294,24 @@ Time-series data support (`StreamData/`):
     active one. The status endpoint (ReadOnly) returns `Pending|Running|Done|Failed` with the final report; unknown id = 404. No
     `rollupRtId` = every rollup. A repository without the feature answers 400. Tests: `StreamDataControllerRollupConsistencyTests`.
     A rollup the validator cannot check is an entry with `isNotChecked: true`, `notChecked: {cause, reason, isBlocking}` (NoLiveTable|NeverActivated|SourceMissing). `isBlocking` is false only for NeverActivated (informational: `isOk` stays true, the report stays ok); a blocking gap makes `isOk` false (`isBlockedByNotChecked`). The report carries `hasNotChecked` (any) and `hasBlockingNotChecked`. Fields are additive.
+  - `POST archives/{archiveRtId}/insertTimeRange` (ReadWrite) — **origin, writer, reason (AB#5356, AB#7593, AB#7596)**:
+    each point may carry `origin` (`manual` | `automated`, case-insensitive; absent = automated, so existing callers are
+    unchanged) and, only with `manual`, an optional `reason`. The writer of a manual row comes from the caller's token
+    (`StreamDataController.CallerIdentity`, AB#7647: `preferred_username`, else `name`, else `ClaimTypes.Name`, else the
+    subject id; `client_id` only when the token has no subject), **never** a body field;
+    the platform time is set by the repository. 400 for an unknown origin (names the valid values), a reason without
+    `manual`, and a manual write whose token names no identity; nothing of the batch is written. Tests:
+    `StreamDataControllerInsertTimeRangeTests`. SDK: `IStreamDataServicesClient.InsertTimeRangeAsync` (`TimeRangePointDto`).
+    **Write result (AB#7598):** answers **200** with `StreamDataWriteResultRestDto` (`stored`, `skipped`,
+    `skippedByReason` — `LowerPrecedence` / `ManualValueProtected` / `CkTypeMismatch` —, `skippedRows` up to 1,000);
+    an empty batch stays 204. A manual row the archive did not store (`ManualStreamDataNotAppliedException`) answers
+    **409** `{ message, result }` — never success. Callers that ignore the body behave as before.
+  - **Reading the origin (AB#7616)**: the GraphQL stream-data queries (`streamData.transientStreamDataQuery` /
+    persisted queries: simple, groupingAggregation, downsampling, fieldFilter) accept `row_origin` (`manual` |
+    `automated`; rows written before AB#5356 read `automated`), `manual_written_by`, `manual_written_at`,
+    `manual_reason` as column / filter / groupBy paths on raw and time-range archives — the engine resolver
+    (`StreamDataFieldResolver.CreateForArchive`) provides them, no asset-repo code. Rollup archives refuse them. There
+    is no REST read endpoint for stream data. Test: `StreamData/StreamDataRowOriginQueryTests`.
 - **TenantManager** - Manages stream data tenant contexts
 - **StreamDataDatabaseManager** - Database operations for time-series data
 - **StreamDataTenantContext** - Per-tenant stream data context

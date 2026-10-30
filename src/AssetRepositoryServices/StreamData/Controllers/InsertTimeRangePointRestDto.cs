@@ -50,4 +50,18 @@ public sealed class InsertTimeRangePointRestDto
     }
 
     private IReadOnlyDictionary<string, object?> _attributes = ReadOnlyDictionary<string, object?>.Empty;
+
+    /// <summary>
+    /// Whether the value was entered manually or delivered automatically (AB#5356, AB#7596): <c>manual</c>
+    /// or <c>automated</c>, case-insensitive. Absent means automated, so existing callers are unchanged.
+    /// Any other value refuses the batch with HTTP 400. The writer of a manual row is taken from the
+    /// caller's token, never from the body (AB#7593).
+    /// </summary>
+    public string? Origin { get; set; }
+
+    /// <summary>
+    /// Optional free-text reason of a manual write (AB#7593), stored as given. Only allowed together with
+    /// <see cref="Origin" /> <c>manual</c>.
+    /// </summary>
+    public string? Reason { get; set; }
 }
