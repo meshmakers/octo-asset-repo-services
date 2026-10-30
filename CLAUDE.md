@@ -1010,9 +1010,8 @@ parameters, the idempotency key or the token, so none can reach the event.
   **Counted once:** `CkMethodAuditRecorder.RecordAsync` counts `ck.method.calls` for transport `gateway` (AB#6920), so the fault is counted exactly once with no change in common-services
   (test `AFault_IsCountedOnce_AsAGatewayCall_WithOutcomeHandlerFailed`).
   **No duplicates:** the real `CkMethodDispatcher` and the pipeline never throw for a failing call (the filter records an exception from an inner step as `METHOD_HANDLER_FAILED`, rethrows to the
-  pipeline, which answers `METHOD_HANDLER_FAILED`), so a throw out of `dispatcher.InvokeAsync` is a contract violation of a custom dispatcher and the filter has not recorded it. Known gap (needs
-  octo-common-services): the dispatcher's own last-line catch (resolver or DI fault before the pipeline) answers `METHOD_HANDLER_FAILED` as a **response** without any audit event; the gateway cannot
-  tell that answer from an audited one, so it records nothing for it.
+  pipeline, which answers `METHOD_HANDLER_FAILED`), so a throw out of `dispatcher.InvokeAsync` is a contract violation of a custom dispatcher and the filter has not recorded it. Not covered by the gateway: the dispatcher's own last-line catch (a resolver or DI fault before the pipeline) answers `METHOD_HANDLER_FAILED` as a **response**
+  that the filter never saw; the gateway cannot tell that answer from an audited one, so it records nothing for it (the dispatcher belongs to octo-common-services).
 - Tests: `GraphQL/Methods/CkMethodGatewayAuditTests` (parametrized over the five refusal paths: one record, transport `gateway`, code, invocation id; real recorder + capturing sink canary scan
   for parameter value, token and idempotency key; real in-process pipeline for the no-duplicate case; audit failure; cancelled caller; AB#7907: faults in the target-access check and in the
   dispatcher with exception text in the message (event carries no canary, caller gets the same exception), a handler that throws is audited by the filter only, meter count once, cancellation not recorded). User documentation: octo-documentation `ckLanguage2/methodConsistency.md#audit` (en + de).
