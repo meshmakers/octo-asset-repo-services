@@ -87,18 +87,31 @@ internal sealed class CkMethodGateway(
         var started = Stopwatch.GetTimestamp();
         var principal = call.User.Identity?.IsAuthenticated == true ? CkMethodPrincipal.FromClaimsPrincipal(call.User) : null;
 
+        var dispatched = new DispatchState();
         try
         {
-            return await InvokeCoreAsync(call, targetAccess, invocationId, started, principal, cancellationToken)
+            return await InvokeCoreAsync(call, targetAccess, invocationId, started, principal, dispatched, cancellationToken)
                 .ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested && !dispatched.Started)
+        {
+            // AB#7930: the caller gave up before the call reached the dispatcher (in the target-access check, the only await
+            // before it). No pipeline filter and no dispatcher saw the call, so the gateway is the only observer and records
+            // it once as CALLER_CANCELLED (counted by the recorder like every gateway event) and rethrows. After the
+            // dispatch started, the pipeline's audit filter (or the dispatcher, for a cancellation before the pipeline)
+            // records the cancellation, so the gateway stays silent there.
+            await RecordAsync(call, invocationId, principal, started, CkMethodAuditOutcomes.CallerCancelled)
+                .ConfigureAwait(false);
+            throw;
         }
         catch (Exception e) when (e is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
         {
             // AB#7907: a fault of the gateway itself (the target-access check, the validator, the dispatcher that throws
             // against its contract) is no refusal and no answer, but the call must not vanish from the audit. It is recorded
             // once here and rethrown, so the caller gets exactly the error it got before. The real dispatcher never throws
-            // for a failing call (the pipeline audits those through the band-100 filter); only a cancellation by the caller
-            // is not a fault and passes through unrecorded.
+            // for a failing call (the pipeline audits those through the band-100 filter, and its own last line audits what the
+            // pipeline never saw: AB#7930, so a dispatcher answer is a response here and is not recorded again); a cancellation
+            // by the caller is not a fault (see the catch above).
             logger.LogError(
                 "CK method {MethodId} invocation {InvocationId} in tenant {TenantId}: the gateway faulted ({ExceptionType}), recorded in the audit",
                 call.MethodId, invocationId, call.TenantId, e.GetType().Name);
@@ -109,7 +122,8 @@ internal sealed class CkMethodGateway(
     }
 
     private async Task<CkMethodResponse> InvokeCoreAsync(CkMethodGatewayCall call, CkMethodTargetAccessCheck targetAccess,
-        Guid invocationId, long started, CkMethodPrincipal? principal, CancellationToken cancellationToken)
+        Guid invocationId, long started, CkMethodPrincipal? principal, DispatchState dispatched,
+        CancellationToken cancellationToken)
     {
         // 1. authorize. Nothing about the target has been read; the answer depends on the method and the caller only.
         var definition = definitionSource.Find(call.TenantId, call.CkTypeId, call.MethodId);
@@ -205,6 +219,7 @@ internal sealed class CkMethodGateway(
         };
         using (CkMethodPrincipalScope.Begin(principal!))
         {
+            dispatched.Started = true;
             return await dispatcher.InvokeAsync(request, cancellationToken).ConfigureAwait(false);
         }
     }
@@ -220,7 +235,9 @@ internal sealed class CkMethodGateway(
     ///     AB#7907: a <b>fault</b> (an exception from the gateway's own steps or from a dispatcher that throws) is recorded the
     ///     same way with outcome <c>METHOD_HANDLER_FAILED</c> (the audit filter uses the same outcome for an exception inside the
     ///     pipeline; transport <c>gateway</c> and no handler instance say that it happened before the handler) and the
-    ///     exception surfaces unchanged. A cancellation by the caller is not a fault and is not recorded here.
+    ///     exception surfaces unchanged. A cancellation by the caller before the dispatch (AB#7930: in the target-access check) is
+    ///     recorded once with outcome <c>CALLER_CANCELLED</c> (transport <c>gateway</c>) and rethrown; once the dispatch has
+    ///     started the pipeline's audit filter records it.
     /// </summary>
     private async Task<CkMethodResponse> RefuseAsync(CkMethodGatewayCall call, Guid invocationId, CkMethodPrincipal? principal,
         long started, CkMethodResponse refusal)
@@ -263,6 +280,12 @@ internal sealed class CkMethodGateway(
             logger.LogError(e, "CK method {MethodId} invocation {InvocationId}: the audit recorder threw", call.MethodId,
                 invocationId);
         }
+    }
+
+    /// <summary>Whether the call has reached the dispatcher (from then on the pipeline and the dispatcher audit it).</summary>
+    private sealed class DispatchState
+    {
+        public bool Started { get; set; }
     }
 
     private static CkMethodCaller CallerOf(ClaimsPrincipal user, CkMethodPrincipal principal) => new()
