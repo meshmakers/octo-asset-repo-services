@@ -526,6 +526,9 @@ public class StreamDataController : ControllerBase
     /// </summary>
     [HttpPost("archives/{archiveRtId}/insertTimeRange")]
     [ProducesResponseType(typeof(StreamDataWriteResultRestDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(typeof(string), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ManualWriteNotStoredRestDto), StatusCodes.Status409Conflict)]
     [Microsoft.AspNetCore.Authorization.Authorize(AssetRepositoryServiceConstants.TenantAssetApiReadWritePolicy)]
     public async Task<IActionResult> InsertTimeRange(
         [Required] string tenantId,
@@ -606,7 +609,11 @@ public class StreamDataController : ControllerBase
             _logger.LogWarning(
                 "InsertTimeRange for tenant '{TenantId}', archive '{ArchiveRtId}': {Skipped} manual row(s) not stored.",
                 tenantId, archiveRtId, e.Result.Skipped.Count(s => s.Origin == ArchiveRowOrigin.Manual));
-            return Conflict(new { message = e.Message, result = StreamDataWriteResultRestDto.From(e.Result) });
+            return Conflict(new ManualWriteNotStoredRestDto
+            {
+                Message = e.Message,
+                Result = StreamDataWriteResultRestDto.From(e.Result)
+            });
         }
         catch (ConfigurationException e)
         {

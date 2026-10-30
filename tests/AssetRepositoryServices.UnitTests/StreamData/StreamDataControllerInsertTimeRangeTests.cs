@@ -313,7 +313,17 @@ public class StreamDataControllerInsertTimeRangeTests
 
         var result = await _controller.InsertTimeRange(TenantId, _archiveRtId.ToString(), Bind(OnePoint(", \"origin\": \"manual\"")));
 
-        result.Should().BeOfType<ConflictObjectResult>();
+        var conflict = result.Should().BeOfType<ConflictObjectResult>().Subject;
+
+        // The SDK and the energy pipelines read this body: the property names are the wire contract.
+        using var body = JsonDocument.Parse(JsonSerializer.Serialize(conflict.Value, new JsonSerializerOptions(JsonSerializerDefaults.Web)));
+        body.RootElement.EnumerateObject().Select(p => p.Name).Should().BeEquivalentTo("message", "result");
+        body.RootElement.GetProperty("message").GetString().Should().NotBeNullOrEmpty();
+        var writeResultBody = body.RootElement.GetProperty("result");
+        writeResultBody.GetProperty("stored").GetInt32().Should().Be(0);
+        writeResultBody.GetProperty("skipped").GetInt32().Should().Be(1);
+        writeResultBody.GetProperty("skippedByReason").GetProperty("LowerPrecedence").GetInt32().Should().Be(1);
+        writeResultBody.GetProperty("skippedRows")[0].GetProperty("origin").GetString().Should().Be("manual");
     }
 
     private static IReadOnlyList<InsertTimeRangePointRestDto> Bind(string body) =>
