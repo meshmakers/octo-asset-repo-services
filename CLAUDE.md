@@ -961,7 +961,7 @@ only in the audit facts as `ReplayOf`); a `resultSensitive` method refuses a key
 `CkMethodResponseMapper` passes them through `CkMethodGraphQlError` (`extensions.code`, `extensions.parameters`); neither the key nor a parameter value is in an error.
 Without the argument nothing changes (the filter passes an unkeyed call on without touching the store). The argument is additive: a replica without this change rejects it at
 schema validation (fail closed, a key is never silently ignored). There is no generic (non-typed) method invocation in the asset repository; the typed mutations are the only
-GraphQL entry. Clients (octo-sdk, octo-cli, MCP) do not send the key yet; Studio refreshes `schema.graphql` and runs codegen when it needs it. Tests:
+GraphQL entry. After a schema change, Studio refreshes `schema.graphql` and runs codegen. Tests:
 `CkMethodMutationFieldsTests` (argument on every field), `CkMethodGatewayTests` (forwarding), `CkMethodResponseMapperTests` (codes), `IntegrationTests/GraphQL/CkV2/MethodIdempotencyKeyTests`
 (real schema, gateway, pipeline and in-process handler with `IdempotentMethodGraphQlTestFixture`: replay runs the handler once, other key / other caller run again, changed
 parameters, 129 characters, 128 accepted, forbidden stays forbidden, failed handler burns the key).
