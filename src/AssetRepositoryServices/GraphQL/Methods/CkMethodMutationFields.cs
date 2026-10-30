@@ -68,6 +68,14 @@ internal static class CkMethodMutationFields
                 });
             }
 
+            // AB#7825 (OD-4): optional on every method; the filter of the invocation pipeline validates it and applies the
+            // key rules (scope, fingerprint, in-flight, replay). Without it the call is unchanged.
+            arguments.Add(new QueryArgument(new StringGraphType())
+            {
+                Name = Statics.IdempotencyKeyArg,
+                Description = "Optional idempotency key (at most 128 characters). While the key is within its lifetime (24 hours by default, configured by Methods:Idempotency:Ttl), a second call by the same caller with the same key and the same parameters returns the first result instead of running the method again."
+            });
+
             var field = new FieldType
             {
                 Name = fieldName,

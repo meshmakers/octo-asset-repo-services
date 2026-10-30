@@ -209,6 +209,22 @@ public class CkMethodGatewayTests
     }
 
     [Fact]
+    public async Task IdempotencyKey_IsForwardedIntoTheRequest_AndAbsentWhenTheCallHasNone()
+    {
+        var gateway = Gateway(new CkMethodAuthorizationDto { Roles = ["AssetManagement"] });
+        var reader = new Counter();
+        var user = User(Other, ["assetmanagement"]);
+
+        await gateway.InvokeAsync(Call(user, Owner) with { IdempotencyKey = "key-7825" }, reader.CheckAsync,
+            TestContext.Current.CancellationToken);
+        await gateway.InvokeAsync(Call(user, Owner), reader.CheckAsync, TestContext.Current.CancellationToken);
+
+        Assert.Equal(2, _dispatched.Count);
+        Assert.Equal("key-7825", _dispatched[0].IdempotencyKey);
+        Assert.Null(_dispatched[1].IdempotencyKey);
+    }
+
+    [Fact]
     public async Task AllowSelf_PassesAcrossLetterCase_AnotherCallerIsRefusedBeforeAnyRead()
     {
         var gateway = Gateway(new CkMethodAuthorizationDto { AllowSelf = true });

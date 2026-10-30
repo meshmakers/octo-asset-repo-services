@@ -17,6 +17,7 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Methods;
 /// <param name="User">The authenticated user of the HTTP request.</param>
 /// <param name="AccessToken">The raw access token of the request, forwarded to the handler for its own validation. Sensitive.</param>
 /// <param name="CorrelationId">Id of the request that causes the call.</param>
+/// <param name="IdempotencyKey">AB#7825: the optional idempotency key of the call (the <c>idempotencyKey</c> argument), forwarded unchanged into the request; the idempotency filter of the invocation pipeline validates it. Sensitive-ish: never logged.</param>
 public sealed record CkMethodGatewayCall(
     string TenantId,
     string CkTypeId,
@@ -25,7 +26,8 @@ public sealed record CkMethodGatewayCall(
     string ParametersJson,
     ClaimsPrincipal User,
     string? AccessToken = null,
-    Guid? CorrelationId = null)
+    Guid? CorrelationId = null,
+    string? IdempotencyKey = null)
 {
     /// <summary>Redacting: the parameters and the token never show.</summary>
     public override string ToString() => $"CkMethodGatewayCall {{ {MethodId} {TenantId} }}";
@@ -163,6 +165,7 @@ internal sealed class CkMethodGateway(
             ParametersJson = call.ParametersJson,
             Caller = CallerOf(call.User, principal!),
             CallerAccessToken = call.AccessToken,
+            IdempotencyKey = call.IdempotencyKey,
             DeadlineUtc = timeoutResolver.GetDeadlineUtc(call.TenantId, call.CkTypeId, call.MethodId)
         };
         using (CkMethodPrincipalScope.Begin(principal!))

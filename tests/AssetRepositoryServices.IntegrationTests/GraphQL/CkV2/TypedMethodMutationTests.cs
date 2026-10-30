@@ -43,12 +43,38 @@ public class TypedMethodMutationTests
     {
         var fields = await FieldsAsync($"{Prefix}AccessTestAccountMutations");
 
-        ArgumentNames(fields["resetPassword"]).Should().Equal("rtId", "input");
-        ArgumentNames(fields["touch"]).Should().Equal("rtId");
-        ArgumentNames(fields["lookup"]).Should().BeEmpty("a static method has no target and no parameters");
-        var rtId = fields["touch"]["args"]!.Single();
+        ArgumentNames(fields["resetPassword"]).Should().Equal("rtId", "input", "idempotencyKey");
+        ArgumentNames(fields["touch"]).Should().Equal("rtId", "idempotencyKey");
+        ArgumentNames(fields["lookup"]).Should().Equal(["idempotencyKey"], "a static method has no target and no parameters");
+        var rtId = fields["touch"]["args"]!.Single(a => a["name"]!.Value<string>() == "rtId");
         rtId["type"]!["kind"]!.Value<string>().Should().Be("NON_NULL");
         rtId["type"]!["ofType"]!["name"]!.Value<string>().Should().Be("OctoObjectId");
+    }
+
+    [Fact]
+    public async Task EveryMethodField_HasTheOptionalStringArgumentIdempotencyKey()
+    {
+        // AB#7825: on every typed method mutation of the test model, instance and static, with and without input
+        var methodFields = new[] { "resetPassword", "resetPassword2", "issueToken", "touch", "lookup" };
+        var fields = await FieldsAsync($"{Prefix}AccessTestAccountMutations");
+        var checkedFields = 0;
+        foreach (var name in methodFields)
+        {
+            var argument = fields[name]["args"]!.Single(a => a["name"]!.Value<string>() == "idempotencyKey");
+            argument["type"]!["kind"]!.Value<string>().Should().Be("SCALAR", $"{name}: the argument is optional");
+            argument["type"]!["name"]!.Value<string>().Should().Be("String", name);
+            checkedFields++;
+        }
+
+        // the operable thing type of the test model (inherited and interface methods)
+        var operable = await FieldsAsync($"{Prefix}OperableThingMutations");
+        foreach (var field in operable.Where(f => f.Key is not ("create" or "update")))
+        {
+            field.Value["args"]!.Select(a => a["name"]!.Value<string>()).Should().Contain("idempotencyKey", field.Key);
+            checkedFields++;
+        }
+
+        checkedFields.Should().BeGreaterThan(methodFields.Length);
     }
 
     [Fact]

@@ -4,7 +4,8 @@ A CK method call that carries an idempotency key runs at most once per tenant, m
 asset repository replica the retry reaches. The rules (scope, parameter fingerprint, in-progress, stored results, lifetime,
 store location) are OD-4 (AB#6922); the filter that applies them is `CkMethodIdempotencyFilter` (octo-common-services,
 band 300, AB#7820). This document describes the store behind it: `Services/Methods/MongoMethodIdempotencyStore.cs`
-(`ICkMethodIdempotencyStore`, contract AB#7817). The GraphQL argument `idempotencyKey` that feeds it is K6 (AB#7825).
+(`ICkMethodIdempotencyStore`, contract AB#7817). The GraphQL argument `idempotencyKey` that feeds it is K6 (AB#7825): the optional `idempotencyKey: String` argument on every typed
+method mutation (see the section "Method idempotency key argument" in `CLAUDE.md`).
 
 ## Where the records live
 

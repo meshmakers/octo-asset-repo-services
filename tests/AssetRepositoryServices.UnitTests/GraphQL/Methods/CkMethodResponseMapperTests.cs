@@ -49,6 +49,8 @@ public class CkMethodResponseMapperTests
     [InlineData(CkMethodErrorCodes.MethodHandlerNotAvailable)]
     [InlineData(CkMethodErrorCodes.MethodTimeout)]
     [InlineData(CkMethodErrorCodes.MethodHandlerFailed)]
+    [InlineData(CkMethodErrorCodes.MethodRequestInProgress)] // AB#7825: idempotency codes pass the allow-list
+    [InlineData(CkMethodErrorCodes.MethodOutcomeUnknown)]
     [InlineData("PASSWORD_POLICY_VIOLATION")]
     public void FailedResponse_IsOneErrorWithTheCodeAndParameters(string code)
     {

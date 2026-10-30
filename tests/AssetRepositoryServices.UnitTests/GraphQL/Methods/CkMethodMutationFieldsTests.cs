@@ -38,10 +38,27 @@ public class CkMethodMutationFieldsTests
             Method("Lookup-1", CkMethodKindDto.Static));
 
         var reset = FieldOf(type, "reset");
-        reset.Arguments!.Select(a => a.Name).Should().Equal("rtId", "input");
+        reset.Arguments!.Select(a => a.Name).Should().Equal("rtId", "input", "idempotencyKey");
         reset.Arguments!.Find("rtId")!.ResolvedType.Should().BeOfType<NonNullGraphType>();
         var lookup = FieldOf(type, "lookup");
-        lookup.Arguments!.Count.Should().Be(0);
+        lookup.Arguments!.Select(a => a.Name).Should().Equal("idempotencyKey");
+    }
+
+    [Fact]
+    public void EveryMethodField_HasTheOptionalIdempotencyKeyArgument_OfTypeString()
+    {
+        var type = Build(
+            Method("Reset-1", CkMethodKindDto.Instance, [Param("newPassword", AttributeValueTypesDto.String)]),
+            Method("Touch-1", CkMethodKindDto.Instance),
+            Method("Lookup-1", CkMethodKindDto.Static),
+            Method("Calc-1", CkMethodKindDto.Static, [Param("a", AttributeValueTypesDto.Int, optional: true)]));
+
+        foreach (var name in new[] { "reset", "touch", "lookup", "calc" })
+        {
+            var argument = FieldOf(type, name).Arguments!.Find("idempotencyKey");
+            argument.Should().NotBeNull(name);
+            argument!.ResolvedType.Should().BeOfType<StringGraphType>(name); // nullable: optional
+        }
     }
 
     [Fact]
