@@ -91,6 +91,60 @@ public class RollupManualWriteTests(ImmediateSweepStreamDataFixture fixture, ITe
             "the rollup is consistent with its source after the manual write");
     }
 
+    // AB#7727: through the production drain, up a ladder of two rollups, none of which declares anything.
+    [Fact]
+    public async Task AManualValue_IsCountedInEveryRollupOfTheLadder_Once()
+    {
+        fixture.OutputHelper = output;
+        var anchor = AlignDownToHour(DateTime.UtcNow).AddHours(-6);
+        var series = OctoObjectId.GenerateNewId();
+        var archive = await _builder.CreateTimeRangeArchiveAsync("ManualCountSource", QuarterHour);
+        await _builder.InsertWindowsAsync(archive, series,
+            Enumerable.Range(0, 16).Select(i => (anchor + i * QuarterHour, anchor + (i + 1) * QuarterHour, Delivered)));
+        var hourly = await _builder.CreateRollupAsync("ManualCountHourly", [new RollupSourceReference(archive)], OneHour);
+        var twoHourly = await _builder.CreateRollupAsync("ManualCountTwoHourly", [new RollupSourceReference(hourly)], 2 * OneHour);
+        foreach (var rollup in new[] { hourly, twoHourly })
+        {
+            await _builder.ActivateAsync(rollup);
+            await _builder.RewindAsync(rollup, anchor);
+            await _builder.TickAsync(rollup);
+        }
+
+        var repo = (await _builder.TenantAsync()).GetStreamDataRepository()!;
+        var corrected = anchor.AddHours(1);
+        await repo.InsertTimeRangeAsync(archive,
+        [
+            ManualPoint(series, corrected, Corrected),
+            ManualPoint(series, corrected.AddMinutes(15), Corrected)
+        ], TestContext.Current.CancellationToken);
+        await _builder.RefreshAsync(archive);
+        await (await _builder.TenantAsync()).GetRecomputeOrchestrator()!.TickAsync(CancellationToken.None);
+        await repo.InsertTimeRangeAsync(archive, [ManualPoint(series, corrected, Corrected + 1)], TestContext.Current.CancellationToken);
+        await _builder.RefreshAsync(archive);
+        await (await _builder.TenantAsync()).GetRecomputeOrchestrator()!.TickAsync(CancellationToken.None);
+
+        (await ManualCountsAsync(hourly, series))[corrected].Should().Be(2, "two manual quarter hours, one of them corrected twice");
+        (await ManualCountsAsync(hourly, series))[anchor].Should().Be(0);
+        (await ManualCountsAsync(twoHourly, series)).Values.Sum().Should().Be(2, "the level above adds the hours up");
+    }
+
+    private TimeRangeStreamDataPoint ManualPoint(OctoObjectId series, DateTime from, double value) => new()
+    {
+        RtId = series,
+        CkTypeId = new RtCkId<CkTypeId>(fixture.TestCkTypeId),
+        From = from,
+        To = from.AddMinutes(15),
+        Attributes = new Dictionary<string, object?> { [MultiSourceArchiveBuilder.BaseColumn] = value },
+        Origin = ArchiveRowOrigin.Manual,
+        ManualWrittenBy = "user-1"
+    };
+
+    private async Task<IReadOnlyDictionary<DateTime, double>> ManualCountsAsync(OctoObjectId rollupRtId, OctoObjectId seriesRtId)
+    {
+        var buckets = await _builder.ReadBucketsAsync(rollupRtId, ArchiveRowOriginFields.ManualCount, seriesRtId);
+        return buckets.ToDictionary(b => b.WindowStart, b => b.Value ?? 0);
+    }
+
     private async Task<IReadOnlyDictionary<DateTime, double>> BucketsAsync(OctoObjectId rollupRtId, OctoObjectId seriesRtId)
     {
         var buckets = await _builder.ReadBucketsAsync(rollupRtId, MultiSourceArchiveBuilder.RollupColumn, seriesRtId);
