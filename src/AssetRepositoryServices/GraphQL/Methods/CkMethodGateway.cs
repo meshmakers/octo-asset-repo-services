@@ -1,7 +1,9 @@
+using System.Diagnostics;
 using System.Security.Claims;
 using Meshmakers.Octo.ConstructionKit.Contracts.DataTransferObjects;
 using Meshmakers.Octo.Services.Contracts.DistributionEventHub.Methods;
 using Meshmakers.Octo.Services.Methods;
+using Meshmakers.Octo.Services.Methods.Audit;
 using Meshmakers.Octo.Services.Methods.Authorization;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -71,6 +73,7 @@ internal sealed class CkMethodGateway(
     ICkMethodAuthorizationDefinitionSource definitionSource,
     ICkMethodTimeoutResolver timeoutResolver,
     ICkMethodDispatcher dispatcher,
+    ICkMethodAuditRecorder auditRecorder,
     ILogger<CkMethodGateway> logger,
     IOptions<CkMethodLimitsOptions>? limits = null) : ICkMethodGateway
 {
@@ -81,6 +84,7 @@ internal sealed class CkMethodGateway(
         ArgumentNullException.ThrowIfNull(targetAccess);
 
         var invocationId = Guid.NewGuid();
+        var started = Stopwatch.GetTimestamp();
         var principal = call.User.Identity?.IsAuthenticated == true ? CkMethodPrincipal.FromClaimsPrincipal(call.User) : null;
 
         // 1. authorize. Nothing about the target has been read; the answer depends on the method and the caller only.
@@ -94,7 +98,9 @@ internal sealed class CkMethodGateway(
             logger.LogInformation(
                 "CK method {MethodId} invocation {InvocationId} refused at the gateway in tenant {TenantId}: {Denial}",
                 call.MethodId, invocationId, call.TenantId, decision.Denial);
-            return CkMethodResponse.Failed(invocationId, string.Empty, CkMethodAuthorizationErrors.Forbidden(call.MethodId));
+            return await RefuseAsync(call, invocationId, principal, started,
+                CkMethodResponse.Failed(invocationId, string.Empty, CkMethodAuthorizationErrors.Forbidden(call.MethodId)))
+                .ConfigureAwait(false);
         }
 
         // 1b. the size of the parameters (AB#7665, F-2): after authorization (a caller who may not call the method learns
@@ -104,8 +110,9 @@ internal sealed class CkMethodGateway(
             logger.LogWarning(
                 "CK method {MethodId} invocation {InvocationId} in tenant {TenantId}: parameters of {ActualBytes} bytes exceed the limit, refused",
                 call.MethodId, invocationId, call.TenantId, actualBytes);
-            return CkMethodResponse.Failed(invocationId, string.Empty,
-                CkMethodParameterLimit.TooLarge(call.MethodId, limits?.Value, actualBytes));
+            return await RefuseAsync(call, invocationId, principal, started,
+                CkMethodResponse.Failed(invocationId, string.Empty,
+                    CkMethodParameterLimit.TooLarge(call.MethodId, limits?.Value, actualBytes))).ConfigureAwait(false);
         }
 
         // 2. load the target with the caller's rights and check the data permission (AB#7037). The data action is Write
@@ -131,15 +138,18 @@ internal sealed class CkMethodGateway(
                 logger.LogInformation(
                     "CK method {MethodId} invocation {InvocationId} in tenant {TenantId}: target not found",
                     call.MethodId, invocationId, call.TenantId);
-                return CkMethodResponse.Failed(invocationId, string.Empty,
-                    CkMethodError.Create(CkMethodErrorCodes.MethodTargetNotFound,
-                        (CkMethodErrorParameters.MethodId, call.MethodId)));
+                return await RefuseAsync(call, invocationId, principal, started,
+                    CkMethodResponse.Failed(invocationId, string.Empty,
+                        CkMethodError.Create(CkMethodErrorCodes.MethodTargetNotFound,
+                            (CkMethodErrorParameters.MethodId, call.MethodId)))).ConfigureAwait(false);
             default:
                 // NotPermitted, or a static method whose declaring type the caller cannot read at all.
                 logger.LogInformation(
                     "CK method {MethodId} invocation {InvocationId} refused by a data permission in tenant {TenantId} ({DataAccess})",
                     call.MethodId, invocationId, call.TenantId, dataAccess);
-                return CkMethodResponse.Failed(invocationId, string.Empty, CkMethodDataPermissionErrors.Forbidden(call.MethodId));
+                return await RefuseAsync(call, invocationId, principal, started,
+                    CkMethodResponse.Failed(invocationId, string.Empty, CkMethodDataPermissionErrors.Forbidden(call.MethodId)))
+                    .ConfigureAwait(false);
         }
 
         // 3. validate the parameters against the declaration. After authorization and the target lookup, so a caller who
@@ -151,7 +161,8 @@ internal sealed class CkMethodGateway(
             logger.LogInformation(
                 "CK method {MethodId} invocation {InvocationId} in tenant {TenantId}: parameters rejected ({Reason})",
                 call.MethodId, invocationId, call.TenantId, invalid.Parameters.GetValueOrDefault(CkMethodErrorParameters.Reason));
-            return CkMethodResponse.Failed(invocationId, string.Empty, invalid);
+            return await RefuseAsync(call, invocationId, principal, started,
+                CkMethodResponse.Failed(invocationId, string.Empty, invalid)).ConfigureAwait(false);
         }
 
         // 4. dispatch. The principal travels in the ambient scope, so the filter (second line) judges the same caller.
@@ -172,6 +183,49 @@ internal sealed class CkMethodGateway(
         {
             return await dispatcher.InvokeAsync(request, cancellationToken).ConfigureAwait(false);
         }
+    }
+
+    /// <summary>
+    ///     AB#7826: a call the gateway refuses never reaches the invocation pipeline, so the audit filter (band 100) never sees
+    ///     it. The gateway records it through the same <see cref="ICkMethodAuditRecorder" />: transport <c>gateway</c>, the
+    ///     invocation id minted above, the error code of the answer as outcome, no handler instance. The record has no place
+    ///     for parameters, the idempotency key or the token. A call that passes the gateway is recorded by the filter only, so
+    ///     there is exactly one event per invocation id. A refusal is a call that did not run: when the tenant fails calls on an
+    ///     audit failure the answer stays the refusal (the recorder has logged and counted the failure). The event is written
+    ///     with a token that is not cancelled, like the filter does.
+    /// </summary>
+    private async Task<CkMethodResponse> RefuseAsync(CkMethodGatewayCall call, Guid invocationId, CkMethodPrincipal? principal,
+        long started, CkMethodResponse refusal)
+    {
+        var record = new CkMethodAuditRecord
+        {
+            TenantId = call.TenantId,
+            InvocationId = invocationId,
+            MethodId = call.MethodId,
+            CkTypeId = call.CkTypeId,
+            TargetRtId = call.TargetRtId,
+            Transport = CkMethodAuditRecord.GatewayTransport,
+            Outcome = CkMethodAuditRecord.OutcomeOf(refusal),
+            CallerSubject = principal?.SubjectId ?? call.User.FindFirst("client_id")?.Value,
+            CallerName = call.User.FindFirst("name")?.Value,
+            Duration = Stopwatch.GetElapsedTime(started)
+        };
+        try
+        {
+            await auditRecorder.RecordAsync(record, CancellationToken.None).ConfigureAwait(false);
+        }
+        catch (CkMethodAuditFailedException)
+        {
+            // logged and counted by the recorder; the call did not run, so it stays the refusal it was
+        }
+        catch (Exception e)
+        {
+            // a custom recorder must not turn a refusal into a fault
+            logger.LogError(e, "CK method {MethodId} invocation {InvocationId}: the audit recorder threw", call.MethodId,
+                invocationId);
+        }
+
+        return refusal;
     }
 
     private static CkMethodCaller CallerOf(ClaimsPrincipal user, CkMethodPrincipal principal) => new()
