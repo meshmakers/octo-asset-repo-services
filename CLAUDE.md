@@ -170,7 +170,7 @@ Located in versioned API folders:
 - `DiagnosticsController.cs` - Health and diagnostics
 - `BlueprintsController.cs` - Blueprint management
 - `CkModelCatalogController.cs` - CK model catalog browsing, search, and cache refresh
-- `TenantRegistryController.cs` - `POST system/v1/tenants/reconcile-registry?apply=false`: repairs the system tenant registry (AB#6971, AB#6941). Tenants that a parent lists in its own registry (visible in `GetTenants -r`) but that lack their system registry row (missing in `GetTenants -a`, so client mirror provisioning, token cleanup, CORS and health checks skip them) get the row inserted through the engine's `ISystemContext.ReconcileTenantRegistryAsync`. **Dry run is the default**; rows are only inserted, never changed or deleted; disagreeing rows and unreadable parent registries are returned as `conflicts`; idempotent. Runs in one admin transaction. Caller check `SystemAdministratorGuard` (shared with the orphan sweep: system-tenant token, user tokens need `AdminPanelManagement`, else 403) plus `SystemAssetApiReadWritePolicy`. Report: `applied`, `walked`, `inserted[]`, `alreadyPresent`, `conflicts[]` (with reason), `summary`. Needs an engine release that contains `ReconcileTenantRegistryAsync` (octo-construction-kit-engine-mongodb PR 172). Runbook: dry run, review inserts and conflicts, then `apply=true`, then re-run the client mirror backfill.
+- `TenantRegistryController.cs` - `POST system/v1/tenants/reconcile-registry?apply=false`: repairs the system tenant registry (AB#6971, AB#6941). Tenants that a parent lists in its own registry (visible in `GetTenants -r`) but that lack their system registry row (missing in `GetTenants -a`, so client mirror provisioning, token cleanup, CORS and health checks skip them) get the row inserted through the engine's `ISystemContext.ReconcileTenantRegistryAsync`. **Dry run is the default**; rows are only inserted, never changed or deleted; disagreeing rows and unreadable parent registries are returned as `conflicts`; idempotent. Runs in one admin transaction. Caller check `SystemAdministratorGuard` (`Security/`, shared with the orphan sweep and the `methodHandlers` query: system-tenant token, user tokens need `AdminPanelManagement`, else 403) plus `SystemAssetApiReadWritePolicy`. Report: `applied`, `walked`, `inserted[]`, `alreadyPresent`, `conflicts[]` (with reason), `summary`. Needs an engine release that contains `ReconcileTenantRegistryAsync` (octo-construction-kit-engine-mongodb PR 172). Runbook: dry run, review inserts and conflicts, then `apply=true`, then re-run the client mirror backfill.
 - `FilesOrphanSweepController.cs` - `POST system/v1/files/orphan-sweep/{tenantId}?remove=false&gracePeriodMinutes=1440`: finds (dry run, the default) and removes (`remove=true`) orphaned GridFS bytes of linked binaries with the engine's `GridFsOrphanSweeper`; caller check `SystemAdministratorGuard` (shared with `reconcile-registry`: system-tenant token, user tokens need `AdminPanelManagement`, otherwise 403) plus `SystemAssetApiReadWritePolicy`; grace period default 24 h, minimum 10 min (400 below); returns a count report, logs counts only (AB#6541, see `docs/gridfs-orphan-sweep.md`)
 
 **Tenant APIs** (`TenantApi/v1/Controllers/`):
@@ -931,6 +931,35 @@ job), blueprint seed data and `ImportCk`-time data, the mesh-adapter `ApplyChang
 types (never flagged). There is no REST endpoint that creates arbitrary runtime entities. Tests: `UnitTests/GraphQL/Methods/GenericCreateReplacedByMethodGraphQlErrorTests`,
 `IntegrationTests/GraphQL/CkV2/GenericCreateReplacedByMethodTests` (incl. the query-row create) (test types `ManagedThing`, `ManagedThingChild`, `ToolThing` in
 `tests/AssetRepositoryIntegrationTestCkModel/ConstructionKit/types/replacesGenericCreateTest.yaml`).
+
+### Method handler diagnostics: `methodHandlers` (AB#7837, F3.2)
+
+Root query field `MethodHandlers` (camelCase on the wire: `methodHandlers`; mounted by `GraphQL/MethodHandlersQuery.AddTo`, called from `OctoQuery`; types in
+`GraphQL/MethodHandlers/`). It shows, per CK method, the handler instances of the registry of **the answering gateway replica**, their state, last seen,
+heartbeat vs snapshot. **System administrators only**, checked on the root field by `Security/SystemAdministratorGuard` (moved from `SystemApi/v1/Controllers`
+without a behaviour change; also used by the orphan sweep and the registry reconcile): a token issued for the system tenant (`tenant_id` = `ISystemContext.TenantId`);
+a user token also needs `AdminPanelManagement`; a client-credentials token of the system tenant passes without the role. Everyone else (tenant admin of a
+customer tenant, system-tenant user without the role, unauthenticated) gets `methodHandlers: null` with the error code `MethodHandlersForbidden`
+(`Statics.GraphQlMethodHandlersForbidden`); the registry, the snapshot store and the CK cache are not read. No reduced view for tenant admins (platform topology
+across all tenants; widening it needs a decision by Gerald).
+
+* Source of the data: `ICkMethodHandlerRegistryDiagnostics` (octo-common-services, AB#7836: entries with `Source` Announcement/Snapshot and `State`, snapshot health,
+  in-process method ids), ONE `ICkMethodHandlerSnapshotStore.LoadAsync` per request (shared collection `ck_method_handler_snapshot`, gives `persistedLastSeenUtc` by
+  method id + instance id) and the system tenant's CK cache (`ICkCacheService.GetCkTypes` -> `AllMethods`, `Handler == service`). `MethodHandlersViewBuilder` builds the view once
+  per request for all selected fields (`MethodHandlersRequestContext`).
+* Method list = registry entries + in-process methods + CK methods with a service handler and no entry (`NOT_ANNOUNCED`, the "missing handler" case). Method `state`:
+  `LIVE` (a live instance, or served in-process, then `transport = IN_PROCESS`), `NO_LIVE_HANDLER` (only expired, withdrawn or no-queue-bound instances),
+  `NOT_ANNOUNCED`. Instance `state` is `LIVE|EXPIRED|WITHDRAWN|NO_QUEUE_BOUND`, `source` is `HEARTBEAT|SNAPSHOT` (a restored row no announcement confirmed yet).
+  Arguments of `methods`: `search` (method id or service name, case-insensitive), `states`.
+* A missing or failing snapshot store never fails the query: `persistedLastSeenUtc` is null and a warning is logged; the response never carries exception text.
+  The response holds service data only (ids, service names, versions, times, tenant ids, flags), never parameters, tokens or user data
+  (`GraphTypes_HoldServiceDataOnly` pins the field set).
+* `answeredBy` (`dispatcherInstanceId`, `serviceVersion`, `snapshotEnabled`, `generatedAtUtc`, `snapshotLoadedAtUtc`, `snapshotRowsRestored`, `snapshotLoadFailed`,
+  `lastFlushUtc`, `lastFlushFailed`) names the replica: each replica answers from its own memory, so two requests may differ; `persistedLastSeenUtc` shows what other
+  replicas wrote.
+* Tests: `UnitTests/GraphQL/MethodHandlersQueryTests` (real GraphQL executor with registry/store/cache doubles: access matrix, states, source, failing store, filters, field set).
+  User docs: `octo-documentation` `ckLanguage2/methodHandlers.md` (en + de), section "Diagnostics". `schema.graphql` for the Studio codegen is refreshed from the running asset-repo (see the
+  Studio CLAUDE.md).
 
 ### Blueprint-locked entities: stable error contract (AB#6385)
 

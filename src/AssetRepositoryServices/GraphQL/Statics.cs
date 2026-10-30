@@ -167,6 +167,12 @@ internal static class Statics
     public const string GraphQlSecretsForbidden = "Forbidden";
 
     /// <summary>
+    ///     AB#7837: <c>MethodHandlers { … }</c> by a caller that is not a system administrator
+    ///     (<c>SystemAdministratorGuard</c>).
+    /// </summary>
+    public const string GraphQlMethodHandlersForbidden = "MethodHandlersForbidden";
+
+    /// <summary>
     ///     GraphQL name of a CK element: model and element name without separators. An element version above 1 is
     ///     appended without the dash (CK v2 F1.5-S2: <c>System.Identity/Named-2</c> → <c>SystemIdentityNamed2</c>, so
     ///     <c>Named-1</c> and <c>Named-2</c> coexist in one schema; a dash is not a valid GraphQL name character).
