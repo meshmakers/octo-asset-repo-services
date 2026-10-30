@@ -447,6 +447,46 @@ public class CreateRollupArchiveInputTests(StreamDataFixture fixture, ITestOutpu
         return error;
     }
 
+    // AB#7872: the generic mutation reaches every attribute; what the table cannot follow is refused with a code of its own.
+    [Fact]
+    public async Task TheGenericUpdate_OfTheBucketSizeOfAnActivatedRollup_IsRefused_AndOfItsLagPasses()
+    {
+        fixture.OutputHelper = output;
+        var rtId = await CreateSucceedsAsync(Input(name: "GuardedUpdate", sources: [Source(fixture.ArchiveRtId)]));
+        await ActivateSucceedsAsync(rtId);
+
+        var refused = await ExecuteUpdateAsync(rtId, "bucketSizeMs", 7_200_000L);
+
+        refused.Errors.Should().NotBeNullOrEmpty();
+        var error = SignificantError(refused);
+        error.Code.Should().Be(Statics.GraphQlErrorStreamDataSchemaImmutable);
+        error.Message.Should().Contain(rtId.ToString()).And.Contain("BucketSizeMs").And.Contain("needs a new archive");
+        (await LoadRollupAsync(rtId)).BucketSize.Should().Be(OneHour);
+
+        (await ExecuteUpdateAsync(rtId, "watermarkLagMs", 600_000L)).Errors.Should().BeNullOrEmpty();
+        (await LoadRollupAsync(rtId)).WatermarkLag.Should().Be(TimeSpan.FromMinutes(10));
+    }
+
+    private Task<ExecutionResult> ExecuteUpdateAsync(OctoObjectId rtId, string attribute, object value) =>
+        fixture.ExecuteGraphQlAsync(
+            "mutation ($entities: [RtEntityUpdate!]!) { runtime { runtimeEntities { update(entities: $entities) { rtId } } } }",
+            JsonSerializer.Serialize(new Dictionary<string, object?>
+            {
+                ["entities"] = new[]
+                {
+                    new Dictionary<string, object?>
+                    {
+                        ["rtId"] = rtId.ToString(),
+                        ["item"] = new Dictionary<string, object?>
+                        {
+                            ["ckTypeId"] = "System.StreamData/RollupArchive",
+                            ["attributes"] = new[] { new Dictionary<string, object?> { ["attributeName"] = attribute, ["value"] = value } }
+                        }
+                    }
+                }
+            }),
+            StreamDataFixture.StreamDataAdminPrincipal);
+
     /// <summary>
     /// The error the resolver raised. GraphQL appends a "cannot return null for a non-null field"
     /// error because the failing resolver returns null; only the resolver's own error carries the

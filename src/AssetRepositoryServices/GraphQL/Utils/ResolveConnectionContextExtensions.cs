@@ -299,7 +299,7 @@ internal static class ResolveConnectionContextExtensions
             ArchiveNotFoundException => Statics.GraphQlErrorStreamDataArchiveNotFound,
             ArchiveNotActivatedException => Statics.GraphQlErrorStreamDataArchiveNotActivated,
             InvalidArchiveStateTransitionException => Statics.GraphQlErrorStreamDataInvalidTransition,
-            ArchiveSchemaImmutableException => Statics.GraphQlErrorStreamDataSchemaImmutable,
+            ArchiveSchemaImmutableException or RollupSchemaImmutableException => Statics.GraphQlErrorStreamDataSchemaImmutable,
             ArchivePathInvalidException => Statics.GraphQlErrorStreamDataPathInvalid,
             ArchiveActivationFailedException => Statics.GraphQlErrorStreamDataActivationFailed,
             _ => Statics.GraphQlErrorStreamData,
