@@ -52,7 +52,8 @@ internal static class CkMethodFieldResolver
                 targetRtId,
                 CkMethodParameterJson.ToJson(InputOf(context)),
                 userContext.User ?? new ClaimsPrincipal(new ClaimsIdentity()),
-                BearerTokenOf(context));
+                BearerTokenOf(context),
+                IdempotencyKey: IdempotencyKeyOf(context));
 
             // Own session without a transaction: the method runs outside the request transaction. Declared authorization
             // runs in the gateway before anything is read; the check below is only called once the caller passed it.
@@ -89,6 +90,11 @@ internal static class CkMethodFieldResolver
     private static IDictionary<string, object?>? InputOf(IResolveFieldContext context) =>
         context.Arguments != null && context.Arguments.TryGetValue(Statics.InputArg, out var argument)
             ? argument.Value as IDictionary<string, object?>
+            : null;
+
+    private static string? IdempotencyKeyOf(IResolveFieldContext context) =>
+        context.Arguments != null && context.Arguments.TryGetValue(Statics.IdempotencyKeyArg, out var argument)
+            ? argument.Value as string
             : null;
 
     private static string? BearerTokenOf(IResolveFieldContext context)

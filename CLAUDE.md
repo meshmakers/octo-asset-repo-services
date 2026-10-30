@@ -790,7 +790,8 @@ Every concrete CK type with methods gets one mutation field per method **next to
 - **Field name** = `CkMethodIds.MethodClassName(methodId)` camelCase (`ResetPassword-2` -> `resetPassword2`). A name that equals an existing field of the type
   (`create`, `update`, another method) throws `OctoGraphQLException.CkMethodFieldNameClash` (names type and qualified method id): the schema of that tenant is not built.
 - **Arguments**: instance methods `rtId: OctoObjectId!`; static none. `input: {Declaring}{Method}MethodInput`, built with `OctoValueTypeMapper` (the attribute mapping),
-  required parameter = non-null; the argument is non-null only if a parameter is required, absent without parameters. **Result** `{Declaring}{Method}MethodResult`:
+  required parameter = non-null; the argument is non-null only if a parameter is required, absent without parameters. **Every** method field also takes the optional
+  `idempotencyKey: String` (AB#7825, see "Method idempotency key argument" below). **Result** `{Declaring}{Method}MethodResult`:
   `invocationId: ID!` and `result` (declared value type) - no error/success member. The field itself is nullable.
 - **Marker**: the field metadata key `Statics.CkMethodCall` (`"CkMethodCall"`) holds a `CkMethodCallInfo` (concrete type, method id, qualified id, kind); `Statics.CkId` holds the
   type. The gateway rules (AB#7020 one call per request, AB#7026) find a method call by this key, never by field name.
@@ -943,8 +944,27 @@ compare the per-document `expiresAt` themselves (lifetime `Methods:Idempotency:T
 **Fails closed**: every database problem is a `CkMethodIdempotencyStoreException` (unlike `MongoFileSystemNameLeaseStore`, no admin
 credentials is a refusal, not a pass). `Complete`/`Release` do not carry the tenant, so the store remembers the tenant of its own
 in-flight claims. Keyed calls need `Methods:Idempotency:Fingerprint:Current` (Id + base64 secret >= 32 bytes). The `idempotencyKey`
-GraphQL argument is AB#7825. Tests: `IntegrationTests/Methods/MongoMethodIdempotencyStoreTests` (private MongoDB; race, takeover,
+GraphQL argument is AB#7825 (next section). Tests: `IntegrationTests/Methods/MongoMethodIdempotencyStoreTests` (private MongoDB; race, takeover,
 expiry, fail closed, stored document, benchmark). Details and latency: `docs/method-idempotency-store.md`.
+
+### Method idempotency key argument (AB#7825, F3.5)
+
+Every typed method mutation field takes the optional argument `idempotencyKey: String` (`CkMethodMutationFields`, `Statics.IdempotencyKeyArg`; instance and
+static methods alike). `CkMethodFieldResolver` puts it into `CkMethodGatewayCall.IdempotencyKey`, the gateway copies it unchanged into
+`CkMethodRequest.IdempotencyKey`, and the band-300 `CkMethodIdempotencyFilter` of octo-common-services applies the OD-4 rules (AB#6922); the gateway and the resolver
+validate nothing about the key themselves (the filter does, after authorization, the data-permission check and the parameter validation of the gateway). Rules as seen by
+a client: scope = tenant + method + caller subject + key (max 128 characters, longer = `METHOD_VALIDATION_FAILED` with `field = idempotencyKey`, `reason = key-too-long`);
+same key with other parameters = `METHOD_VALIDATION_FAILED` / `parameters-changed`; first call still running = `METHOD_REQUEST_IN_PROGRESS`; unknown outcome =
+`METHOD_OUTCOME_UNKNOWN` (the key is burned, as after a failed handler); a replay returns the first response with the new call's `invocationId` (the first invocation id is
+only in the audit facts as `ReplayOf`); a `resultSensitive` method refuses a key (`result-sensitive`); no fingerprint key configured = `fingerprint-key-missing` /
+`fingerprint-unavailable`; store down = `METHOD_HANDLER_NOT_AVAILABLE` with `reason = idempotency-store-unavailable`. All codes are platform codes, so
+`CkMethodResponseMapper` passes them through `CkMethodGraphQlError` (`extensions.code`, `extensions.parameters`); neither the key nor a parameter value is in an error.
+Without the argument nothing changes (the filter passes an unkeyed call on without touching the store). The argument is additive: a replica without this change rejects it at
+schema validation (fail closed, a key is never silently ignored). There is no generic (non-typed) method invocation in the asset repository; the typed mutations are the only
+GraphQL entry. Clients (octo-sdk, octo-cli, MCP) do not send the key yet; Studio refreshes `schema.graphql` and runs codegen when it needs it. Tests:
+`CkMethodMutationFieldsTests` (argument on every field), `CkMethodGatewayTests` (forwarding), `CkMethodResponseMapperTests` (codes), `IntegrationTests/GraphQL/CkV2/MethodIdempotencyKeyTests`
+(real schema, gateway, pipeline and in-process handler with `IdempotentMethodGraphQlTestFixture`: replay runs the handler once, other key / other caller run again, changed
+parameters, 129 characters, 128 accepted, forbidden stays forbidden, failed handler burns the key).
 
 ### Method handler diagnostics: `methodHandlers` (AB#7837, F3.2)
 

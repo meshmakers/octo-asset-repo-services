@@ -26,6 +26,9 @@ internal static class Statics
     internal const string OptionsArg = "options";
     internal const string InputArg = "input";
 
+    /// <summary>AB#7825: optional idempotency key argument of a typed CK method mutation (same name as the wire member).</summary>
+    internal const string IdempotencyKeyArg = "idempotencyKey";
+
     internal const string UpdateTypesArg = "updateTypes";
     internal const string SearchFilterArg = "searchFilter";
     internal const string AttributePathContainsFilterArg = "attributePathContains";
