@@ -394,6 +394,10 @@ internal sealed class StreamDataQuery : ObjectGraphType
             Meshmakers.Octo.Communication.Contracts.DataTransferObjects.AggregationTypesDto.Average => Meshmakers.Octo.ConstructionKit.Contracts.DataTransferObjects.AttributeValueTypesDto.Double,
             Meshmakers.Octo.Communication.Contracts.DataTransferObjects.AggregationTypesDto.Minimum => sourceType,
             Meshmakers.Octo.Communication.Contracts.DataTransferObjects.AggregationTypesDto.Maximum => sourceType,
+            // Same result types as the transient path (StreamDataTransientQuery): ms-in-state is an
+            // integer duration (AB#4341), the integral is value × hours (AB#7919).
+            Meshmakers.Octo.Communication.Contracts.DataTransferObjects.AggregationTypesDto.StateDuration => Meshmakers.Octo.ConstructionKit.Contracts.DataTransferObjects.AttributeValueTypesDto.Integer,
+            Meshmakers.Octo.Communication.Contracts.DataTransferObjects.AggregationTypesDto.Integral => Meshmakers.Octo.ConstructionKit.Contracts.DataTransferObjects.AttributeValueTypesDto.Double,
             _ => sourceType
         };
     }
@@ -411,6 +415,11 @@ internal sealed class StreamDataQuery : ObjectGraphType
             "Min"     => Meshmakers.Octo.Communication.Contracts.DataTransferObjects.AggregationTypesDto.Minimum,
             "Maximum" => Meshmakers.Octo.Communication.Contracts.DataTransferObjects.AggregationTypesDto.Maximum,
             "Max"     => Meshmakers.Octo.Communication.Contracts.DataTransferObjects.AggregationTypesDto.Maximum,
+            // AB#7919: the time-weighted functions reported NONE on persisted queries before.
+            "TimeWeightedAverage" => Meshmakers.Octo.Communication.Contracts.DataTransferObjects.AggregationTypesDto.TimeWeightedAverage,
+            "TimeWeightedAvg"     => Meshmakers.Octo.Communication.Contracts.DataTransferObjects.AggregationTypesDto.TimeWeightedAverage,
+            "StateDuration"       => Meshmakers.Octo.Communication.Contracts.DataTransferObjects.AggregationTypesDto.StateDuration,
+            "Integral"            => Meshmakers.Octo.Communication.Contracts.DataTransferObjects.AggregationTypesDto.Integral,
             _ => Meshmakers.Octo.Communication.Contracts.DataTransferObjects.AggregationTypesDto.None
         };
     }

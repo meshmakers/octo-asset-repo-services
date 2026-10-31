@@ -117,6 +117,15 @@ Both surfaces accept runtime overrides on the `rows` / sub-connection level:
 
 The persisted query's `aggregations` sub-connection takes a `ResultAggregationInput` (count/min/max/avg/sum × attribute paths) and runs a second engine call over the same data set as `rows` — useful for "give me the avg/max alongside the rows" without persisting an aggregation-typed query.
 
+**Integral (AB#7919, engine AB#7918).** `aggregationType: INTEGRAL` (transient `aggregation` / `groupingAggregation`) and the CK
+value `System/AggregationTypes.Integral` (key 7, System 2.8.0) on persisted `AggregationSdQuery` / `GroupingAggregationSdQuery` give the step
+integral over `[from, to)` in value unit x hours, result cell `<attr>_integral`, column `aggregationType: INTEGRAL`, value type `DOUBLE`
+(mappings: `StreamDataGraphQlMapper`, `StreamDataTransientQuery`, `StreamDataQuery`, wire suffix in `StreamDataFieldResolverExtensions`). The
+persisted column mapping now also reports `TIME_WEIGHTED_AVERAGE` / `STATE_DURATION` (they reported `NONE` before). `StreamDataIntegralValidation`
+refuses, with `ASSET1004` and the column named, an integral on a non-numeric column (CK value type other than Integer/Integer64/Double, or a
+built-in field; computed columns pass) and any integral in a downsampling query; a missing From/To is the engine's structured
+`StreamDataException`. Raw archives only (rollups: AB#7920). Tests: `StreamData/StreamDataIntegralQueryTests`.
+
 GraphQL types are dynamically created based on the tenant's construction kit model stored in MongoDB.
 
 #### StreamData Mutations
