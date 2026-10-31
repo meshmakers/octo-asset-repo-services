@@ -172,6 +172,25 @@ public class StreamDataIntegralQueryTests(StreamDataFixture fixture, ITestOutput
     }
 
     [Fact]
+    public async Task TransientAggregation_IntegralOnATextPlatformField_IsAStructuredError()
+    {
+        // row_origin resolves as a data-stream field but has no CK attribute and is text (review of PR #120).
+        fixture.OutputHelper = output;
+        var archive = await EnsureArchiveAsync();
+
+        var result = await fixture.ExecuteGraphQlAsync($$"""
+            { streamData { transientStreamDataQuery { aggregation(
+                archiveRtId: "{{archive.RtId}}"
+                columnPaths: [{ attributePath: "row_origin", aggregationType: INTEGRAL }]
+                arg: { from: "{{From}}", to: "{{To}}", queryMode: DEFAULT } first: 10) {
+              items { rows(first: 10) { items { cells(first: 10) { items { value } } } } }
+            } } } }
+            """);
+
+        AssertSingleCodedError(result, Statics.GraphQlModelValidationErrors).Message.Should().Contain("row_origin");
+    }
+
+    [Fact]
     public async Task PersistedAggregationSdQuery_IntegralOnABuiltInColumn_IsAStructuredError()
     {
         fixture.OutputHelper = output;

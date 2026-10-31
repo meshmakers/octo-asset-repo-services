@@ -123,7 +123,7 @@ integral over `[from, to)` in value unit x hours, result cell `<attr>_integral`,
 (mappings: `StreamDataGraphQlMapper`, `StreamDataTransientQuery`, `StreamDataQuery`, wire suffix in `StreamDataFieldResolverExtensions`). The
 persisted column mapping now also reports `TIME_WEIGHTED_AVERAGE` / `STATE_DURATION` (they reported `NONE` before). `StreamDataIntegralValidation`
 refuses, with `ASSET1004` and the column named, an integral on a non-numeric column (CK value type other than Integer/Integer64/Double, or a
-built-in field; computed columns pass) and any integral in a downsampling query; a missing From/To is the engine's structured
+built-in or platform field; computed columns pass when their result type is numeric) and any integral in a downsampling query; a missing From/To is the engine's structured
 `StreamDataException`. Raw archives only (rollups: AB#7920). Tests: `StreamData/StreamDataIntegralQueryTests`.
 
 GraphQL types are dynamically created based on the tenant's construction kit model stored in MongoDB.

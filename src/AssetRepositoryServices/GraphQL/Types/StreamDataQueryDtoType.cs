@@ -273,7 +273,7 @@ internal sealed class StreamDataQueryDtoType : ObjectGraphType<StreamDataQueryDt
                             StreamDataGraphQlMapper.MapCkAggregationType(c.AggregationType),
                             c.ComparisonValue))
                         .ToList();
-                    StreamDataIntegralValidation.EnsureNumericColumns(fieldResolver, aggInputAgg,
+                    StreamDataIntegralValidation.EnsureNumericColumns(fieldResolver, archiveSnapshot, aggInputAgg,
                         () => LoadTypeQueryColumns(ctx, gql.TenantId, ckTypeId));
                     resolvedColumnNames = fieldResolver.ResolveAggregationMappings(aggInputAgg, enumIdResolver);
 
@@ -326,7 +326,7 @@ internal sealed class StreamDataQueryDtoType : ObjectGraphType<StreamDataQueryDt
                             StreamDataGraphQlMapper.MapCkAggregationType(c.AggregationType),
                             c.ComparisonValue))
                         .ToList();
-                    StreamDataIntegralValidation.EnsureNumericColumns(fieldResolver, aggInputGrp,
+                    StreamDataIntegralValidation.EnsureNumericColumns(fieldResolver, archiveSnapshot, aggInputGrp,
                         () => LoadTypeQueryColumns(ctx, gql.TenantId, ckTypeId));
                     resolvedColumnNames = fieldResolver
                         .ResolveToMappings(groupingColumns, enumIdResolver)

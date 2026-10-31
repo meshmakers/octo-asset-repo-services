@@ -234,7 +234,7 @@ internal sealed class StreamDataTransientQuery : ObjectGraphType
                     StreamDataGraphQlMapper.MapAggregationFunctionDto(c.AggregationType),
                     c.ComparisonValue))
                 .ToList();
-            StreamDataIntegralValidation.EnsureNumericColumns(fieldResolver, aggColumns,
+            StreamDataIntegralValidation.EnsureNumericColumns(fieldResolver, archiveSnapshot, aggColumns,
                 () => ctx.GetCkCacheService().GetCkTypeQueryColumnPathsByRtCkId(gql.TenantId, ckTypeId,
                     new CkTypeQueryColumnOptions { IgnoreNavigationProperties = true }));
 
@@ -310,7 +310,7 @@ internal sealed class StreamDataTransientQuery : ObjectGraphType
                     StreamDataGraphQlMapper.MapAggregationFunctionDto(c.AggregationType),
                     c.ComparisonValue))
                 .ToList();
-            StreamDataIntegralValidation.EnsureNumericColumns(fieldResolver, aggColumns,
+            StreamDataIntegralValidation.EnsureNumericColumns(fieldResolver, archiveSnapshot, aggColumns,
                 () => ctx.GetCkCacheService().GetCkTypeQueryColumnPathsByRtCkId(gql.TenantId, ckTypeId,
                     new CkTypeQueryColumnOptions { IgnoreNavigationProperties = true }));
 
