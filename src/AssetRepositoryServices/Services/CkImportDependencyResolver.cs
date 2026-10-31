@@ -125,6 +125,17 @@ internal static class CkImportDependencyResolver
                 // a range-retaining and a classic parent must be judged against each requirement, otherwise the
                 // classic parent's exact pin would never be checked.
                 var requirementForDep = DependencyRequirement.For(dep, compiledModel);
+
+                // AB#7940: a range-retaining model lists the flat exact closure in Dependencies (including the
+                // transitive pins, e.g. System-2.7.0 via Basic) but its dependencyRanges name only the direct
+                // dependencies. A dependency without a range entry is therefore transitive: it is not judged at this
+                // level (and not added to 'resolved'); it is judged when the intermediate model that really
+                // requires it is resolved, with that model's own range (range-retaining) or exact pin (classic).
+                if (compiledModel.IsRangeRetaining && requirementForDep.Range == null)
+                {
+                    continue;
+                }
+
                 if (!resolved.Add($"{dep.FullName}|{requirementForDep.Describe()}"))
                 {
                     continue;

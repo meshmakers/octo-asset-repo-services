@@ -390,6 +390,100 @@ public class ModelsControllerResolveDependenciesTests
         byParent["ClassicParent"].Should().Be("incompatible");
     }
 
+    // AB#7940: EnergyIQ-like graph. The range-retaining root lists the flat exact closure (Basic-2.5.0 and the
+    // transitive System-2.7.0) but dependencyRanges only name the direct dependency Basic.
+    private void StubEnergyIqGraph(bool rangeRetainingIntermediate, string installedSystem)
+    {
+        var basic = new CkModelId("Basic-2.5.0");
+        var root = new CkCompiledModelRoot
+        {
+            ModelId = new CkModelId("EnergyIQ-2.14.0"),
+            Dependencies = [basic, new CkModelId("System-2.7.0")],
+            DependencyRanges =
+            [
+                new CkModelDependencyDto { Range = new CkModelIdVersionRange("Basic-[2.5,3.0)"), Floor = "2.5.0" }
+            ]
+        };
+        var basicModel = rangeRetainingIntermediate
+            ? new CkCompiledModelRoot
+            {
+                ModelId = basic, Dependencies = [new CkModelId("System-2.5.0")],
+                DependencyRanges =
+                [
+                    new CkModelDependencyDto { Range = new CkModelIdVersionRange("System-[2.5,3.0)"), Floor = "2.5.0" }
+                ]
+            }
+            : new CkCompiledModelRoot { ModelId = basic, Dependencies = [new CkModelId("System-2.7.0")] };
+        A.CallTo(() => _catalogService.GetAsync("PublicGitHub", A<CkModelId>.Ignored, A<OperationResult>.Ignored,
+                A<CancellationToken?>.Ignored))
+            .Returns(root);
+        A.CallTo(() => _catalogService.GetAsync(A<CkModelId>.That.Matches(m => m.Name == "Basic"),
+                A<OperationResult>.Ignored, null, A<CancellationToken?>.Ignored))
+            .Returns(basicModel);
+        A.CallTo(() => _catalogService.GetAsync(A<CkModelId>.That.Matches(m => m.Name == "System"),
+                A<OperationResult>.Ignored, null, A<CancellationToken?>.Ignored))
+            .Returns(new CkCompiledModelRoot { ModelId = new CkModelId("System-2.7.0") });
+        A.CallTo(() => _tenantContext.IsCkModelExistingAsync(A<CkModelId>.Ignored)).Returns(false);
+        A.CallTo(() => _libraryStatusService.GetInstalledModelVersionsAsync(A<ITenantContext>._))
+            .Returns(new Dictionary<string, CkVersion> { ["System"] = new(installedSystem) });
+    }
+
+    private static IEnumerable<DependencyResolutionItemDto> Flatten(DependencyResolutionItemDto item) =>
+        new[] { item }.Concat(item.Dependencies.SelectMany(Flatten));
+
+    [Fact]
+    public async Task TransitiveSystemPin_OfRangeRetainingRoot_IsJudgedByTheRangeRetainingIntermediate()
+    {
+        StubEnergyIqGraph(true, "2.8.0");
+
+        var root = await ResolveRootAsync("EnergyIQ-2.14.0");
+
+        Flatten(root).Should().NotContain(i => i.Action == "incompatible");
+        root.Dependencies.Select(d => d.Name).Should().Equal("Basic");
+        root.Dependencies.Single().Dependencies.Single().Name.Should().Be("System");
+    }
+
+    [Fact]
+    public async Task TransitiveSystemPin_ViaExactPinnedIntermediate_StaysIncompatible()
+    {
+        StubEnergyIqGraph(false, "2.8.0");
+
+        var root = await ResolveRootAsync("EnergyIQ-2.14.0");
+
+        var incompatible = Flatten(root).Where(i => i.Action == "incompatible").ToList();
+        incompatible.Should().ContainSingle().Which.InstalledVersion.Should().Contain("installed v2.8.0");
+    }
+
+    [Fact]
+    public async Task Batch_TransitiveSystemPin_ViaRangeRetainingIntermediate_ImportsRootAndIntermediate()
+    {
+        StubEnergyIqGraph(true, "2.8.0");
+
+        var result = await _controller.ResolveDependenciesBatch(
+            [new ImportFromCatalogRequestDto { CatalogName = "PublicGitHub", ModelId = "EnergyIQ-2.14.0" }],
+            TestContext.Current.CancellationToken);
+
+        var response = result.Should().BeOfType<OkObjectResult>().Subject.Value
+            .Should().BeOfType<BatchDependencyResolutionResponseDto>().Subject;
+        response.ModelsToImport.Should().Equal("Basic-2.5.0", "EnergyIQ-2.14.0");
+        Flatten(response.DependencyTrees.Single().RootModel).Should().NotContain(i => i.Action == "incompatible");
+    }
+
+    [Fact]
+    public async Task Batch_TransitiveSystemPin_ViaExactPinnedIntermediate_ImportsNothing()
+    {
+        StubEnergyIqGraph(false, "2.8.0");
+
+        var result = await _controller.ResolveDependenciesBatch(
+            [new ImportFromCatalogRequestDto { CatalogName = "PublicGitHub", ModelId = "EnergyIQ-2.14.0" }],
+            TestContext.Current.CancellationToken);
+
+        var response = result.Should().BeOfType<OkObjectResult>().Subject.Value
+            .Should().BeOfType<BatchDependencyResolutionResponseDto>().Subject;
+        response.ModelsToImport.Should().BeEmpty();
+        Flatten(response.DependencyTrees.Single().RootModel).Should().Contain(i => i.Action == "incompatible");
+    }
+
     private async Task<DependencyResolutionItemDto> ResolveSingleDependencyAsync(CkModelId dependency,
         CkModelDependencyDto? range, string? installed)
     {
