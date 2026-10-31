@@ -143,6 +143,76 @@ public class CkModelLibraryStatusDependencyRangeTests
         (await CheckAsync(top.ModelId, "2.7.0")).ok.Should().BeFalse();
     }
 
+    /// <summary>
+    /// AB#7940: a range-retaining model whose dependencies list carries the transitive System pin (EnergyIQ via Basic)
+    /// but whose dependencyRanges name only the direct dependencies.
+    /// </summary>
+    private static CkCompiledModelRoot RangedWithTransitiveSystem(string name, string version, string intermediate,
+        string intermediateRange, string transitiveSystemPin) =>
+        new()
+        {
+            ModelId = new CkModelId(name, version),
+            Dependencies = [new CkModelId(intermediate), new CkModelId(transitiveSystemPin)],
+            DependencyRanges = [Range(intermediateRange, intermediate.Split('-', 2)[1])]
+        };
+
+    [Fact]
+    public async Task Transitive_System_ViaRangeRetainingIntermediate_IsCompatibleWithNewerSystem()
+    {
+        _models["Basic-2.5.0"] = Ranged("Basic", "2.5.0", "2.5.0", "System-[2.5,3.0)");
+        var top = RangedWithTransitiveSystem("EnergyIQ", "2.14.0", "Basic-2.5.0", "Basic-[2.5,3.0)", "System-2.7.0");
+
+        var (ok, reason) = await Check(top, "2.8.0");
+
+        ok.Should().BeTrue(reason);
+    }
+
+    [Fact]
+    public async Task Transitive_System_ViaRangeRetainingIntermediate_RangeExcludesInstalled_IsIncompatibleWithReason()
+    {
+        _models["Basic-2.5.0"] = Ranged("Basic", "2.5.0", "2.5.0", "System-[2.5,3.0)");
+        var top = RangedWithTransitiveSystem("EnergyIQ", "2.14.0", "Basic-2.5.0", "Basic-[2.5,3.0)", "System-2.7.0");
+
+        var (ok, reason) = await Check(top, "3.1.0");
+
+        ok.Should().BeFalse();
+        reason.Should().Contain("System-[2.5,3.0)").And.Contain("System-3.1.0 is installed");
+    }
+
+    [Fact]
+    public async Task Transitive_System_ViaExactPinnedIntermediate_StaysIncompatible()
+    {
+        _models["Basic-2.4.0"] = Exact("Basic", "2.4.0", "System-2.7.0");
+        var top = RangedWithTransitiveSystem("EnergyIQ", "2.14.0", "Basic-2.4.0", "Basic-[2.4,3.0)", "System-2.7.0");
+
+        var (ok, reason) = await Check(top, "2.8.0");
+
+        ok.Should().BeFalse();
+        reason.Should().Be("Requires System-2.7.0, but System-2.8.0 is installed");
+    }
+
+    [Fact]
+    public async Task Transitive_System_OfRangeRetainingModel_IsNotMarkedVisited_SoIntermediateStillChecksItsRange()
+    {
+        // Same System pin top and intermediate: skipping it at the top must not make the intermediate skip it too.
+        _models["Basic-2.5.0"] = Ranged("Basic", "2.5.0", "2.7.0", "System-[2.7,2.8)");
+        var top = RangedWithTransitiveSystem("EnergyIQ", "2.14.0", "Basic-2.5.0", "Basic-[2.5,3.0)", "System-2.7.0");
+
+        var (ok, reason) = await Check(top, "2.8.0");
+
+        ok.Should().BeFalse();
+        reason.Should().Contain("System-[2.7,2.8)");
+    }
+
+    [Fact]
+    public async Task DirectSystemRange_OnRangeRetainingModel_IsUnchanged()
+    {
+        var model = Ranged("System.Communication", "4.13.0", "2.7.0", "System-[2.7,3.0)");
+
+        (await Check(model, "2.8.0")).ok.Should().BeTrue();
+        (await Check(model, "3.0.0")).ok.Should().BeFalse();
+    }
+
     [Fact]
     public void CatalogManifestJson_KeepsDependencyRanges()
     {
