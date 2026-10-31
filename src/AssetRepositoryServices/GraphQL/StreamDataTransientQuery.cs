@@ -234,6 +234,9 @@ internal sealed class StreamDataTransientQuery : ObjectGraphType
                     StreamDataGraphQlMapper.MapAggregationFunctionDto(c.AggregationType),
                     c.ComparisonValue))
                 .ToList();
+            StreamDataIntegralValidation.EnsureNumericColumns(fieldResolver, archiveSnapshot, aggColumns,
+                () => ctx.GetCkCacheService().GetCkTypeQueryColumnPathsByRtCkId(gql.TenantId, ckTypeId,
+                    new CkTypeQueryColumnOptions { IgnoreNavigationProperties = true }));
 
             // Stream-data archives only carry physical columns — navigation paths are meaningless
             // for CrateDB tables, and unbounded navigation expansion over a densely connected CK
@@ -307,6 +310,9 @@ internal sealed class StreamDataTransientQuery : ObjectGraphType
                     StreamDataGraphQlMapper.MapAggregationFunctionDto(c.AggregationType),
                     c.ComparisonValue))
                 .ToList();
+            StreamDataIntegralValidation.EnsureNumericColumns(fieldResolver, archiveSnapshot, aggColumns,
+                () => ctx.GetCkCacheService().GetCkTypeQueryColumnPathsByRtCkId(gql.TenantId, ckTypeId,
+                    new CkTypeQueryColumnOptions { IgnoreNavigationProperties = true }));
 
             // Stream-data archives only carry physical columns — navigation paths are meaningless
             // for CrateDB tables, and unbounded navigation expansion over a densely connected CK
@@ -384,6 +390,7 @@ internal sealed class StreamDataTransientQuery : ObjectGraphType
                     StreamDataGraphQlMapper.MapAggregationFunctionDto(c.AggregationType),
                     c.ComparisonValue))
                 .ToList();
+            StreamDataIntegralValidation.RejectInDownsampling(aggColumns);
 
             // Stream-data archives only carry physical columns — navigation paths are meaningless
             // for CrateDB tables, and unbounded navigation expansion over a densely connected CK
@@ -441,6 +448,7 @@ internal sealed class StreamDataTransientQuery : ObjectGraphType
             AggregationFunctionDto.Sum   => AggregationTypesDto.Sum,
             AggregationFunctionDto.TimeWeightedAvg => AggregationTypesDto.TimeWeightedAverage,
             AggregationFunctionDto.StateDuration => AggregationTypesDto.StateDuration,
+            AggregationFunctionDto.Integral => AggregationTypesDto.Integral,
             _ => AggregationTypesDto.None
         };
     }
@@ -501,6 +509,8 @@ internal sealed class StreamDataTransientQuery : ObjectGraphType
             AggregationTypesDto.Maximum => sourceType,
             // AB#4341: absolute milliseconds-in-state — an integer duration regardless of source.
             AggregationTypesDto.StateDuration => Meshmakers.Octo.ConstructionKit.Contracts.DataTransferObjects.AttributeValueTypesDto.Integer,
+            // AB#7919: value × hours — fractional regardless of the source type (an Integer power column integrates to a Double).
+            AggregationTypesDto.Integral => Meshmakers.Octo.ConstructionKit.Contracts.DataTransferObjects.AttributeValueTypesDto.Double,
             _ => sourceType
         };
     }

@@ -133,6 +133,26 @@ public class OctoGraphQLException : Exception
             $"Invalid column paths: {string.Join(", ", invalidColumnPaths)}");
     }
 
+    /// <summary>
+    ///     AB#7919: Integral integrates a numeric value over time; a text, boolean, enum or built-in column has no
+    ///     value to integrate. The message names every offending column with its value type.
+    /// </summary>
+    public static Exception IntegralRequiresNumericColumns(IReadOnlyCollection<string> columns)
+    {
+        return new OctoGraphQLException(
+            $"Integral requires a numeric column (Integer, Integer64, Double or a numeric computed column): {string.Join(", ", columns)}.");
+    }
+
+    /// <summary>
+    ///     AB#7919: Integral is computed over the whole query window (aggregation and grouping queries); downsampling
+    ///     buckets are not supported.
+    /// </summary>
+    public static Exception IntegralNotSupportedInDownsampling(string attributePath)
+    {
+        return new OctoGraphQLException(
+            $"Integral on '{attributePath}' is not supported in downsampling queries; use an aggregation or grouping query with From and To.");
+    }
+
     public static Exception LargeBinaryNotFound(OctoObjectId binaryId)
     {
         return new OctoGraphQLException($"Large binary with ID {binaryId} not found.");

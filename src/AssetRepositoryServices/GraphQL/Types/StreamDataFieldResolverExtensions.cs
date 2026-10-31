@@ -125,6 +125,8 @@ internal static class StreamDataFieldResolverExtensions
         // "stateduration" also equals the enum-name fallback, but be explicit so the alias
         // contract stays visible next to the engine's "{col}_stateduration" output (AB#4341).
         AggregationFunction.StateDuration => "stateduration",
+        // Matches the engine's "{col}_integral" output alias (AB#7918/AB#7919).
+        AggregationFunction.Integral => "integral",
         _ => f.ToString().ToLowerInvariant()
     };
 

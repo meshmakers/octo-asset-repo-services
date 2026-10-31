@@ -6,6 +6,7 @@ using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Scalars;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Utils;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
 using Meshmakers.Octo.ConstructionKit.Contracts;
+using Meshmakers.Octo.ConstructionKit.Contracts.DependencyGraph;
 using Meshmakers.Octo.ConstructionKit.Models.System.Generated.System.v2;
 using Meshmakers.Octo.Runtime.Contracts.Repositories.Query;
 using Meshmakers.Octo.Runtime.Contracts.StreamData;
@@ -272,6 +273,8 @@ internal sealed class StreamDataQueryDtoType : ObjectGraphType<StreamDataQueryDt
                             StreamDataGraphQlMapper.MapCkAggregationType(c.AggregationType),
                             c.ComparisonValue))
                         .ToList();
+                    StreamDataIntegralValidation.EnsureNumericColumns(fieldResolver, archiveSnapshot, aggInputAgg,
+                        () => LoadTypeQueryColumns(ctx, gql.TenantId, ckTypeId));
                     resolvedColumnNames = fieldResolver.ResolveAggregationMappings(aggInputAgg, enumIdResolver);
 
                     input = new StreamQueryExecutionInput
@@ -323,6 +326,8 @@ internal sealed class StreamDataQueryDtoType : ObjectGraphType<StreamDataQueryDt
                             StreamDataGraphQlMapper.MapCkAggregationType(c.AggregationType),
                             c.ComparisonValue))
                         .ToList();
+                    StreamDataIntegralValidation.EnsureNumericColumns(fieldResolver, archiveSnapshot, aggInputGrp,
+                        () => LoadTypeQueryColumns(ctx, gql.TenantId, ckTypeId));
                     resolvedColumnNames = fieldResolver
                         .ResolveToMappings(groupingColumns, enumIdResolver)
                         .Concat(fieldResolver.ResolveAggregationMappings(aggInputGrp, enumIdResolver))
@@ -377,6 +382,7 @@ internal sealed class StreamDataQueryDtoType : ObjectGraphType<StreamDataQueryDt
                             StreamDataGraphQlMapper.MapCkAggregationType(c.AggregationType),
                             c.ComparisonValue))
                         .ToList();
+                    StreamDataIntegralValidation.RejectInDownsampling(aggInputDs);
                     // Timestamp first (canonical PascalCase, wire camelCase), then aggregation
                     // columns with function-suffixed keys (matches engine MapAggregationRow).
                     resolvedColumnNames = fieldResolver
@@ -563,6 +569,17 @@ internal sealed class StreamDataQueryDtoType : ObjectGraphType<StreamDataQueryDt
         if (persisted == null || persisted.Count == 0) return runtime;
         if (runtime == null || runtime.Count == 0) return persisted;
         return persisted.Concat(runtime).ToList();
+    }
+
+    /// <summary>
+    /// CK attribute columns of the archive's target type without navigation paths (stream-data archives carry
+    /// physical columns only), for <see cref="StreamDataIntegralValidation"/> (AB#7919).
+    /// </summary>
+    private static IReadOnlyCollection<CkTypeQueryColumn> LoadTypeQueryColumns(
+        IResolveFieldContext ctx, string tenantId, RtCkId<CkTypeId> ckTypeId)
+    {
+        return ctx.GetCkCacheService().GetCkTypeQueryColumnPathsByRtCkId(tenantId, ckTypeId,
+            new CkTypeQueryColumnOptions { IgnoreNavigationProperties = true });
     }
 
     private static IEnumerable<string>? ConcatNullable(IEnumerable<string>? a, IEnumerable<string>? b)
