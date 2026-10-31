@@ -604,6 +604,24 @@ public sealed class CkModelLibraryStatusService : ICkModelLibraryStatusService
 
         foreach (var dep in compiled.Dependencies)
         {
+            // AB#7940: a range-retaining model (DependencyRanges != null) lists in Dependencies the flat, exact
+            // closure including the transitive pins (e.g. System-2.7.0 via Basic), but DependencyRanges only carry
+            // the direct dependencies. A System dependency without a range entry in such a model is therefore the
+            // transitive floor of an intermediate model, not a requirement of this model: it is not compared
+            // exactly. The intermediate decides with its own range (range-retaining) or its own exact pin
+            // (classic) when the recursion reaches it. The skipped pin is deliberately NOT added to 'visited':
+            // the intermediate lists the same pin and must still be checked against it.
+            if (IsSystemManaged(dep.Name) && compiled.IsRangeRetaining &&
+                compiled.DependencyRanges!.All(r => r.Range.Name != dep.Name))
+            {
+                if (!installedSystemVersions.ContainsKey(dep.Name))
+                {
+                    return (false, $"Requires {dep.FullName}, but {dep.Name} is not installed");
+                }
+
+                continue;
+            }
+
             if (!visited.Add(dep.FullName)) continue;
 
             if (IsSystemManaged(dep.Name))
