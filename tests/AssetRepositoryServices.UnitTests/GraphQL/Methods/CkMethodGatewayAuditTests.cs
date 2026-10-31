@@ -447,14 +447,17 @@ public class CkMethodGatewayAuditTests
         Assert.Single(recorder.Records);
     }
 
+    // ---- AB#7930: cancellation by the caller ----
+
     [Fact]
-    public async Task ACancellationByTheCaller_IsNoFault_AndIsNotRecordedByTheGateway()
+    public async Task ACancellationInTheTargetAccessCheck_IsRecordedOnce_AsCallerCancelled_AndRethrown()
     {
         var recorder = new RecordingRecorder();
         using var cts = new CancellationTokenSource();
-        var call = Call(User(MethodCkCacheFake.DeclaredRole));
+        var call = Call(User(MethodCkCacheFake.DeclaredRole), $"{{\"note\":\"{CanaryValue}\"}}");
+        var dispatcher = new Dispatcher(_ => throw new InvalidOperationException());
 
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => Gateway(recorder, new Dispatcher(_ => throw new InvalidOperationException()))
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => Gateway(recorder, dispatcher)
             .InvokeAsync(call, async (_, _) =>
             {
                 await cts.CancelAsync();
@@ -462,7 +465,87 @@ public class CkMethodGatewayAuditTests
                 return CkMethodTargetAccess.Allowed;
             }, cts.Token));
 
+        var record = Assert.Single(recorder.Records);
+        Assert.Equal("gateway", record.Transport);
+        Assert.Equal(CkMethodAuditOutcomes.CallerCancelled, record.Outcome);
+        Assert.Null(record.HandlerInstanceId);
+        Assert.Equal(Caller, record.CallerSubject);
+        Assert.Equal(0, dispatcher.Calls);
+    }
+
+    [Fact]
+    public async Task ACancellationInTheTargetAccessCheck_IsWrittenAndCountedOnce_AndCarriesNoParameterOrToken_Canary()
+    {
+        var sink = new CapturingSink();
+        using var provider = Provider(sink);
+        var counted = 0;
+        using var listener = new MeterListener();
+        listener.InstrumentPublished = (instrument, l) =>
+        {
+            if (instrument.Meter.Name == "Meshmakers.Octo.Methods" && instrument.Name == "ck.method.calls")
+            {
+                l.EnableMeasurementEvents(instrument);
+            }
+        };
+        listener.SetMeasurementEventCallback<long>((_, value, tags, _) =>
+        {
+            var t = tags.ToArray().ToDictionary(x => x.Key, x => x.Value as string);
+            if (t.GetValueOrDefault("method_id") == MethodId && t.GetValueOrDefault("transport") == "gateway" &&
+                t.GetValueOrDefault("outcome") == CkMethodAuditOutcomes.CallerCancelled)
+            {
+                Interlocked.Add(ref counted, (int)value);
+            }
+        });
+        listener.Start();
+        using var cts = new CancellationTokenSource();
+        var call = Call(User(MethodCkCacheFake.DeclaredRole), $"{{\"note\":\"{CanaryValue}\"}}");
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => Gateway(provider.GetRequiredService<ICkMethodAuditRecorder>(),
+            new Dispatcher(_ => throw new InvalidOperationException())).InvokeAsync(call, async (_, _) =>
+        {
+            await cts.CancelAsync();
+            cts.Token.ThrowIfCancellationRequested();
+            return CkMethodTargetAccess.Allowed;
+        }, cts.Token));
+
+        Assert.Equal(1, counted);
+        var auditEvent = Assert.Single(sink.Events);
+        Assert.Equal(CkMethodAuditOutcomes.CallerCancelled, auditEvent.Metadata![CkMethodAuditEvent.Keys.Outcome]);
+        Assert.Equal("gateway", auditEvent.Metadata[CkMethodAuditEvent.Keys.Transport]);
+        AssertNoCanary(auditEvent);
+    }
+
+    [Fact]
+    public async Task ACancellationAfterTheDispatchStarted_IsNotRecordedByTheGateway_ThePipelineOwnsIt()
+    {
+        var recorder = new RecordingRecorder();
+        using var cts = new CancellationTokenSource();
+        var call = Call(User(MethodCkCacheFake.DeclaredRole));
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => Gateway(recorder, new Dispatcher(async _ =>
+            {
+                await cts.CancelAsync();
+                cts.Token.ThrowIfCancellationRequested();
+                return CkMethodResponse.Succeeded(Guid.NewGuid(), string.Empty, "{}");
+            }))
+            .InvokeAsync(call, (_, _) => Task.FromResult(CkMethodTargetAccess.Allowed), cts.Token));
+
         Assert.Empty(recorder.Records);
+    }
+
+    [Fact]
+    public async Task AnAnswerOfTheDispatcher_EvenAHandlerFailed_IsNotRecordedAgainByTheGateway()
+    {
+        var recorder = new RecordingRecorder();
+        var call = Call(User(MethodCkCacheFake.DeclaredRole));
+        var dispatcher = new Dispatcher(r => Task.FromResult(CkMethodResponse.Failed(r.InvocationId, string.Empty,
+            CkMethodError.Create(CkMethodErrorCodes.MethodHandlerFailed, (CkMethodErrorParameters.MethodId, r.MethodId)))));
+
+        var response = await Gateway(recorder, dispatcher).InvokeAsync(call,
+            (_, _) => Task.FromResult(CkMethodTargetAccess.Allowed), TestContext.Current.CancellationToken);
+
+        Assert.Equal(CkMethodErrorCodes.MethodHandlerFailed, response.Error!.Code);
+        Assert.Empty(recorder.Records); // the dispatcher recorded its last-line failure (AB#7930); the gateway sees a response
     }
 
     private static void AssertNoCanary(AuditEvent auditEvent)

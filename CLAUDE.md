@@ -1003,18 +1003,23 @@ parameters, the idempotency key or the token, so none can reach the event.
 - **Faults are audited too (AB#7907).** `CkMethodGateway.InvokeAsync` wraps the whole gateway flow (`InvokeCoreAsync`: authorization, size limit, target-access check, validation, dispatch)
   and records an exception that escapes it once, through the same recorder: transport `gateway`, the minted invocation id, no handler instance, outcome `METHOD_HANDLER_FAILED`, then rethrows
   (`throw;`), so the caller gets exactly the error it got before (the resolver's `HandleException`). A cancellation by the caller (`OperationCanceledException` with the caller's token cancelled)
-  is no fault and is not recorded by the gateway. The log line names only the exception **type** (the exception text of a store may carry values); the event has no place for exception text.
+  is no fault; AB#7930 records it separately (next bullet). The log line names only the exception **type** (the exception text of a store may carry values); the event has no place for exception text.
   **Outcome decision:** `METHOD_HANDLER_FAILED`, no new gateway fault code. Reasons: (1) it is the code the band-100 filter already writes for an exception inside the pipeline, so one query finds all
   unexpected platform failures; (2) `CkMethodMetrics.OutcomeLabel` and the audit level (`Error`) only know the catalogued codes, an invented outcome would be counted as `invalid_code` and logged
   as `Warning`; (3) a new code is a wire/contract change in octo-common-services; (4) the combination transport `gateway` + no handler instance + this code says "failed before a handler was reached".
   **Counted once:** `CkMethodAuditRecorder.RecordAsync` counts `ck.method.calls` for transport `gateway` (AB#6920), so the fault is counted exactly once with no change in common-services
   (test `AFault_IsCountedOnce_AsAGatewayCall_WithOutcomeHandlerFailed`).
   **No duplicates:** the real `CkMethodDispatcher` and the pipeline never throw for a failing call (the filter records an exception from an inner step as `METHOD_HANDLER_FAILED`, rethrows to the
-  pipeline, which answers `METHOD_HANDLER_FAILED`), so a throw out of `dispatcher.InvokeAsync` is a contract violation of a custom dispatcher and the filter has not recorded it. Not covered by the gateway: the dispatcher's own last-line catch (a resolver or DI fault before the pipeline) answers `METHOD_HANDLER_FAILED` as a **response**
-  that the filter never saw; the gateway cannot tell that answer from an audited one, so it records nothing for it (the dispatcher belongs to octo-common-services).
+  pipeline, which answers `METHOD_HANDLER_FAILED`), so a throw out of `dispatcher.InvokeAsync` is a contract violation of a custom dispatcher and the filter has not recorded it. The dispatcher's own last-line catch (a resolver or DI fault before the pipeline) answers `METHOD_HANDLER_FAILED` as a **response**;
+  since AB#7930 the dispatcher records that one event itself (octo-common-services), and the gateway, which only records exceptions it catches, never records a dispatcher answer again.
+- **Caller cancellation is audited by whoever observes it (AB#7930).** A cancellation (`OperationCanceledException`, caller's token cancelled) before the dispatch started - in practice inside the
+  target-access check, the only await before the dispatcher - reaches no filter and no dispatcher, so the gateway records it once: transport `gateway`, outcome `CALLER_CANCELLED`, no handler instance,
+  written with `CancellationToken.None`, counted once by the recorder (`transport=gateway`), then `throw;`. Once the dispatch started (`DispatchState.Started`), the pipeline's audit filter (or the dispatcher,
+  for a cancellation before the pipeline) records it and the gateway stays silent, so there is one event and one count per invocation id. Needs no new common-services API, so this repository does not wait for
+  the dispatcher package.
 - Tests: `GraphQL/Methods/CkMethodGatewayAuditTests` (parametrized over the five refusal paths: one record, transport `gateway`, code, invocation id; real recorder + capturing sink canary scan
-  for parameter value, token and idempotency key; real in-process pipeline for the no-duplicate case; audit failure; cancelled caller; AB#7907: faults in the target-access check and in the
-  dispatcher with exception text in the message (event carries no canary, caller gets the same exception), a handler that throws is audited by the filter only, meter count once, cancellation not recorded). User documentation: octo-documentation `ckLanguage2/methodConsistency.md#audit` (en + de).
+  for parameter value, token and idempotency key; real in-process pipeline for the no-duplicate case; audit failure; cancelled caller; AB#7930: cancellation in the target-access check recorded once (record, real recorder + meter + canary), after the dispatch started not recorded, a dispatcher answer not recorded again; AB#7907: faults in the target-access check and in the
+  dispatcher with exception text in the message (event carries no canary, caller gets the same exception), a handler that throws is audited by the filter only, meter count once). User documentation: octo-documentation `ckLanguage2/methodConsistency.md#audit` (en + de).
 
 ### Method handler diagnostics: `methodHandlers` (AB#7837, F3.2)
 
