@@ -1,0 +1,38 @@
+$schema: https://schemas.meshmakers.cloud/runtime-model.schema.json
+dependencies:
+  - System.Identity
+entities:
+  - rtId: 67000099aaaa7781bbbb0001
+    ckTypeId: System.Identity/User
+    rtWellKnownName: CredentialSeedUser
+    attributes:
+      - id: System.Identity/FirstName
+        value: Seed
+      - id: System.Identity/EmailConfirmed
+        value: false
+      - id: System.Identity/PhoneNumberConfirmed
+        value: false
+      - id: System.Identity/TwoFactorEnabled
+        value: false
+      - id: System.Identity/LockoutEnabled
+        value: true
+      - id: System.Identity/AccessFailedCount
+        value: 0
+      - id: System.Identity/ResetPasswordOnLogin
+        value: false
+      - id: System.Identity/PasswordHash
+        value: DUMMY-HASH-7781
+      - id: System.Identity/SecurityStamp
+        value: DUMMY-STAMP-7781
+      - id: System.Identity/UserTokens
+        value:
+          - ckRecordId: System.Identity/UserToken
+            attributes:
+              - id: System.Identity/LoginProvider
+                value: '[AspNetUserStore]'
+              - id: System/Name
+                value: AuthenticatorKey
+              - id: System.Identity/UserId
+                value: seed
+              - id: System.Identity/Value
+                value: DUMMY-TOKEN-7781
