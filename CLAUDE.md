@@ -688,8 +688,9 @@ schema initialization.
   run every GraphQL, export, import and blueprint-seed path against the **real** System.Identity model (compiler output in
   `testData/ck-models/`, loaded by `Fixtures/SystemIdentitySnapshotCkModel`; refresh procedure in the README there) with a user whose
   `PasswordHash`, `SecurityStamp` and `UserTokens` hold fixed dummy values; no response, export file or captured log line may contain
-  them. Path table: the README of the integration test project. Open gaps are skipped tests with the bug in the skip reason:
-  AB#8048 (the MongoDB command log and slow-query buffer print Hidden values of a write). A new user is refused on every create path
+  them. Path table: the README of the integration test project. Open gaps would be skipped tests with the bug in the skip reason;
+  none is open (the last, AB#8048, is fixed: `TheIdentityStoreWrite_LeavesNoCredentialInTheMongoCommandLog` checks the captured Debug
+  command log of the identity store write, non-vacuous: the rendered insert must be in the capture). A new user is refused on every create path
   (`GENERIC_CREATE_REPLACED_BY_METHOD` naming `User.CreateUser-1`, AB#7777, next section), so the create tests of these suites assert that refusal. A stored query whose filter or selector reaches a credential is refused when it is saved (AB#8049,
   `StoredQuery_WithACredentialFilter_IsRefusedWhenSaved`, `EntitySelector_InAStoredQuery_IsRefused`).
 - **Identity-owned User fields and identity associations (AB#8042)**: `GraphQL/Utils/IdentityOwnedWriteGuard` refuses, for every caller,
