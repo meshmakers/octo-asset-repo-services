@@ -3,6 +3,7 @@ using GraphQL;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Collections;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Fixtures;
 using Meshmakers.Octo.ConstructionKit.Contracts;
+using Meshmakers.Octo.ConstructionKit.Models.System.Generated.System.v2;
 using Meshmakers.Octo.ConstructionKit.Models.StreamData.Generated.System.StreamData.v1;
 using Meshmakers.Octo.Runtime.Contracts.RepositoryEntities;
 using Newtonsoft.Json.Linq;
@@ -66,21 +67,25 @@ public class StreamDataHiddenAttributeTests(StreamDataFixture fixture, ITestOutp
     public async Task PersistedQuery_WithAHiddenColumn_IsRejected()
     {
         fixture.OutputHelper = output;
-        var queryRtId = await CreatePersistedQueryAsync("""columns: ["name", "passwordHash"]""");
+        // AB#8049: refused when saved; a query that arrives another way (import, restore) is refused when it runs.
+        await AssertStoreRefusedAsync("""columns: ["name", "passwordHash"]""");
+        var queryRtId = await StoreAsImportedAsync(q => q.Columns = new AttributeStringValueList(["name", "passwordHash"]));
 
         AssertRejected(await ExecutePersistedRowsAsync(queryRtId, ""));
     }
 
     [Theory]
-    [InlineData("operator: EQUALS")] // stored without comparison value: was not validated before
-    [InlineData("operator: LIKE, comparisonValue: \"AQ\"")]
-    public async Task PersistedQuery_WithAStoredFilterOnAHiddenAttribute_IsRejected(string filter)
+    [InlineData("operator: EQUALS", RtFieldFilterOperatorEnum.Equals, null)] // stored without comparison value
+    [InlineData("operator: LIKE, comparisonValue: \"AQ\"", RtFieldFilterOperatorEnum.Like, "AQ")]
+    public async Task PersistedQuery_WithAStoredFilterOnAHiddenAttribute_IsRejected(string filter,
+        RtFieldFilterOperatorEnum op, string? comparison)
     {
         // The stored filter operator enum (System/FieldFilterOperator) has no IS_NULL / IS_NOT_NULL; every stored
         // filter is checked regardless of its operator or value.
         fixture.OutputHelper = output;
-        var queryRtId = await CreatePersistedQueryAsync(
+        await AssertStoreRefusedAsync(
             $$"""columns: ["name"], fieldFilter: [{ attributePath: "passwordHash", {{filter}} }]""");
+        var queryRtId = await StoreAsImportedAsync(q => q.FieldFilter = HiddenFilter(op, comparison));
 
         AssertRejected(await ExecutePersistedRowsAsync(queryRtId, ""));
     }
@@ -90,8 +95,9 @@ public class StreamDataHiddenAttributeTests(StreamDataFixture fixture, ITestOutp
     {
         // Re-review N5: the aggregations sub-connection merges the stored filter - a yes/no oracle with count.
         fixture.OutputHelper = output;
-        var queryRtId = await CreatePersistedQueryAsync(
+        await AssertStoreRefusedAsync(
             """columns: ["name"], fieldFilter: [{ attributePath: "passwordHash", operator: EQUALS, comparisonValue: "AQ" }]""");
+        var queryRtId = await StoreAsImportedAsync(q => q.FieldFilter = HiddenFilter(RtFieldFilterOperatorEnum.Equals, "AQ"));
 
         var result = await fixture.ExecuteGraphQlAsync($$"""
             { streamData { streamDataQuery(rtId: "{{queryRtId}}") { items {
@@ -141,6 +147,43 @@ public class StreamDataHiddenAttributeTests(StreamDataFixture fixture, ITestOutp
         return JObject.Parse(createJson).SelectToken("data.runtime.systemSimpleSdQuerys.create[0].rtId")!
             .Value<string>()!;
     }
+
+    /// <summary>AB#8049: saving a query that reaches a Hidden attribute is refused, nothing is stored.</summary>
+    private async Task AssertStoreRefusedAsync(string fields)
+    {
+        var archiveRtId = await EnsureArchiveAsync();
+        var create = await fixture.ExecuteGraphQlAsync($$"""
+            mutation {
+              runtime { systemSimpleSdQuerys {
+                create(entities: [{ name: "hidden-sd", queryCkTypeId: "{{AccountType}}", archiveRtId: "{{archiveRtId}}",
+                                    {{fields}} }]) { rtId }
+              } }
+            }
+            """);
+        AssertRejected(create);
+    }
+
+    /// <summary>Stores a query through the repository, as an import or a restore would (no save-time check).</summary>
+    private async Task<string> StoreAsImportedAsync(Action<RtSimpleSdQuery> configure)
+    {
+        var archiveRtId = await EnsureArchiveAsync();
+        var repository = fixture.GetSystemContext().GetSystemTenantRepository();
+        var query = await repository.CreateTransientRtEntityAsync<RtSimpleSdQuery>();
+        query.Name = "hidden-sd-imported";
+        query.QueryCkTypeId = AccountType;
+        query.ArchiveRtId = archiveRtId;
+        query.Columns = new AttributeStringValueList(["name"]);
+        configure(query);
+        using var session = await repository.GetSessionAsync();
+        session.StartTransaction();
+        await repository.InsertOneRtEntityAsync(session, query);
+        await session.CommitTransactionAsync();
+        return query.RtId.ToString();
+    }
+
+    private static AttributeRecordValueList<RtFieldFilterRecord> HiddenFilter(RtFieldFilterOperatorEnum op,
+        string? comparison) =>
+        new() { new RtFieldFilterRecord { AttributePath = "passwordHash", Operator = op, ComparisonValue = comparison } };
 
     private Task<ExecutionResult> ExecutePersistedRowsAsync(string queryRtId, string rowsArguments)
     {
