@@ -301,7 +301,7 @@ public class IdentityCredentialGuardGraphQlTests
             }]) { rtId } } } }
             """);
         var createJson = _fixture.SerializeGraphQl(create);
-        AssertNoDummyValue(createJson.Replace(F.DummyPasswordHash + "\"", string.Empty));
+        AssertNoDummyValue(createJson);
         if (create.Errors is { Count: > 0 })
         {
             create.Errors.Select(e => e.Code).Should().Contain("ATTRIBUTE_NOT_QUERYABLE", createJson);

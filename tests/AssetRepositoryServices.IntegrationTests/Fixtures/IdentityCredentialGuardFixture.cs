@@ -54,7 +54,7 @@ public class IdentityCredentialGuardFixture : MethodGatewayGraphQlTestFixture
     /// <summary>RtId of the seeded user.</summary>
     public string ProbeUserRtId { get; private set; } = string.Empty;
 
-    /// <summary>RtId of the role assigned to the last seeded user.</summary>
+    /// <summary>RtId of the role assigned to the probe user.</summary>
     public string ProbeRoleRtId { get; private set; } = string.Empty;
 
     protected override async Task InitializeServicesAsync()
@@ -69,13 +69,16 @@ public class IdentityCredentialGuardFixture : MethodGatewayGraphQlTestFixture
             throw new InvalidOperationException("Failed to import System.Identity: " + result.GetMessages());
         }
 
-        ProbeUserRtId = await SeedUserAsync(ProbeUserName, ProbeUserEmail);
+        (ProbeUserRtId, ProbeRoleRtId) = await SeedUserWithRoleAsync(ProbeUserName, ProbeUserEmail);
     }
 
     /// <summary>
     ///     Inserts a user with dummy credentials through the repository - the way the identity store writes them.
     /// </summary>
-    public async Task<string> SeedUserAsync(string userName, string email)
+    public async Task<string> SeedUserAsync(string userName, string email) =>
+        (await SeedUserWithRoleAsync(userName, email)).UserRtId;
+
+    private async Task<(string UserRtId, string RoleRtId)> SeedUserWithRoleAsync(string userName, string email)
     {
         var repository = GetSystemContext().GetSystemTenantRepository();
         var ckTypeId = new RtCkId<CkTypeId>(UserCkTypeId);
@@ -122,8 +125,7 @@ public class IdentityCredentialGuardFixture : MethodGatewayGraphQlTestFixture
         }
 
         await session.CommitTransactionAsync();
-        ProbeRoleRtId = role.RtId.ToString();
-        return user.RtId.ToString();
+        return (user.RtId.ToString(), role.RtId.ToString());
     }
 
     /// <summary>Number of captured log lines so far; tests of one collection run one after the other.</summary>

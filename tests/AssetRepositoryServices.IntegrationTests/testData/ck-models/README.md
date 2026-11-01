@@ -11,7 +11,7 @@ The file is byte-identical to what the compiler writes. Do not edit it by hand.
 ## Refresh
 
 When System.Identity changes the access of a user attribute (for example when an attribute becomes `MethodOnly`), refresh
-the snapshot and enable the matching skipped `Gap_*` test:
+the snapshot and enable the skipped tests whose `Skip` reason names the change (the work item of the fix):
 
 ```bash
 # 1. export the model sources of octo-identity-services origin/main into a scratch folder
