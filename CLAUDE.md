@@ -673,8 +673,18 @@ schema initialization.
 - Both codes come from `HiddenAttributeAccessException`, mapped by `HandleException` and the GraphQL
   `UnhandledExceptionDelegate` (`TryCreateAttributeAccessError`).
 - CK meta: `CkTypeAttribute.access: String!` (`ReadWrite` / `ReadOnly` / `MethodOnly` / `Hidden`).
-- **Known limitations** (platform-owner decision 2026-10-08, fixed with System.Identity v2 in CK v2 Phase 4):
-  `ImportRt` writes and RT export emit Hidden / MethodOnly values (review H2/H3), user tokens (H4).
+- **Export / import** (review H2/H3/H4, closed by the engine in AB#7767): RT export skips Hidden values, RT import and
+  blueprint seed refuse Hidden / MethodOnly values (engine message 139). Pinned for the real System.Identity user by the
+  credential guard tests (below).
+- **Credential guard regression tests (AB#7781)**: `tests/AssetRepositoryServices.IntegrationTests/Security/IdentityCredentialGuard*Tests`
+  run every GraphQL, export, import and blueprint-seed path against the **real** System.Identity model (compiler output in
+  `testData/ck-models/`, loaded by `Fixtures/SystemIdentitySnapshotCkModel`; refresh procedure in the README there) with a user whose
+  `PasswordHash`, `SecurityStamp` and `UserTokens` hold fixed dummy values; no response, export file or captured log line may contain
+  them. Path table: the README of the integration test project. Open gaps are skipped tests with the bug in the skip reason:
+  AB#8042 (identity flags, claims, logins, role/group associations still ReadWrite), AB#8047 (ReadOnly not enforced on update, next
+  bullet), AB#8048 (the MongoDB command log and slow-query buffer print Hidden values of a write), and the pending
+  `replacesGenericCreate` of `CreateUser`. AB#8049 (export by a stored query applies its Hidden filter, octo-bot-services) has no test
+  here: a stored query with a Hidden filter is still accepted, only running it through GraphQL is refused.
 - **Stream data** (review M12 / G3 E-M2): no archive column may reach a Hidden attribute. The engine refuses to
   activate such an archive and fails an active one when a model change makes a column reach Hidden
   (`ArchiveHiddenColumnGuard`, `ArchiveLifecycleService`). The asset-repo additionally refuses every stream-data
@@ -696,7 +706,8 @@ schema initialization.
   under one process-wide semaphore and does not cache failures, so a broken tenant serialises all cache-miss builds.
   Compiler rule I-5 only compares exact type/interface names.
 - **`ReadOnly`** is parsed, persisted and shown in the CK meta API (`access`), but not enforced on the GraphQL write
-  path yet (the generic input types and mutations treat it like `ReadWrite`).
+  path yet (the generic input types and mutations treat it like `ReadWrite`): a generic update changes the ReadOnly
+  `LockoutEnd` / `AccessFailedCount` of a user (AB#8047; fix = `AttributeAccess.IsGenericallyWritable(access, isCreate)`).
 - Tests: `CkAttributeAccessSchemaTests`, `AccessQueryGuardTests` (unit); `GraphQL/CkV2/HiddenAttributeTests` and
   `HiddenAttributeNavigationTests` (integration, test types `AccessTestAccount` --`AccessTestMembership`-->
   `AccessTestGroup`; the test model is `ckLanguage: 2`).

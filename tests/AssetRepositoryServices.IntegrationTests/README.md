@@ -24,11 +24,14 @@ tests/AssetRepositoryServices.IntegrationTests/
 ├── Tenant/
 │   └── BlueprintUpdateBlankingFlowTests.cs # AB#6315: preview -> apply -> confirm flow of BlueprintsController
 │                                           # against a real tenant (TestBlueprints/BlankingFlowBp, own fixture)
+├── Security/
+│   └── IdentityCredentialGuard*Tests.cs   # Credential guard regression tests (real System.Identity model, see below)
 ├── GraphQL/
 │   ├── GraphQLTestHelper.cs               # Helper for GraphQL queries
 │   └── Queries/
 │       └── BasicGraphQLTests.cs           # Example GraphQL tests
 ├── testData/                              # Test data files
+│   └── ck-models/                         # Compiler output of System.Identity for the credential guard tests
 ├── appsettings.test.json                  # Test configuration
 └── README.md
 ```
@@ -299,6 +302,35 @@ To complete the test infrastructure:
    - Error handling tests
    - Complex filter tests
 5. **Performance Tests**: Add tests measuring query performance
+
+## Credential guard regression tests
+
+Defensive regression tests of the access guards for identity credentials. They run in the regular CI with the rest of
+this project (MongoDB Testcontainer, no running services, no network).
+
+- **Model**: the real `System.Identity` CK model, loaded from `testData/ck-models/` (provenance and refresh: README there)
+  by `Fixtures/SystemIdentitySnapshotCkModel`.
+- **Data**: one user whose `PasswordHash`, `SecurityStamp` and `UserTokens` hold fixed dummy values
+  (`IdentityCredentialGuardFixture.DummyValues`, never real credentials), written through the repository like the identity
+  store does, plus a role assigned to it.
+- **Assertion**: every path refuses the read or write, and no response, error, export file or captured log line written
+  during the test contains a dummy value.
+
+| Path | Test class |
+|------|------------|
+| GraphQL: schema and CK meta, typed and generic reads, association targets, filters (all operators), sort, attribute search, aggregations, group-by, transient query columns, grouping aggregation, entity-selector equality probes (transient and stored), stored query filters | `Security/IdentityCredentialGuardGraphQlTests` |
+| GraphQL writes: generic create/update of Hidden and MethodOnly attributes, `userTokens`, `clearSecretAttributes`, query-row create/update | `Security/IdentityCredentialGuardGraphQlTests` |
+| GraphQL methods: two aliased identity method calls, a method next to a generic update (one method call per request), a method without the role, the sensitive parameter in responses and logs | `Security/IdentityCredentialGuardGraphQlTests` |
+| RT export by query and by deep graph (engine building blocks of the export jobs, system session) | `Security/IdentityCredentialGuardExchangeTests` |
+| RT import (system and caller path, insert and upsert) of Hidden and MethodOnly values | `Security/IdentityCredentialGuardExchangeTests` |
+| Blueprint seed with Hidden or MethodOnly values (local test blueprint catalog `CredentialSeedBp`, `MethodOnlySeedBp`, positive control `VisibleIdentitySeedBp`) | `Security/IdentityCredentialGuardBlueprintSeedTests` |
+
+Open gaps are skipped tests named `Gap_*` (or with the bug in the skip reason) next to the passing ones; enable a test when
+its fix lands.
+
+```bash
+dotnet test tests/AssetRepositoryServices.IntegrationTests/ -c DebugL --filter "FullyQualifiedName~IdentityCredentialGuard"
+```
 
 ## Rollup consistency tests (AB#6968)
 
