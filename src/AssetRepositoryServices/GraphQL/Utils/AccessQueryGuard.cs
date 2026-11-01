@@ -224,7 +224,33 @@ internal static partial class AccessQueryGuard
             return;
         }
 
-        var paths = CollectPaths(queryOptions).ToList();
+        EnsurePathsAllowed(ckCacheService, tenantId, targetCkTypeId, CollectPaths(queryOptions).ToList(), hiddenNames);
+    }
+
+    /// <summary>
+    ///     AB#8049: validates the paths a stored query carries (its field filters, sort orders, columns, group-by and
+    ///     attribute-search paths) when the query is created or changed. Same rule as
+    ///     <see cref="EnsureQueryOptionsAllowed" />: each path is checked against the query type and every type derived
+    ///     from it; an unknown or missing query type is checked by name (fail closed). The repository applies a stored
+    ///     filter as it is, so a query that filters on a hidden attribute would be an oracle for its value wherever it is
+    ///     run (export job, pipeline node).
+    /// </summary>
+    internal static void EnsureStoredQueryPathsAllowed(ICkCacheService ckCacheService, string tenantId,
+        RtCkId<CkTypeId>? queryCkTypeId, IReadOnlyCollection<(string Path, string Operation)> paths)
+    {
+        var hiddenNames = GetHiddenAttributeNames(ckCacheService, tenantId);
+        if (hiddenNames.Count == 0)
+        {
+            return;
+        }
+
+        EnsurePathsAllowed(ckCacheService, tenantId, queryCkTypeId, paths, hiddenNames);
+    }
+
+    private static void EnsurePathsAllowed(ICkCacheService ckCacheService, string tenantId,
+        RtCkId<CkTypeId>? targetCkTypeId, IReadOnlyCollection<(string Path, string Operation)> paths,
+        IReadOnlySet<string> hiddenNames)
+    {
         if (paths.Count == 0)
         {
             return;

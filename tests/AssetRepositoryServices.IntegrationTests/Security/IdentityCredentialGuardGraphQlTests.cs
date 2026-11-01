@@ -4,6 +4,8 @@ using FluentAssertions;
 using GraphQL;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Collections;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Fixtures;
+using Meshmakers.Octo.ConstructionKit.Models.System.Generated.System.v2;
+using Meshmakers.Octo.Runtime.Contracts.RepositoryEntities;
 using Newtonsoft.Json.Linq;
 using Xunit;
 using F = Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Fixtures.IdentityCredentialGuardFixture;
@@ -265,35 +267,41 @@ public class IdentityCredentialGuardGraphQlTests
     [Fact]
     public async Task EntitySelector_InAStoredQuery_IsRefused()
     {
-        var queryRtId = await CreateGenericAsync(new
+        // AB#8049: the query is refused when it is saved (before, saving was accepted and only running it was refused).
+        var result = await _fixture.ExecuteGraphQlAsync(GenericCreateMutation, JsonSerializer.Serialize(new
         {
-            ckTypeId = "System/SimpleRtQuery",
-            attributes = new object[]
+            entities = new[]
             {
-                new { attributeName = "name", value = "credential-selector" },
-                new { attributeName = "queryCkTypeId", value = F.RoleCkTypeId },
                 new
                 {
-                    attributeName = "columns",
-                    value = new[] { "name", $"assignedEntities.systemIdentityUser[passwordHash='{StoredGuess}']->userName" }
+                    ckTypeId = "System/SimpleRtQuery",
+                    attributes = new object[]
+                    {
+                        new { attributeName = "name", value = (object)"credential-selector" },
+                        new { attributeName = "queryCkTypeId", value = (object)F.RoleCkTypeId },
+                        new
+                        {
+                            attributeName = "columns",
+                            value = (object)new[]
+                                { "name", $"assignedEntities.systemIdentityUser[passwordHash='{StoredGuess}']->userName" }
+                        }
+                    }
                 }
             }
-        });
+        }));
 
-        await AssertRefusedAsync($$"""
-            query { runtime { runtimeQuery(rtId: "{{queryRtId}}") {
-              items { rows { items { ... on RtSimpleQueryRow { cells { items { attributePath value } } } } } } } } }
-            """, "ATTRIBUTE_NOT_QUERYABLE");
+        AssertRefused(result, "ATTRIBUTE_NOT_QUERYABLE");
+        _fixture.SerializeGraphQl(result).Should().NotContain(StoredGuess);
     }
 
     [Theory]
     [InlineData("passwordHash")]
     [InlineData("securityStamp")]
     [InlineData("userTokens.value")]
-    public async Task StoredQuery_WithACredentialFilter_IsRefusedWhenRun(string path)
+    public async Task StoredQuery_WithACredentialFilter_IsRefusedWhenSaved(string path)
     {
-        // Creating the query entity is a generic write of a System/SimpleRtQuery; whether it is accepted or not, running it
-        // must not apply the filter.
+        // AB#8049: saving a query whose filter reaches a credential is refused (ATTRIBUTE_NOT_QUERYABLE). Should a query get in
+        // another way (import, restore), running it must not apply the filter either.
         var create = await _fixture.ExecuteGraphQlAsync($$"""
             mutation { runtime { systemSimpleRtQuerys { create(entities: [{
               name: "credential-filter", queryCkTypeId: "{{F.UserCkTypeId}}", columns: ["userName"],
@@ -302,15 +310,28 @@ public class IdentityCredentialGuardGraphQlTests
             """);
         var createJson = _fixture.SerializeGraphQl(create);
         AssertNoDummyValue(createJson);
-        if (create.Errors is { Count: > 0 })
+        create.Errors.Should().NotBeNullOrEmpty("a stored credential filter is refused when saved (AB#8049)");
+        create.Errors!.Select(e => e.Code).Should().Contain("ATTRIBUTE_NOT_QUERYABLE", createJson);
+
+        // A query that arrives without the save-time check (import, restore) is refused when it runs.
+        var repository = _fixture.GetSystemContext().GetSystemTenantRepository();
+        var query = await repository.CreateTransientRtEntityAsync<RtSimpleRtQuery>();
+        query.Name = "credential-filter-imported";
+        query.QueryCkTypeId = F.UserCkTypeId;
+        query.Columns = new AttributeStringValueList(["userName"]);
+        query.FieldFilter = new AttributeRecordValueList<RtFieldFilterRecord>
         {
-            create.Errors.Select(e => e.Code).Should().Contain("ATTRIBUTE_NOT_QUERYABLE", createJson);
-            return;
+            new() { AttributePath = path, Operator = RtFieldFilterOperatorEnum.Equals, ComparisonValue = StoredGuess }
+        };
+        using (var session = await repository.GetSessionAsync())
+        {
+            session.StartTransaction();
+            await repository.InsertOneRtEntityAsync(session, query);
+            await session.CommitTransactionAsync();
         }
 
-        var queryRtId = JObject.Parse(createJson).SelectToken("data.runtime.systemSimpleRtQuerys.create[0].rtId")!.Value<string>()!;
         await AssertRefusedAsync($$"""
-            query { runtime { runtimeQuery(rtId: "{{queryRtId}}") {
+            query { runtime { runtimeQuery(rtId: "{{query.RtId}}") {
               items { rows { totalCount items { ... on RtSimpleQueryRow { cells { items { attributePath value } } } } } } } } }
             """, "ATTRIBUTE_NOT_QUERYABLE");
     }
