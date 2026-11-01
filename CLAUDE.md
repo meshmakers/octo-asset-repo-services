@@ -689,8 +689,8 @@ schema initialization.
   `testData/ck-models/`, loaded by `Fixtures/SystemIdentitySnapshotCkModel`; refresh procedure in the README there) with a user whose
   `PasswordHash`, `SecurityStamp` and `UserTokens` hold fixed dummy values; no response, export file or captured log line may contain
   them. Path table: the README of the integration test project. Open gaps are skipped tests with the bug in the skip reason:
-  AB#8048 (the MongoDB command log and slow-query buffer print Hidden values of a write), and the pending `replacesGenericCreate` of
-  `CreateUser`. A stored query whose filter or selector reaches a credential is refused when it is saved (AB#8049,
+  AB#8048 (the MongoDB command log and slow-query buffer print Hidden values of a write). A new user is refused on every create path
+  (`GENERIC_CREATE_REPLACED_BY_METHOD` naming `User.CreateUser-1`, AB#7777, next section), so the create tests of these suites assert that refusal. A stored query whose filter or selector reaches a credential is refused when it is saved (AB#8049,
   `StoredQuery_WithACredentialFilter_IsRefusedWhenSaved`, `EntitySelector_InAStoredQuery_IsRefused`).
 - **Identity-owned User fields and identity associations (AB#8042)**: `GraphQL/Utils/IdentityOwnedWriteGuard` refuses, for every caller,
   the attributes and association roles listed in the engine's `IdentityOwnedWrites` (ConstructionKit.Contracts): User `NormalizedUserName`,
@@ -1030,7 +1030,14 @@ response envelope) and `extensions.parameters` = `{ ckTypeId, methodId }` (`meth
 message is fixed, contains only ids, and carries no entity data, so it is byte-identical for every caller. It needs no method right and runs after
 authentication like any mutation. Update, delete, query-row update/delete and every other mutation are untouched; types without the flag are untouched.
 The CK meta field `CkMethod.replacesGenericCreate` (`Boolean!`, additive) shows the flag; v1 CK queries are unchanged.
-**Create paths that do not go through the GraphQL create and are therefore not covered:** `ModelsController.ImportRt` (async `ImportRtCommandRequest`
+**`System.Identity/User` (AB#7777):** the engine helper answers the static `User.CreateUser-1` for the user type although System.Identity 2.x does
+not set the flag (runtime rule until the next major, AB#8053), so the typed, generic and query-row create of a **new** user are refused here with
+`methodId = System.Identity/User.CreateUser-1`; updates of existing users are untouched. No code in this repository changed for it (engine package only);
+the CK meta still reports `replacesGenericCreate: false` for the method. Tests: `Security/IdentityCredentialGuardGraphQlTests` (`GenericCreate_OfAUserWithOnlyVisibleFields_*`,
+`TypedCreate_OfAUser_*`, the create cases), `Security/IdentityCredentialGuardBlueprintSeedTests` (test blueprint `NewUserSeedBp`, System.Identity 2.29+: new user seed refused with 136,
+seed of an existing user rtId upserted; `VisibleIdentitySeedBp` installs 2.28.0, which has no `CreateUser`, and is still applied), `Security/IdentityCredentialGuardExchangeTests`
+(caller `ImportRt` of a new user: 137).
+**Create paths that do not go through the GraphQL create and are therefore not covered here:** `ModelsController.ImportRt` (async `ImportRtCommandRequest`
 job), blueprint seed data and `ImportCk`-time data, the mesh-adapter `ApplyChanges` nodes (repository access), and `FileSystemService`/system
 types (never flagged). There is no REST endpoint that creates arbitrary runtime entities. Tests: `UnitTests/GraphQL/Methods/GenericCreateReplacedByMethodGraphQlErrorTests`,
 `IntegrationTests/GraphQL/CkV2/GenericCreateReplacedByMethodTests` (incl. the query-row create) (test types `ManagedThing`, `ManagedThingChild`, `ToolThing` in
