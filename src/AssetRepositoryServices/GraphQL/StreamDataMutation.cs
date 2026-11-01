@@ -108,7 +108,7 @@ internal sealed class StreamDataMutation : ObjectGraphType
         // ---- Computed columns (AB#4189 Phase 7) ----
 
         Field<NonNullGraphType<ArchiveTransitionResultDtoType>>("addComputedColumn")
-            .Description("Adds a computed column to an Activated raw or time-range archive and backfills it across the existing rows. The column stays hidden until the backfill completes, then becomes visible atomically; a backfill failure leaves the previous archive state intact. Requires StreamDataAdmin. AB#4189.")
+            .Description("Adds a computed column to an Activated raw or time-range archive and queues its backfill as a background job (AB#8002): returns at once with the column in Backfilling. The job writes the existing rows outside the request — a client timeout cannot cancel it — and ends the column Active (visible atomically) or Failed with the reason on the job; follow it with recomputeJobsFor(archive). A Failed column is retried with retryComputedColumnBackfill. Requires StreamDataAdmin. AB#4189.")
             .Argument<NonNullGraphType<OctoObjectIdType>>(Statics.RtIdArg, "Runtime id of the archive to add the computed column to.")
             .Argument<NonNullGraphType<StringGraphType>>("name", "Output column name — the identifier formulas reference and the column appears under.")
             .Argument<NonNullGraphType<StringGraphType>>("formula", "mXparser formula over other columns of the same row (e.g. 'activePower / apparentPower').")
@@ -123,11 +123,17 @@ internal sealed class StreamDataMutation : ObjectGraphType
             .ResolveAsync(ResolveRemoveComputedColumnAsync);
 
         Field<NonNullGraphType<ArchiveTransitionResultDtoType>>("updateComputedColumnFormula")
-            .Description("Changes the formula of an existing computed column on an active archive with optimistic / atomic semantics: readers keep seeing the previous formula's values while the new one is backfilled, then switch atomically. Rejected when another computed column references this one (it would orphan the reference) — re-point or remove the dependent first. The result type is unchanged. Requires StreamDataAdmin. AB#4189.")
+            .Description("Changes the formula of an existing computed column on an active archive with optimistic / atomic semantics: readers keep seeing the previous formula's values while the new one is backfilled by a background job (AB#8002), then switch atomically; a failed job reverts to the previous formula. Returns once the job is queued. Rejected when another computed column references this one (it would orphan the reference) — re-point or remove the dependent first — or while a backfill of the column is still queued or running. The result type is unchanged. Requires StreamDataAdmin. AB#4189.")
             .Argument<NonNullGraphType<OctoObjectIdType>>(Statics.RtIdArg, "Runtime id of the archive carrying the computed column.")
             .Argument<NonNullGraphType<StringGraphType>>("name", "Name of the computed column to re-formulate.")
             .Argument<NonNullGraphType<StringGraphType>>("formula", "The new mXparser formula.")
             .ResolveAsync(ResolveUpdateComputedColumnFormulaAsync);
+
+        Field<RecomputeJobInfoDtoType>("retryComputedColumnBackfill")
+            .Description("Queues the backfill of a computed column again (AB#8002) — for a column that ended Failed, or that is stuck in Pending / Backfilling without a running job — without removing and re-adding it. Returns the queued job (computedColumnName set); poll it with recomputeJobsFor(archive). Rejected when the column is Active. Requires StreamDataAdmin.")
+            .Argument<NonNullGraphType<OctoObjectIdType>>(Statics.RtIdArg, "Runtime id of the archive carrying the computed column.")
+            .Argument<NonNullGraphType<StringGraphType>>("name", "Name of the computed column whose backfill is retried.")
+            .ResolveAsync(ResolveRetryComputedColumnBackfillAsync);
     }
 
     private async Task<object?> ResolveRecomputeAsync(IResolveFieldContext<object?> ctx)
@@ -226,7 +232,10 @@ internal sealed class StreamDataMutation : ObjectGraphType
                 ?? throw AssetRepositoryException.StreamDataNotAvailable();
             var store = gql.TenantContext.GetArchiveRuntimeStore();
 
-            await lifecycle.AddComputedColumnAsync(archiveRtId, name, formula, resultType, indexed);
+            // AB#8002: queue the backfill and return; the background job runs it under the host's
+            // lifetime, so neither this request's timeout nor a client disconnect can cancel it.
+            await lifecycle.EnqueueAddComputedColumnAsync(
+                archiveRtId, name, formula, resultType, indexed, HostToken(ctx));
 
             var snapshot = await store.GetAsync(archiveRtId)
                 ?? throw new ArchiveNotFoundException(archiveRtId);
@@ -298,7 +307,8 @@ internal sealed class StreamDataMutation : ObjectGraphType
                 ?? throw AssetRepositoryException.StreamDataNotAvailable();
             var store = gql.TenantContext.GetArchiveRuntimeStore();
 
-            await lifecycle.UpdateComputedColumnFormulaAsync(archiveRtId, name, formula);
+            // AB#8002: queue the backfill of the new formula and return (see addComputedColumn).
+            await lifecycle.EnqueueUpdateComputedColumnFormulaAsync(archiveRtId, name, formula, HostToken(ctx));
 
             var snapshot = await store.GetAsync(archiveRtId)
                 ?? throw new ArchiveNotFoundException(archiveRtId);
@@ -309,6 +319,45 @@ internal sealed class StreamDataMutation : ObjectGraphType
             return ctx.HandleException(e);
         }
     }
+
+    private async Task<object?> ResolveRetryComputedColumnBackfillAsync(IResolveFieldContext<object?> ctx)
+    {
+        try
+        {
+            var archiveRtId = ctx.GetArgument<OctoObjectId>(Statics.RtIdArg);
+            var name = ctx.GetArgument<string>("name");
+            _logger.LogDebug("Retry of computed column '{Column}' backfill requested for archive {ArchiveRtId}", name, archiveRtId);
+
+            var gql = (GraphQlUserContext)ctx.UserContext;
+            if (gql.User?.IsInRole(CommonConstants.StreamDataAdminRole) != true)
+            {
+                ctx.Errors.Add(new ExecutionError(
+                    $"Retrying a computed column backfill requires the '{CommonConstants.StreamDataAdminRole}' role.")
+                {
+                    Code = Statics.GraphQlForbidden,
+                });
+                return null;
+            }
+
+            var lifecycle = gql.TenantContext.GetArchiveLifecycleService()
+                ?? throw AssetRepositoryException.StreamDataNotAvailable();
+
+            var job = await lifecycle.RetryComputedColumnBackfillAsync(archiveRtId, name, HostToken(ctx));
+            return job is null ? null : RecomputeJobInfoDto.From(job);
+        }
+        catch (Exception e)
+        {
+            return ctx.HandleException(e);
+        }
+    }
+
+    /// <summary>
+    /// The host's stopping token for the quick queuing writes of a computed-column mutation
+    /// (AB#8002) — deliberately not the request's token, so a client that gives up mid-call cannot
+    /// leave a half-queued column behind. The backfill itself runs on the background service.
+    /// </summary>
+    private static CancellationToken HostToken(IResolveFieldContext<object?> ctx) =>
+        ctx.RequestServices?.GetService<IHostApplicationLifetime>()?.ApplicationStopping ?? CancellationToken.None;
 
     private async Task<object?> ResolveDeleteAsync(IResolveFieldContext<object?> ctx)
     {

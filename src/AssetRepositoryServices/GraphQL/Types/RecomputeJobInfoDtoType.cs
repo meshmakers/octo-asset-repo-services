@@ -14,7 +14,7 @@ internal sealed class RecomputeJobInfoDtoType : ObjectGraphType<RecomputeJobInfo
     public RecomputeJobInfoDtoType()
     {
         Name = "RecomputeJobInfo";
-        Description = "A rollup recompute run: state, row/window counts, timings, and failure reason.";
+        Description = "A recompute run of an archive — a rollup recompute or a computed-column backfill (computedColumnName set): state, row/window counts, timings, and failure reason.";
 
         Field<NonNullGraphType<OctoObjectIdType>>("rtId")
             .Description("Runtime id of the recompute job.")
@@ -54,5 +54,11 @@ internal sealed class RecomputeJobInfoDtoType : ObjectGraphType<RecomputeJobInfo
                 "committed chunk. A Running job whose heartbeat stops advancing is no longer alive; after the " +
                 "stale-job timeout the drain fails it as 'Presumed dead'. Null on jobs written before the field existed.")
             .Resolve(ctx => ctx.Source!.LastProgressAt);
+
+        Field<StringGraphType>("computedColumnName")
+            .Description(
+                "The computed column this job backfills (AB#8002); null for a rollup recompute. Adding a computed " +
+                "column, changing its formula or retrying a failed backfill queues such a job on the archive.")
+            .Resolve(ctx => ctx.Source!.ComputedColumnName);
     }
 }
