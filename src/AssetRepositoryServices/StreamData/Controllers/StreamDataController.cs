@@ -226,6 +226,20 @@ public class StreamDataController : ControllerBase
                 id, name, formula, resultType, indexed, _appLifetime.ApplicationStopping));
 
     /// <summary>
+    /// Adds an ingested column for an existing attribute of the archive's target CK type to an Activated raw or
+    /// time-range archive without recreating it (AB#7997): the table gains a nullable column (existing rows keep their
+    /// data and read NULL for it), then the archive definition names it, and the next ingested rows fill it. Idempotent:
+    /// a path the archive already captures is a no-op. 400 when the archive is not Activated, is a rollup, or the path
+    /// does not resolve. Same lifecycle path as the <c>addArchiveColumn</c> GraphQL mutation.
+    /// </summary>
+    [HttpPost("archives/{archiveRtId}/columns")]
+    [Microsoft.AspNetCore.Authorization.Authorize(AssetRepositoryServiceConstants.TenantAssetApiReadWritePolicy)]
+    public Task<IActionResult> AddArchiveColumn(
+        [Required] string tenantId, [Required] string archiveRtId, [Required] string path, bool indexed = false)
+        => InvokeArchiveTransitionAsync(tenantId, archiveRtId, "AddArchiveColumn",
+            (lifecycle, id) => lifecycle.AddArchiveColumnAsync(id, path, indexed, _appLifetime.ApplicationStopping));
+
+    /// <summary>
     /// Removes a computed column from an archive (AB#4189 Phase 7). Rejected when another computed
     /// column still references it; the physical CrateDB column is left as a harmless orphan.
     /// </summary>

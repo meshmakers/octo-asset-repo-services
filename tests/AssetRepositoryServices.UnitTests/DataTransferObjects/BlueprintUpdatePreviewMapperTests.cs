@@ -3,6 +3,7 @@ using FluentAssertions;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.DataTransferObjects.Blueprints;
 using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.Runtime.Contracts.Blueprints;
+using Meshmakers.Octo.Runtime.Contracts.Exchange;
 using Meshmakers.Octo.Runtime.Contracts.TransportContainer.DTOs;
 using Xunit;
 
@@ -237,6 +238,33 @@ public class BlueprintUpdatePreviewMapperTests
             new[] { dto.EntitiesAdded, dto.EntitiesUpdated, dto.EntitiesUnchanged, dto.EntitiesDeleted, dto.EntitiesSkipped });
         Assert.Equal(["kept"], dto.Warnings);
         Assert.True(Assert.Single(dto.BlankedAttributes).AppliedOnUpdate);
+    }
+
+    // AB#7997: the columns an update added to activated archives reach the REST/GraphQL result.
+    [Fact]
+    public void ToDto_Result_CarriesTheArchiveColumnsAdded()
+    {
+        var archive = new OctoObjectId("6a0e000000000000000a000d");
+        var job = new OctoObjectId("6a0e000000000000000a0099");
+        var result = new BlueprintUpdateResult
+        {
+            Success = false,
+            ArchiveColumnsAdded =
+            [
+                new RtImportArchiveColumnAddition(archive, "battery", "DischargingPower", false, null, null),
+                new RtImportArchiveColumnAddition(archive, "battery", "DischargePower", true, job, null),
+                new RtImportArchiveColumnAddition(archive, null, "Late", false, null, "CrateDB is away"),
+            ]
+        };
+
+        var dto = BlueprintUpdatePreviewMapper.ToDto(result);
+
+        dto.ArchiveColumnsAdded.Should().BeEquivalentTo(new[]
+        {
+            new BlueprintArchiveColumnAdditionDto { ArchiveRtId = archive.ToString(), ArchiveWellKnownName = "battery", Column = "DischargingPower" },
+            new BlueprintArchiveColumnAdditionDto { ArchiveRtId = archive.ToString(), ArchiveWellKnownName = "battery", Column = "DischargePower", IsComputed = true, BackfillJobRtId = job.ToString() },
+            new BlueprintArchiveColumnAdditionDto { ArchiveRtId = archive.ToString(), Column = "Late", Error = "CrateDB is away" },
+        }, o => o.WithStrictOrdering());
     }
 
     [Fact]

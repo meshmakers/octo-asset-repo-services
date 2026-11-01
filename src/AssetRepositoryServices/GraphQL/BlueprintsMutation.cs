@@ -205,6 +205,7 @@ internal sealed class BlueprintsMutation : ObjectGraphType
                 LoadedCkModels = [],
                 Warnings = result.Warnings.ToList(),
                 BlankedAttributes = BlueprintUpdatePreviewMapper.ToDtos(result.BlankedAttributes),
+                ArchiveColumnsAdded = BlueprintUpdatePreviewMapper.ToDtos(result.ArchiveColumnsAdded),
                 TenantOwnedSkipped = BlueprintUpdatePreviewMapper.ToDtos(result.TenantOwnedSkipped),
                 TenantOwnedStaysDeleted = BlueprintUpdatePreviewMapper.ToDtos(result.TenantOwnedStaysDeleted),
                 // AB#6871: a dry run reports what a real update would be refused for.

@@ -47,6 +47,10 @@ internal sealed class BlueprintApplyResultDtoType : ObjectGraphType<BlueprintApp
             .Description("Update only (AB#6315): attributes the seed would have blanked and what happened to each (appliedOnUpdate false = tenant value kept). Empty for an install.")
             .Resolve(ctx => ctx.Source!.BlankedAttributes);
 
+        Field<NonNullGraphType<ListGraphType<NonNullGraphType<BlueprintArchiveColumnAdditionDtoType>>>>("archiveColumnsAdded")
+            .Description("Update only (AB#7997): columns the update added to activated archives (ingested through ADD COLUMN, computed with a queued backfill job), each with its outcome. Empty for an install.")
+            .Resolve(ctx => ctx.Source!.ArchiveColumnsAdded);
+
         Field<NonNullGraphType<ListGraphType<NonNullGraphType<BlueprintTenantOwnedEntityDtoType>>>>("tenantOwnedSkipped")
             .Description("Update only (AB#6454): tenant-owned seed entities the update left untouched because the tenant still holds them. Empty for an install. Identity only, no values.")
             .Resolve(ctx => ctx.Source!.TenantOwnedSkipped);

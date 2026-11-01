@@ -319,6 +319,11 @@ Time-series data support (`StreamData/`):
     and the mutation `retryComputedColumnBackfill` re-queue a `Failed` column (400 / error for an
     `Active` one). Never call the inline `AddComputedColumnAsync` / `UpdateComputedColumnFormulaAsync`
     from a request again — they backfill in the call.
+  - **Ingested column on an active archive (AB#7997).** `POST .../archives/{rtId}/columns?path=&indexed=` and the
+    mutation `addArchiveColumn` call `IArchiveLifecycleService.AddArchiveColumnAsync` (storage first, nullable
+    `ADD COLUMN`, then the definition; idempotent; 400 for a non-activated archive, a rollup or an unresolvable path).
+    A blueprint update whose seed adds columns to an activated archive reports them in `archiveColumnsAdded`
+    (REST result and GraphQL `BlueprintApplyResult`); rules in engine-mongodb `docs/streamdata-archive-concept.md` §10.
   - `POST disable` is a **verified precondition, not a teardown (AB#4255)**: 409 +
     `OperationFailedErrorDto` naming the archives while any is still `Activated` (guard in the
     engine's `TenantContext.DisableStreamDataAsync`); on success only the tenant flag is switched
