@@ -683,8 +683,8 @@ schema initialization.
   them. Path table: the README of the integration test project. Open gaps are skipped tests with the bug in the skip reason:
   AB#8042 (identity flags, claims, logins, role/group associations still ReadWrite), AB#8047 (ReadOnly not enforced on update, next
   bullet), AB#8048 (the MongoDB command log and slow-query buffer print Hidden values of a write), and the pending
-  `replacesGenericCreate` of `CreateUser`. AB#8049 (export by a stored query applies its Hidden filter, octo-bot-services) has no test
-  here: a stored query with a Hidden filter is still accepted, only running it through GraphQL is refused.
+  `replacesGenericCreate` of `CreateUser`. A stored query whose filter or selector reaches a credential is refused when it is saved
+  (AB#8049, `StoredQuery_WithACredentialFilter_IsRefusedWhenSaved`, `EntitySelector_InAStoredQuery_IsRefused`).
 - **Stream data** (review M12 / G3 E-M2): no archive column may reach a Hidden attribute. The engine refuses to
   activate such an archive and fails an active one when a model change makes a column reach Hidden
   (`ArchiveHiddenColumnGuard`, `ArchiveLifecycleService`). The asset-repo additionally refuses every stream-data

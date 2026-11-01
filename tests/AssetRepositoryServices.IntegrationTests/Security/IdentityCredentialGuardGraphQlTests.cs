@@ -265,35 +265,41 @@ public class IdentityCredentialGuardGraphQlTests
     [Fact]
     public async Task EntitySelector_InAStoredQuery_IsRefused()
     {
-        var queryRtId = await CreateGenericAsync(new
+        // AB#8049: the query is refused when it is saved (before, saving was accepted and only running it was refused).
+        var result = await _fixture.ExecuteGraphQlAsync(GenericCreateMutation, JsonSerializer.Serialize(new
         {
-            ckTypeId = "System/SimpleRtQuery",
-            attributes = new object[]
+            entities = new[]
             {
-                new { attributeName = "name", value = "credential-selector" },
-                new { attributeName = "queryCkTypeId", value = F.RoleCkTypeId },
                 new
                 {
-                    attributeName = "columns",
-                    value = new[] { "name", $"assignedEntities.systemIdentityUser[passwordHash='{StoredGuess}']->userName" }
+                    ckTypeId = "System/SimpleRtQuery",
+                    attributes = new object[]
+                    {
+                        new { attributeName = "name", value = (object)"credential-selector" },
+                        new { attributeName = "queryCkTypeId", value = (object)F.RoleCkTypeId },
+                        new
+                        {
+                            attributeName = "columns",
+                            value = (object)new[]
+                                { "name", $"assignedEntities.systemIdentityUser[passwordHash='{StoredGuess}']->userName" }
+                        }
+                    }
                 }
             }
-        });
+        }));
 
-        await AssertRefusedAsync($$"""
-            query { runtime { runtimeQuery(rtId: "{{queryRtId}}") {
-              items { rows { items { ... on RtSimpleQueryRow { cells { items { attributePath value } } } } } } } } }
-            """, "ATTRIBUTE_NOT_QUERYABLE");
+        AssertRefused(result, "ATTRIBUTE_NOT_QUERYABLE");
+        _fixture.SerializeGraphQl(result).Should().NotContain(StoredGuess);
     }
 
     [Theory]
     [InlineData("passwordHash")]
     [InlineData("securityStamp")]
     [InlineData("userTokens.value")]
-    public async Task StoredQuery_WithACredentialFilter_IsRefusedWhenRun(string path)
+    public async Task StoredQuery_WithACredentialFilter_IsRefusedWhenSaved(string path)
     {
-        // Creating the query entity is a generic write of a System/SimpleRtQuery; whether it is accepted or not, running it
-        // must not apply the filter.
+        // AB#8049: saving a query whose filter reaches a credential is refused (ATTRIBUTE_NOT_QUERYABLE). Should a query get in
+        // another way (import, restore), running it must not apply the filter either.
         var create = await _fixture.ExecuteGraphQlAsync($$"""
             mutation { runtime { systemSimpleRtQuerys { create(entities: [{
               name: "credential-filter", queryCkTypeId: "{{F.UserCkTypeId}}", columns: ["userName"],
@@ -302,17 +308,8 @@ public class IdentityCredentialGuardGraphQlTests
             """);
         var createJson = _fixture.SerializeGraphQl(create);
         AssertNoDummyValue(createJson);
-        if (create.Errors is { Count: > 0 })
-        {
-            create.Errors.Select(e => e.Code).Should().Contain("ATTRIBUTE_NOT_QUERYABLE", createJson);
-            return;
-        }
-
-        var queryRtId = JObject.Parse(createJson).SelectToken("data.runtime.systemSimpleRtQuerys.create[0].rtId")!.Value<string>()!;
-        await AssertRefusedAsync($$"""
-            query { runtime { runtimeQuery(rtId: "{{queryRtId}}") {
-              items { rows { totalCount items { ... on RtSimpleQueryRow { cells { items { attributePath value } } } } } } } } }
-            """, "ATTRIBUTE_NOT_QUERYABLE");
+        create.Errors.Should().NotBeNullOrEmpty("a stored credential filter is refused when saved (AB#8049)");
+        create.Errors!.Select(e => e.Code).Should().Contain("ATTRIBUTE_NOT_QUERYABLE", createJson);
     }
 
     // ------------------------------------------------------------------------------------------------- writes
