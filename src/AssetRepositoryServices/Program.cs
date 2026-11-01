@@ -140,8 +140,12 @@ try
     // Bind the computed-column backfill service options (AB#8002): StreamData:ComputedColumnBackfill
     // overrides the drain interval and startup delay; StreamData:ComputedColumnBackfillSlice the width
     // of the time slices a backfill walks the archive in (default one day).
-    builder.Services.Configure<Meshmakers.Octo.Runtime.Engine.MongoDb.StreamData.ComputedColumnBackfillOptions>(
-        builder.Configuration.GetSection("StreamData:ComputedColumnBackfill"));
+    // A zero tick would make the service drain in a tight loop; refuse it at startup.
+    builder.Services.AddOptions<Meshmakers.Octo.Runtime.Engine.MongoDb.StreamData.ComputedColumnBackfillOptions>()
+        .Bind(builder.Configuration.GetSection("StreamData:ComputedColumnBackfill"))
+        .Validate(o => o.TickInterval > TimeSpan.Zero && o.StartupDelay >= TimeSpan.Zero,
+            "StreamData:ComputedColumnBackfill: TickInterval must be positive and StartupDelay must not be negative.")
+        .ValidateOnStart();
     builder.Services.Configure<Meshmakers.Octo.Runtime.Engine.CrateDb.Configuration.StreamDataConfiguration>(options =>
     {
         if (TimeSpan.TryParse(builder.Configuration["StreamData:ComputedColumnBackfillSlice"],
