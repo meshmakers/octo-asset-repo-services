@@ -234,6 +234,8 @@ internal class QueryMapper(
                 // (ATTRIBUTE_NOT_WRITABLE). Checked first.
                 AccessQueryGuard.EnsureWritablePath(ckCacheService, tenantId, ckTypeId, cellDto.AttributePath,
                     isCreate);
+                // AB#8042: identity-owned User fields are written only by the identity service.
+                IdentityOwnedWriteGuard.EnsureWritablePath(ckTypeId, cellDto.AttributePath);
 
                 // AB#5528 (concept §4.4): a Secret attribute is never a query column, so a query row cannot
                 // write it either - secrets are set through the entity mutations (string input, explicit

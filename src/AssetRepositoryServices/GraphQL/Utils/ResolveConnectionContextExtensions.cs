@@ -298,6 +298,11 @@ internal static class ResolveConnectionContextExtensions
                 ["operation"] = accessException.Operation
             }
         };
+        if (accessException.Reason != null)
+        {
+            error.Extensions["reason"] = accessException.Reason;
+        }
+
         return true;
     }
 
