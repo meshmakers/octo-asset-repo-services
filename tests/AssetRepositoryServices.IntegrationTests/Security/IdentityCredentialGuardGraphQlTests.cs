@@ -366,7 +366,8 @@ public class IdentityCredentialGuardGraphQlTests
             }
         }));
 
-        AssertRefused(result, "ATTRIBUTE_NOT_WRITABLE");
+        // AB#7777: a new user is refused as a whole (only User.CreateUser or REST create users), before any attribute is judged.
+        AssertCreateReplacedByUserCreateUser(result);
     }
 
     [Fact]
@@ -388,7 +389,8 @@ public class IdentityCredentialGuardGraphQlTests
             }
         }));
 
-        AssertRefused(result, "ATTRIBUTE_NOT_WRITABLE");
+        // AB#7777: a new user is refused as a whole (only User.CreateUser or REST create users), before any attribute is judged.
+        AssertCreateReplacedByUserCreateUser(result);
     }
 
     [Theory]
@@ -466,8 +468,9 @@ public class IdentityCredentialGuardGraphQlTests
             } } }
             """);
 
-        AssertRefused(result, "ATTRIBUTE_NOT_WRITABLE");
-        result.Errors!.Select(e => e.Message).Should().Contain(m => m.Contains($"access: {access}"));
+        // AB#7777: a row of a new user is refused as a whole before its cells are mapped ({{access}} cell or not).
+        access.Should().NotBeNullOrEmpty();
+        AssertCreateReplacedByUserCreateUser(result);
     }
 
     [Theory]
@@ -641,7 +644,8 @@ public class IdentityCredentialGuardGraphQlTests
             }
         }));
 
-        AssertIdentityOwnedRefusal(result);
+        // AB#7777: the new user is refused before the identity-owned field is judged.
+        AssertCreateReplacedByUserCreateUser(result);
     }
 
     [Fact]
@@ -657,6 +661,41 @@ public class IdentityCredentialGuardGraphQlTests
 
         AssertIdentityOwnedRefusal(result);
         (await ProbeIdentityFieldsAsync()).Should().Equal(before);
+    }
+
+    [Fact]
+    public async Task GenericCreate_OfAUserWithOnlyVisibleFields_IsRefused_NamingUserCreateUser()
+    {
+        // AB#7777: before, this created a user that skipped the user manager (no normalised name, no security stamp).
+        var name = $"generic-create-7777-{Guid.NewGuid():N}";
+        var result = await _fixture.ExecuteGraphQlAsync(GenericCreateMutation, JsonSerializer.Serialize(new
+        {
+            entities = new[]
+            {
+                new
+                {
+                    ckTypeId = F.UserCkTypeId,
+                    attributes = new object[] { new { attributeName = "firstName", value = (object)name } }
+                }
+            }
+        }));
+
+        AssertCreateReplacedByUserCreateUser(result);
+        (await _fixture.ExecuteGraphQlAsync($$"""
+            query { runtime { runtimeEntities(ckId: "{{F.UserCkTypeId}}", fieldFilter: [{ attributePath: "firstName", operator: EQUALS, comparisonValue: "{{name}}" }]) { totalCount } } }
+            """)).Should().Match<ExecutionResult>(r => _fixture.SerializeGraphQl(r).Contains("\"totalCount\":0"));
+    }
+
+    [Fact]
+    public async Task TypedCreate_OfAUser_IsRefused_NamingUserCreateUser()
+    {
+        var result = await _fixture.ExecuteGraphQlAsync($$"""
+            mutation { runtime { {{F.UserMutationField}} {
+              create(entities: [{ firstName: "typed-create-7777" }]) { rtId }
+            } } }
+            """);
+
+        AssertCreateReplacedByUserCreateUser(result);
     }
 
     [Fact]
@@ -777,7 +816,8 @@ public class IdentityCredentialGuardGraphQlTests
             } } }
             """);
 
-        AssertIdentityOwnedRefusal(result);
+        // AB#7777: the row of a new user is refused as a whole before the identity-owned cell is judged.
+        AssertCreateReplacedByUserCreateUser(result);
     }
 
     [Fact(Skip = "Pending: CreateUser does not set replacesGenericCreate in System.Identity 2.29.0 (needs the next major)")]
@@ -887,6 +927,17 @@ public class IdentityCredentialGuardGraphQlTests
             .Should().BeTrue("the tokens are still stored");
         (await _fixture.ReadRawAttributeValueFromMongoDb(rtId, "userTokens", F.UserCollectionSuffix)).AsBsonArray
             .Should().HaveCount(1);
+    }
+
+    /// <summary>AB#7777: the generic create of a user is replaced by <c>User.CreateUser-1</c> (engine runtime rule).</summary>
+    private void AssertCreateReplacedByUserCreateUser(ExecutionResult result)
+    {
+        AssertRefused(result, "GENERIC_CREATE_REPLACED_BY_METHOD");
+        var json = _fixture.SerializeGraphQl(result);
+        var error = result.Errors!.First(e => e.Code == "GENERIC_CREATE_REPLACED_BY_METHOD");
+        var parameters = (IDictionary<string, object?>)error.Extensions!["parameters"]!;
+        parameters["methodId"].Should().Be("System.Identity/User.CreateUser-1", json);
+        parameters["ckTypeId"]!.ToString().Should().Contain("System.Identity", json).And.EndWith("/User", json);
     }
 
     private void AssertIdentityOwnedRefusal(ExecutionResult result)

@@ -5,6 +5,7 @@ using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.ConstructionKit.Contracts.BlueprintCatalogs;
 using Meshmakers.Octo.Runtime.Contracts;
 using Meshmakers.Octo.Runtime.Contracts.Repositories.Query;
+using Meshmakers.Octo.Runtime.Contracts.RepositoryEntities;
 using Xunit;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Security;
@@ -23,9 +24,14 @@ public class IdentityCredentialGuardBlueprintSeedTests(IdentitySeedBlueprintFixt
 
     private static readonly RtCkId<CkTypeId> UserCkType = new(IdentityCredentialGuardFixture.UserCkTypeId);
 
+    /// <summary>The rtId of the user in <c>NewUserSeedBp</c>.</summary>
+    private const string NewSeedUserRtId = "67000099aaaa7777bbbb0001";
+
     [Fact(Timeout = TestTimeoutMs)]
-    public async Task SeedWithVisibleUserAttributes_IsApplied_PositiveControl()
+    public async Task SeedWithVisibleUserAttributes_OnSystemIdentity228_IsApplied_PositiveControl()
     {
+        // The blueprint's floor installs System.Identity 2.28.0, which declares no User.CreateUser: the runtime rule of
+        // AB#7777 does not apply to such a tenant (no method to point to), the seed is applied as before.
         var ct = TestContext.Current.CancellationToken;
         var tenantId = await fixture.CreateTenantAsync("seed-ok");
         try
@@ -39,6 +45,75 @@ public class IdentityCredentialGuardBlueprintSeedTests(IdentitySeedBlueprintFixt
         finally
         {
             await fixture.DropTenantAsync(tenantId);
+        }
+    }
+
+    [Fact(Timeout = TestTimeoutMs)]
+    public async Task SeedOfANewUser_IsRefusedWithUserCreateUser_AndWritesNoUser()
+    {
+        // AB#7777: on System.Identity 2.29+ a user is created only by the Identity Service (REST or User.CreateUser).
+        var ct = TestContext.Current.CancellationToken;
+        var tenantId = await fixture.CreateTenantAsync("seed-new");
+        try
+        {
+            var outcome = await ApplyNewUserSeedAsync(tenantId, ct);
+
+            outcome.Should().Contain("[136]").And.Contain("System.Identity/User.CreateUser-1")
+                .And.Contain("GENERIC_CREATE_REPLACED_BY_METHOD").And.Contain(NewSeedUserRtId);
+            (await CountUsersAsync(tenantId, ct)).Should().Be(0, "nothing is written");
+            (await fixture.GetBlueprintInstallations().GetByBlueprintNameAsync(tenantId, "NewUserSeedBp", ct))
+                .Should().BeNull("the blueprint is not recorded as installed");
+        }
+        finally
+        {
+            await fixture.DropTenantAsync(tenantId);
+        }
+    }
+
+    [Fact(Timeout = TestTimeoutMs)]
+    public async Task SeedOfAnExistingUserRtId_IsUpserted_PositiveControl()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var tenantId = await fixture.CreateTenantAsync("seed-upsert");
+        try
+        {
+            // The first apply installs System.Identity 2.29 and is refused (new user); then the user exists - created through
+            // the repository, as the Identity Service does - and the same seed only updates it.
+            (await ApplyNewUserSeedAsync(tenantId, ct)).Should().Contain("[136]");
+            var repository = await fixture.GetRuntimeRepositoryProvider().GetRepositoryAsync(tenantId, ct);
+            using (var session = await repository!.GetSessionAsync())
+            {
+                session.StartTransaction();
+                var user = new RtEntity(UserCkType, new OctoObjectId(NewSeedUserRtId));
+                user.SetAttributeRawValue("FirstName", "Existing");
+                await repository.InsertOneRtEntityAsync(session, user);
+                await session.CommitTransactionAsync();
+            }
+
+            var result = await fixture.GetBlueprintService()
+                .ApplyBlueprintAsync(tenantId, new BlueprintId("NewUserSeedBp-1.0.0"), false, ct);
+
+            result.IsSuccess.Should().BeTrue(Messages(result.OperationResult));
+            (await CountUsersAsync(tenantId, ct)).Should().Be(1);
+        }
+        finally
+        {
+            await fixture.DropTenantAsync(tenantId);
+        }
+    }
+
+    private async Task<string> ApplyNewUserSeedAsync(string tenantId, CancellationToken ct)
+    {
+        try
+        {
+            var result = await fixture.GetBlueprintService()
+                .ApplyBlueprintAsync(tenantId, new BlueprintId("NewUserSeedBp-1.0.0"), false, ct);
+            result.IsSuccess.Should().BeFalse("a blueprint cannot create a user");
+            return Messages(result.OperationResult);
+        }
+        catch (Exception e) when (e is not Xunit.Sdk.XunitException)
+        {
+            return e.ToString();
         }
     }
 

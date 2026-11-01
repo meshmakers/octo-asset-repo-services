@@ -1,0 +1,23 @@
+$schema: https://schemas.meshmakers.cloud/runtime-model.schema.json
+dependencies:
+  - System-[2.5,3.0)
+  - System.Identity-[2.29,3.0)
+entities:
+  - rtId: 67000099aaaa7777bbbb0001
+    ckTypeId: System.Identity/User
+    rtWellKnownName: NewSeedUser
+    attributes:
+      - id: System.Identity/FirstName
+        value: Seed
+      - id: System.Identity/EmailConfirmed
+        value: false
+      - id: System.Identity/PhoneNumberConfirmed
+        value: false
+      - id: System.Identity/TwoFactorEnabled
+        value: false
+      - id: System.Identity/LockoutEnabled
+        value: true
+      - id: System.Identity/AccessFailedCount
+        value: 0
+      - id: System.Identity/ResetPasswordOnLogin
+        value: false

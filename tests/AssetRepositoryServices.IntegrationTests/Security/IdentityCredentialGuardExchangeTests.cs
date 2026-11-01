@@ -184,14 +184,38 @@ public class IdentityCredentialGuardExchangeTests
             .Should().NotBe(new MongoDB.Bson.BsonString("caller-import-8042"), "nothing is written");
     }
 
-    [Fact]
-    public async Task ImportRt_CallerPath_OtherUserFields_AreAccepted_PositiveControl()
+    // AB#7777: a user-started import cannot create a user (engine message 137 naming User.CreateUser-1); before, this file
+    // created a user that skipped the user manager. Insert and Upsert alike.
+    [Theory]
+    [InlineData(ImportStrategy.Insert)]
+    [InlineData(ImportStrategy.Upsert)]
+    public async Task ImportRt_CallerPath_NewUser_IsRefusedNamingUserCreateUser_AndWritesNothing(ImportStrategy strategy)
     {
         var rtId = OctoObjectId.GenerateNewId().ToString();
         var file = WriteYaml(PlainUserYaml(rtId, string.Empty));
 
-        (await ImportAsync(file, ImportStrategy.Insert, callerPath: true)).Should().BeNull();
-        (await FindUserAsync(rtId)).Should().BeTrue();
+        var exception = await ImportAsync(file, strategy, callerPath: true);
+
+        exception.Should().NotBeNull("a user-started import must not create a user");
+        exception!.MessageNumber.Should().Be(137);
+        var message = exception.Messages.Should().ContainSingle().Subject;
+        message.Parameters["rtId"].Should().Be(rtId);
+        message.Parameters["methodId"].Should().Be("System.Identity/User.CreateUser-1");
+        message.Parameters["reason"].Should().Be("GENERIC_CREATE_REPLACED_BY_METHOD");
+        (await FindUserAsync(rtId)).Should().BeFalse("nothing is written");
+    }
+
+    [Fact]
+    public async Task ImportRt_CallerPath_OtherFieldsOfAnExistingUser_AreAccepted_PositiveControl()
+    {
+        // A user of its own (created through the repository, as the identity service does), not the shared probe user.
+        var name = $"caller-upsert-7777-{Guid.NewGuid():N}";
+        var rtId = await _fixture.SeedUserAsync(name, $"{name}@example.invalid");
+        var file = WriteYaml(PlainUserYaml(rtId, string.Empty));
+
+        (await ImportAsync(file, ImportStrategy.Upsert, callerPath: true)).Should().BeNull();
+        (await _fixture.ReadRawAttributeValueFromMongoDb(rtId, "firstName", F.UserCollectionSuffix))
+            .AsString.Should().Be("caller-import-8042");
     }
 
     private static string PlainUserYaml(string rtId, string extraAttributes, string associations = "") => $"""
