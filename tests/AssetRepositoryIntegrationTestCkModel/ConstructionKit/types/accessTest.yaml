@@ -19,6 +19,10 @@ types:
       name: ApprovalState
       isOptional: true
       access: MethodOnly
+    - id: ${this}/AccessTestExternalReference
+      name: ExternalReference
+      isOptional: true
+      access: ReadOnly
   associations:
     - id: ${this}/AccessTestMembership
       targetCkTypeId: ${this}/AccessTestGroup

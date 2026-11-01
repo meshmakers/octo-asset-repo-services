@@ -8,3 +8,6 @@ attributes:
     description: "CK v2 (AB#5668): assigned with access MethodOnly - readable, not generically writable"
   - id: AccessTestLabel
     valueType: String
+  - id: AccessTestExternalReference
+    valueType: String
+    description: "CK v2 (AB#8047): assigned with access ReadOnly - set on create, never changed by a generic update"

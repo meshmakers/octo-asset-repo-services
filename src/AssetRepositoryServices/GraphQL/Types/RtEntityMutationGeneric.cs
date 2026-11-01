@@ -96,7 +96,7 @@ internal sealed class RtEntityMutationGeneric : RtMutationBase
             {
                 var rtEntity = await tenantRepository.CreateTransientRtEntityByRtCkIdAsync(rtEntityDto.CkTypeId);
                 await RtEntityFromInputObjectAsync(ckCacheService, graphQlUserContext.TenantId, rtEntity, rtEntityDto,
-                    associationUpdateInfoList);
+                    associationUpdateInfoList, isCreate: true);
                 entityUpdateInfos.Add(EntityUpdateInfo<RtEntity>.CreateInsert(rtEntity));
             }
 
@@ -169,7 +169,7 @@ internal sealed class RtEntityMutationGeneric : RtMutationBase
                 };
 
                 await RtEntityFromInputObjectAsync(ckCacheService, graphQlUserContext.TenantId, document,
-                    mutationDto.Item, associationUpdateInfoList);
+                    mutationDto.Item, associationUpdateInfoList, isCreate: false);
                 var clearSecretAttributes = MapClearSecretAttributes(ckCacheService, graphQlUserContext.TenantId,
                     ckTypeId, mutationDto.ClearSecretAttributes);
                 var entityUpdateInfo = CreateUpdateInfo(rtEntityId, document, clearSecretAttributes);
