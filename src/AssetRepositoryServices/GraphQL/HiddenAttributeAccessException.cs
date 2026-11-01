@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using Meshmakers.Octo.ConstructionKit.Contracts.DataTransferObjects;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL;
@@ -7,7 +8,7 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL;
 ///     GraphQL surface. Mapped by <c>HandleException</c> to <see cref="Statics.GraphQlAttributeNotWritable" /> (writes)
 ///     or <see cref="Statics.GraphQlAttributeNotQueryable" /> (queries). The message names the attribute, never a value.
 /// </summary>
-internal sealed class HiddenAttributeAccessException : Exception
+internal sealed partial class HiddenAttributeAccessException : Exception
 {
     private HiddenAttributeAccessException(string message, string attributePath, string entityName,
         CkAttributeAccessDto? access, string operation, bool isWrite)
@@ -84,18 +85,27 @@ internal sealed class HiddenAttributeAccessException : Exception
     ///     <c>]</c>, as before, left the rest of the value in the message. The price: path segments between the first
     ///     selector value and the last <c>]</c> are not shown either (<c>a.t[x=1].b.u[y=2]-&gt;c</c> becomes
     ///     <c>a.t[x=…]-&gt;c</c>). A <c>[</c> without a following <c>=</c> (<c>items[0].name</c>) is no selector and is kept.
-    ///     A selector without a closing <c>]</c> after its <c>=</c> is redacted to the end of the path.
+    ///     The last <c>]</c> only ends the redaction when the rest of the path is a valid path suffix in the grammar of the
+    ///     engine (<c>RtPathEvaluator</c>: <c>-&gt;name</c>, <c>.name</c>, <c>::meta</c>, or nothing); otherwise that
+    ///     <c>]</c> belongs to the value of an unterminated selector (<c>[passwordHash='AQ]AA-secret</c>) and the path is
+    ///     redacted to its end, as is a selector without any <c>]</c> after its <c>=</c>.
     /// </remarks>
     internal static string RedactSelectorValues(string path)
     {
         var open = path.IndexOf('[');
         var equals = open < 0 ? -1 : path.IndexOf('=', open);
-        var close = path.LastIndexOf(']');
         if (equals < 0)
         {
             return path;
         }
 
-        return close < equals ? path[..equals] + "=…" : path[..equals] + "=…" + path[close..];
+        var close = path.LastIndexOf(']');
+        return close > equals && PathSuffixRegex().IsMatch(path[(close + 1)..])
+            ? path[..equals] + "=…" + path[close..]
+            : path[..equals] + "=…";
     }
+
+    /// <summary>What may follow the last selector: path segments of the engine grammar, no brackets, no value.</summary>
+    [GeneratedRegex(@"^(?:(?:->|\.|::)[^.\[\]\->:=]+)*$")]
+    private static partial Regex PathSuffixRegex();
 }

@@ -94,6 +94,8 @@ public class CkAttributeAccessSchemaTests
     [InlineData("a.t[x=1].b.u[y='z']->c", "a.t[x=…]->c")]
     [InlineData("items[0].name", "items[0].name")]
     [InlineData("items[0].t[passwordHash='AQAA']->name", "items[0].t[passwordHash=…]->name")]
+    [InlineData("a.t[x=1]::target", "a.t[x=…]::target")]
+    [InlineData("a.t[x=1].b", "a.t[x=…].b")]
     public void AccessErrors_RedactSelectorValues(string path, string expected)
     {
         // F1.5-S4 (AB#5923): access errors never carry values.
@@ -111,7 +113,10 @@ public class CkAttributeAccessSchemaTests
     [InlineData("members.t[passwordHash='AQ[AA]-secret']->name", "members.t[passwordHash=…]->name")]
     [InlineData("members.t[passwordHash=AQ]AA-secret]", "members.t[passwordHash=…]")]
     [InlineData("members.t[passwordHash='AQAA-secret", "members.t[passwordHash=…")]
-    [InlineData("members.t[passwordHash='AQAA-secret]'", "members.t[passwordHash=…]'")]
+    [InlineData("members.t[passwordHash='AQAA-secret]'", "members.t[passwordHash=…")]
+    [InlineData("members.t[passwordHash='AQ]AA-secret", "members.t[passwordHash=…")]
+    [InlineData("members.t[passwordHash='AQ]AA.secret", "members.t[passwordHash=…")]
+    [InlineData("members.t[passwordHash='AQ]->AA=secret", "members.t[passwordHash=…")]
     public void AccessErrors_RedactTheWholeSelectorValue_WhateverBracketsItContains(string path, string expected)
     {
         foreach (var error in new[]
