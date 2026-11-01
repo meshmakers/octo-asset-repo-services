@@ -1403,6 +1403,38 @@ enforce the guard **before anything is cached or queued** (`ModelsController.Enf
 
 **Response:** `UpgradeCheckResponseDto` with: `modelName`, `installedVersion`, `targetVersion`, `upgradeNeeded`, `migrationPathAvailable`, `hasBreakingChanges`, `errorMessage`, plus `isBlocked` and `blockers[]` (tenant upgrade guard, AB#6868, see above).
 
+#### Dependents' ranges and pins hold a version back (AB#7998)
+
+The engine guard (`EvaluateCkUpdateAsync`) treats a candidate of **another major** than the installed version as a parallel
+install and does not judge it, but the import replaces the installed version: FixAll upgraded `Basic.Energy` 1.10.0 to
+2.0.0 and `EnergyIQ` 2.14.0 (range `Basic.Energy-[1.9,2.0)`) became `ResolveFailed`. `Services/CkDependentRequirementGuard`
+closes this for every version and every guard surface (it runs inside `EvaluateCompiledBlockersAsync`, so LibraryStatus rows,
+`ResolveDependencies*`, `ImportFromCatalog*`, the blueprint guard and the file import all use it):
+
+- A candidate whose name is installed `Available` in another version must lie inside the intersection of the requirements of
+  every installed `Available` dependent the set does not replace, and of the models of the set (judged by their new
+  requirements): range-retaining dependent = its declared range of the **direct** dependency, at or above the floor (a pin
+  without a range entry is transitive, AB#7940, and is not judged); classic dependent = its exact pin. Service-managed
+  candidates only for explicit callers (file import, CheckUpgrade). ResolveFailed dependents and candidates that are not
+  installed are ignored, like in the engine guard.
+- Blockers have the engine's shape: kind `RangeNotSatisfied` (`CK_UPGRADE_RANGE_NOT_SATISFIED`, subject = declared range) or
+  `ExactPin` (`CK_UPGRADE_EXACT_PIN`, subject = the pin), message `EnergyIQ 2.14.0 would break: range Basic.Energy-[1.9,2.0)
+  (floor 1.9.0) does not admit Basic.Energy-2.0.0`. A (dependent, update) pair the engine already reported is not repeated.
+- **Single import past a range** is therefore the existing `409 CK_UPGRADE_BLOCKED` naming the dependent; `forceBreakingUpdate`
+  (octo-cli `ImportFromCatalog --force…`) still overrides it with the WARN audit line. FixAll never forces.
+- **LibraryStatus row**: when the newest version has a requirement blocker (`RangeNotSatisfied`, `ExactPin`, `FloorNotMet`),
+  the row looks for the **highest allowed** catalog version (newer than installed, admitted by all installed dependents,
+  compatible with the installed System models, its import set unblocked) and offers it in `catalogVersion` / `fullModelId` /
+  `catalogName` with `needsAction = true` - FixAll imports it. Without one the row stays blocked on the newest version
+  (`needsAction = false`). In both cases the new optional members `heldBackVersion` (newest version), `heldBackBy[]`
+  (`CkUpgradeBlockerDto`: dependent + range/pin) and `heldBackReason` (`2.0.0 available, held back by EnergyIQ 2.14.0
+  (Basic.Energy-[1.9,2.0))`, display only) say why. Cost: lower versions an installed dependent excludes are skipped without a
+  guard call; each remaining candidate costs one guard evaluation, newest first, until one passes.
+- Tests: `UnitTests/Services/CkDependentRequirementGuardTests` (pure check, rows, set evaluation, no duplicate pair),
+  `UnitTests/TenantApi/ModelsControllerDependentRangeGuardTests` (409 naming the dependent, forced import, batch),
+  `IntegrationTests/Tenant/DependentRangeGuardFlowTests` (real engine guard and tenant: range-retaining and exact-pinned
+  dependents, nothing written).
+
 #### Tenant upgrade guard for the file import (CK v2 F2.5, AB#6966)
 
 `POST {tenantId}/v1/models/ImportCk` (a CK model file; octo-cli `ImportCk -f`) used to be unguarded ("explicit operator decision"): a System
