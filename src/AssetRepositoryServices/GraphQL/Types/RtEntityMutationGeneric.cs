@@ -118,7 +118,7 @@ internal sealed class RtEntityMutationGeneric : RtMutationBase
 
             OperationResult operationResult = new();
             // AB#6171: a data-permission denial on files and folders answers FORBIDDEN (no rtIds named).
-            await ApplyChangesAsync(tenantRepository, sessionAccessor.Session, entityUpdateInfos,
+            await ApplyChangesAsync(ckCacheService, tenantRepository, sessionAccessor.Session, entityUpdateInfos,
                 associationUpdateInfoList, operationResult, FileSystemMutationGuard.Applies(firstCkTypeId, associationUpdateInfoList));
 
             return await GetResultSet(sessionAccessor.Session, tenantRepository, entityUpdateInfos);
@@ -188,7 +188,7 @@ internal sealed class RtEntityMutationGeneric : RtMutationBase
 
             OperationResult operationResult = new();
             // AB#6171: a data-permission denial on files and folders answers FORBIDDEN (no rtIds named).
-            await ApplyChangesAsync(tenantRepository, sessionAccessor.Session, entityUpdateInfos,
+            await ApplyChangesAsync(ckCacheService, tenantRepository, sessionAccessor.Session, entityUpdateInfos,
                 associationUpdateInfoList, operationResult, FileSystemMutationGuard.Applies(firstCkTypeId, associationUpdateInfoList));
 
             return await GetResultSet(sessionAccessor.Session, tenantRepository, entityUpdateInfos);

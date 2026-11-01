@@ -2,6 +2,8 @@ using System.Text.Json;
 using FluentAssertions;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Collections;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Fixtures;
+using Meshmakers.Octo.ConstructionKit.Models.System.Generated.System.v2;
+using Meshmakers.Octo.Runtime.Contracts.RepositoryEntities;
 using MongoDB.Bson;
 using Newtonsoft.Json.Linq;
 using Xunit;
@@ -131,16 +133,45 @@ public class HiddenAttributeNavigationTests
     public async Task SelectorColumn_HiddenKey_IsRejected_StoredQuery()
     {
         await CreateGroupWithMemberAsync();
-        var queryRtId = await CreateAsync(new
-        {
-            ckTypeId = "System/SimpleRtQuery",
-            attributes = new object[]
-            {
-                new { attributeName = "name", value = "hidden-selector" },
-                new { attributeName = "queryCkTypeId", value = GroupCkTypeId },
-                new { attributeName = "columns", value = new[] { "name", HiddenSelectorColumn } }
+        // AB#8049: saving such a query is refused (ATTRIBUTE_NOT_QUERYABLE, no value in the error) ...
+        var refused = await _fixture.ExecuteGraphQlAsync("""
+            mutation ($entities: [RtEntityInput!]!) {
+              runtime { runtimeEntities { create(entities: $entities) { rtId } } }
             }
-        });
+            """, JsonSerializer.Serialize(new
+        {
+            entities = new[]
+            {
+                new
+                {
+                    ckTypeId = "System/SimpleRtQuery",
+                    attributes = new object[]
+                    {
+                        new { attributeName = "name", value = (object)"hidden-selector" },
+                        new { attributeName = "queryCkTypeId", value = (object)GroupCkTypeId },
+                        new { attributeName = "columns", value = (object)new[] { "name", HiddenSelectorColumn } }
+                    }
+                }
+            }
+        }));
+        var refusedJson = _fixture.SerializeGraphQl(refused);
+        refused.Errors!.Select(e => e.Code).Should().Contain("ATTRIBUTE_NOT_QUERYABLE", refusedJson);
+        refusedJson.Should().NotContain(StoredHash);
+
+        // ... and one that arrives another way (import, restore) is refused when it runs.
+        var repository = _fixture.GetSystemContext().GetSystemTenantRepository();
+        var query = await repository.CreateTransientRtEntityAsync<RtSimpleRtQuery>();
+        query.Name = "hidden-selector-imported";
+        query.QueryCkTypeId = GroupCkTypeId;
+        query.Columns = new AttributeStringValueList(["name", HiddenSelectorColumn]);
+        using (var session = await repository.GetSessionAsync())
+        {
+            session.StartTransaction();
+            await repository.InsertOneRtEntityAsync(session, query);
+            await session.CommitTransactionAsync();
+        }
+
+        var queryRtId = query.RtId.ToString();
 
         await AssertRejectedAsync($$"""
             query { runtime { runtimeQuery(rtId: "{{queryRtId}}") {

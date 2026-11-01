@@ -20,13 +20,17 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL;
 internal abstract class RtMutationBase : ObjectGraphType
 {
     /// <summary>
-    ///     Applies the changes; for file system mutations (AB#6171) the engine's data-permission denial becomes
+    ///     Checks stored queries (AB#8049) and applies the changes; for file system mutations (AB#6171) the engine's data-permission denial becomes
     ///     the GraphQL error code FORBIDDEN without naming entities.
     /// </summary>
-    protected static async Task ApplyChangesAsync(ITenantRepository repository, IOctoSession session,
-        List<EntityUpdateInfo<RtEntity>> entityUpdateInfos, List<AssociationUpdateInfo> associations,
-        OperationResult operationResult, bool fileSystemMutation)
+    protected static async Task ApplyChangesAsync(ICkCacheService ckCacheService, ITenantRepository repository,
+        IOctoSession session, List<EntityUpdateInfo<RtEntity>> entityUpdateInfos,
+        List<AssociationUpdateInfo> associations, OperationResult operationResult, bool fileSystemMutation)
     {
+        // AB#8049: a stored query may not filter, sort, select or group by a Hidden attribute (ATTRIBUTE_NOT_QUERYABLE).
+        await StoredQueryWriteGuard.EnsureStoredQueriesAllowedAsync(ckCacheService, repository, session,
+            entityUpdateInfos);
+
         if (!fileSystemMutation)
         {
             await repository.ApplyChangesAsync(session, entityUpdateInfos, associations, operationResult);

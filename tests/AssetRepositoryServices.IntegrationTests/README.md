@@ -318,7 +318,7 @@ this project (MongoDB Testcontainer, no running services, no network).
 
 | Path | Test class |
 |------|------------|
-| GraphQL: schema and CK meta, typed and generic reads, association targets, filters (all operators), sort, attribute search, aggregations, group-by, transient query columns, grouping aggregation, entity-selector equality probes (transient and stored), stored query filters | `Security/IdentityCredentialGuardGraphQlTests` |
+| GraphQL: schema and CK meta, typed and generic reads, association targets, filters (all operators), sort, attribute search, aggregations, group-by, transient query columns, grouping aggregation, entity-selector equality probes (transient and stored; a stored one is refused when saved), stored query filters (refused when saved) | `Security/IdentityCredentialGuardGraphQlTests` |
 | GraphQL writes: generic create/update of Hidden and MethodOnly attributes, `userTokens`, `clearSecretAttributes`, query-row create/update | `Security/IdentityCredentialGuardGraphQlTests` |
 | GraphQL methods: two aliased identity method calls, a method next to a generic update (one method call per request), a method without the role, the sensitive parameter in responses and logs | `Security/IdentityCredentialGuardGraphQlTests` |
 | RT export by query and by deep graph (engine building blocks of the export jobs, system session) | `Security/IdentityCredentialGuardExchangeTests` |

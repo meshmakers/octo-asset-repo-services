@@ -653,6 +653,16 @@ schema initialization.
     navigation filters, and `RtMutationBase.GetRtQueryRowResultSet`): hidden paths and hidden selector keys →
     `ATTRIBUTE_NOT_QUERYABLE`, Secret selector keys → `SecretAttributeNotQueryable`. Navigation lookups in
     query-row writes (`QueryMapperEngine.EvaluateNavigationFilters`) reject hidden keys as well.
+  - **Stored queries are checked when they are saved (AB#8049)**: `RtMutationBase.ApplyChangesAsync` (typed and generic
+    create/update/replace) calls `StoredQueryWriteGuard.EnsureStoredQueriesAllowedAsync` for every entity of a type derived from
+    `System/PersistentQuery`. Field filters, sort orders, columns (strings or aggregation records), group-by columns and
+    attribute-search paths are checked with `AccessQueryGuard.EnsureStoredQueryPathsAllowed` against the query type and every
+    derived type (unknown or missing query type: by name, fail closed); on an update the effective query (update over the stored
+    entity) is judged, so retargeting `QueryCkTypeId` under an existing filter is refused too. Refusal: `ATTRIBUTE_NOT_QUERYABLE`,
+    nothing stored, no value in the error. Why: running such a query here was already refused, but the export job (bot-services) and
+    the pipeline nodes (`GetQueryById@1`, notifications) apply a stored filter as it is - they check stored queries themselves too,
+    because a query can also arrive through `ImportRt`, a restore or an older version. Not covered at save time: `ImportRt` and the
+    query-row mutations. Tests: `UnitTests/GraphQL/StoredQueryWriteGuardTests`, `IntegrationTests/GraphQL/CkV2/StoredQueryHiddenAttributeTests`.
   - Every segment of a record path counts: a Hidden (or, for writes, MethodOnly) record-valued attribute also
     protects `record.field` (re-review M7 gap).
   - Paths across a navigation (`->`), selector keys and paths against an unknown type are matched by attribute name
@@ -673,8 +683,8 @@ schema initialization.
   them. Path table: the README of the integration test project. Open gaps are skipped tests with the bug in the skip reason:
   AB#8042 (identity flags, claims, logins, role/group associations still ReadWrite), AB#8047 (ReadOnly not enforced on update, next
   bullet), AB#8048 (the MongoDB command log and slow-query buffer print Hidden values of a write), and the pending
-  `replacesGenericCreate` of `CreateUser`. AB#8049 (export by a stored query applies its Hidden filter, octo-bot-services) has no test
-  here: a stored query with a Hidden filter is still accepted, only running it through GraphQL is refused.
+  `replacesGenericCreate` of `CreateUser`. A stored query whose filter or selector reaches a credential is refused when it is saved
+  (AB#8049, `StoredQuery_WithACredentialFilter_IsRefusedWhenSaved`, `EntitySelector_InAStoredQuery_IsRefused`).
 - **Stream data** (review M12 / G3 E-M2): no archive column may reach a Hidden attribute. The engine refuses to
   activate such an archive and fails an active one when a model change makes a column reach Hidden
   (`ArchiveHiddenColumnGuard`, `ArchiveLifecycleService`). The asset-repo additionally refuses every stream-data
