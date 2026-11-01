@@ -296,6 +296,61 @@ public class TenantsControllerTests
     }
 
     [Fact]
+    public async Task Delete_OfAStaleEntry_RemovesOnlyThatEntry_AndTouchesNothingKeyedByTheTenantId()
+    {
+        // AB#6759: the tenant was deleted from the system tenant (or its id now belongs to a tenant under another
+        // parent); the caller's registry still lists it. The delete must answer 200 instead of 500 and must not drop
+        // a database, fire events, tombstone the id or clear its scratch marker / retries — those would hit the
+        // tenant that uses the id or the database today.
+        const string staleTenantId = "stale-child";
+        A.CallTo(() => _tenantContext.IsChildTenantExistingAsync(A<IOctoAdminSession>._, staleTenantId))
+            .Returns(true);
+        A.CallTo(() => _tenantContext.RemoveStaleChildTenantEntryAsync(A<IOctoAdminSession>._, staleTenantId))
+            .Returns(true);
+
+        var result = await _controller.Delete(staleTenantId);
+
+        result.Should().BeOfType<OkResult>();
+        A.CallTo(() => _tenantContext.RemoveStaleChildTenantEntryAsync(A<IOctoAdminSession>._, staleTenantId))
+            .MustHaveHappenedOnceExactly();
+        A.CallTo(() => _tenantContext.DeleteChildTenantMetadataAsync(A<IOctoAdminSession>._, A<string>._, A<bool>._))
+            .MustNotHaveHappened();
+        A.CallTo(() => _tenantContext.DropTenantDatabaseAsync(A<TenantDeletionHandle>._, A<string>._))
+            .MustNotHaveHappened();
+        A.CallTo(() => _tenantLifecycleStore.GetAsync(A<string>._, A<CancellationToken>._)).MustNotHaveHappened();
+        A.CallTo(() => _tenantLifecycleStore.MarkDeletingAsync(A<string>._, A<CancellationToken>._))
+            .MustNotHaveHappened();
+        A.CallTo(() => _tenantLifecycleStore.EnsureDeletingAsync(A<string>._, A<string>._, A<Guid>._,
+            A<CancellationToken>._)).MustNotHaveHappened();
+        A.CallTo(() => _tenantSetupRetryStore.ClearAllForTenantAsync(A<string>._, A<CancellationToken>._))
+            .MustNotHaveHappened();
+        A.CallTo(() => _scratchTenantMarkerStore.DeleteAsync(A<string>._)).MustNotHaveHappened();
+        A.CallTo(() => _capabilityStateReader.GetEnabledCapabilitiesAsync(A<ITenantContext>._, A<string>._))
+            .MustNotHaveHappened();
+    }
+
+    [Fact]
+    public async Task Delete_OfALiveChild_RunsTheFullDelete()
+    {
+        // The stale probe answers false for a live child: the regular two-phase delete follows.
+        const string childTenantId = "live-child";
+        A.CallTo(() => _tenantContext.IsChildTenantExistingAsync(A<IOctoAdminSession>._, childTenantId))
+            .Returns(true);
+        A.CallTo(() => _tenantContext.RemoveStaleChildTenantEntryAsync(A<IOctoAdminSession>._, childTenantId))
+            .Returns(false);
+        A.CallTo(() => _tenantLifecycleStore.GetAsync(childTenantId, A<CancellationToken>._))
+            .Returns((TenantLifecycleRecord?)null);
+        A.CallTo(() => _tenantContext.DeleteChildTenantMetadataAsync(A<IOctoAdminSession>._, childTenantId, true))
+            .Returns(new TenantDeletionHandle("live-child-db", Guid.NewGuid()));
+
+        var result = await _controller.Delete(childTenantId);
+
+        result.Should().BeOfType<OkResult>();
+        A.CallTo(() => _tenantContext.DropTenantDatabaseAsync(A<TenantDeletionHandle>._, childTenantId))
+            .MustHaveHappenedOnceExactly();
+    }
+
+    [Fact]
     public async Task Delete_ReturnsConflict_WhenAnOwnChildIsStillBeingCreated()
     {
         const string childTenantId = "child-a";
