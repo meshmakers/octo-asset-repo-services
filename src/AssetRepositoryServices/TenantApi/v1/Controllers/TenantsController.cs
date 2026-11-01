@@ -891,6 +891,27 @@ public class TenantsController : ControllerBase
                 }
             }
 
+            // AB#6759: the row may be stale — the tenant was deleted elsewhere (e.g. from the system tenant), or its
+            // id now belongs to a tenant under another parent. Then remove just that row and stop: no lifecycle
+            // tombstone, no events, no database drop, no scratch-marker or retry cleanup. All of those are keyed by
+            // the tenant id or the database name and would hit whatever tenant uses them today. Checked BEFORE the
+            // platform-global lifecycle store, which for a reused id describes the other tenant.
+            using (var staleSession = await tenantContext.GetAdminSessionAsync())
+            {
+                staleSession.StartTransaction();
+                var removedStaleEntry = await tenantContext.RemoveStaleChildTenantEntryAsync(staleSession, childTenantId);
+                await staleSession.CommitTransactionAsync();
+
+                if (removedStaleEntry)
+                {
+                    _logger.LogWarning(
+                        "Delete of tenant '{TenantId}' from '{ParentTenantId}' removed a stale child entry only; the " +
+                        "tenant was not registered as its child any more (AB#6759)", normalizedTenantId,
+                        tenantContext.TenantId);
+                    return Ok();
+                }
+            }
+
             // Q2: refuse to delete a tenant that is still being created. The reconciler drives a stalled
             // Creating tenant to Active or Failed, at which point the operator can retry the delete
             // (AB#4348 Phase 3).

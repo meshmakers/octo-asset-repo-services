@@ -193,6 +193,18 @@ Located in versioned API folders:
   engine's reason-free conflicts: a caller took the deliberately vague *"Tenant ID is already in use"*
   from `Post` and then read the colliding tenant's database name, last error and lease owner from here.
 
+  **A stale child entry is removed, never deleted through (AB#6759).** Right after the ownership probe,
+  `Delete` calls the engine's `RemoveStaleChildTenantEntryAsync`: when the caller's registry still lists a
+  tenant that is not registered as its child any more (deleted from the system tenant before the engine
+  cleaned the parent row, or its id now used below another parent or on another database), only that row
+  goes and the answer is 200 — no lifecycle tombstone, no events, no database drop, no scratch-marker or
+  setup-retry cleanup, no capability read, because all of those are keyed by the tenant id or database name
+  and would hit the tenant that uses them today. Before the fix this path answered 500 or, with a reused
+  id/database, dropped the other tenant's database. Needs the engine release with
+  `ITenantContext.RemoveStaleChildTenantEntryAsync`. Detection of stale rows per cluster (read-only):
+  `octo-cli -c ReconcileTenantRegistry` dry run, conflicts whose reason starts with `stale entry`.
+  Tests: `TenantsControllerTests.Delete_OfAStaleEntry_*`.
+
   **Conflicts are the engine's two generic messages, verbatim.** `Post`'s in-flight-deletion guard
   reuses `TenantException.TenantIdNotAvailable(...).Message` rather than naming the lifecycle state,
   because it queries the store globally. `Delete`'s "still being created" guard may state its reason —
