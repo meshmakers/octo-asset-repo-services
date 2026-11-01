@@ -138,6 +138,25 @@ public class AccessQueryGuardTests
         act.Should().NotThrow();
     }
 
+    [Theory]
+    [InlineData(null, true, true)]
+    [InlineData(CkAttributeAccessDto.ReadWrite, true, true)]
+    [InlineData(CkAttributeAccessDto.ReadOnly, true, false)]
+    [InlineData(CkAttributeAccessDto.MethodOnly, false, false)]
+    [InlineData(CkAttributeAccessDto.Hidden, false, false)]
+    public void GenericWrites_FollowTheEngineRule_ReadOnlyOnCreateOnly(CkAttributeAccessDto? access, bool onCreate,
+        bool onUpdate)
+    {
+        // AB#8047: the same rule as the engine's AttributeAccess.IsGenericallyWritable(access, isCreate).
+        var attribute = access == null
+            ? Attribute("Reference", AttributeValueTypesDto.String)
+            : new CkTypeAttributeGraph(new CkId<CkAttributeId>("Test/Reference"), "Reference", null,
+                AttributeValueTypesDto.String, null, null, null, null, null, true, null) { Access = access.Value };
+
+        AccessQueryGuard.IsNotGenericallyWritable(attribute, isCreate: true).Should().Be(!onCreate);
+        AccessQueryGuard.IsNotGenericallyWritable(attribute, isCreate: false).Should().Be(!onUpdate);
+    }
+
     private static (CkRecordGraph Outer, CkRecordGraph Inner) RecordWithHiddenRecordAttribute()
     {
         var token = Attribute("Token", AttributeValueTypesDto.String);

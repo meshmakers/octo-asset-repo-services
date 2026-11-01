@@ -623,15 +623,18 @@ schema initialization.
 **Attribute `access` (AB#5668 / F1.5-S1 AB#5920):**
 - `OctoBuilder.Attribute` is the single chokepoint: `Hidden` attributes get no field on entity, abstract-type
   interface, CK interface, input, `…InputUpdate` and record types; `MethodOnly` attributes are readable but not
-  part of the input types. `ReadOnly` is parsed but not enforced yet.
+  part of the input types. `ReadOnly` attributes stay in the input types (the typed create and update share one input
+  type), but are writable on create only (next bullet).
 - Generic projections skip `Hidden`: the `attributes` connection of entities (`RtEntityGenericDtoType`), records
   (`RtRecordDtoType`) and associations (`RtAssociationDtoType`). When the CK type / record / role is unknown to the
   CK cache, the stored attributes are projected without CK knowledge (`UnknownCkTypeAttributeProjection`) — every
   name that is Hidden anywhere in the tenant is dropped there (fail closed, review L11).
-- Writes: `RtMutationBase.TryHandleAttributeAsync` rejects `Hidden` / `MethodOnly` attributes of the generic
-  `runtimeEntities.create/update` path with `ATTRIBUTE_NOT_WRITABLE` ("Attribute '…' of '…' is not writable via
-  generic mutations (access: …)."); query-row creates/updates (`QueryMapper` → `AccessQueryGuard.EnsureWritablePath`)
-  apply the same rule to `Hidden` **and** `MethodOnly` cells (review M7).
+- Writes: `RtMutationBase.TryHandleAttributeAsync` applies the engine rule `AttributeAccess.IsGenericallyWritable(access,
+  isCreate)` to the typed and generic create/update paths (also to record members, which follow the create/update of the
+  entity): `Hidden` / `MethodOnly` are never writable, `ReadOnly` only on create (AB#8047) - refused with `ATTRIBUTE_NOT_WRITABLE`
+  ("Attribute '…' of '…' is not writable via generic mutations (access: …)."), nothing written; query-row creates/updates
+  (`QueryMapper` → `AccessQueryGuard.EnsureWritablePath(…, isCreate)`) apply the same rule to their cells (review M7, AB#8047).
+  `ImportRt` and blueprint seeds keep ReadOnly importable by design (engine `IsWritableOutsideMethod`, AB#7767).
 - Queries: the engine's query column collector and the repository do not know `access`, so the asset-repo guards
   every entry point (`AccessQueryGuard`):
   - `WithoutHiddenColumns` filters `availableQueryColumns` and `QueryColumnPathResolver.GetColumnsForPaths` (all
@@ -681,10 +684,10 @@ schema initialization.
   `testData/ck-models/`, loaded by `Fixtures/SystemIdentitySnapshotCkModel`; refresh procedure in the README there) with a user whose
   `PasswordHash`, `SecurityStamp` and `UserTokens` hold fixed dummy values; no response, export file or captured log line may contain
   them. Path table: the README of the integration test project. Open gaps are skipped tests with the bug in the skip reason:
-  AB#8042 (identity flags, claims, logins, role/group associations still ReadWrite), AB#8047 (ReadOnly not enforced on update, next
-  bullet), AB#8048 (the MongoDB command log and slow-query buffer print Hidden values of a write), and the pending
-  `replacesGenericCreate` of `CreateUser`. A stored query whose filter or selector reaches a credential is refused when it is saved
-  (AB#8049, `StoredQuery_WithACredentialFilter_IsRefusedWhenSaved`, `EntitySelector_InAStoredQuery_IsRefused`).
+  AB#8042 (identity flags, claims, logins, role/group associations still ReadWrite), AB#8048 (the MongoDB command log and slow-query
+  buffer print Hidden values of a write), and the pending `replacesGenericCreate` of `CreateUser`. A stored query whose filter or
+  selector reaches a credential is refused when it is saved (AB#8049, `StoredQuery_WithACredentialFilter_IsRefusedWhenSaved`,
+  `EntitySelector_InAStoredQuery_IsRefused`).
 - **Stream data** (review M12 / G3 E-M2): no archive column may reach a Hidden attribute. The engine refuses to
   activate such an archive and fails an active one when a model change makes a column reach Hidden
   (`ArchiveHiddenColumnGuard`, `ArchiveLifecycleService`). The asset-repo additionally refuses every stream-data
@@ -705,9 +708,10 @@ schema initialization.
   make schema initialization throw, and the whole tenant schema is unavailable. `SchemaContext` builds every tenant
   under one process-wide semaphore and does not cache failures, so a broken tenant serialises all cache-miss builds.
   Compiler rule I-5 only compares exact type/interface names.
-- **`ReadOnly`** is parsed, persisted and shown in the CK meta API (`access`), but not enforced on the GraphQL write
-  path yet (the generic input types and mutations treat it like `ReadWrite`): a generic update changes the ReadOnly
-  `LockoutEnd` / `AccessFailedCount` of a user (AB#8047; fix = `AttributeAccess.IsGenericallyWritable(access, isCreate)`).
+- **`ReadOnly`** (AB#8047): set on create, never changed by a generic update, typed update or query-row update
+  (`ATTRIBUTE_NOT_WRITABLE`); e.g. the `LockoutEnd` / `AccessFailedCount` of a user change only through the identity service.
+  Tests: `GraphQL/CkV2/ReadOnlyAttributeTests` (test attribute `AccessTestAccount.ExternalReference`) and
+  `Security/IdentityCredentialGuardGraphQlTests.GenericUpdate_OfAReadOnlyLockoutAttribute_IsRefused`.
 - Tests: `CkAttributeAccessSchemaTests`, `AccessQueryGuardTests` (unit); `GraphQL/CkV2/HiddenAttributeTests` and
   `HiddenAttributeNavigationTests` (integration, test types `AccessTestAccount` --`AccessTestMembership`-->
   `AccessTestGroup`; the test model is `ckLanguage: 2`).

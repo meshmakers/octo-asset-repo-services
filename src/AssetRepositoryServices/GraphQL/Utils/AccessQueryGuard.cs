@@ -44,11 +44,12 @@ internal static partial class AccessQueryGuard
     }
 
     /// <summary>
-    ///     True when the attribute is not writable through the generic surface (<c>Hidden</c> or <c>MethodOnly</c>).
+    ///     True when the attribute is not writable through the generic surface: <c>Hidden</c> and <c>MethodOnly</c>
+    ///     never, <c>ReadOnly</c> only on create (AB#8047, the engine's <see cref="AttributeAccess.IsGenericallyWritable" />).
     /// </summary>
-    internal static bool IsNotGenericallyWritable(CkTypeAttributeGraph? attribute)
+    internal static bool IsNotGenericallyWritable(CkTypeAttributeGraph? attribute, bool isCreate)
     {
-        return attribute != null && !AttributeAccess.IsExposedInGenericInput(attribute.Access);
+        return attribute != null && !AttributeAccess.IsGenericallyWritable(attribute.Access, isCreate);
     }
 
     /// <summary>
@@ -167,19 +168,21 @@ internal static partial class AccessQueryGuard
     }
 
     /// <summary>
-    ///     M7: a query-row write must not set a <c>Hidden</c> or <c>MethodOnly</c> attribute (same rule as the generic
-    ///     mutations). Throws <see cref="HiddenAttributeAccessException" /> (<c>ATTRIBUTE_NOT_WRITABLE</c>).
+    ///     M7: a query-row write must not set a <c>Hidden</c> or <c>MethodOnly</c> attribute, nor a <c>ReadOnly</c> one on
+    ///     update (AB#8047; same rule as the generic mutations). Throws <see cref="HiddenAttributeAccessException" />
+    ///     (<c>ATTRIBUTE_NOT_WRITABLE</c>).
     /// </summary>
     internal static void EnsureWritablePath(ICkCacheService ckCacheService, string tenantId,
-        RtCkId<CkTypeId> ckTypeId, string attributePath)
+        RtCkId<CkTypeId> ckTypeId, string attributePath, bool isCreate)
     {
         var root = TryGetType(ckCacheService, tenantId, ckTypeId);
         var normalized = QueryColumnPathResolver.NormalizePath(attributePath);
         if (root != null && !normalized.Contains("->"))
         {
-            // Every segment counts: a MethodOnly / Hidden record-valued attribute also protects record.field.
+            // Every segment counts: a MethodOnly / Hidden (or, on update, ReadOnly) record-valued attribute also protects
+            // record.field.
             var attribute = ResolveSegments(ckCacheService, tenantId, root, normalized)
-                .FirstOrDefault(IsNotGenericallyWritable);
+                .FirstOrDefault(a => IsNotGenericallyWritable(a, isCreate));
             if (attribute != null)
             {
                 throw HiddenAttributeAccessException.NotWritable(attributePath, ckTypeId.ToString(), attribute.Access);
