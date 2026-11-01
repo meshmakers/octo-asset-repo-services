@@ -323,8 +323,9 @@ this project (MongoDB Testcontainer, no running services, no network).
 | GraphQL methods: two aliased identity method calls, a method next to a generic update (one method call per request), a method without the role, the sensitive parameter in responses and logs | `Security/IdentityCredentialGuardGraphQlTests` |
 | RT export by query and by deep graph (engine building blocks of the export jobs, system session) | `Security/IdentityCredentialGuardExchangeTests` |
 | GraphQL writes of identity-owned User fields and identity associations (AB#8042): generic and typed update/create of the flags, claims, external logins, role assignment from the user and from the role, a group with a member, query-row create/update; positive controls | `Security/IdentityCredentialGuardGraphQlTests` |
-| RT import (system and caller path, insert and upsert) of Hidden and MethodOnly values; caller-path import of identity-owned fields and of a role assignment (message 140, AB#8042) | `Security/IdentityCredentialGuardExchangeTests` |
-| Blueprint seed with Hidden or MethodOnly values (local test blueprint catalog `CredentialSeedBp`, `MethodOnlySeedBp`, positive control `VisibleIdentitySeedBp`) | `Security/IdentityCredentialGuardBlueprintSeedTests` |
+| RT import (system and caller path, insert and upsert) of Hidden and MethodOnly values; caller-path import of identity-owned fields and of a role assignment (message 140, AB#8042); caller-path import of a new user (message 137 naming `User.CreateUser-1`, AB#7777) | `Security/IdentityCredentialGuardExchangeTests` |
+| Blueprint seed with Hidden or MethodOnly values (local test blueprint catalog `CredentialSeedBp`, `MethodOnlySeedBp`); a seed of a new user (`NewUserSeedBp`, System.Identity 2.29+) refused with message 136 naming `User.CreateUser-1`, and upserted when its rtId exists; positive control `VisibleIdentitySeedBp` on System.Identity 2.28.0 (no `CreateUser`) (AB#7777) | `Security/IdentityCredentialGuardBlueprintSeedTests` |
+| GraphQL create of a new user (generic, typed, query row): `GENERIC_CREATE_REPLACED_BY_METHOD` naming `User.CreateUser-1`, before any attribute is judged (AB#7777) | `Security/IdentityCredentialGuardGraphQlTests` |
 
 Open gaps are skipped tests named `Gap_*` (or with the bug in the skip reason) next to the passing ones; enable a test when
 its fix lands.
