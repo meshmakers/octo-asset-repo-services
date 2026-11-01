@@ -116,6 +116,7 @@ try
         .AddCrateDbStreamDataRepository<ConfigureStreamDataConfiguration>()
         .AddRollupOrchestratorBackgroundService()
         .AddRecomputeOrchestratorBackgroundService()
+        .AddComputedColumnBackfillBackgroundService()
         .AddDisplayRuleSweepBackgroundService();
 
     // Surface platform events (e.g. failed tenant creation, AB#1958) in the event log. Registers
@@ -135,6 +136,20 @@ try
     // IRollupTenantSource registered below, so it ticks the full tenant population too.
     builder.Services.Configure<Meshmakers.Octo.Runtime.Engine.MongoDb.StreamData.RecomputeOrchestratorOptions>(
         builder.Configuration.GetSection("StreamData:Recompute"));
+
+    // Bind the computed-column backfill service options (AB#8002): StreamData:ComputedColumnBackfill
+    // overrides the drain interval and startup delay; StreamData:ComputedColumnBackfillSlice the width
+    // of the time slices a backfill walks the archive in (default one day).
+    builder.Services.Configure<Meshmakers.Octo.Runtime.Engine.MongoDb.StreamData.ComputedColumnBackfillOptions>(
+        builder.Configuration.GetSection("StreamData:ComputedColumnBackfill"));
+    builder.Services.Configure<Meshmakers.Octo.Runtime.Engine.CrateDb.Configuration.StreamDataConfiguration>(options =>
+    {
+        if (TimeSpan.TryParse(builder.Configuration["StreamData:ComputedColumnBackfillSlice"],
+                System.Globalization.CultureInfo.InvariantCulture, out var slice) && slice > TimeSpan.Zero)
+        {
+            options.ComputedColumnBackfillSlice = slice;
+        }
+    });
 
     // Bind archive coverage options (AB#5157) so the StreamData:Coverage config section can override
     // the measured-coverage cache TTL (CacheTtlSeconds, default 60) used by the resolver's coverage

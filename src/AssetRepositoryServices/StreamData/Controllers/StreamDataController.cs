@@ -208,10 +208,12 @@ public class StreamDataController : ControllerBase
             (lifecycle, id) => lifecycle.RewindWatermarkAsync(id, toBucketEnd));
 
     /// <summary>
-    /// Adds a computed column to an Activated raw or time-range archive and backfills it across the
-    /// existing rows (AB#4189 Phase 7). The column stays hidden until the backfill completes, then
-    /// becomes visible atomically; a backfill failure leaves the previous archive state intact. Same
-    /// lifecycle path as the <c>addComputedColumn</c> GraphQL mutation.
+    /// Adds a computed column to an Activated raw or time-range archive (AB#4189 Phase 7) and queues
+    /// its backfill as a background job (AB#8002): returns at once with the column in
+    /// <c>Backfilling</c>; the job writes the existing rows outside this request — a client timeout
+    /// cannot cancel it — and ends the column <c>Active</c> or <c>Failed</c>. Follow it with the
+    /// recompute-jobs endpoint of the archive. Same lifecycle path as the <c>addComputedColumn</c>
+    /// GraphQL mutation.
     /// </summary>
     [HttpPost("archives/{archiveRtId}/computed-columns")]
     [Microsoft.AspNetCore.Authorization.Authorize(AssetRepositoryServiceConstants.TenantAssetApiReadWritePolicy)]
@@ -220,7 +222,8 @@ public class StreamDataController : ControllerBase
         [Required] string name, [Required] string formula, [Required] FormulaResultType resultType,
         bool indexed = true)
         => InvokeArchiveTransitionAsync(tenantId, archiveRtId, "AddComputedColumn",
-            (lifecycle, id) => lifecycle.AddComputedColumnAsync(id, name, formula, resultType, indexed));
+            (lifecycle, id) => lifecycle.EnqueueAddComputedColumnAsync(
+                id, name, formula, resultType, indexed, _appLifetime.ApplicationStopping));
 
     /// <summary>
     /// Removes a computed column from an archive (AB#4189 Phase 7). Rejected when another computed
@@ -236,7 +239,9 @@ public class StreamDataController : ControllerBase
     /// <summary>
     /// Changes the formula of an existing computed column on an active archive with optimistic /
     /// atomic semantics (AB#4189 Phase 7): readers keep the previous values while the new formula is
-    /// backfilled, then switch atomically. Rejected when another computed column references this one.
+    /// backfilled, then switch atomically. The backfill runs as a background job (AB#8002); the call
+    /// returns once it is queued. Rejected when another computed column references this one, or
+    /// while a backfill of the column is still queued or running.
     /// </summary>
     [HttpPut("archives/{archiveRtId}/computed-columns/{name}")]
     [Microsoft.AspNetCore.Authorization.Authorize(AssetRepositoryServiceConstants.TenantAssetApiReadWritePolicy)]
@@ -244,7 +249,41 @@ public class StreamDataController : ControllerBase
         [Required] string tenantId, [Required] string archiveRtId, [Required] string name,
         [Required] string formula)
         => InvokeArchiveTransitionAsync(tenantId, archiveRtId, "UpdateComputedColumnFormula",
-            (lifecycle, id) => lifecycle.UpdateComputedColumnFormulaAsync(id, name, formula));
+            (lifecycle, id) => lifecycle.EnqueueUpdateComputedColumnFormulaAsync(
+                id, name, formula, _appLifetime.ApplicationStopping));
+
+    /// <summary>
+    /// Queues the backfill of a computed column again (AB#8002) — for a column that ended
+    /// <c>Failed</c>, or that is stuck in <c>Pending</c> / <c>Backfilling</c> without a running job —
+    /// without removing and re-adding it. Returns the queued job; poll it via the recompute-jobs
+    /// endpoint. 400 when the column is Active (nothing to retry) or does not exist.
+    /// </summary>
+    [HttpPost("archives/{archiveRtId}/computed-columns/{name}/retry")]
+    [Microsoft.AspNetCore.Authorization.Authorize(AssetRepositoryServiceConstants.TenantAssetApiReadWritePolicy)]
+    public async Task<ActionResult<RecomputeJobInfoRestDto>> RetryComputedColumnBackfill(
+        [Required] string tenantId, [Required] string archiveRtId, [Required] string name)
+    {
+        try
+        {
+            var tenantContext = await _systemContext.FindTenantContextAsync(tenantId);
+            var lifecycle = tenantContext.GetArchiveLifecycleService()
+                ?? throw new StreamDataException(
+                    $"StreamData is not enabled for tenant '{tenantId}'. Call POST /streamdata/enable first.");
+            var job = await lifecycle.RetryComputedColumnBackfillAsync(
+                new OctoObjectId(archiveRtId), name, _appLifetime.ApplicationStopping);
+            return job is null ? NoContent() : Ok(RecomputeJobInfoRestDto.From(job));
+        }
+        catch (ConfigurationException e)
+        {
+            return BadRequest(e.Message);
+        }
+        catch (Exception e) when (e is StreamDataException or InvalidOperationException)
+        {
+            _logger.LogWarning("RetryComputedColumnBackfill refused for tenant '{TenantId}', archive '{ArchiveRtId}', column '{Column}': {Reason}",
+                tenantId, archiveRtId, name, e.Message);
+            return BadRequest(e.Message);
+        }
+    }
 
     /// <summary>
     /// Triggers (or coalesces) an optimistic recompute of a rollup archive over the half-open range

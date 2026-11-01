@@ -17,10 +17,11 @@ internal sealed record RecomputeJobInfoDto(
     DateTime? FinishedAt,
     int? DurationMs,
     string? ErrorReason,
-    DateTime? LastProgressAt)
+    DateTime? LastProgressAt,
+    string? ComputedColumnName = null)
 {
     /// <summary>Maps an engine snapshot to the API projection.</summary>
     public static RecomputeJobInfoDto From(RecomputeJobSnapshot job) => new(
         job.RtId, job.State, job.RowsProcessed, job.WindowsProcessed,
-        job.StartedAt, job.FinishedAt, job.DurationMs, job.ErrorReason, job.LastProgressAt);
+        job.StartedAt, job.FinishedAt, job.DurationMs, job.ErrorReason, job.LastProgressAt, job.ComputedColumnName);
 }

@@ -286,6 +286,17 @@ Time-series data support (`StreamData/`):
   constants as `TenantApi/v1/Controllers/BlueprintsController`. Both policies are scope-only
   (`octo_api.full_access` / `octo_api.read_only`), so CLI/MCP/client-credentials callers keep
   working. The `api/v1/streamdata` route no longer exists.
+  - **Computed columns queue their backfill (AB#8002).** `POST .../computed-columns` (add) and
+    `PUT .../computed-columns/{name}` (formula change), like the GraphQL mutations `addComputedColumn` /
+    `updateComputedColumnFormula`, only validate, provision and queue: they call the engine's
+    `EnqueueAdd…` / `EnqueueUpdate…` with the host's stopping token (never the request token) and return
+    with the column `Backfilling`. The backfill runs on `ComputedColumnBackfillHostedService`
+    (registered in `Program.cs` via `AddComputedColumnBackfillBackgroundService`, options
+    `StreamData:ComputedColumnBackfill`, slice width `StreamData:ComputedColumnBackfillSlice`), one at a
+    time, and shows up as a recompute job with `computedColumnName` set. `POST .../computed-columns/{name}/retry`
+    and the mutation `retryComputedColumnBackfill` re-queue a `Failed` column (400 / error for an
+    `Active` one). Never call the inline `AddComputedColumnAsync` / `UpdateComputedColumnFormulaAsync`
+    from a request again — they backfill in the call.
   - `POST disable` is a **verified precondition, not a teardown (AB#4255)**: 409 +
     `OperationFailedErrorDto` naming the archives while any is still `Activated` (guard in the
     engine's `TenantContext.DisableStreamDataAsync`); on success only the tenant flag is switched
