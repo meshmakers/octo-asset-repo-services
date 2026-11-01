@@ -1,4 +1,3 @@
-using System.Text.RegularExpressions;
 using Meshmakers.Octo.ConstructionKit.Contracts.DataTransferObjects;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL;
@@ -8,7 +7,7 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL;
 ///     GraphQL surface. Mapped by <c>HandleException</c> to <see cref="Statics.GraphQlAttributeNotWritable" /> (writes)
 ///     or <see cref="Statics.GraphQlAttributeNotQueryable" /> (queries). The message names the attribute, never a value.
 /// </summary>
-internal sealed partial class HiddenAttributeAccessException : Exception
+internal sealed class HiddenAttributeAccessException : Exception
 {
     private HiddenAttributeAccessException(string message, string attributePath, string entityName,
         CkAttributeAccessDto? access, string operation, bool isWrite)
@@ -78,11 +77,25 @@ internal sealed partial class HiddenAttributeAccessException : Exception
     ///     selector (<c>members.type[passwordHash='X']-&gt;name</c> becomes <c>members.type[passwordHash=…]-&gt;name</c>),
     ///     because error texts end up in logs and client error reports.
     /// </summary>
+    /// <remarks>
+    ///     AB#8052: everything from the first <c>=</c> inside a selector up to the <b>last</b> <c>]</c> of the path is
+    ///     replaced (the rule of the mesh adapter's <c>RtAttributeAccessGuard.WithoutSelectorValues</c>, AB#8049). A value
+    ///     may itself contain <c>]</c> or <c>[</c> (<c>[passwordHash='a]b']</c>); ending the redaction at the first
+    ///     <c>]</c>, as before, left the rest of the value in the message. The price: path segments between the first
+    ///     selector value and the last <c>]</c> are not shown either (<c>a.t[x=1].b.u[y=2]-&gt;c</c> becomes
+    ///     <c>a.t[x=…]-&gt;c</c>). A <c>[</c> without a following <c>=</c> (<c>items[0].name</c>) is no selector and is kept.
+    ///     A selector without a closing <c>]</c> after its <c>=</c> is redacted to the end of the path.
+    /// </remarks>
     internal static string RedactSelectorValues(string path)
     {
-        return SelectorValueRegex().Replace(path, "[$1=…]");
-    }
+        var open = path.IndexOf('[');
+        var equals = open < 0 ? -1 : path.IndexOf('=', open);
+        var close = path.LastIndexOf(']');
+        if (equals < 0)
+        {
+            return path;
+        }
 
-    [GeneratedRegex(@"\[([^\[\]=]+)=[^\[\]]*\]", RegexOptions.Compiled)]
-    private static partial Regex SelectorValueRegex();
+        return close < equals ? path[..equals] + "=…" : path[..equals] + "=…" + path[close..];
+    }
 }
