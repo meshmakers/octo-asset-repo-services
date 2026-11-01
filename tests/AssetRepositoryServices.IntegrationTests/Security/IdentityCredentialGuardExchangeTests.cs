@@ -146,6 +146,77 @@ public class IdentityCredentialGuardExchangeTests
         (await FindUserAsync(rtId)).Should().BeTrue();
     }
 
+    // AB#8042: a user-initiated import (caller path) cannot set an identity-owned User field or write an identity association
+    // (engine message 140); the system path (blueprint seed) is unchanged (positive control above imports the same fields).
+    [Theory]
+    [InlineData("System.Identity/TwoFactorEnabled", "true")]
+    [InlineData("System.Identity/EmailConfirmed", "true")]
+    [InlineData("System.Identity/NormalizedUserName", "'OTHER-USER'")]
+    [InlineData("System.Identity/ResetPasswordOnLogin", "false")]
+    public async Task ImportRt_CallerPath_IdentityOwnedField_IsRefused_AndWritesNothing(string attributeId, string value)
+    {
+        var rtId = OctoObjectId.GenerateNewId().ToString();
+        var file = WriteYaml(PlainUserYaml(rtId, $"""
+                  - id: {attributeId}
+                    value: {value}
+            """));
+
+        var exception = await ImportAsync(file, ImportStrategy.Insert, callerPath: true);
+
+        AssertIdentityOwnedRefusal(exception, attributeId.Split('/')[1]);
+        (await FindUserAsync(rtId)).Should().BeFalse("nothing is written");
+    }
+
+    [Fact]
+    public async Task ImportRt_CallerPath_RoleAssignment_IsRefused_AndChangesNothing()
+    {
+        var file = WriteYaml(PlainUserYaml(_fixture.ProbeUserRtId, string.Empty, $"""
+                associations:
+                  - roleId: {F.AssignedRoleId}
+                    targetRtId: '{_fixture.ProbeRoleRtId}'
+                    targetCkTypeId: {F.RoleCkTypeId}
+            """));
+
+        var exception = await ImportAsync(file, ImportStrategy.Upsert, callerPath: true);
+
+        AssertIdentityOwnedRefusal(exception, "AssignedRole");
+        (await _fixture.ReadRawAttributeValueFromMongoDb(_fixture.ProbeUserRtId, "firstName", F.UserCollectionSuffix))
+            .Should().NotBe(new MongoDB.Bson.BsonString("caller-import-8042"), "nothing is written");
+    }
+
+    [Fact]
+    public async Task ImportRt_CallerPath_OtherUserFields_AreAccepted_PositiveControl()
+    {
+        var rtId = OctoObjectId.GenerateNewId().ToString();
+        var file = WriteYaml(PlainUserYaml(rtId, string.Empty));
+
+        (await ImportAsync(file, ImportStrategy.Insert, callerPath: true)).Should().BeNull();
+        (await FindUserAsync(rtId)).Should().BeTrue();
+    }
+
+    private static string PlainUserYaml(string rtId, string extraAttributes, string associations = "") => $"""
+        $schema: https://schemas.meshmakers.cloud/runtime-model.schema.json
+        dependencies:
+          - System.Identity
+        entities:
+          - rtId: '{rtId}'
+            ckTypeId: {F.UserCkTypeId}
+            attributes:
+              - id: System.Identity/FirstName
+                value: caller-import-8042
+        {extraAttributes}{associations}
+        """;
+
+    private void AssertIdentityOwnedRefusal(ExchangeException? exception, string pathPart)
+    {
+        exception.Should().NotBeNull("the import must be refused");
+        exception!.MessageNumber.Should().Be(140);
+        exception.Messages.Should().NotBeEmpty().And.OnlyContain(m => m.MessageNumber == 140);
+        exception.Messages.Should().Contain(m => m.Parameters["path"].Contains(pathPart));
+        exception.Message.Should().Contain("only the identity service writes");
+        AssertNoCredential(exception.ToString());
+    }
+
     // ------------------------------------------------------------------------------------------------- helpers
 
     private const string TokensYaml = "TOKENS";

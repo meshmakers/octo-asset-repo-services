@@ -322,7 +322,8 @@ this project (MongoDB Testcontainer, no running services, no network).
 | GraphQL writes: generic create/update of Hidden and MethodOnly attributes, `userTokens`, `clearSecretAttributes`, query-row create/update | `Security/IdentityCredentialGuardGraphQlTests` |
 | GraphQL methods: two aliased identity method calls, a method next to a generic update (one method call per request), a method without the role, the sensitive parameter in responses and logs | `Security/IdentityCredentialGuardGraphQlTests` |
 | RT export by query and by deep graph (engine building blocks of the export jobs, system session) | `Security/IdentityCredentialGuardExchangeTests` |
-| RT import (system and caller path, insert and upsert) of Hidden and MethodOnly values | `Security/IdentityCredentialGuardExchangeTests` |
+| GraphQL writes of identity-owned User fields and identity associations (AB#8042): generic and typed update/create of the flags, claims, external logins, role assignment from the user and from the role, a group with a member, query-row create/update; positive controls | `Security/IdentityCredentialGuardGraphQlTests` |
+| RT import (system and caller path, insert and upsert) of Hidden and MethodOnly values; caller-path import of identity-owned fields and of a role assignment (message 140, AB#8042) | `Security/IdentityCredentialGuardExchangeTests` |
 | Blueprint seed with Hidden or MethodOnly values (local test blueprint catalog `CredentialSeedBp`, `MethodOnlySeedBp`, positive control `VisibleIdentitySeedBp`) | `Security/IdentityCredentialGuardBlueprintSeedTests` |
 
 Open gaps are skipped tests named `Gap_*` (or with the bug in the skip reason) next to the passing ones; enable a test when

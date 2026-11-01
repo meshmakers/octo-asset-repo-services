@@ -108,6 +108,8 @@ internal sealed class RtQueryMutation : RtMutationBase
             // AB#6171: the file system rules live on the entity mutations; query rows cannot write files.
             Services.Files.FileSystemMutationGuard.EnsureNotInQueryMutation(
                 entityUpdateInfos.Select(e => e.CkTypeId), associationUpdateInfoList);
+            // AB#8042: query rows cannot write identity associations either.
+            IdentityOwnedWriteGuard.EnsureAssociationsWritable(associationUpdateInfoList);
 
             OperationResult operationResult = new();
             await tenantRepository.ApplyChangesAsync(sessionAccessor.Session, entityUpdateInfos,
@@ -219,6 +221,8 @@ internal sealed class RtQueryMutation : RtMutationBase
             // AB#6171: the file system rules live on the entity mutations; query rows cannot write files.
             Services.Files.FileSystemMutationGuard.EnsureNotInQueryMutation(
                 inputObjects.Select(i => i.Item.CkTypeId), associationUpdateInfoList);
+            // AB#8042: query rows cannot write identity associations either.
+            IdentityOwnedWriteGuard.EnsureAssociationsWritable(associationUpdateInfoList);
 
             OperationResult operationResult = new();
             await tenantRepository.ApplyChangesAsync(sessionAccessor.Session, entityUpdateInfos,

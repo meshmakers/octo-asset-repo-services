@@ -585,40 +585,199 @@ public class IdentityCredentialGuardGraphQlTests
 
     // ------------------------------------------------------------------------------------------------- open gaps
 
-    // Generic writes that still reach identity data without the identity methods. Enable each test when the attribute or
-    // association becomes MethodOnly / ReadOnly in System.Identity and the snapshot in testData/ck-models is refreshed.
-    [Theory(Skip = "AB#8042: still ReadWrite in System.Identity 2.29.0")]
-    [InlineData("normalizedUserName", "OTHER-USER")]
-    [InlineData("normalizedEmail", "OTHER@EXAMPLE.INVALID")]
-    [InlineData("emailConfirmed", true)]
-    [InlineData("twoFactorEnabled", false)]
-    [InlineData("lockoutEnabled", false)]
-    [InlineData("resetPasswordOnLogin", false)]
-    public async Task Gap_GenericUpdate_OfAnIdentityFlag_IsRefused(string attribute, object value)
+    // AB#8042: identity-owned User fields and identity associations are written only by the identity service (REST API and
+    // methods). The generic paths refuse them with ATTRIBUTE_NOT_WRITABLE and the extension reason = identity-owned.
+    public static TheoryData<string, object> IdentityOwnedFlags() => new()
     {
+        { "normalizedUserName", "OTHER-USER" },
+        { "normalizedEmail", "OTHER@EXAMPLE.INVALID" },
+        { "emailConfirmed", false },
+        { "phoneNumberConfirmed", true },
+        { "twoFactorEnabled", true },
+        { "lockoutEnabled", false },
+        { "resetPasswordOnLogin", true },
+        { "preferredChannelBindingId", "65f0c0ffee65f0c0ffee6599" }
+    };
+
+    [Theory]
+    [MemberData(nameof(IdentityOwnedFlags))]
+    public async Task GenericUpdate_OfAnIdentityOwnedField_IsRefused_AndNothingChanges(string attribute, object value)
+    {
+        var before = await ProbeIdentityFieldsAsync();
+
         var result = await GenericUpdateAsync(_fixture.ProbeUserRtId, attribute, value);
 
-        AssertRefused(result, "ATTRIBUTE_NOT_WRITABLE");
+        AssertIdentityOwnedRefusal(result);
+        (await ProbeIdentityFieldsAsync()).Should().Equal(before);
     }
 
-    [Theory(Skip = "AB#8042: claims and external logins are still ReadWrite in System.Identity 2.29.0")]
+    [Theory]
     [InlineData("claims")]
     [InlineData("userLogins")]
-    public async Task Gap_GenericWrite_OfClaimsOrExternalLogins_IsRefused(string attribute)
+    public async Task GenericWrite_OfClaimsOrExternalLogins_IsRefused(string attribute)
     {
         var result = await GenericUpdateAsync(_fixture.ProbeUserRtId, attribute, Array.Empty<object>());
 
-        AssertRefused(result, "ATTRIBUTE_NOT_WRITABLE");
+        AssertIdentityOwnedRefusal(result);
     }
 
-    // Group membership (Group.members / User.memberOfGroups) has the same gap; it needs a seeded group.
-    [Fact(Skip = "AB#8042: the AssignedRole association is still writable through the generic mutations")]
-    public async Task Gap_GenericWrite_OfARoleAssignment_IsRefused()
+    [Theory]
+    [MemberData(nameof(IdentityOwnedFlags))]
+    public async Task GenericCreate_OfAUser_WithAnIdentityOwnedField_IsRefused(string attribute, object value)
+    {
+        var result = await _fixture.ExecuteGraphQlAsync(GenericCreateMutation, JsonSerializer.Serialize(new
+        {
+            entities = new[]
+            {
+                new
+                {
+                    ckTypeId = F.UserCkTypeId,
+                    attributes = new object[]
+                    {
+                        new { attributeName = "firstName", value = (object)"generic-create-8042" },
+                        new { attributeName = attribute, value }
+                    }
+                }
+            }
+        }));
+
+        AssertIdentityOwnedRefusal(result);
+    }
+
+    [Fact]
+    public async Task TypedUpdate_OfAnIdentityOwnedField_IsRefused_AndNothingChanges()
+    {
+        var before = await ProbeIdentityFieldsAsync();
+
+        var result = await _fixture.ExecuteGraphQlAsync($$"""
+            mutation { runtime { {{F.UserMutationField}} {
+              update(entities: [{ rtId: "{{_fixture.ProbeUserRtId}}", item: { twoFactorEnabled: true, firstName: "typed" } }]) { rtId }
+            } } }
+            """);
+
+        AssertIdentityOwnedRefusal(result);
+        (await ProbeIdentityFieldsAsync()).Should().Equal(before);
+    }
+
+    [Fact]
+    public async Task GenericUpdate_OfAVisibleUserField_StillWorks_PositiveControl()
+    {
+        var result = await GenericUpdateAsync(_fixture.ProbeUserRtId, "lastName", "visible-8042");
+
+        result.Errors.Should().BeNullOrEmpty(_fixture.SerializeGraphQl(result));
+        (await _fixture.ReadRawAttributeValueFromMongoDb(_fixture.ProbeUserRtId, "lastName", F.UserCollectionSuffix))
+            .AsString.Should().Be("visible-8042");
+    }
+
+    [Fact]
+    public async Task GenericWrite_OfARoleAssignment_FromTheUser_IsRefused()
     {
         var result = await GenericUpdateAsync(_fixture.ProbeUserRtId, "assignedRoles",
-            new object[] { new { target = new { rtId = _fixture.ProbeRoleRtId, ckTypeId = F.RoleCkTypeId } } });
+            new object[] { new { target = new { rtId = _fixture.ProbeRoleRtId, ckTypeId = F.RoleCkTypeId }, modOption = "DELETE" } });
 
-        AssertRefused(result, "ATTRIBUTE_NOT_WRITABLE");
+        AssertIdentityOwnedRefusal(result);
+        (await AssignedRoleCountAsync()).Should().Be(1, "the seeded role edge is kept");
+    }
+
+    [Fact]
+    public async Task GenericWrite_OfARoleAssignment_FromTheRole_IsRefused()
+    {
+        var other = await _fixture.SeedUserAsync("probe-8042-" + Guid.NewGuid().ToString("N")[..8],
+            "probe-8042@example.invalid");
+
+        var result = await _fixture.ExecuteGraphQlAsync(GenericUpdateMutation, JsonSerializer.Serialize(new
+        {
+            entities = new[]
+            {
+                new
+                {
+                    rtId = _fixture.ProbeRoleRtId,
+                    item = new
+                    {
+                        ckTypeId = F.RoleCkTypeId,
+                        attributes = new object[]
+                        {
+                            new
+                            {
+                                attributeName = "assignedEntities",
+                                value = new object[] { new { target = new { rtId = other, ckTypeId = F.UserCkTypeId } } }
+                            }
+                        }
+                    }
+                }
+            }
+        }));
+
+        AssertIdentityOwnedRefusal(result);
+    }
+
+    [Fact]
+    public async Task GenericCreate_OfAGroupWithAMember_IsRefused_ButAGroupWithoutMembersIsCreated()
+    {
+        object Group(string name, bool withMember) => new
+        {
+            ckTypeId = "System.Identity/Group",
+            attributes = withMember
+                ? new object[]
+                {
+                    new { attributeName = "groupName", value = (object)name },
+                    new { attributeName = "normalizedGroupName", value = (object)name.ToUpperInvariant() },
+                    new
+                    {
+                        attributeName = "members",
+                        value = (object)new object[] { new { target = new { rtId = _fixture.ProbeUserRtId, ckTypeId = F.UserCkTypeId } } }
+                    }
+                }
+                : new object[]
+                {
+                    new { attributeName = "groupName", value = (object)name },
+                    new { attributeName = "normalizedGroupName", value = (object)name.ToUpperInvariant() }
+                }
+        };
+
+        var refused = await _fixture.ExecuteGraphQlAsync(GenericCreateMutation,
+            JsonSerializer.Serialize(new { entities = new[] { Group("g-8042-member", true) } }));
+        AssertIdentityOwnedRefusal(refused);
+
+        var created = await CreateGenericAsync(Group("g-8042-plain", false));
+        created.Should().NotBeNullOrEmpty("a group itself is not identity-owned, only its edges");
+    }
+
+    [Theory]
+    [InlineData("twoFactorEnabled", "true")]
+    [InlineData("emailConfirmed", "false")]
+    public async Task QueryRowUpdate_WithAnIdentityOwnedCell_IsRefused_AndNothingChanges(string cell, string value)
+    {
+        var queryRtId = await CreateUserQueryAsync();
+        var before = await ProbeIdentityFieldsAsync();
+
+        var result = await _fixture.ExecuteGraphQlAsync($$"""
+            mutation { runtime { runtimeQuery(rtId: "{{queryRtId}}") {
+              update(entities: [{ rtId: "{{_fixture.ProbeUserRtId}}", item: { ckTypeId: "{{F.UserCkTypeId}}", cells: [
+                { attributePath: "{{cell}}", value: {{value}} }
+              ] } }]) { ckTypeId }
+            } } }
+            """);
+
+        AssertIdentityOwnedRefusal(result);
+        (await ProbeIdentityFieldsAsync()).Should().Equal(before);
+    }
+
+    [Fact]
+    public async Task QueryRowCreate_WithAnIdentityOwnedCell_IsRefused()
+    {
+        var queryRtId = await CreateUserQueryAsync();
+
+        var result = await _fixture.ExecuteGraphQlAsync($$"""
+            mutation { runtime { runtimeQuery(rtId: "{{queryRtId}}") {
+              create(entities: [{ ckTypeId: "{{F.UserCkTypeId}}", cells: [
+                { attributePath: "firstName", value: "row-create-8042" },
+                { attributePath: "resetPasswordOnLogin", value: false }
+              ] }]) { ckTypeId }
+            } } }
+            """);
+
+        AssertIdentityOwnedRefusal(result);
     }
 
     [Fact(Skip = "Pending: CreateUser does not set replacesGenericCreate in System.Identity 2.29.0 (needs the next major)")]
@@ -728,6 +887,36 @@ public class IdentityCredentialGuardGraphQlTests
             .Should().BeTrue("the tokens are still stored");
         (await _fixture.ReadRawAttributeValueFromMongoDb(rtId, "userTokens", F.UserCollectionSuffix)).AsBsonArray
             .Should().HaveCount(1);
+    }
+
+    private void AssertIdentityOwnedRefusal(ExecutionResult result)
+    {
+        AssertRefused(result, "ATTRIBUTE_NOT_WRITABLE");
+        var json = _fixture.SerializeGraphQl(result);
+        result.Errors!.Should().Contain(e => e.Code == "ATTRIBUTE_NOT_WRITABLE" && e.Extensions != null &&
+                                             Equals(e.Extensions["reason"], "identity-owned"), json);
+    }
+
+    /// <summary>The identity-owned fields of the probe user as stored (raw BSON as text), to prove that a refusal wrote nothing.</summary>
+    private async Task<List<string>> ProbeIdentityFieldsAsync()
+    {
+        var values = new List<string>();
+        foreach (var name in new[] { "normalizedUserName", "normalizedEmail", "emailConfirmed", "phoneNumberConfirmed",
+                     "twoFactorEnabled", "lockoutEnabled", "resetPasswordOnLogin", "firstName" })
+        {
+            values.Add(name + "=" +
+                       (await _fixture.ReadRawAttributeValueFromMongoDb(_fixture.ProbeUserRtId, name, F.UserCollectionSuffix)));
+        }
+
+        return values;
+    }
+
+    private async Task<long> AssignedRoleCountAsync()
+    {
+        var json = await ExecuteOkAsync($$"""
+            query { runtime { {{F.UserQueryField}}(rtId: "{{_fixture.ProbeUserRtId}}") { items { assignedRoles(ckTypeIds: ["{{F.RoleCkTypeId}}"]) { totalCount } } } } }
+            """);
+        return JObject.Parse(json).SelectToken("$..assignedRoles.totalCount")!.Value<long>();
     }
 
     private async Task AssertRefusedAsync(string query, string code) =>

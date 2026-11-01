@@ -232,6 +232,8 @@ internal class QueryMapper(
                 // CK v2 (AB#5668, review M7): Hidden and MethodOnly attributes are never writable through a query
                 // row - the same rule as the generic mutations (ATTRIBUTE_NOT_WRITABLE). Checked first.
                 AccessQueryGuard.EnsureWritablePath(ckCacheService, tenantId, ckTypeId, cellDto.AttributePath);
+                // AB#8042: identity-owned User fields are written only by the identity service.
+                IdentityOwnedWriteGuard.EnsureWritablePath(ckTypeId, cellDto.AttributePath);
 
                 // AB#5528 (concept §4.4): a Secret attribute is never a query column, so a query row cannot
                 // write it either - secrets are set through the entity mutations (string input, explicit

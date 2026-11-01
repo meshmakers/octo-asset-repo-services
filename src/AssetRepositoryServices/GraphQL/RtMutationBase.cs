@@ -30,6 +30,8 @@ internal abstract class RtMutationBase : ObjectGraphType
         // AB#8049: a stored query may not filter, sort, select or group by a Hidden attribute (ATTRIBUTE_NOT_QUERYABLE).
         await StoredQueryWriteGuard.EnsureStoredQueriesAllowedAsync(ckCacheService, repository, session,
             entityUpdateInfos);
+        // AB#8042: identity associations (role assignment, group membership, ...) are written only by the identity service.
+        IdentityOwnedWriteGuard.EnsureAssociationsWritable(associations);
 
         if (!fileSystemMutation)
         {
@@ -159,6 +161,10 @@ internal abstract class RtMutationBase : ObjectGraphType
                 throw HiddenAttributeAccessException.NotWritable(attributeName,
                     GetElementName(ckTypeWithAttributesGraph), ckTypeAttributeGraph.Access);
             }
+
+            // AB#8042: identity-owned User fields are written only by the identity service (REST API and methods).
+            IdentityOwnedWriteGuard.EnsureAttributeWritable(ckTypeWithAttributesGraph, ckTypeAttributeGraph.AttributeName,
+                GetElementName(ckTypeWithAttributesGraph));
 
             switch (ckTypeAttributeGraph.ValueType)
             {

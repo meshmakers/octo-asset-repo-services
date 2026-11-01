@@ -681,10 +681,23 @@ schema initialization.
   `testData/ck-models/`, loaded by `Fixtures/SystemIdentitySnapshotCkModel`; refresh procedure in the README there) with a user whose
   `PasswordHash`, `SecurityStamp` and `UserTokens` hold fixed dummy values; no response, export file or captured log line may contain
   them. Path table: the README of the integration test project. Open gaps are skipped tests with the bug in the skip reason:
-  AB#8042 (identity flags, claims, logins, role/group associations still ReadWrite), AB#8047 (ReadOnly not enforced on update, next
-  bullet), AB#8048 (the MongoDB command log and slow-query buffer print Hidden values of a write), and the pending
+  AB#8047 (ReadOnly not enforced on update, next bullet), AB#8048 (the MongoDB command log and slow-query buffer print Hidden values of a write), and the pending
   `replacesGenericCreate` of `CreateUser`. A stored query whose filter or selector reaches a credential is refused when it is saved
   (AB#8049, `StoredQuery_WithACredentialFilter_IsRefusedWhenSaved`, `EntitySelector_InAStoredQuery_IsRefused`).
+- **Identity-owned User fields and identity associations (AB#8042)**: `GraphQL/Utils/IdentityOwnedWriteGuard` refuses, for every caller,
+  the attributes and association roles listed in the engine's `IdentityOwnedWrites` (ConstructionKit.Contracts): User `NormalizedUserName`,
+  `NormalizedEmail`, `EmailConfirmed`, `PhoneNumberConfirmed`, `TwoFactorEnabled`, `LockoutEnabled`, `ResetPasswordOnLogin`, `Claims`, `UserLogins`,
+  `PreferredChannelBindingId`; associations `AssignedRole`, `GroupMember`, `ChildGroup`, `MayActAs`, `GrantsPermission` (insert and delete, from
+  either end). Call sites: `RtMutationBase.TryHandleAttributeAsync` (typed and generic create/update attribute input), `RtMutationBase.ApplyChangesAsync`
+  (all associations of the typed and generic create/update), `QueryMapper.RtEntityFromInputObject` (query-row cells) and `RtQueryMutation` create/update
+  (query-row navigation associations). Refusal: `ATTRIBUTE_NOT_WRITABLE` (`HiddenAttributeAccessException.IdentityOwned`) with the extra extension
+  `reason = identity-owned`; nothing is written. Only the identity service writes these values (its REST API and the identity methods, which carry the
+  role-change guard and the audit); it uses its own repository, which never passes here. The engine refuses the same values on the caller path of
+  `ImportRt` (message 140). Why a runtime list and not CK `access`: none of these attributes was `securitySensitive` in an earlier System.Identity 2.x,
+  so tightening their access is a Major (row T7); the list moves into the model's `access` with the next System.Identity major, together with AB#7777;
+  association writes cannot be expressed in CK at all. Not covered here: `PolicyPermission`, `IdentifiesUser` (open), the mesh-adapter load nodes,
+  `clearSecretAttributes` (no identity-owned attribute is a Secret). Tests: `UnitTests/GraphQL/IdentityOwnedWriteGuardTests`, the AB#8042 tests in
+  `IntegrationTests/Security/IdentityCredentialGuard{GraphQl,Exchange}Tests`.
 - **Stream data** (review M12 / G3 E-M2): no archive column may reach a Hidden attribute. The engine refuses to
   activate such an archive and fails an active one when a model change makes a column reach Hidden
   (`ArchiveHiddenColumnGuard`, `ArchiveLifecycleService`). The asset-repo additionally refuses every stream-data

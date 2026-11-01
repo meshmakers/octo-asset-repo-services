@@ -27,7 +27,30 @@ internal sealed partial class HiddenAttributeAccessException : Exception
     public string Operation { get; }
     public bool IsWrite { get; }
 
+    /// <summary>
+    ///     Why the write is refused when it is not the CK <c>access</c> of the attribute: <c>identity-owned</c> (AB#8042,
+    ///     <see cref="Meshmakers.Octo.ConstructionKit.Contracts.IdentityOwnedWrites" />). Null for an access refusal.
+    /// </summary>
+    public string? Reason { get; private init; }
+
     public string Code => IsWrite ? Statics.GraphQlAttributeNotWritable : Statics.GraphQlAttributeNotQueryable;
+
+    /// <summary>
+    ///     AB#8042: an identity-owned User field or an identity association, which only the identity service writes (its REST
+    ///     API and the identity methods). Same code as an access refusal (<c>ATTRIBUTE_NOT_WRITABLE</c>), extension
+    ///     <c>reason = identity-owned</c>.
+    /// </summary>
+    public static HiddenAttributeAccessException IdentityOwned(string attributePath, string entityName)
+    {
+        attributePath = RedactSelectorValues(attributePath);
+        return new HiddenAttributeAccessException(
+            $"'{attributePath}' of '{entityName}' is written only by the identity service (identity REST API or identity " +
+            "methods), not via generic mutations or query rows.",
+            attributePath, entityName, null, "write", true)
+        {
+            Reason = Meshmakers.Octo.ConstructionKit.Contracts.IdentityOwnedWrites.RefusalReason
+        };
+    }
 
     /// <summary>
     ///     The contract message of the write rejection (contract §4.1).
