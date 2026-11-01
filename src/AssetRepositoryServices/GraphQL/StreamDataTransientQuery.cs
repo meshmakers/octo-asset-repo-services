@@ -138,7 +138,7 @@ internal sealed class StreamDataTransientQuery : ObjectGraphType
                 .GetCkTypeQueryColumnPathsByRtCkId(gql.TenantId, ckTypeId,
                     new CkTypeQueryColumnOptions { IgnoreNavigationProperties = true });
             var columns = columnPaths
-                .Select(p => BuildSimpleColumn(p, typeQueryColumns))
+                .Select(p => StreamDataColumnBuilder.BuildSimpleColumn(p, typeQueryColumns, fieldResolver))
                 .ToList();
 
             // Downsampling override (AB#4233): a Simple transient query executed with
@@ -245,7 +245,7 @@ internal sealed class StreamDataTransientQuery : ObjectGraphType
                 .GetCkTypeQueryColumnPathsByRtCkId(gql.TenantId, ckTypeId,
                     new CkTypeQueryColumnOptions { IgnoreNavigationProperties = true });
             var columns = columnInputs
-                .Select(c => BuildAggregationColumn(c.AttributePath, MapAggregationFunctionDtoToDto(c.AggregationType), typeQueryColumns))
+                .Select(c => StreamDataColumnBuilder.BuildAggregationColumn(c.AttributePath, MapAggregationFunctionDtoToDto(c.AggregationType), typeQueryColumns, fieldResolver))
                 .ToList();
 
             var dto = new StreamDataTransientQueryDto
@@ -321,9 +321,9 @@ internal sealed class StreamDataTransientQuery : ObjectGraphType
                 .GetCkTypeQueryColumnPathsByRtCkId(gql.TenantId, ckTypeId,
                     new CkTypeQueryColumnOptions { IgnoreNavigationProperties = true });
             var groupByColumns = groupByColumnPaths
-                .Select(p => BuildSimpleColumn(p, typeQueryColumns));
+                .Select(p => StreamDataColumnBuilder.BuildSimpleColumn(p, typeQueryColumns, fieldResolver));
             var aggColumnDtos = columnInputs
-                .Select(c => BuildAggregationColumn(c.AttributePath, MapAggregationFunctionDtoToDto(c.AggregationType), typeQueryColumns));
+                .Select(c => StreamDataColumnBuilder.BuildAggregationColumn(c.AttributePath, MapAggregationFunctionDtoToDto(c.AggregationType), typeQueryColumns, fieldResolver));
             var columns = groupByColumns.Concat(aggColumnDtos).ToList();
 
             var dto = new StreamDataTransientQueryDto
@@ -399,7 +399,7 @@ internal sealed class StreamDataTransientQuery : ObjectGraphType
                 .GetCkTypeQueryColumnPathsByRtCkId(gql.TenantId, ckTypeId,
                     new CkTypeQueryColumnOptions { IgnoreNavigationProperties = true });
             var columns = columnInputs
-                .Select(c => BuildAggregationColumn(c.AttributePath, MapAggregationFunctionDtoToDto(c.AggregationType), typeQueryColumns))
+                .Select(c => StreamDataColumnBuilder.BuildAggregationColumn(c.AttributePath, MapAggregationFunctionDtoToDto(c.AggregationType), typeQueryColumns, fieldResolver))
                 .ToList();
 
             var dto = new StreamDataTransientQueryDto
@@ -453,65 +453,4 @@ internal sealed class StreamDataTransientQuery : ObjectGraphType
         };
     }
 
-    /// <summary>
-    /// Builds a simple (non-aggregating) column DTO. Resolves the value type
-    /// from the CK model when the path is known; falls back to the String
-    /// value type for paths the resolver doesn't recognise (e.g. synthesized
-    /// downsampling output columns like window_start / window_end).
-    /// </summary>
-    private static RtQueryColumnDto BuildSimpleColumn(
-        string attributePath,
-        IReadOnlyCollection<CkTypeQueryColumn> typeQueryColumns)
-    {
-        var ck = typeQueryColumns.FirstOrDefault(c => c.Path == attributePath);
-        return new RtQueryColumnDto
-        {
-            AttributePath = attributePath,
-            AttributeValueType = ck?.ValueType
-                ?? Meshmakers.Octo.ConstructionKit.Contracts.DataTransferObjects.AttributeValueTypesDto.String,
-            AggregationType = AggregationTypesDto.None
-        };
-    }
-
-    /// <summary>
-    /// Builds an aggregation column DTO with the result type adjusted per
-    /// aggregation function (Count -> Integer, Average -> Double; min/max/sum
-    /// preserve the source type). Mirrors the runtime resolver's behavior
-    /// in <c>RtQueryColumnType.GetAggregationResultType</c>.
-    /// </summary>
-    private static RtQueryColumnDto BuildAggregationColumn(
-        string attributePath,
-        AggregationTypesDto aggregationType,
-        IReadOnlyCollection<CkTypeQueryColumn> typeQueryColumns)
-    {
-        var ck = typeQueryColumns.FirstOrDefault(c => c.Path == attributePath);
-        var sourceType = ck?.ValueType
-            ?? Meshmakers.Octo.ConstructionKit.Contracts.DataTransferObjects.AttributeValueTypesDto.String;
-        return new RtQueryColumnDto
-        {
-            AttributePath = attributePath,
-            AttributeValueType = GetAggregationResultType(sourceType, aggregationType),
-            AggregationType = aggregationType
-        };
-    }
-
-    private static Meshmakers.Octo.ConstructionKit.Contracts.DataTransferObjects.AttributeValueTypesDto GetAggregationResultType(
-        Meshmakers.Octo.ConstructionKit.Contracts.DataTransferObjects.AttributeValueTypesDto sourceType,
-        AggregationTypesDto aggregationType)
-    {
-        return aggregationType switch
-        {
-            AggregationTypesDto.None => sourceType,
-            AggregationTypesDto.Count => Meshmakers.Octo.ConstructionKit.Contracts.DataTransferObjects.AttributeValueTypesDto.Integer,
-            AggregationTypesDto.Sum => sourceType,
-            AggregationTypesDto.Average => Meshmakers.Octo.ConstructionKit.Contracts.DataTransferObjects.AttributeValueTypesDto.Double,
-            AggregationTypesDto.Minimum => sourceType,
-            AggregationTypesDto.Maximum => sourceType,
-            // AB#4341: absolute milliseconds-in-state — an integer duration regardless of source.
-            AggregationTypesDto.StateDuration => Meshmakers.Octo.ConstructionKit.Contracts.DataTransferObjects.AttributeValueTypesDto.Integer,
-            // AB#7919: value × hours — fractional regardless of the source type (an Integer power column integrates to a Double).
-            AggregationTypesDto.Integral => Meshmakers.Octo.ConstructionKit.Contracts.DataTransferObjects.AttributeValueTypesDto.Double,
-            _ => sourceType
-        };
-    }
 }

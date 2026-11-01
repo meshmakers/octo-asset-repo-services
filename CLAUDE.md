@@ -117,6 +117,16 @@ Both surfaces accept runtime overrides on the `rows` / sub-connection level:
 
 The persisted query's `aggregations` sub-connection takes a `ResultAggregationInput` (count/min/max/avg/sum × attribute paths) and runs a second engine call over the same data set as `rows` — useful for "give me the avg/max alongside the rows" without persisting an aggregation-typed query.
 
+**Column types (`columns { attributeValueType }`, AB#8030).** Persisted and transient queries build their column metadata in
+`GraphQL/StreamDataColumnBuilder`. The path is matched against the CK type's query columns **case-insensitively** (exact match first),
+the same rule as the query execution (`StreamDataFieldResolver`, `OrdinalIgnoreCase`): a stored PascalCase path (`ActivePower`, EnergyIQ seed)
+gets the CK value type (`DOUBLE`) — before, the exact match failed and the column was `STRING`, so MeshBoard numeric pickers stayed empty.
+A path that is no CK attribute but a field of the archive (default fields `timestamp`/`rtId`/`window_start`…, `row_origin`…, rollup and
+computed columns) keeps `STRING` as before. A path that exists nowhere is reported as `attributeValueType: null` — explicitly unknown, for
+every aggregation function — via the `UnknownStreamDataColumn` marker that `RtQueryColumnType` resolves to null. The field was already
+nullable, so the schema is unchanged and no enum value was added. The persisted resolver loads the archive snapshot for this (field resolver).
+Tests: `UnitTests/GraphQL/StreamDataColumnBuilderTests`, `IntegrationTests/StreamData/StreamDataColumnTypeTests`.
+
 **Integral (AB#7919, engine AB#7918).** `aggregationType: INTEGRAL` (transient `aggregation` / `groupingAggregation`) and the CK
 value `System/AggregationTypes.Integral` (key 7, System 2.8.0) on persisted `AggregationSdQuery` / `GroupingAggregationSdQuery` give the step
 integral over `[from, to)` in value unit x hours, result cell `<attr>_integral`, column `aggregationType: INTEGRAL`, value type `DOUBLE`

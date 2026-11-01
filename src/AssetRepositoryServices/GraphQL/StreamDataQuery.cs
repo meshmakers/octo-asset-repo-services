@@ -281,7 +281,15 @@ internal sealed class StreamDataQuery : ObjectGraphType
             var typeQueryColumns = ckCacheService
                 .GetCkTypeQueryColumnPathsByRtCkId(graphQlUserContext.TenantId, new RtCkId<CkTypeId>(loaded.QueryCkTypeId),
                     new CkTypeQueryColumnOptions { IgnoreNavigationProperties = true });
-            var columns = BuildColumnsFromLoaded(loaded, typeQueryColumns);
+            // The archive's field resolver tells a field the archive knows without being a CK attribute
+            // (timestamp, rtId, window_start, row_origin, rollup and computed columns) from a path that
+            // exists nowhere; the latter is reported as unknown (AB#8030). A missing archive leaves the
+            // default fields only - the rows of such a query fail anyway.
+            var archiveSnapshot = await graphQlUserContext.TenantContext.GetArchiveRuntimeStore().GetAsync(archiveRtId);
+            var fieldResolver = archiveSnapshot != null
+                ? StreamDataFieldResolver.CreateForArchive(archiveSnapshot)
+                : new StreamDataFieldResolver();
+            var columns = BuildColumnsFromLoaded(loaded, typeQueryColumns, fieldResolver);
 
             await DataPermissionStreamGuard.EnsureStreamReadAllowedAsync(arg, graphQlUserContext,
                 new RtCkId<CkTypeId>(loaded.QueryCkTypeId));
@@ -308,98 +316,39 @@ internal sealed class StreamDataQuery : ObjectGraphType
 
     private static IReadOnlyList<RtQueryColumnDto> BuildColumnsFromLoaded(
         RtStreamDataQuery loaded,
-        IReadOnlyCollection<CkTypeQueryColumn> typeQueryColumns)
+        IReadOnlyCollection<CkTypeQueryColumn> typeQueryColumns,
+        StreamDataFieldResolver fieldResolver)
     {
         switch (loaded)
         {
             case RtSimpleSdQuery simple:
                 return (simple.Columns?.ToList() ?? [])
-                    .Select(path => BuildSimpleColumn(path, typeQueryColumns))
+                    .Select(path => StreamDataColumnBuilder.BuildSimpleColumn(path, typeQueryColumns, fieldResolver))
                     .ToList();
 
             case RtAggregationSdQuery aggregation:
                 return (aggregation.Columns?.ToList() ?? [])
-                    .Select(c => BuildAggregationColumn(c.AttributePath, MapCkAggregationTypeToDto(c.AggregationType), typeQueryColumns))
+                    .Select(c => StreamDataColumnBuilder.BuildAggregationColumn(c.AttributePath,
+                        MapCkAggregationTypeToDto(c.AggregationType), typeQueryColumns, fieldResolver))
                     .ToList();
 
             case RtGroupingAggregationSdQuery grouping:
                 var groupingCols = (grouping.GroupingColumns?.ToList() ?? [])
-                    .Select(path => BuildSimpleColumn(path, typeQueryColumns));
+                    .Select(path => StreamDataColumnBuilder.BuildSimpleColumn(path, typeQueryColumns, fieldResolver));
                 var aggCols = (grouping.Columns?.ToList() ?? [])
-                    .Select(c => BuildAggregationColumn(c.AttributePath, MapCkAggregationTypeToDto(c.AggregationType), typeQueryColumns));
+                    .Select(c => StreamDataColumnBuilder.BuildAggregationColumn(c.AttributePath,
+                        MapCkAggregationTypeToDto(c.AggregationType), typeQueryColumns, fieldResolver));
                 return groupingCols.Concat(aggCols).ToList();
 
             case RtDownsamplingSdQuery downsampling:
                 return (downsampling.Columns?.ToList() ?? [])
-                    .Select(c => BuildAggregationColumn(c.AttributePath, MapCkAggregationTypeToDto(c.AggregationType), typeQueryColumns))
+                    .Select(c => StreamDataColumnBuilder.BuildAggregationColumn(c.AttributePath,
+                        MapCkAggregationTypeToDto(c.AggregationType), typeQueryColumns, fieldResolver))
                     .ToList();
 
             default:
                 return [];
         }
-    }
-
-    /// <summary>
-    /// Builds a simple (non-aggregating) column DTO. Resolves the value type from
-    /// the CK model when the path is known; falls back to the String value type
-    /// for synthesized columns the resolver wouldn't recognise (e.g. window_start /
-    /// window_end emitted by downsampling/rollup, or aggregation result columns
-    /// that don't exist as raw attributes on the target CK type).
-    /// </summary>
-    private static RtQueryColumnDto BuildSimpleColumn(
-        string attributePath,
-        IReadOnlyCollection<CkTypeQueryColumn> typeQueryColumns)
-    {
-        var ck = typeQueryColumns.FirstOrDefault(c => c.Path == attributePath);
-        return new RtQueryColumnDto
-        {
-            AttributePath = attributePath,
-            AttributeValueType = ck?.ValueType
-                ?? Meshmakers.Octo.ConstructionKit.Contracts.DataTransferObjects.AttributeValueTypesDto.String,
-            AggregationType = Meshmakers.Octo.Communication.Contracts.DataTransferObjects.AggregationTypesDto.None
-        };
-    }
-
-    /// <summary>
-    /// Builds an aggregation column DTO with the result type adjusted per
-    /// aggregation function (Count → Integer, Average → Double; min/max/sum
-    /// preserve the source type). Mirrors the runtime resolver's behavior
-    /// in <c>RtQueryColumnType.GetAggregationResultType</c>.
-    /// </summary>
-    private static RtQueryColumnDto BuildAggregationColumn(
-        string attributePath,
-        Meshmakers.Octo.Communication.Contracts.DataTransferObjects.AggregationTypesDto aggregationType,
-        IReadOnlyCollection<CkTypeQueryColumn> typeQueryColumns)
-    {
-        var ck = typeQueryColumns.FirstOrDefault(c => c.Path == attributePath);
-        var sourceType = ck?.ValueType
-            ?? Meshmakers.Octo.ConstructionKit.Contracts.DataTransferObjects.AttributeValueTypesDto.String;
-        return new RtQueryColumnDto
-        {
-            AttributePath = attributePath,
-            AttributeValueType = GetAggregationResultType(sourceType, aggregationType),
-            AggregationType = aggregationType
-        };
-    }
-
-    private static Meshmakers.Octo.ConstructionKit.Contracts.DataTransferObjects.AttributeValueTypesDto GetAggregationResultType(
-        Meshmakers.Octo.ConstructionKit.Contracts.DataTransferObjects.AttributeValueTypesDto sourceType,
-        Meshmakers.Octo.Communication.Contracts.DataTransferObjects.AggregationTypesDto aggregationType)
-    {
-        return aggregationType switch
-        {
-            Meshmakers.Octo.Communication.Contracts.DataTransferObjects.AggregationTypesDto.None => sourceType,
-            Meshmakers.Octo.Communication.Contracts.DataTransferObjects.AggregationTypesDto.Count => Meshmakers.Octo.ConstructionKit.Contracts.DataTransferObjects.AttributeValueTypesDto.Integer,
-            Meshmakers.Octo.Communication.Contracts.DataTransferObjects.AggregationTypesDto.Sum => sourceType,
-            Meshmakers.Octo.Communication.Contracts.DataTransferObjects.AggregationTypesDto.Average => Meshmakers.Octo.ConstructionKit.Contracts.DataTransferObjects.AttributeValueTypesDto.Double,
-            Meshmakers.Octo.Communication.Contracts.DataTransferObjects.AggregationTypesDto.Minimum => sourceType,
-            Meshmakers.Octo.Communication.Contracts.DataTransferObjects.AggregationTypesDto.Maximum => sourceType,
-            // Same result types as the transient path (StreamDataTransientQuery): ms-in-state is an
-            // integer duration (AB#4341), the integral is value × hours (AB#7919).
-            Meshmakers.Octo.Communication.Contracts.DataTransferObjects.AggregationTypesDto.StateDuration => Meshmakers.Octo.ConstructionKit.Contracts.DataTransferObjects.AttributeValueTypesDto.Integer,
-            Meshmakers.Octo.Communication.Contracts.DataTransferObjects.AggregationTypesDto.Integral => Meshmakers.Octo.ConstructionKit.Contracts.DataTransferObjects.AttributeValueTypesDto.Double,
-            _ => sourceType
-        };
     }
 
     private static Meshmakers.Octo.Communication.Contracts.DataTransferObjects.AggregationTypesDto

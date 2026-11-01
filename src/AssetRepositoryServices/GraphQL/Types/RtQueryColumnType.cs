@@ -35,7 +35,12 @@ internal sealed class RtQueryColumnType : ObjectGraphType<RtQueryColumnDto>
                     ? dto.AttributePath
                     : RtAggregationCellKeyMapper.ToAggregationKey(dto.AttributePath ?? string.Empty, dto.AggregationType);
             });
-        Field(d => d.AttributeValueType, typeof(AttributeValueTypesDtoType));
+        // Nullable on the wire (unchanged schema). A stream-data column whose path the archive does not know
+        // is reported as null - explicitly unknown - instead of a made-up STRING (AB#8030).
+        Field<AttributeValueTypesDtoType>("AttributeValueType")
+            .Resolve(context => context.Source.UserContext is UnknownStreamDataColumn
+                ? null
+                : context.Source.AttributeValueType);
         Field(d => d.AggregationType, typeof(AggregationTypesDtoType));
     }
 
