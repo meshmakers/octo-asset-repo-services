@@ -115,7 +115,7 @@ internal class QueryMapper(
             }
         }
 
-        RtEntityFromInputObject(rtEntity, queryRowDto, mappingResult);
+        RtEntityFromInputObject(rtEntity, queryRowDto, mappingResult, mappingMode == MappingMode.Insert);
     }
 
     /// <summary>
@@ -212,7 +212,7 @@ internal class QueryMapper(
     }
 
     private void RtEntityFromInputObject(RtEntity rtEntity,
-        RtSimpleQueryRowDto rtQueryRowDto, MappingResult mappingResult)
+        RtSimpleQueryRowDto rtQueryRowDto, MappingResult mappingResult, bool isCreate)
     {
         rtEntity.RtWellKnownName = rtQueryRowDto.RtWellKnownName;
 
@@ -230,8 +230,10 @@ internal class QueryMapper(
                 }
 
                 // CK v2 (AB#5668, review M7): Hidden and MethodOnly attributes are never writable through a query
-                // row - the same rule as the generic mutations (ATTRIBUTE_NOT_WRITABLE). Checked first.
-                AccessQueryGuard.EnsureWritablePath(ckCacheService, tenantId, ckTypeId, cellDto.AttributePath);
+                // row, ReadOnly only on create (AB#8047) - the same rule as the generic mutations
+                // (ATTRIBUTE_NOT_WRITABLE). Checked first.
+                AccessQueryGuard.EnsureWritablePath(ckCacheService, tenantId, ckTypeId, cellDto.AttributePath,
+                    isCreate);
                 // AB#8042: identity-owned User fields are written only by the identity service.
                 IdentityOwnedWriteGuard.EnsureWritablePath(ckTypeId, cellDto.AttributePath);
 

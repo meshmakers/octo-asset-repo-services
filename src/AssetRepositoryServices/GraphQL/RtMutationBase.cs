@@ -47,10 +47,13 @@ internal abstract class RtMutationBase : ObjectGraphType
         }, "Access denied by data permissions.");
     }
 
+    // isCreate: a ReadOnly attribute may be set once on create, never on update (AB#8047, the engine's
+    // AttributeAccess.IsGenericallyWritable).
     protected async Task RtEntityFromInputObjectAsync(ICkCacheService ckCacheService, string tenantId,
         RtEntity rtEntity,
         RtEntityDto rtEntityDto,
-        List<AssociationUpdateInfo> associations)
+        List<AssociationUpdateInfo> associations,
+        bool isCreate)
     {
         var ckTypeGraph =
             ckCacheService.GetRtCkType(tenantId, rtEntity.CkTypeId ?? throw OctoGraphQLException.CkTypeIdUndefined());
@@ -62,7 +65,7 @@ internal abstract class RtMutationBase : ObjectGraphType
             foreach (var item in rtEntityDto.Attributes)
             {
                 if (await TryHandleAttributeAsync(ckCacheService, tenantId, rtEntity, ckTypeGraph,
-                        item.AttributeName.ToPascalCase(), item.Value))
+                        item.AttributeName.ToPascalCase(), item.Value, isCreate))
                 {
                     continue;
                 }
@@ -150,13 +153,14 @@ internal abstract class RtMutationBase : ObjectGraphType
     private async Task<bool> TryHandleAttributeAsync(ICkCacheService ckCacheService, string tenantId,
         RtTypeWithAttributes rtTypeWithAttributes,
         CkTypeWithAttributesGraph ckTypeWithAttributesGraph, string attributeName,
-        object? value)
+        object? value, bool isCreate)
     {
         if (ckTypeWithAttributesGraph.AllAttributesByName.TryGetValue(attributeName, out var ckTypeAttributeGraph))
         {
-            // CK v2 (AB#5668): Hidden and MethodOnly attributes are not writable through the generic mutations.
-            // Checked before any value handling, and before an unknown name would fall through to associations.
-            if (!AttributeAccess.IsExposedInGenericInput(ckTypeAttributeGraph.Access))
+            // CK v2 (AB#5668): Hidden and MethodOnly attributes are not writable through the generic mutations;
+            // ReadOnly only on create (AB#8047, the engine rule). Checked before any value handling, and before an
+            // unknown name would fall through to associations. Record members follow the create/update of the entity.
+            if (!AttributeAccess.IsGenericallyWritable(ckTypeAttributeGraph.Access, isCreate))
             {
                 throw HiddenAttributeAccessException.NotWritable(attributeName,
                     GetElementName(ckTypeWithAttributesGraph), ckTypeAttributeGraph.Access);
@@ -184,7 +188,7 @@ internal abstract class RtMutationBase : ObjectGraphType
                     var rtRecordDto = ConvertToRtRecordDto(value, ckTypeAttributeGraph.ValueCkRecordId.ToRtCkId());
                     var rtRecord = await HandleRecordAsync(ckCacheService, tenantId,
                         ckTypeAttributeGraph.ValueCkRecordId,
-                        rtRecordDto);
+                        rtRecordDto, isCreate);
                     rtTypeWithAttributes.SetAttributeValue(ckTypeAttributeGraph.AttributeName,
                         ckTypeAttributeGraph.ValueType, rtRecord);
                     return true;
@@ -209,7 +213,7 @@ internal abstract class RtMutationBase : ObjectGraphType
                         var rtRecordDtoItem = ConvertToRtRecordDto(rtRecordItem, ckTypeAttributeGraph.ValueCkRecordId.ToRtCkId());
                         var rtRecordItemResult = await HandleRecordAsync(ckCacheService, tenantId,
                             ckTypeAttributeGraph.ValueCkRecordId,
-                            rtRecordDtoItem);
+                            rtRecordDtoItem, isCreate);
                         rtRecords.Add(rtRecordItemResult);
                     }
 
@@ -543,7 +547,7 @@ internal abstract class RtMutationBase : ObjectGraphType
 
     private async Task<RtRecord> HandleRecordAsync(ICkCacheService ckCacheService, string tenantId,
         CkId<CkRecordId> ckRecordId,
-        RtRecordDto rtRecordDto)
+        RtRecordDto rtRecordDto, bool isCreate)
     {
         var ckRecordGraph = ckCacheService.GetCkRecord(tenantId, ckRecordId);
 
@@ -557,7 +561,7 @@ internal abstract class RtMutationBase : ObjectGraphType
             foreach (var recordAttributeItem in rtRecordDto.Attributes)
             {
                 await TryHandleAttributeAsync(ckCacheService, tenantId, rtRecord, ckRecordGraph,
-                    recordAttributeItem.AttributeName.ToPascalCase(), recordAttributeItem.Value);
+                    recordAttributeItem.AttributeName.ToPascalCase(), recordAttributeItem.Value, isCreate);
             }
         }
 

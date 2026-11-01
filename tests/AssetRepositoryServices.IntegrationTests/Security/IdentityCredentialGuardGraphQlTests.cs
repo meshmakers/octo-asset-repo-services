@@ -402,8 +402,8 @@ public class IdentityCredentialGuardGraphQlTests
         await AssertProbeUserUnchangedAsync();
     }
 
-    // Open gap: ReadOnly is not enforced on the generic update path yet. Enable with the fix.
-    [Theory(Skip = "AB#8047: the generic update writes ReadOnly attributes")]
+    // AB#8047: ReadOnly attributes are writable on create only, like in the engine (AttributeAccess.IsGenericallyWritable).
+    [Theory]
     [InlineData("lockoutEnd", "2020-01-01T00:00:00Z")]
     [InlineData("accessFailedCount", 0)]
     public async Task GenericUpdate_OfAReadOnlyLockoutAttribute_IsRefused(string attribute, object value)
