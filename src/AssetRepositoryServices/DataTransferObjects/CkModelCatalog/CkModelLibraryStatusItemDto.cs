@@ -111,4 +111,26 @@ public class CkModelLibraryStatusItemDto
     ///     catalog model (AB#7408).
     /// </summary>
     public bool IsRangeRetaining { get; set; }
+
+    /// <summary>
+    ///     AB#7998: the newest catalog version, when an installed dependent's range or exact pin excludes it (for example
+    ///     <c>2.0.0</c> while <c>EnergyIQ</c> requires <c>Basic.Energy-[1.9,2.0)</c>). The row then offers the highest
+    ///     version all dependents allow in <see cref="CatalogVersion" /> (with <see cref="NeedsAction" />), or, when
+    ///     there is none, stays blocked on the held-back version. <c>null</c> when nothing is held back. Optional.
+    /// </summary>
+    public string? HeldBackVersion { get; set; }
+
+    /// <summary>
+    ///     AB#7998: the dependents that hold <see cref="HeldBackVersion" /> back, one entry per dependent and
+    ///     requirement (<see cref="CkUpgradeBlockerDto.Dependent" />, the range or pin in
+    ///     <see cref="CkUpgradeBlockerDto.Subject" />); empty when nothing is held back.
+    /// </summary>
+    public List<CkUpgradeBlockerDto> HeldBackBy { get; set; } = [];
+
+    /// <summary>
+    ///     AB#7998: English summary for display, for example
+    ///     <c>2.0.0 available, held back by EnergyIQ 2.14.0 (Basic.Energy-[1.9,2.0))</c>; <c>null</c> when nothing is
+    ///     held back. Never parse it.
+    /// </summary>
+    public string? HeldBackReason { get; set; }
 }

@@ -183,6 +183,13 @@ public sealed class CkModelLibraryStatusService : ICkModelLibraryStatusService
         // Versions the catalogs offer: lets the upgrade guard suggest a newer version of a blocking dependent.
         var availableVersions = catalogModels.Select(m => m.ModelId).ToList();
 
+        // AB#7998: every offered version per name, newest first - a held-back row offers the highest allowed one.
+        var catalogVersionsByName = catalogModels
+            .GroupBy(m => m.ModelId.Name)
+            .ToDictionary(g => g.Key, g => (IReadOnlyList<CatalogResultItem>)g
+                .OrderByDescending(m => m.ModelId.Version).ToList());
+        var installedModels = installedResult.Items.ToList();
+
         // Build merged view
         var items = new List<CkModelLibraryStatusItemDto>();
         var processedNames = new HashSet<string>();
@@ -190,8 +197,8 @@ public sealed class CkModelLibraryStatusService : ICkModelLibraryStatusService
         foreach (var inst in installedResult.Items)
         {
             processedNames.Add(inst.ModelId);
-            items.Add(await BuildInstalledItemAsync(inst, catalogByName, installedSystemVersions,
-                snapshot, tenantContext, availableVersions, memo, cancellationToken));
+            items.Add(await BuildInstalledItemAsync(inst, catalogByName, catalogVersionsByName, installedSystemVersions,
+                snapshot, installedModels, tenantContext, availableVersions, memo, cancellationToken));
         }
 
         // Add catalog-only models (not installed)
@@ -259,7 +266,8 @@ public sealed class CkModelLibraryStatusService : ICkModelLibraryStatusService
 
         var updateSet = await ResolveImportSetAsync(roots, BuildInstalledSnapshot(installedResult.Items), memo,
             cancellationToken);
-        return await EvaluateBlockersAsync(tenantContext, updateSet, availableVersions, memo, cancellationToken);
+        return await EvaluateBlockersAsync(tenantContext, updateSet, availableVersions, memo, cancellationToken,
+            installedModels: installedResult.Items.ToList());
     }
 
     /// <inheritdoc />
@@ -414,7 +422,7 @@ public sealed class CkModelLibraryStatusService : ICkModelLibraryStatusService
     /// </summary>
     private async Task<List<CkUpgradeBlockerDto>> EvaluateBlockersAsync(ITenantContext tenantContext,
         IReadOnlyList<CkModelId> candidates, IReadOnlyCollection<CkModelId> availableVersions, CatalogModelMemo memo,
-        CancellationToken cancellationToken, bool explicitCaller = false)
+        CancellationToken cancellationToken, bool explicitCaller = false, IReadOnlyCollection<CkModel>? installedModels = null)
     {
         // A candidate that is not published in a catalog cannot be judged and is left out (as for one candidate).
         var compiled = new List<ConstructionKit.Contracts.DataTransferObjects.CkCompiledModelRoot>();
@@ -433,21 +441,47 @@ public sealed class CkModelLibraryStatusService : ICkModelLibraryStatusService
         }
 
         return await EvaluateCompiledBlockersAsync(tenantContext, compiled, availableVersions, memo, explicitCaller,
-            cancellationToken);
+            cancellationToken, installedModels);
     }
 
     private async Task<List<CkUpgradeBlockerDto>> EvaluateCompiledBlockersAsync(ITenantContext tenantContext,
         IReadOnlyList<ConstructionKit.Contracts.DataTransferObjects.CkCompiledModelRoot> compiled,
         IReadOnlyCollection<CkModelId> availableVersions, CatalogModelMemo memo, bool explicitCaller,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken, IReadOnlyCollection<CkModel>? installedModels = null)
     {
         var result = await JudgeAsync(tenantContext, compiled, availableVersions, explicitCaller, cancellationToken);
+        var blockers = await MapEngineBlockersAsync(tenantContext, compiled, result, availableVersions, memo,
+            explicitCaller, cancellationToken);
+
+        // AB#7998: the requirements of the installed dependents, for every version of the set - also a candidate of
+        // another major, which the engine guard treats as a parallel install although the import replaces the
+        // installed version. A (dependent, update) pair the engine already reported is not reported twice.
+        installedModels ??= await LoadInstalledModelsAsync(tenantContext);
+        var reported = blockers.Select(b => (b.Dependent, b.Update)).ToHashSet();
+        blockers.AddRange(CkDependentRequirementGuard.Evaluate(installedModels, compiled, explicitCaller)
+            .Where(b => !reported.Contains((b.Dependent, b.Update))));
+        return blockers;
+    }
+
+    private static async Task<IReadOnlyCollection<CkModel>> LoadInstalledModelsAsync(ITenantContext tenantContext)
+    {
+        var repository = tenantContext.GetTenantRepository();
+        var installed = await repository.GetCkModelsAsync(repository.GetSession(), null, RtEntityQueryOptions.Create(),
+            take: ModelPageSize);
+        return installed.Items.ToList();
+    }
+
+    private async Task<List<CkUpgradeBlockerDto>> MapEngineBlockersAsync(ITenantContext tenantContext,
+        IReadOnlyList<ConstructionKit.Contracts.DataTransferObjects.CkCompiledModelRoot> compiled,
+        CkUpgradeGuardResult result, IReadOnlyCollection<CkModelId> availableVersions, CatalogModelMemo memo,
+        bool explicitCaller, CancellationToken cancellationToken)
+    {
+        var blockers = new List<CkUpgradeBlockerDto>();
         if (!result.IsBlocked)
         {
-            return [];
+            return blockers;
         }
 
-        var blockers = new List<CkUpgradeBlockerDto>();
         foreach (var blocker in result.Blockers)
         {
             var dto = ToDto(blocker);
@@ -668,10 +702,12 @@ public sealed class CkModelLibraryStatusService : ICkModelLibraryStatusService
     // Build one library-status row for an installed model. Catches per-item failures so a
     // single misbehaving model does not collapse the whole library-status response into a 500.
     private async Task<CkModelLibraryStatusItemDto> BuildInstalledItemAsync(
-        Runtime.Contracts.MongoDb.Repositories.Entities.CkModel inst,
+        CkModel inst,
         Dictionary<string, CatalogResultItem> catalogByName,
+        IReadOnlyDictionary<string, IReadOnlyList<CatalogResultItem>> catalogVersionsByName,
         Dictionary<string, CkVersion> installedSystemVersions,
         InstalledSnapshot installed,
+        IReadOnlyCollection<CkModel> installedModels,
         ITenantContext tenantContext,
         IReadOnlyCollection<CkModelId> availableVersions,
         CatalogModelMemo memo,
@@ -709,10 +745,27 @@ public sealed class CkModelLibraryStatusService : ICkModelLibraryStatusService
             var blockers = new List<CkUpgradeBlockerDto>();
             if (hasUpdate && isCompatible && !hasInconsistency)
             {
-                var updateSet = await ResolveUpdateSetAsync(catalog!.ModelId, installed, memo,
+                blockers = await EvaluateRowBlockersAsync(catalog!.ModelId, installed, installedModels, tenantContext,
+                    availableVersions, memo, cancellationToken);
+            }
+
+            // AB#7998: the newest version is excluded by a dependent's range or pin. Offer the highest version all
+            // dependents allow instead (FixAll imports it), and name the held-back version and who holds it back.
+            string? heldBackVersion = null;
+            List<CkUpgradeBlockerDto> heldBackBy = [];
+            var requirementBlockers = blockers.Where(CkDependentRequirementGuard.IsRequirementBlocker).ToList();
+            if (requirementBlockers.Count > 0)
+            {
+                heldBackVersion = catalog!.ModelId.Version.ToString();
+                heldBackBy = requirementBlockers;
+                var allowed = await FindHighestAllowedAsync(inst, catalog, catalogVersionsByName,
+                    installedSystemVersions, installed, installedModels, tenantContext, availableVersions, memo,
                     cancellationToken);
-                blockers = await EvaluateBlockersAsync(tenantContext, updateSet, availableVersions, memo,
-                    cancellationToken);
+                if (allowed != null)
+                {
+                    catalog = allowed;
+                    blockers = [];
+                }
             }
 
             var isBlocked = blockers.Count > 0;
@@ -738,7 +791,10 @@ public sealed class CkModelLibraryStatusService : ICkModelLibraryStatusService
                 HasCatalogInconsistency = hasInconsistency,
                 IsBlocked = isBlocked,
                 Blockers = blockers,
-                IsRangeRetaining = inst.DependencyRanges is { Length: > 0 }
+                IsRangeRetaining = inst.DependencyRanges is { Length: > 0 },
+                HeldBackVersion = heldBackVersion,
+                HeldBackBy = heldBackBy,
+                HeldBackReason = heldBackVersion == null ? null : DescribeHeldBack(heldBackVersion, heldBackBy)
             };
         }
         catch (Exception ex)
@@ -762,6 +818,68 @@ public sealed class CkModelLibraryStatusService : ICkModelLibraryStatusService
                 HasCatalogInconsistency = true
             };
         }
+    }
+
+    /// <summary>
+    ///     The blockers of one offered version of a row: the version plus the dependency updates its import pulls in
+    ///     (AB#7017), judged by the engine guard and the dependents' requirements (AB#7998).
+    /// </summary>
+    private async Task<List<CkUpgradeBlockerDto>> EvaluateRowBlockersAsync(CkModelId offered,
+        InstalledSnapshot installed, IReadOnlyCollection<CkModel> installedModels, ITenantContext tenantContext,
+        IReadOnlyCollection<CkModelId> availableVersions, CatalogModelMemo memo, CancellationToken cancellationToken)
+    {
+        var updateSet = await ResolveUpdateSetAsync(offered, installed, memo, cancellationToken);
+        return await EvaluateBlockersAsync(tenantContext, updateSet, availableVersions, memo, cancellationToken,
+            installedModels: installedModels);
+    }
+
+    /// <summary>
+    ///     AB#7998: the highest catalog version of the row, newer than the installed one and older than the held-back
+    ///     one, that every installed dependent admits, that is compatible with the installed System models and whose
+    ///     import set the guard does not block. <c>null</c> when there is none. Versions an installed dependent
+    ///     excludes are skipped without a guard evaluation.
+    /// </summary>
+    private async Task<CatalogResultItem?> FindHighestAllowedAsync(CkModel inst, CatalogResultItem heldBack,
+        IReadOnlyDictionary<string, IReadOnlyList<CatalogResultItem>> catalogVersionsByName,
+        Dictionary<string, CkVersion> installedSystemVersions, InstalledSnapshot installed,
+        IReadOnlyCollection<CkModel> installedModels, ITenantContext tenantContext,
+        IReadOnlyCollection<CkModelId> availableVersions, CatalogModelMemo memo, CancellationToken cancellationToken)
+    {
+        if (!catalogVersionsByName.TryGetValue(inst.ModelId, out var versions))
+        {
+            return null;
+        }
+
+        foreach (var candidate in versions.Where(v =>
+                     v.ModelId.Version.CompareTo(heldBack.ModelId.Version) < 0 &&
+                     v.ModelId.Version.CompareTo(inst.Id.Version) > 0 &&
+                     CkDependentRequirementGuard.IsAdmittedByInstalled(installedModels, v.ModelId)))
+        {
+            var unresolved = new List<string>();
+            var (compatible, _) = await CheckSystemCompatibilityAsync(candidate.ModelId, installedSystemVersions,
+                new HashSet<string>(), unresolved, memo, cancellationToken);
+            if (!compatible || unresolved.Count > 0)
+            {
+                continue;
+            }
+
+            var blockers = await EvaluateRowBlockersAsync(candidate.ModelId, installed, installedModels, tenantContext,
+                availableVersions, memo, cancellationToken);
+            if (blockers.Count == 0)
+            {
+                return candidate;
+            }
+        }
+
+        return null;
+    }
+
+    private static string DescribeHeldBack(string heldBackVersion, IReadOnlyCollection<CkUpgradeBlockerDto> heldBackBy)
+    {
+        var by = heldBackBy
+            .Select(b => $"{new CkModelId(b.Dependent).Name} {new CkModelId(b.Dependent).Version} ({b.Subject})")
+            .Distinct(StringComparer.Ordinal);
+        return $"{heldBackVersion} available, held back by {string.Join(", ", by)}";
     }
 
     private async Task<CkModelLibraryStatusItemDto> BuildCatalogOnlyItemAsync(
