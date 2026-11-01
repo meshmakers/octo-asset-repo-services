@@ -4,6 +4,8 @@ using FluentAssertions;
 using GraphQL;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Collections;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Fixtures;
+using Meshmakers.Octo.ConstructionKit.Models.System.Generated.System.v2;
+using Meshmakers.Octo.Runtime.Contracts.RepositoryEntities;
 using Newtonsoft.Json.Linq;
 using Xunit;
 using F = Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Fixtures.IdentityCredentialGuardFixture;
@@ -310,6 +312,28 @@ public class IdentityCredentialGuardGraphQlTests
         AssertNoDummyValue(createJson);
         create.Errors.Should().NotBeNullOrEmpty("a stored credential filter is refused when saved (AB#8049)");
         create.Errors!.Select(e => e.Code).Should().Contain("ATTRIBUTE_NOT_QUERYABLE", createJson);
+
+        // A query that arrives without the save-time check (import, restore) is refused when it runs.
+        var repository = _fixture.GetSystemContext().GetSystemTenantRepository();
+        var query = await repository.CreateTransientRtEntityAsync<RtSimpleRtQuery>();
+        query.Name = "credential-filter-imported";
+        query.QueryCkTypeId = F.UserCkTypeId;
+        query.Columns = new AttributeStringValueList(["userName"]);
+        query.FieldFilter = new AttributeRecordValueList<RtFieldFilterRecord>
+        {
+            new() { AttributePath = path, Operator = RtFieldFilterOperatorEnum.Equals, ComparisonValue = StoredGuess }
+        };
+        using (var session = await repository.GetSessionAsync())
+        {
+            session.StartTransaction();
+            await repository.InsertOneRtEntityAsync(session, query);
+            await session.CommitTransactionAsync();
+        }
+
+        await AssertRefusedAsync($$"""
+            query { runtime { runtimeQuery(rtId: "{{query.RtId}}") {
+              items { rows { totalCount items { ... on RtSimpleQueryRow { cells { items { attributePath value } } } } } } } } }
+            """, "ATTRIBUTE_NOT_QUERYABLE");
     }
 
     // ------------------------------------------------------------------------------------------------- writes
