@@ -695,7 +695,8 @@ schema initialization.
 - **Identity-owned User fields and identity associations (AB#8042)**: `GraphQL/Utils/IdentityOwnedWriteGuard` refuses, for every caller,
   the attributes and association roles listed in the engine's `IdentityOwnedWrites` (ConstructionKit.Contracts): User `NormalizedUserName`,
   `NormalizedEmail`, `EmailConfirmed`, `PhoneNumberConfirmed`, `TwoFactorEnabled`, `LockoutEnabled`, `ResetPasswordOnLogin`, `Claims`, `UserLogins`,
-  `PreferredChannelBindingId`; associations `AssignedRole`, `GroupMember`, `ChildGroup`, `MayActAs`, `GrantsPermission` (insert and delete, from
+  `PreferredChannelBindingId`, `LockoutEnd`, `AccessFailedCount` (AB#8059; both are `ReadOnly` in the model and already refused by the access
+  guard, the list adds them for the user-started import); associations `AssignedRole`, `GroupMember`, `ChildGroup`, `MayActAs`, `GrantsPermission` (insert and delete, from
   either end). Call sites: `RtMutationBase.TryHandleAttributeAsync` (typed and generic create/update attribute input), `RtMutationBase.ApplyChangesAsync`
   (all associations of the typed and generic create/update), `QueryMapper.RtEntityFromInputObject` (query-row cells) and `RtQueryMutation` create/update
   (query-row navigation associations). Refusal: `ATTRIBUTE_NOT_WRITABLE` (`HiddenAttributeAccessException.IdentityOwned`) with the extra extension

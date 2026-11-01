@@ -22,6 +22,8 @@ public class IdentityOwnedWriteGuardTests
     [InlineData("TwoFactorEnabled")]
     [InlineData("claims.value")]
     [InlineData("userLogins[0].loginProvider")]
+    [InlineData("lockoutEnd")] // AB#8059: the lockout fields joined the engine list; the guard reads the list
+    [InlineData("accessFailedCount")]
     public void QueryRowPath_OnAnIdentityOwnedUserField_IsRefused_WithTheReason(string path)
     {
         var act = () => IdentityOwnedWriteGuard.EnsureWritablePath(User, path);

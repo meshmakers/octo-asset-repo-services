@@ -153,6 +153,8 @@ public class IdentityCredentialGuardExchangeTests
     [InlineData("System.Identity/EmailConfirmed", "true")]
     [InlineData("System.Identity/NormalizedUserName", "'OTHER-USER'")]
     [InlineData("System.Identity/ResetPasswordOnLogin", "false")]
+    [InlineData("System.Identity/LockoutEnd", "'2000-01-01T00:00:00Z'")] // AB#8059: a caller import cannot reset a lockout
+    [InlineData("System.Identity/AccessFailedCount", "0")]
     public async Task ImportRt_CallerPath_IdentityOwnedField_IsRefused_AndWritesNothing(string attributeId, string value)
     {
         var rtId = OctoObjectId.GenerateNewId().ToString();
