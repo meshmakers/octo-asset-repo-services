@@ -4,6 +4,7 @@ using System.Text;
 using System.Text.Json;
 using Meshmakers.Octo.Runtime.Contracts.Blueprints;
 using Meshmakers.Octo.Runtime.Contracts.TransportContainer.DTOs;
+using Meshmakers.Octo.Runtime.Contracts.Exchange;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.DataTransferObjects.Blueprints;
 
@@ -63,12 +64,29 @@ internal static class BlueprintUpdatePreviewMapper
             EntitiesSkipped = result.EntitiesSkipped,
             Warnings = result.Warnings.ToList(),
             BlankedAttributes = ToDtos(result.BlankedAttributes),
+            ArchiveColumnsAdded = ToDtos(result.ArchiveColumnsAdded),
             TenantOwnedSkipped = ToDtos(result.TenantOwnedSkipped),
             TenantOwnedStaysDeleted = ToDtos(result.TenantOwnedStaysDeleted),
             IsBlocked = result.IsCkUpgradeBlocked,
             CkUpdateSet = result.CkUpdateSet.ToList(),
             Blockers = ToDtos(result.CkUpgradeBlockers)
         };
+    }
+
+    /// <summary>
+    ///     AB#7997: the columns a blueprint update added to activated archives.
+    /// </summary>
+    public static List<BlueprintArchiveColumnAdditionDto> ToDtos(IEnumerable<RtImportArchiveColumnAddition> additions)
+    {
+        return additions.Select(a => new BlueprintArchiveColumnAdditionDto
+        {
+            ArchiveRtId = a.ArchiveRtId.ToString(),
+            ArchiveWellKnownName = a.ArchiveWellKnownName,
+            Column = a.Column,
+            IsComputed = a.IsComputed,
+            BackfillJobRtId = a.BackfillJobRtId?.ToString(),
+            Error = a.Error
+        }).ToList();
     }
 
     /// <summary>

@@ -55,6 +55,28 @@ public class StreamDataControllerComputedColumnTests
             A<FormulaResultType>._, A<bool>._)).MustNotHaveHappened();
     }
 
+    // AB#7997: an ingested column is added through the lifecycle with the host token, not indexed by default.
+    [Fact]
+    public async Task AddArchiveColumn_CallsTheLifecycle_WithTheHostToken()
+    {
+        var result = await _controller.AddArchiveColumn(TenantId, Archive.ToString(), "DischargingPower");
+
+        result.Should().BeOfType<NoContentResult>();
+        A.CallTo(() => _lifecycle.AddArchiveColumnAsync(Archive, "DischargingPower", false, _stopping.Token))
+            .MustHaveHappenedOnceExactly();
+    }
+
+    [Fact]
+    public async Task AddArchiveColumn_UnknownPath_IsABadRequest()
+    {
+        A.CallTo(() => _lifecycle.AddArchiveColumnAsync(A<OctoObjectId>._, A<string>._, A<bool>._, A<CancellationToken>._))
+            .Throws(new ArchivePathInvalidException(Archive, "Nope", "attribute 'Nope' is not defined"));
+
+        var result = await _controller.AddArchiveColumn(TenantId, Archive.ToString(), "Nope", indexed: true);
+
+        result.Should().BeOfType<BadRequestObjectResult>();
+    }
+
     [Fact]
     public async Task UpdateFormula_QueuesTheBackfill_AndNeverBackfillsInline()
     {

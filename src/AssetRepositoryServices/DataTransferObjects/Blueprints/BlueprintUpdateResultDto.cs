@@ -36,6 +36,11 @@ public class BlueprintUpdateResultDto
     public List<BlueprintBlankedAttributeDto> BlankedAttributes { get; set; } = [];
 
     /// <summary>
+    ///     Update only (AB#7997): columns the update added to activated archives, each with its outcome. Empty when none.
+    /// </summary>
+    public List<BlueprintArchiveColumnAdditionDto> ArchiveColumnsAdded { get; set; } = [];
+
+    /// <summary>
     ///     Tenant-owned seed entities the update leaves untouched because the tenant still holds them
     ///     (AB#6454, engine AB#6383). Identity only, never attribute values. Counted in the skipped total.
     /// </summary>

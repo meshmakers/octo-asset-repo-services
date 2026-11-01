@@ -116,6 +116,13 @@ internal sealed class StreamDataMutation : ObjectGraphType
             .Argument<BooleanGraphType>("indexed", "Whether the physical column is indexed. Defaults to true.")
             .ResolveAsync(ResolveAddComputedColumnAsync);
 
+        Field<NonNullGraphType<ArchiveTransitionResultDtoType>>("addArchiveColumn")
+            .Description("Adds an ingested column for an existing attribute of the target CK type to an Activated raw or time-range archive without recreating it (AB#7997). The table gains a nullable column first - existing rows keep their data and read null for it - then the archive definition names it, and the next ingested rows fill it. Idempotent: a path the archive already captures changes nothing. Refused on a rollup (its columns are derived) and for a path that does not resolve. Requires StreamDataAdmin.")
+            .Argument<NonNullGraphType<OctoObjectIdType>>(Statics.RtIdArg, "Runtime id of the archive to add the column to.")
+            .Argument<NonNullGraphType<StringGraphType>>("path", "Attribute path on the archive's target CK type (e.g. 'DischargingPower' or 'Amount.Value').")
+            .Argument<BooleanGraphType>("indexed", "Whether the physical column is indexed. Defaults to false.")
+            .ResolveAsync(ResolveAddArchiveColumnAsync);
+
         Field<NonNullGraphType<ArchiveTransitionResultDtoType>>("removeComputedColumn")
             .Description("Removes a computed column from an archive. Rejected when another computed column still references it. The physical CrateDB column is left as a harmless orphan the read path no longer projects. Requires StreamDataAdmin. AB#4189.")
             .Argument<NonNullGraphType<OctoObjectIdType>>(Statics.RtIdArg, "Runtime id of the archive to remove the computed column from.")
@@ -240,6 +247,40 @@ internal sealed class StreamDataMutation : ObjectGraphType
             var snapshot = await store.GetAsync(archiveRtId)
                 ?? throw new ArchiveNotFoundException(archiveRtId);
             return new ArchiveTransitionResultDto(archiveRtId, snapshot.Status, "AddComputedColumn");
+        }
+        catch (Exception e)
+        {
+            return ctx.HandleException(e);
+        }
+    }
+
+    private async Task<object?> ResolveAddArchiveColumnAsync(IResolveFieldContext<object?> ctx)
+    {
+        try
+        {
+            var archiveRtId = ctx.GetArgument<OctoObjectId>(Statics.RtIdArg);
+            var path = ctx.GetArgument<string>("path");
+            var indexed = ctx.GetArgument<bool?>("indexed") ?? false;
+            _logger.LogDebug("Add column '{Path}' requested for archive {ArchiveRtId}", path, archiveRtId);
+
+            var gql = (GraphQlUserContext)ctx.UserContext;
+            if (gql.User?.IsInRole(CommonConstants.StreamDataAdminRole) != true)
+            {
+                ctx.Errors.Add(new ExecutionError(
+                    $"Adding an archive column requires the '{CommonConstants.StreamDataAdminRole}' role.")
+                {
+                    Code = Statics.GraphQlForbidden,
+                });
+                return null;
+            }
+
+            var lifecycle = gql.TenantContext.GetArchiveLifecycleService()
+                ?? throw AssetRepositoryException.StreamDataNotAvailable();
+            await lifecycle.AddArchiveColumnAsync(archiveRtId, path, indexed, HostToken(ctx));
+
+            var snapshot = await gql.TenantContext.GetArchiveRuntimeStore().GetAsync(archiveRtId)
+                ?? throw new ArchiveNotFoundException(archiveRtId);
+            return new ArchiveTransitionResultDto(archiveRtId, snapshot.Status, "AddArchiveColumn");
         }
         catch (Exception e)
         {
