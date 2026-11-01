@@ -47,6 +47,10 @@
         <None Update="testData\sampleRtModel.yaml">
             <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
         </None>
+        <!-- Credential guard tests: compiler output of the real System.Identity model (provenance: testData/ck-models/README.md). -->
+        <None Update="testData\ck-models\*.yaml">
+            <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+        </None>
         <!-- AB#6315: blueprint catalog root of the blanking preview/apply flow test. -->
         <Content Include="TestBlueprints/**/*.yaml">
             <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>

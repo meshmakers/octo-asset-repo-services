@@ -658,6 +658,16 @@ schema initialization.
     navigation filters, and `RtMutationBase.GetRtQueryRowResultSet`): hidden paths and hidden selector keys →
     `ATTRIBUTE_NOT_QUERYABLE`, Secret selector keys → `SecretAttributeNotQueryable`. Navigation lookups in
     query-row writes (`QueryMapperEngine.EvaluateNavigationFilters`) reject hidden keys as well.
+  - **Stored queries are checked when they are saved (AB#8049)**: `RtMutationBase.ApplyChangesAsync` (typed and generic
+    create/update/replace) calls `StoredQueryWriteGuard.EnsureStoredQueriesAllowedAsync` for every entity of a type derived from
+    `System/PersistentQuery`. Field filters, sort orders, columns (strings or aggregation records), group-by columns and
+    attribute-search paths are checked with `AccessQueryGuard.EnsureStoredQueryPathsAllowed` against the query type and every
+    derived type (unknown or missing query type: by name, fail closed); on an update the effective query (update over the stored
+    entity) is judged, so retargeting `QueryCkTypeId` under an existing filter is refused too. Refusal: `ATTRIBUTE_NOT_QUERYABLE`,
+    nothing stored, no value in the error. Why: running such a query here was already refused, but the export job (bot-services) and
+    the pipeline nodes (`GetQueryById@1`, notifications) apply a stored filter as it is - they check stored queries themselves too,
+    because a query can also arrive through `ImportRt`, a restore or an older version. Not covered at save time: `ImportRt` and the
+    query-row mutations. Tests: `UnitTests/GraphQL/StoredQueryWriteGuardTests`, `IntegrationTests/GraphQL/CkV2/StoredQueryHiddenAttributeTests`.
   - Every segment of a record path counts: a Hidden (or, for writes, MethodOnly) record-valued attribute also
     protects `record.field` (re-review M7 gap).
   - Paths across a navigation (`->`), selector keys and paths against an unknown type are matched by attribute name
@@ -668,8 +678,18 @@ schema initialization.
 - Both codes come from `HiddenAttributeAccessException`, mapped by `HandleException` and the GraphQL
   `UnhandledExceptionDelegate` (`TryCreateAttributeAccessError`).
 - CK meta: `CkTypeAttribute.access: String!` (`ReadWrite` / `ReadOnly` / `MethodOnly` / `Hidden`).
-- **Known limitations** (platform-owner decision 2026-10-08, fixed with System.Identity v2 in CK v2 Phase 4):
-  `ImportRt` writes and RT export emit Hidden / MethodOnly values (review H2/H3), user tokens (H4).
+- **Export / import** (review H2/H3/H4, closed by the engine in AB#7767): RT export skips Hidden values, RT import and
+  blueprint seed refuse Hidden / MethodOnly values (engine message 139). Pinned for the real System.Identity user by the
+  credential guard tests (below).
+- **Credential guard regression tests (AB#7781)**: `tests/AssetRepositoryServices.IntegrationTests/Security/IdentityCredentialGuard*Tests`
+  run every GraphQL, export, import and blueprint-seed path against the **real** System.Identity model (compiler output in
+  `testData/ck-models/`, loaded by `Fixtures/SystemIdentitySnapshotCkModel`; refresh procedure in the README there) with a user whose
+  `PasswordHash`, `SecurityStamp` and `UserTokens` hold fixed dummy values; no response, export file or captured log line may contain
+  them. Path table: the README of the integration test project. Open gaps are skipped tests with the bug in the skip reason:
+  AB#8042 (identity flags, claims, logins, role/group associations still ReadWrite), AB#8047 (ReadOnly not enforced on update, next
+  bullet), AB#8048 (the MongoDB command log and slow-query buffer print Hidden values of a write), and the pending
+  `replacesGenericCreate` of `CreateUser`. A stored query whose filter or selector reaches a credential is refused when it is saved
+  (AB#8049, `StoredQuery_WithACredentialFilter_IsRefusedWhenSaved`, `EntitySelector_InAStoredQuery_IsRefused`).
 - **Stream data** (review M12 / G3 E-M2): no archive column may reach a Hidden attribute. The engine refuses to
   activate such an archive and fails an active one when a model change makes a column reach Hidden
   (`ArchiveHiddenColumnGuard`, `ArchiveLifecycleService`). The asset-repo additionally refuses every stream-data
@@ -691,7 +711,8 @@ schema initialization.
   under one process-wide semaphore and does not cache failures, so a broken tenant serialises all cache-miss builds.
   Compiler rule I-5 only compares exact type/interface names.
 - **`ReadOnly`** is parsed, persisted and shown in the CK meta API (`access`), but not enforced on the GraphQL write
-  path yet (the generic input types and mutations treat it like `ReadWrite`).
+  path yet (the generic input types and mutations treat it like `ReadWrite`): a generic update changes the ReadOnly
+  `LockoutEnd` / `AccessFailedCount` of a user (AB#8047; fix = `AttributeAccess.IsGenericallyWritable(access, isCreate)`).
 - Tests: `CkAttributeAccessSchemaTests`, `AccessQueryGuardTests` (unit); `GraphQL/CkV2/HiddenAttributeTests` and
   `HiddenAttributeNavigationTests` (integration, test types `AccessTestAccount` --`AccessTestMembership`-->
   `AccessTestGroup`; the test model is `ckLanguage: 2`).
@@ -1407,6 +1428,38 @@ enforce the guard **before anything is cached or queued** (`ModelsController.Enf
 **Request body:** Same as ImportFromCatalog (`catalogName` + `modelId`).
 
 **Response:** `UpgradeCheckResponseDto` with: `modelName`, `installedVersion`, `targetVersion`, `upgradeNeeded`, `migrationPathAvailable`, `hasBreakingChanges`, `errorMessage`, plus `isBlocked` and `blockers[]` (tenant upgrade guard, AB#6868, see above).
+
+#### Dependents' ranges and pins hold a version back (AB#7998)
+
+The engine guard (`EvaluateCkUpdateAsync`) treats a candidate of **another major** than the installed version as a parallel
+install and does not judge it, but the import replaces the installed version: FixAll upgraded `Basic.Energy` 1.10.0 to
+2.0.0 and `EnergyIQ` 2.14.0 (range `Basic.Energy-[1.9,2.0)`) became `ResolveFailed`. `Services/CkDependentRequirementGuard`
+closes this for every version and every guard surface (it runs inside `EvaluateCompiledBlockersAsync`, so LibraryStatus rows,
+`ResolveDependencies*`, `ImportFromCatalog*`, the blueprint guard and the file import all use it):
+
+- A candidate whose name is installed `Available` in another version must lie inside the intersection of the requirements of
+  every installed `Available` dependent the set does not replace, and of the models of the set (judged by their new
+  requirements): range-retaining dependent = its declared range of the **direct** dependency, at or above the floor (a pin
+  without a range entry is transitive, AB#7940, and is not judged); classic dependent = its exact pin. Service-managed
+  candidates only for explicit callers (file import, CheckUpgrade). ResolveFailed dependents and candidates that are not
+  installed are ignored, like in the engine guard.
+- Blockers have the engine's shape: kind `RangeNotSatisfied` (`CK_UPGRADE_RANGE_NOT_SATISFIED`, subject = declared range) or
+  `ExactPin` (`CK_UPGRADE_EXACT_PIN`, subject = the pin), message `EnergyIQ 2.14.0 would break: range Basic.Energy-[1.9,2.0)
+  (floor 1.9.0) does not admit Basic.Energy-2.0.0`. A (dependent, update) pair the engine already reported is not repeated.
+- **Single import past a range** is therefore the existing `409 CK_UPGRADE_BLOCKED` naming the dependent; `forceBreakingUpdate`
+  (octo-cli `ImportFromCatalog --force…`) still overrides it with the WARN audit line. FixAll never forces.
+- **LibraryStatus row**: when the newest version has a requirement blocker (`RangeNotSatisfied`, `ExactPin`, `FloorNotMet`),
+  the row looks for the **highest allowed** catalog version (newer than installed, admitted by all installed dependents,
+  compatible with the installed System models, its import set unblocked) and offers it in `catalogVersion` / `fullModelId` /
+  `catalogName` with `needsAction = true` - FixAll imports it. Without one the row stays blocked on the newest version
+  (`needsAction = false`). In both cases the new optional members `heldBackVersion` (newest version), `heldBackBy[]`
+  (`CkUpgradeBlockerDto`: dependent + range/pin) and `heldBackReason` (`2.0.0 available, held back by EnergyIQ 2.14.0
+  (Basic.Energy-[1.9,2.0))`, display only) say why. Cost: lower versions an installed dependent excludes are skipped without a
+  guard call; each remaining candidate costs one guard evaluation, newest first, until one passes.
+- Tests: `UnitTests/Services/CkDependentRequirementGuardTests` (pure check, rows, set evaluation, no duplicate pair),
+  `UnitTests/TenantApi/ModelsControllerDependentRangeGuardTests` (409 naming the dependent, forced import, batch),
+  `IntegrationTests/Tenant/DependentRangeGuardFlowTests` (real engine guard and tenant: range-retaining and exact-pinned
+  dependents, nothing written).
 
 #### Tenant upgrade guard for the file import (CK v2 F2.5, AB#6966)
 
