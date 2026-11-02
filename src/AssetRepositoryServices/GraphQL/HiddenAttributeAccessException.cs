@@ -89,6 +89,9 @@ internal sealed partial class HiddenAttributeAccessException : Exception
     ///     engine (<c>RtPathEvaluator</c>: <c>-&gt;name</c>, <c>.name</c>, <c>::meta</c>, or nothing); otherwise that
     ///     <c>]</c> belongs to the value of an unterminated selector (<c>[passwordHash='AQ]AA-secret</c>) and the path is
     ///     redacted to its end, as is a selector without any <c>]</c> after its <c>=</c>.
+    ///     AB#8081 (the quote check of the mesh adapter, AB#8077): the path is also redacted to its end when a quoted value
+    ///     is still open at the last <c>]</c> (an odd number of <c>'</c> or <c>"</c> between the <c>=</c> and that
+    ///     <c>]</c>, <c>[passwordHash='AQ]-&gt;AAsecret</c>), even if the rest looks like a valid path suffix.
     /// </remarks>
     internal static string RedactSelectorValues(string path)
     {
@@ -100,9 +103,34 @@ internal sealed partial class HiddenAttributeAccessException : Exception
         }
 
         var close = path.LastIndexOf(']');
-        return close > equals && PathSuffixRegex().IsMatch(path[(close + 1)..])
+        return close > equals && QuotesBalanced(path, equals + 1, close) && PathSuffixRegex().IsMatch(path[(close + 1)..])
             ? path[..equals] + "=…" + path[close..]
             : path[..equals] + "=…";
+    }
+
+    /// <summary>
+    ///     True when <c>'</c> and <c>"</c> each occur an even number of times in <paramref name="path" /> from
+    ///     <paramref name="start" /> (inclusive) to <paramref name="end" /> (exclusive). An odd count means a quoted value is
+    ///     still open at <paramref name="end" />, so the <c>]</c> there and what follows belong to the value (AB#8081).
+    /// </summary>
+    private static bool QuotesBalanced(string path, int start, int end)
+    {
+        var single = 0;
+        var doubleQuotes = 0;
+        for (var i = start; i < end; i++)
+        {
+            switch (path[i])
+            {
+                case '\'':
+                    single++;
+                    break;
+                case '"':
+                    doubleQuotes++;
+                    break;
+            }
+        }
+
+        return single % 2 == 0 && doubleQuotes % 2 == 0;
     }
 
     /// <summary>What may follow the last selector: path segments of the engine grammar, no brackets, no value.</summary>
