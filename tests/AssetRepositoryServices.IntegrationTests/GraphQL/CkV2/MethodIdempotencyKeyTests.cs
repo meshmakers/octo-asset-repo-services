@@ -36,6 +36,13 @@ public class MethodIdempotencyKeyTests
     private static ClaimsPrincipal Admin(string sub = "65f0c0ffee65f0c0ffee65f1") => new(new ClaimsIdentity(
         [new Claim("sub", sub), new Claim("scope", "octo_api openid"), new Claim("role", "AccessTestAdmin")], "test"));
 
+    /// <summary>A client-credentials token (AB#8078): <c>client_id</c> and <c>tenant_id</c>, no <c>sub</c>.</summary>
+    private static ClaimsPrincipal ServiceClient(string clientId = "pipeline-client") => new(new ClaimsIdentity(
+    [
+        new Claim("client_id", clientId), new Claim("tenant_id", "meshtest"), new Claim("scope", "octo_api"),
+        new Claim("role", "AccessTestAdmin")
+    ], "test"));
+
     private async Task<string> CreateAccountAsync()
     {
         var result = await _fixture.ExecuteGraphQlAsync($$"""
@@ -113,6 +120,34 @@ public class MethodIdempotencyKeyTests
             .Should().BeNullOrEmpty();
 
         _fixture.Observation.Runs.Should().Be(2);
+    }
+
+    [Fact]
+    public async Task KeyedCallOfAClientCredentialsCaller_ClaimsAndReplays_InsteadOfCallerUnknown()
+    {
+        // AB#8078: a service token has no sub; its key is scoped by client:<client_id>
+        var rtId = await CreateAccountAsync();
+        var key = UniqueKey();
+
+        var first = await ResetPasswordAsync(rtId, "correct-horse", key, ServiceClient());
+        var second = await ResetPasswordAsync(rtId, "correct-horse", key, ServiceClient());
+
+        first.Errors.Should().BeNullOrEmpty(_fixture.SerializeGraphQl(first));
+        second.Errors.Should().BeNullOrEmpty(_fixture.SerializeGraphQl(second));
+        _fixture.Observation.Runs.Should().Be(1, "the second call is a replay of the client's first call");
+    }
+
+    [Fact]
+    public async Task SameKeyOfAClientAndOfAUserWhoseSubIsTheClientId_AreTwoScopes_AndBothRun()
+    {
+        var rtId = await CreateAccountAsync();
+        var key = UniqueKey();
+        const string sharedName = "65f0c0ffee65f0c0ffee65f3";
+
+        (await ResetPasswordAsync(rtId, "correct-horse", key, ServiceClient(sharedName))).Errors.Should().BeNullOrEmpty();
+        (await ResetPasswordAsync(rtId, "correct-horse", key, Admin(sharedName))).Errors.Should().BeNullOrEmpty();
+
+        _fixture.Observation.Runs.Should().Be(2, "a user id and a client id never share an idempotency scope");
     }
 
     [Fact]

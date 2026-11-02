@@ -1,6 +1,6 @@
 # Method idempotency store (AB#7824, F3.5)
 
-A CK method call that carries an idempotency key runs at most once per tenant, method, caller subject and key, whichever
+A CK method call that carries an idempotency key runs at most once per tenant, method, caller (the `sub` of a user, `client:<client_id>` of a client-credentials token, AB#8078) and key, whichever
 asset repository replica the retry reaches. The rules (scope, parameter fingerprint, in-progress, stored results, lifetime,
 store location) are OD-4 (AB#6922); the filter that applies them is `CkMethodIdempotencyFilter` (octo-common-services,
 band 300, AB#7820). This document describes the store behind it: `Services/Methods/MongoMethodIdempotencyStore.cs`

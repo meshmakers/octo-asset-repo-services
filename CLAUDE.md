@@ -1064,7 +1064,7 @@ Every typed method mutation field takes the optional argument `idempotencyKey: S
 static methods alike). `CkMethodFieldResolver` puts it into `CkMethodGatewayCall.IdempotencyKey`, the gateway copies it unchanged into
 `CkMethodRequest.IdempotencyKey`, and the band-300 `CkMethodIdempotencyFilter` of octo-common-services applies the OD-4 rules (AB#6922); the gateway and the resolver
 validate nothing about the key themselves (the filter does, after authorization, the data-permission check and the parameter validation of the gateway). Rules as seen by
-a client: scope = tenant + method + caller subject + key (max 128 characters, longer = `METHOD_VALIDATION_FAILED` with `field = idempotencyKey`, `reason = key-too-long`);
+a client: scope = tenant + method + caller + key (caller = user `sub`, or `client:<client_id>` for a client-credentials token without `sub`: the gateway maps `client_id` through `CkMethodPrincipal.FromClaimsPrincipal`, AB#8078; tests `MethodIdempotencyKeyTests`, `CkMethodGatewayTests`; max 128 characters, longer = `METHOD_VALIDATION_FAILED` with `field = idempotencyKey`, `reason = key-too-long`);
 same key with other parameters = `METHOD_VALIDATION_FAILED` / `parameters-changed`; first call still running = `METHOD_REQUEST_IN_PROGRESS`; unknown outcome =
 `METHOD_OUTCOME_UNKNOWN` (the key is burned, as after a failed handler); a replay returns the first response with the new call's `invocationId` (the first invocation id is
 only in the audit facts as `ReplayOf`); a `resultSensitive` method refuses a key (`result-sensitive`); no fingerprint key configured = `fingerprint-key-missing` /
