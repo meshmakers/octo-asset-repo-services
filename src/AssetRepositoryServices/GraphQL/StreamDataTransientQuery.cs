@@ -123,10 +123,14 @@ internal sealed class StreamDataTransientQuery : ObjectGraphType
             var execArgs = ctx.GetArgument<StreamDataArguments?>(Statics.StreamDataArgument);
             var fieldFilters = fieldFilterDtos?.ToList();
             // CK v2 (review G3 E-M2): no filter operator (incl. IS_NULL) on a Hidden attribute.
+            // AB#7812: anchor columns are display only - not in a field filter (any operator).
+            StreamDataAnchorColumns.EnsureNone(fieldFilters?.Select(f => f.AttributePath), "a field filter");
             StreamDataHiddenGuard.For(ctx, gql.TenantId, ckTypeId).EnsureNotHidden(fieldFilters?.Select(f => f.AttributePath));
 
+            // AB#7812: anchor columns (anchor.<path>) are checked here and split off again when the rows are read.
+            var anchorPlan = StreamDataAnchorColumns.Plan(columnPaths, fieldResolver);
             StreamDataFieldValidation.ValidateStreamDataFields(
-                fieldResolver, columnPaths,
+                fieldResolver, anchorPlan.ArchiveColumns,
                 sortDtos?.Select(s => s.AttributePath),
                 fieldFilters?.Where(f => f.ComparisonValue != null).Select(f => f.AttributePath),
                 StreamDataHiddenGuard.For(ctx, gql.TenantId, ckTypeId));
@@ -137,8 +141,14 @@ internal sealed class StreamDataTransientQuery : ObjectGraphType
             var typeQueryColumns = ctx.GetCkCacheService()
                 .GetCkTypeQueryColumnPathsByRtCkId(gql.TenantId, ckTypeId,
                     new CkTypeQueryColumnOptions { IgnoreNavigationProperties = true });
+            if (anchorPlan.HasAnchors)
+            {
+                StreamDataAnchorColumns.Validate(anchorPlan, ckTypeId, typeQueryColumns,
+                    StreamDataHiddenGuard.For(ctx, gql.TenantId, ckTypeId));
+            }
+
             var columns = columnPaths
-                .Select(p => StreamDataColumnBuilder.BuildSimpleColumn(p, typeQueryColumns, fieldResolver))
+                .Select(p => StreamDataAnchorColumns.BuildColumn(p, typeQueryColumns, fieldResolver))
                 .ToList();
 
             // Downsampling override (AB#4233): a Simple transient query executed with
@@ -149,6 +159,13 @@ internal sealed class StreamDataTransientQuery : ObjectGraphType
             if (execArgs?.QueryMode == QueryModeDto.Downsampling
                 && execArgs.From is not null && execArgs.To is not null && execArgs.Limit is not null)
             {
+                if (anchorPlan.HasAnchors)
+                {
+                    throw new OctoGraphQLException(
+                        $"Anchor column '{anchorPlan.AnchorColumns[0]}' cannot be used in a downsampling query. " +
+                        StreamDataAnchorColumns.DisplayOnlyLimit);
+                }
+
                 var reducers = StreamDataDownsamplingReducers.Synthesize(columnPaths, columns);
                 var dsDto = new StreamDataTransientQueryDto
                 {
@@ -219,6 +236,8 @@ internal sealed class StreamDataTransientQuery : ObjectGraphType
             var execArgs = ctx.GetArgument<StreamDataArguments?>(Statics.StreamDataArgument);
             var fieldFilters = fieldFilterDtos?.ToList();
             // CK v2 (review G3 E-M2): no filter operator (incl. IS_NULL) on a Hidden attribute.
+            // AB#7812: anchor columns are display only - not in a field filter (any operator).
+            StreamDataAnchorColumns.EnsureNone(fieldFilters?.Select(f => f.AttributePath), "a field filter");
             StreamDataHiddenGuard.For(ctx, gql.TenantId, ckTypeId).EnsureNotHidden(fieldFilters?.Select(f => f.AttributePath));
 
             StreamDataFieldValidation.ValidateStreamDataFields(
@@ -295,6 +314,8 @@ internal sealed class StreamDataTransientQuery : ObjectGraphType
             var execArgs = ctx.GetArgument<StreamDataArguments?>(Statics.StreamDataArgument);
             var fieldFilters = fieldFilterDtos?.ToList();
             // CK v2 (review G3 E-M2): no filter operator (incl. IS_NULL) on a Hidden attribute.
+            // AB#7812: anchor columns are display only - not in a field filter (any operator).
+            StreamDataAnchorColumns.EnsureNone(fieldFilters?.Select(f => f.AttributePath), "a field filter");
             StreamDataHiddenGuard.For(ctx, gql.TenantId, ckTypeId).EnsureNotHidden(fieldFilters?.Select(f => f.AttributePath));
 
             StreamDataFieldValidation.ValidateStreamDataFields(
@@ -375,6 +396,8 @@ internal sealed class StreamDataTransientQuery : ObjectGraphType
             ctx.TryGetArgument(Statics.RtIdsArg, null, out IEnumerable<OctoObjectId>? rtIds);
             var fieldFilters = fieldFilterDtos?.ToList();
             // CK v2 (review G3 E-M2): no filter operator (incl. IS_NULL) on a Hidden attribute.
+            // AB#7812: anchor columns are display only - not in a field filter (any operator).
+            StreamDataAnchorColumns.EnsureNone(fieldFilters?.Select(f => f.AttributePath), "a field filter");
             StreamDataHiddenGuard.For(ctx, gql.TenantId, ckTypeId).EnsureNotHidden(fieldFilters?.Select(f => f.AttributePath));
 
             StreamDataFieldValidation.ValidateStreamDataFields(

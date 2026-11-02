@@ -47,9 +47,16 @@ internal sealed class StreamDataQueryRowDto : GraphQlDto
     /// <summary>
     /// Creates a row DTO from an engine-level <see cref="StreamDataRow"/>.
     /// </summary>
+    /// <param name="row">The engine row.</param>
+    /// <param name="columnNames">The column mappings of the result.</param>
+    /// <param name="values">
+    /// The values of the row when they differ from <see cref="StreamDataRow.Values"/> (AB#7812: the row values
+    /// plus the anchor columns); null keeps the engine values.
+    /// </param>
     public static StreamDataQueryRowDto FromStreamDataRow(
         StreamDataRow row,
-        IReadOnlyList<ColumnNameMapping> columnNames)
+        IReadOnlyList<ColumnNameMapping> columnNames,
+        IReadOnlyDictionary<string, object?>? values = null)
     {
         return new StreamDataQueryRowDto
         {
@@ -62,7 +69,7 @@ internal sealed class StreamDataQueryRowDto : GraphQlDto
             RtCreationDateTime = row.RtCreationDateTime,
             RtChangedDateTime = row.RtChangedDateTime,
             ColumnNames = columnNames,
-            Values = row.Values
+            Values = values ?? row.Values
         };
     }
 }

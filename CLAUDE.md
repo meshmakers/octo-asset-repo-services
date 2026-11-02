@@ -127,6 +127,25 @@ every aggregation function — via the `UnknownStreamDataColumn` marker that `Rt
 nullable, so the schema is unchanged and no enum value was added. The persisted resolver loads the archive snapshot for this (field resolver).
 Tests: `UnitTests/GraphQL/StreamDataColumnBuilderTests`, `IntegrationTests/StreamData/StreamDataColumnTypeTests`.
 
+**Anchor columns (AB#7812).** A column `anchor.<attributePath>` in the column list of a **simple** stream-data query (persisted `SimpleSdQuery`,
+transient `simple`; raw, time-range and rollup archives) shows an attribute of the row's anchor entity (the entity its `rtId` points at, e.g. the
+OBIS code and the unit of an energy measurement). Code: `GraphQL/StreamDataAnchorColumns` (`Plan` splits the columns before the repository is
+called, so the engine validator and the SQL are untouched, and asks the engine for `rtid` when it is not listed; `Validate` checks the path against
+the archive's target CK type: unknown = `ASSET1004` naming column and type, Hidden = `ATTRIBUTE_NOT_QUERYABLE`, Secret refused; `BuildRowsAsync`
+loads the distinct anchor ids of ONE page with ONE `GetRtEntitiesByIdAsync` through the request session = the caller's rights, reads the values with
+`RtPathEvaluator.GetValue` and puts them into the row values under the requested column; an anchor the caller may not read or that does not exist
+gives null cells). Enum names come from the existing cell resolver through `ColumnNameMapping.EnumId` of the attribute path
+(`resolveEnumValuesToNames`). **Display only in v1:** `StreamDataFieldValidation` and the explicit `StreamDataAnchorColumns.EnsureNone` calls refuse an
+anchor column in filters (all operators), sort orders (also runtime overrides), aggregations, grouping, downsampling (also a simple query run in
+downsampling mode, at query level `arg` and at `rows(arg:)` level, persisted and transient) and the `aggregations` sub-connection with a message that names the column and says "display-only". The value is the
+**current** value of the anchor, not the value at the time of the measurement. Protected attributes: Secret attributes and records (also whole-record paths such as `anchor.<record>` and record members such as `anchor.<record>.<secret>`) are not CK query columns, so they are refused as "not an attribute"; Hidden = `ATTRIBUTE_NOT_QUERYABLE`; covered transient and persisted with canary values by `StreamDataAnchorColumnsTests` (no response contains a protected value). The type gate of the archive's own type
+(`DataPermissionStreamGuard`) still decides the stream rows; anchors of a type derived from the archive's type are judged by their own policies.
+MCP `execute_stream_data_query` / `query_stream_data_simple` call the stream-data repository directly (not GraphQL) and do not support `anchor.*`
+columns (the engine refuses them as unknown columns); octo-cli has no stream-data query command (only the generic GraphQL command, which inherits it).
+Tests: `UnitTests/GraphQL/StreamDataAnchorColumnsTests` (split, order, refusal, one load per page, null cells),
+`IntegrationTests/StreamData/StreamDataAnchorColumnsTests` (fixture `AnchorColumnsStreamDataFixture`: rollup, raw, time-range, persisted and transient,
+enum names, data policy on a derived anchor type, unknown path, display-only matrix).
+
 **Integral (AB#7919, engine AB#7918).** `aggregationType: INTEGRAL` (transient `aggregation` / `groupingAggregation`) and the CK
 value `System/AggregationTypes.Integral` (key 7, System 2.8.0) on persisted `AggregationSdQuery` / `GroupingAggregationSdQuery` give the step
 integral over `[from, to)` in value unit x hours, result cell `<attr>_integral`, column `aggregationType: INTEGRAL`, value type `DOUBLE`
