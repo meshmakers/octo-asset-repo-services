@@ -90,8 +90,12 @@ public class CkAttributeAccessSchemaTests
 
     [Theory]
     [InlineData("members.someType[passwordHash='AQAA']->name", "members.someType[passwordHash=…]->name")]
-    [InlineData("a.t[x=1].b.u[y='z']->c", "a.t[x=…].b.u[y=…]->c")]
+    // AB#8052: everything from the first selector '=' to the last ']' goes, so later segments are not shown either.
+    [InlineData("a.t[x=1].b.u[y='z']->c", "a.t[x=…]->c")]
     [InlineData("items[0].name", "items[0].name")]
+    [InlineData("items[0].t[passwordHash='AQAA']->name", "items[0].t[passwordHash=…]->name")]
+    [InlineData("a.t[x=1]::target", "a.t[x=…]::target")]
+    [InlineData("a.t[x=1].b", "a.t[x=…].b")]
     public void AccessErrors_RedactSelectorValues(string path, string expected)
     {
         // F1.5-S4 (AB#5923): access errors never carry values.
@@ -99,6 +103,32 @@ public class CkAttributeAccessSchemaTests
 
         error.AttributePath.Should().Be(expected);
         error.Message.Should().Contain(expected).And.NotContain("AQAA");
+    }
+
+    // AB#8052: a value containing ']' or '[' (or a selector that is never closed) used to leave the rest of the value in
+    // the message, because the redaction ended at the first ']'.
+    [Theory]
+    [InlineData("members.t[passwordHash='AQ]AA-secret']->name", "members.t[passwordHash=…]->name")]
+    [InlineData("members.t[passwordHash='AQ]AA]-secret']->name", "members.t[passwordHash=…]->name")]
+    [InlineData("members.t[passwordHash='AQ[AA]-secret']->name", "members.t[passwordHash=…]->name")]
+    [InlineData("members.t[passwordHash=AQ]AA-secret]", "members.t[passwordHash=…]")]
+    [InlineData("members.t[passwordHash='AQAA-secret", "members.t[passwordHash=…")]
+    [InlineData("members.t[passwordHash='AQAA-secret]'", "members.t[passwordHash=…")]
+    [InlineData("members.t[passwordHash='AQ]AA-secret", "members.t[passwordHash=…")]
+    [InlineData("members.t[passwordHash='AQ]AA.secret", "members.t[passwordHash=…")]
+    [InlineData("members.t[passwordHash='AQ]->AA=secret", "members.t[passwordHash=…")]
+    public void AccessErrors_RedactTheWholeSelectorValue_WhateverBracketsItContains(string path, string expected)
+    {
+        foreach (var error in new[]
+                 {
+                     HiddenAttributeAccessException.NotQueryable(path, "Test/Type", "a stored query filter"),
+                     HiddenAttributeAccessException.NotWritable(path, "Test/Type", CkAttributeAccessDto.MethodOnly),
+                     HiddenAttributeAccessException.IdentityOwned(path, "System.Identity/User")
+                 })
+        {
+            error.AttributePath.Should().Be(expected);
+            error.Message.Should().Contain(expected).And.NotContain("AQ").And.NotContain("AA").And.NotContain("secret");
+        }
     }
 
     private static CkTypeAttributeGraph Attribute(string name, CkAttributeAccessDto access)

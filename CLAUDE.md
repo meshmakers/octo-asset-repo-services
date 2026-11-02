@@ -579,6 +579,14 @@ N:M associations are exposed as query columns with `::totalCount` (INT64) and `:
   attribute path and operation but never a value in any environment: entity-selector values in the path are redacted
   (`[passwordHash=…]`, F1.5-S4 AB#5923). Tests: `GraphQlErrorExposureTests` (unit),
   `GraphQL/Errors/GraphQlErrorDetailsTests` (integration, Production and Development host fixtures).
+  `HiddenAttributeAccessException.RedactSelectorValues` (AB#8052, Security) replaces everything from the first `=` inside a
+  selector to the **last** `]` of the path (the mesh adapter's `RtAttributeAccessGuard.WithoutSelectorValues` rule), but only
+  when the rest after that `]` is a valid path suffix of the engine grammar (`->name`, `.name`, `::meta` or nothing; review
+  finding on #134); otherwise (an unterminated selector, `[passwordHash='AQ]AA-secret`, or no `]` at all) to the end of the
+  path. A value containing `]` used to leave its rest in the message, because the old regex ended at the first `]`. Segments between the first selector value and the last `]` are not shown either
+  (`a.t[x=1].b.u[y=2]->c` → `a.t[x=…]->c`). A value with `[` is no valid engine path (`RtPathEvaluator.TokenizePath` refuses it),
+  so the selector-key regex of `AccessQueryGuard` needs no change. Tests: `CkAttributeAccessSchemaTests`
+  (`AccessErrors_RedactTheWholeSelectorValue_*`, all three factory methods), `StoredQueryHiddenAttributeTests.SelectorValueWithBrackets_*`.
 - All GraphQL types must be thread-safe (they're cached and reused)
 - Use resource strings from `AssetRepositoryServices.Resources` for descriptions
 

@@ -78,11 +78,34 @@ internal sealed partial class HiddenAttributeAccessException : Exception
     ///     selector (<c>members.type[passwordHash='X']-&gt;name</c> becomes <c>members.type[passwordHash=…]-&gt;name</c>),
     ///     because error texts end up in logs and client error reports.
     /// </summary>
+    /// <remarks>
+    ///     AB#8052: everything from the first <c>=</c> inside a selector up to the <b>last</b> <c>]</c> of the path is
+    ///     replaced (the rule of the mesh adapter's <c>RtAttributeAccessGuard.WithoutSelectorValues</c>, AB#8049). A value
+    ///     may itself contain <c>]</c> or <c>[</c> (<c>[passwordHash='a]b']</c>); ending the redaction at the first
+    ///     <c>]</c>, as before, left the rest of the value in the message. The price: path segments between the first
+    ///     selector value and the last <c>]</c> are not shown either (<c>a.t[x=1].b.u[y=2]-&gt;c</c> becomes
+    ///     <c>a.t[x=…]-&gt;c</c>). A <c>[</c> without a following <c>=</c> (<c>items[0].name</c>) is no selector and is kept.
+    ///     The last <c>]</c> only ends the redaction when the rest of the path is a valid path suffix in the grammar of the
+    ///     engine (<c>RtPathEvaluator</c>: <c>-&gt;name</c>, <c>.name</c>, <c>::meta</c>, or nothing); otherwise that
+    ///     <c>]</c> belongs to the value of an unterminated selector (<c>[passwordHash='AQ]AA-secret</c>) and the path is
+    ///     redacted to its end, as is a selector without any <c>]</c> after its <c>=</c>.
+    /// </remarks>
     internal static string RedactSelectorValues(string path)
     {
-        return SelectorValueRegex().Replace(path, "[$1=…]");
+        var open = path.IndexOf('[');
+        var equals = open < 0 ? -1 : path.IndexOf('=', open);
+        if (equals < 0)
+        {
+            return path;
+        }
+
+        var close = path.LastIndexOf(']');
+        return close > equals && PathSuffixRegex().IsMatch(path[(close + 1)..])
+            ? path[..equals] + "=…" + path[close..]
+            : path[..equals] + "=…";
     }
 
-    [GeneratedRegex(@"\[([^\[\]=]+)=[^\[\]]*\]", RegexOptions.Compiled)]
-    private static partial Regex SelectorValueRegex();
+    /// <summary>What may follow the last selector: path segments of the engine grammar, no brackets, no value.</summary>
+    [GeneratedRegex(@"^(?:(?:->|\.|::)[^.\[\]\->:=]+)*$")]
+    private static partial Regex PathSuffixRegex();
 }
