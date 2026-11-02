@@ -1,0 +1,21 @@
+$schema: https://schemas.meshmakers.cloud/construction-kit-elements.schema.json
+types:
+- typeId: RecordAccessThing
+  derivedFromCkTypeId: ${System}/Entity
+  description: "AB#8055: whole-record updates keep the members the caller may not write"
+  attributes:
+    - id: ${System}/Name
+      name: Name
+    - id: ${this}/RecordAccessThingDetail
+      name: Detail
+      isOptional: true
+    - id: ${this}/RecordAccessThingEntries
+      name: Entries
+      isOptional: true
+    - id: ${this}/RecordAccessThingKeyedEntries
+      name: KeyedEntries
+      isOptional: true
+    - id: ${this}/RecordAccessThingToken
+      name: Token
+      isOptional: true
+      access: MethodOnly

@@ -1,0 +1,48 @@
+$schema: https://schemas.meshmakers.cloud/construction-kit-elements.schema.json
+records:
+# AB#8055: records with members the caller may not write on update (ReadOnly, Hidden, MethodOnly). A whole-record
+# update keeps their stored values (single record: by position; record array: by record key; no key: refused).
+- recordId: AccessTestDetail
+  description: "AB#8055: record with ReadWrite, ReadOnly, Hidden and MethodOnly members and a nested record"
+  attributes:
+    - id: ${this}/AccessTestDetailLabel
+      name: Label
+      isOptional: true
+    - id: ${this}/AccessTestDetailRef
+      name: Ref
+      isOptional: true
+      access: ReadOnly
+    - id: ${this}/AccessTestDetailNote
+      name: Note
+      isOptional: true
+      access: Hidden
+    - id: ${this}/AccessTestDetailState
+      name: State
+      isOptional: true
+      access: MethodOnly
+    - id: ${this}/AccessTestDetailInner
+      name: Inner
+      isOptional: true
+- recordId: AccessTestInner
+  description: "AB#8055: nested record with a ReadOnly member"
+  attributes:
+    - id: ${this}/AccessTestInnerText
+      name: Text
+      isOptional: true
+    - id: ${this}/AccessTestInnerRef
+      name: InnerRef
+      isOptional: true
+      access: ReadOnly
+- recordId: AccessTestKeyedEntry
+  description: "AB#8055: record array element with a record key and a ReadOnly member"
+  recordKey: Key
+  attributes:
+    - id: ${this}/AccessTestKeyedEntryKey
+      name: Key
+    - id: ${this}/AccessTestKeyedEntryLabel
+      name: Label
+      isOptional: true
+    - id: ${this}/AccessTestKeyedEntryRef
+      name: Ref
+      isOptional: true
+      access: ReadOnly
