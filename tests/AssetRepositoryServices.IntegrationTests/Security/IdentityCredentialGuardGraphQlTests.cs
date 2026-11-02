@@ -577,12 +577,18 @@ public class IdentityCredentialGuardGraphQlTests
     // ------------------------------------------------------------------------------------------------- logs
 
     // Every refusal above also asserts that no log line written during the test carries a dummy value
-    // (AssertNoDummyValueInTestLogs). The write of the identity store itself is the open gap below.
-    [Fact(Skip = "AB#8048: the MongoDB command log (Debug, and the slow-query preview at Warning) prints Hidden attribute values of a write in clear text")]
-    public async Task Gap_TheIdentityStoreWrite_LeavesNoCredentialInTheMongoCommandLog()
+    // (AssertNoDummyValueInTestLogs). The write of the identity store itself goes through the repository: its MongoDB command
+    // log (written at Debug; the fixture captures every level) masks the Hidden values (AB#8048).
+    [Fact]
+    public async Task TheIdentityStoreWrite_LeavesNoCredentialInTheMongoCommandLog()
     {
-        await _fixture.SeedUserAsync("probe-log-" + Guid.NewGuid().ToString("N")[..8], "probe-log@example.invalid");
+        var userName = "probe-log-" + Guid.NewGuid().ToString("N")[..8];
+        await _fixture.SeedUserAsync(userName, "probe-log@example.invalid");
 
+        // Non-vacuous: the rendered insert command of the seed (it names the user) reached the capture.
+        _fixture.LogLinesSince(_logStart).Should().Contain(
+            l => l.Contains("\"$db\"", StringComparison.Ordinal) && l.Contains(userName, StringComparison.Ordinal),
+            "the MongoDB command log of the write must be captured");
         AssertNoDummyValueInTestLogs();
     }
 

@@ -156,6 +156,26 @@ public class StoredQueryHiddenAttributeTests
         result.Errors.Should().BeNullOrEmpty(_fixture.SerializeGraphQl(result));
     }
 
+    // AB#8052: a selector value that contains ']' used to keep the part after the first ']' in the error message, so a part
+    // of the guess was echoed. (A value with '[' is no valid path for the engine, RtPathEvaluator.TokenizePath refuses it.)
+    [Theory]
+    [InlineData("close", "x]" + Guess)]
+    [InlineData("double-close", "x]]" + Guess)]
+    public async Task SelectorValueWithBrackets_IsRefused_WithoutEchoingAnyPartOfTheValue(string shape, string value)
+    {
+        var name = Name("selector-brackets-" + shape);
+        var result = await _fixture.ExecuteGraphQlAsync($$"""
+            mutation { runtime { systemSimpleRtQuerys { create(entities: [{ name: "{{name}}", queryCkTypeId: "{{GroupType}}",
+              columns: ["name", "members.{{AccountType}}[passwordHash='{{value}}']->name"] }]) { rtId } } } }
+            """);
+
+        AssertNotQueryable(result);
+        var json = _fixture.SerializeGraphQl(result);
+        json.Should().NotContain("dummy-guess");
+        result.Errors!.Select(e => e.Message).Should().Contain(m => m.Contains("[passwordHash=…]->name"));
+        (await CountQueriesNamedAsync(name)).Should().Be(0);
+    }
+
     private static string Name(string shape) => $"ab8049-{shape}";
 
     private async Task<string> CreateVisibleQueryAsync(string name, string queryCkTypeId, string filterPath)
