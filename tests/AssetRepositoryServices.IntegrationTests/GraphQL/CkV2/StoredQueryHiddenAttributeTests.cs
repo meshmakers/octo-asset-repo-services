@@ -188,9 +188,10 @@ public class StoredQueryHiddenAttributeTests
               columns: ["name", "members.{{AccountType}}[passwordHash='x]->{{pathLikeGuess}}"] }]) { rtId } } } }
             """);
 
-        result.Errors.Should().NotBeNullOrEmpty();
+        AssertNotQueryable(result);
         var json = _fixture.SerializeGraphQl(result);
         json.Should().NotContain(pathLikeGuess);
+        result.Errors!.Select(e => e.Message).Should().Contain(m => m.Contains("[passwordHash=…"));
         (await CountQueriesNamedAsync(name)).Should().Be(0);
     }
 

@@ -99,6 +99,8 @@ public class CkAttributeAccessSchemaTests
     // AB#8081: balanced quotes keep the structure after the last ']'.
     [InlineData("a.t[x='1'].b.u[y=\"z\"]->c", "a.t[x=…]->c")]
     [InlineData("members.t[name='O''Brien']->name", "members.t[name=…]->name")]
+    // The parity check stays: an odd count of one kind redacts to the end, also inside a value of the other kind.
+    [InlineData("members.t[name='a\"b']->name", "members.t[name=…")]
     public void AccessErrors_RedactSelectorValues(string path, string expected)
     {
         // F1.5-S4 (AB#5923): access errors never carry values.
@@ -127,6 +129,8 @@ public class CkAttributeAccessSchemaTests
     [InlineData("members.t[passwordHash='AQ].AAsecret", "members.t[passwordHash=…")]
     [InlineData("members.t[passwordHash=\"AQ]->AAsecret", "members.t[passwordHash=…")]
     [InlineData("a.t[x='1'].b.u[passwordHash='AQ]->AAsecret", "a.t[x=…")]
+    // Both counts even, but a double-quoted value is still open at the last ']' (review of #136).
+    [InlineData("a.t[x='AQ\"AA' \"secret].AAsecret", "a.t[x=…")]
     public void AccessErrors_RedactTheWholeSelectorValue_WhateverBracketsItContains(string path, string expected)
     {
         foreach (var error in new[]

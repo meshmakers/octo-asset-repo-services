@@ -584,8 +584,8 @@ N:M associations are exposed as query columns with `::totalCount` (INT64) and `:
   when the rest after that `]` is a valid path suffix of the engine grammar (`->name`, `.name`, `::meta` or nothing; review
   finding on #134); otherwise (an unterminated selector, `[passwordHash='AQ]AA-secret`, or no `]` at all) to the end of the
   path. The path is also redacted to its end when a quoted value is still open at that `]` (an odd number of `'` or `"`
-  between the `=` and the `]`, `[passwordHash='AQ]->AAsecret`; AB#8081, the quote check of mesh-adapter AB#8077), even if
-  the rest looks like a valid suffix. A value containing `]` used to leave its rest in the message, because the old regex ended at the first `]`. Segments between the first selector value and the last `]` are not shown either
+  between the `=` and the `]`, `[passwordHash='AQ]->AAsecret`; AB#8081, the quote check of mesh-adapter AB#8077, or a quote
+  still open when the quotes are read in order, `[x='a"b' "secret].c`, review of #136), even if the rest looks like a valid suffix. A value containing `]` used to leave its rest in the message, because the old regex ended at the first `]`. Segments between the first selector value and the last `]` are not shown either
   (`a.t[x=1].b.u[y=2]->c` → `a.t[x=…]->c`). A value with `[` is no valid engine path (`RtPathEvaluator.TokenizePath` refuses it),
   so the selector-key regex of `AccessQueryGuard` needs no change. Tests: `CkAttributeAccessSchemaTests`
   (`AccessErrors_RedactTheWholeSelectorValue_*`, all three factory methods), `StoredQueryHiddenAttributeTests.SelectorValueWithBrackets_*`,
