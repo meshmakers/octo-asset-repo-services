@@ -9,6 +9,7 @@ using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.Runtime.Contracts.Repositories.Query;
 using Meshmakers.Octo.Runtime.Contracts.StreamData;
 using Meshmakers.Octo.Runtime.Engine.CrateDb;
+using Meshmakers.Octo.Runtime.Engine.CrateDb.Dtos;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
 
@@ -112,6 +113,14 @@ internal sealed class StreamDataTransientQueryDtoType : ObjectGraphType<StreamDa
                         .EnsureNotHidden(runtimeSortList?.Select(s => s.AttributePath));
 
                     var execOverride = ctx.GetArgument<StreamDataArguments?>(Statics.StreamDataArgument);
+                    if (anchorPlan.HasAnchors && execOverride?.QueryMode == QueryModeDto.Downsampling)
+                    {
+                        // Consistent with the simple-level check: a rows-level queryMode is refused with anchors
+                        // even though the transient rows path itself reads plain rows.
+                        throw new OctoGraphQLException(
+                            $"Anchor column '{anchorPlan.AnchorColumns[0]}' cannot be used in a downsampling query. " +
+                            StreamDataAnchorColumns.DisplayOnlyLimit);
+                    }
 
                     var sortOrders = runtimeSortList is { Count: > 0 }
                         ? StreamDataGraphQlMapper.MapSortOrders(runtimeSortList)

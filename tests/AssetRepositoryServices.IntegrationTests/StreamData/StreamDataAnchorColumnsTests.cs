@@ -255,6 +255,103 @@ public class StreamDataAnchorColumnsTests(AnchorColumnsStreamDataFixture fixture
         json.Should().Contain("display-only");
     }
 
+    // ─── review findings (AB#7812): protected anchor attributes ─────────────
+
+    /// <summary>
+    ///     archive (HiddenArchive/SecretArchive), column, expected error code or null (only the message is checked).
+    ///     A Hidden attribute is not queryable; a Secret attribute, a Secret record member and a whole record that
+    ///     holds a Secret member are never shown.
+    /// </summary>
+    public static TheoryData<string, string, string?> ProtectedAnchorColumns => new()
+    {
+        { "hidden", "anchor.PasswordHash", "ATTRIBUTE_NOT_QUERYABLE" },
+        { "secret", "anchor.Password", null },
+        { "secret", "anchor.ApiKey", null },
+        { "secret", "anchor.PrimaryEndpoint.Token", null },
+        { "secret", "anchor.Endpoints.Token", null },
+        { "secret", "anchor.PrimaryEndpoint", null },
+        { "secret", "anchor.Endpoints", null }
+    };
+
+    [Theory]
+    [MemberData(nameof(ProtectedAnchorColumns))]
+    public async Task TransientQuery_WithAProtectedAnchorColumn_IsRefusedAndNeverShowsTheValue(
+        string kind, string column, string? code)
+    {
+        fixture.OutputHelper = output;
+
+        var result = await fixture.ExecuteGraphQlAsync($$"""
+            { streamData { transientStreamDataQuery { simple(
+                archiveRtId: "{{ProtectedArchive(kind)}}", columnPaths: ["name", "{{column}}"]) { items {
+                rows(first: 5) { items { cells(first: 10) { items { attributePath value } } } }
+            } } } } }
+            """, user: Caller);
+
+        AssertProtectedRefusal(result, column, code);
+    }
+
+    [Theory]
+    [MemberData(nameof(ProtectedAnchorColumns))]
+    public async Task PersistedQuery_WithAProtectedAnchorColumn_IsRefusedWhenRunAndNeverShowsTheValue(
+        string kind, string column, string? code)
+    {
+        fixture.OutputHelper = output;
+        var queryRtId = await StoreAsImportedAsync(ProtectedArchive(kind), ProtectedType(kind),
+            q => q.Columns = new AttributeStringValueList(["name", column]));
+
+        var result = await fixture.ExecuteGraphQlAsync($$"""
+            { streamData { streamDataQuery(rtId: "{{queryRtId}}") { items { rows(first: 5) { items {
+                cells(first: 10) { items { attributePath value } } } } } } } }
+            """, user: Caller);
+
+        AssertProtectedRefusal(result, column, code);
+    }
+
+    [Fact]
+    public async Task AnchorColumn_OnAnAttributeThatIsNotProtected_StillWorksOnThoseTypes()
+    {
+        // Positive control: the refusals above come from the protection, not from the type or the archive.
+        fixture.OutputHelper = output;
+
+        var hidden = await RunTransientAsync(fixture.HiddenArchive, """["name", "anchor.Label"]""");
+        hidden.Single()["anchor.Label"]!.Value<string>().Should().Be("visible label");
+
+        var secret = await RunTransientAsync(fixture.SecretArchive, """["name", "anchor.PrimaryEndpoint.Label"]""");
+        secret.Single()["anchor.PrimaryEndpoint.Label"]!.Value<string>().Should().Be("visible record label");
+    }
+
+    // ─── review findings (AB#7812): rows-level queryMode ─────────────────────
+
+    [Fact]
+    public async Task TransientQuery_RowsLevelDownsamplingMode_IsRefusedWithAnchorColumns()
+    {
+        fixture.OutputHelper = output;
+
+        var result = await fixture.ExecuteGraphQlAsync($$"""
+            { streamData { transientStreamDataQuery { simple(
+                archiveRtId: "{{fixture.RawArchive}}", columnPaths: ["voltage", "anchor.meteringPointNumber"]) { items {
+                rows(first: 5, arg: { queryMode: DOWNSAMPLING, from: "2026-03-01T00:00:00Z", to: "2026-03-02T00:00:00Z", limit: 4 }) { items { rtId } }
+            } } } } }
+            """, user: Caller);
+
+        AssertDownsamplingRefusal(result);
+    }
+
+    [Fact]
+    public async Task PersistedQuery_RowsLevelDownsamplingMode_IsRefusedWithAnchorColumns()
+    {
+        fixture.OutputHelper = output;
+        var queryRtId = await CreatePersistedQueryAsync(fixture.RawArchive, """["voltage", "anchor.meteringPointNumber"]""");
+
+        var result = await fixture.ExecuteGraphQlAsync($$"""
+            { streamData { streamDataQuery(rtId: "{{queryRtId}}") { items {
+                rows(first: 5, arg: { queryMode: DOWNSAMPLING, from: "2026-03-01T00:00:00Z", to: "2026-03-02T00:00:00Z", limit: 4 }) { items { rtId } }
+            } } } }
+            """, user: Caller);
+
+        AssertDownsamplingRefusal(result);
+    }
+
     // ─── AC 8: no regression ─────────────────────────────────────────────────
 
     [Fact]
@@ -330,12 +427,49 @@ public class StreamDataAnchorColumnsTests(AnchorColumnsStreamDataFixture fixture
         return JObject.Parse(createJson).SelectToken("data.runtime.systemSimpleSdQuerys.create[0].rtId")!.Value<string>()!;
     }
 
-    private async Task<string> StoreAsImportedAsync(OctoObjectId archive, Action<RtSimpleSdQuery> configure)
+    private OctoObjectId ProtectedArchive(string kind) => kind == "hidden" ? fixture.HiddenArchive : fixture.SecretArchive;
+
+    private static string ProtectedType(string kind) =>
+        kind == "hidden" ? AnchorColumnsStreamDataFixture.AccountType : AnchorColumnsStreamDataFixture.CredentialType;
+
+    private void AssertProtectedRefusal(ExecutionResult result, string column, string? code)
+    {
+        var json = fixture.SerializeGraphQl(result);
+        output.WriteLine(json);
+        result.Errors.Should().NotBeNull(json);
+        if (code != null)
+        {
+            result.Errors!.Select(e => e.Code).Should().Contain(code, json);
+        }
+        else
+        {
+            result.Errors!.Select(e => e.Message).Should().Contain(m => m.Contains(column), json);
+        }
+
+        foreach (var canary in AnchorColumnsStreamDataFixture.Canaries)
+        {
+            json.Should().NotContain(canary);
+        }
+    }
+
+    private void AssertDownsamplingRefusal(ExecutionResult result)
+    {
+        var json = fixture.SerializeGraphQl(result);
+        output.WriteLine(json);
+        result.Errors.Should().NotBeNull(json);
+        result.Errors!.Select(e => e.Message + " " + e.InnerException?.Message).Should().Contain(
+            m => m.Contains("anchor.meteringPointNumber") && m.Contains("downsampling query") && m.Contains("display-only"), json);
+    }
+
+    private Task<string> StoreAsImportedAsync(OctoObjectId archive, Action<RtSimpleSdQuery> configure) =>
+        StoreAsImportedAsync(archive, AnchorColumnsStreamDataFixture.MeteringPointType, configure);
+
+    private async Task<string> StoreAsImportedAsync(OctoObjectId archive, string queryCkTypeId, Action<RtSimpleSdQuery> configure)
     {
         var repository = fixture.GetSystemContext().GetSystemTenantRepository();
         var query = await repository.CreateTransientRtEntityAsync<RtSimpleSdQuery>();
         query.Name = "anchor-sd-imported";
-        query.QueryCkTypeId = AnchorColumnsStreamDataFixture.MeteringPointType;
+        query.QueryCkTypeId = queryCkTypeId;
         query.ArchiveRtId = archive.ToString();
         configure(query);
         using var session = await repository.GetSessionAsync();

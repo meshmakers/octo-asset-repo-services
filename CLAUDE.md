@@ -137,8 +137,8 @@ loads the distinct anchor ids of ONE page with ONE `GetRtEntitiesByIdAsync` thro
 gives null cells). Enum names come from the existing cell resolver through `ColumnNameMapping.EnumId` of the attribute path
 (`resolveEnumValuesToNames`). **Display only in v1:** `StreamDataFieldValidation` and the explicit `StreamDataAnchorColumns.EnsureNone` calls refuse an
 anchor column in filters (all operators), sort orders (also runtime overrides), aggregations, grouping, downsampling (also a simple query run in
-downsampling mode) and the `aggregations` sub-connection with a message that names the column and says "display-only". The value is the
-**current** value of the anchor, not the value at the time of the measurement. The type gate of the archive's own type
+downsampling mode, at query level `arg` and at `rows(arg:)` level, persisted and transient) and the `aggregations` sub-connection with a message that names the column and says "display-only". The value is the
+**current** value of the anchor, not the value at the time of the measurement. Protected attributes: Secret attributes and records (also whole-record paths such as `anchor.<record>` and record members such as `anchor.<record>.<secret>`) are not CK query columns, so they are refused as "not an attribute"; Hidden = `ATTRIBUTE_NOT_QUERYABLE`; covered transient and persisted with canary values by `StreamDataAnchorColumnsTests` (no response contains a protected value). The type gate of the archive's own type
 (`DataPermissionStreamGuard`) still decides the stream rows; anchors of a type derived from the archive's type are judged by their own policies.
 MCP `execute_stream_data_query` / `query_stream_data_simple` call the stream-data repository directly (not GraphQL) and do not support `anchor.*`
 columns (the engine refuses them as unknown columns); octo-cli has no stream-data query command (only the generic GraphQL command, which inherits it).

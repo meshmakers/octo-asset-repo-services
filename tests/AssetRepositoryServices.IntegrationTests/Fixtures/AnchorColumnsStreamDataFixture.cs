@@ -26,6 +26,20 @@ public class AnchorColumnsStreamDataFixture : StreamDataFixture
     public const string MeteringPointType = "AssetRepositoryIntegrationTest/MeteringPoint";
     public const string FacilityType = "AssetRepositoryIntegrationTest/OperatingFacility";
     public const string AssetType = "AssetRepositoryIntegrationTest/Asset";
+    public const string AccountType = "AssetRepositoryIntegrationTest/AccessTestAccount";
+    public const string CredentialType = "AssetRepositoryIntegrationTest/ServiceCredential";
+    private const string CredentialEntryRecord = "AssetRepositoryIntegrationTest/CredentialEntry";
+
+    /// <summary>Distinctive values of the protected attributes; no response may ever contain one of them.</summary>
+    public const string CanaryPasswordHash = "CANARY-HIDDEN-HASH-7812";
+    public const string CanaryPassword = "CANARY-SECRET-PASSWORD-7812";
+    public const string CanaryApiKey = "CANARY-SECRET-APIKEY-7812";
+    public const string CanaryToken = "CANARY-SECRET-TOKEN-7812";
+    public const string CanaryEndpointToken = "CANARY-SECRET-ENDPOINT-TOKEN-7812";
+
+    public static readonly string[] Canaries =
+        [CanaryPasswordHash, CanaryPassword, CanaryApiKey, CanaryToken, CanaryEndpointToken];
+
     public const string FacilityReaderRole = "AnchorFacilityReader";
     public const string PlainRole = "AnchorPlain";
 
@@ -51,6 +65,15 @@ public class AnchorColumnsStreamDataFixture : StreamDataFixture
     public OctoObjectId TimeRangeArchive { get; private set; }
     public OctoObjectId RollupArchive { get; private set; }
     public OctoObjectId AssetArchive { get; private set; }
+
+    /// <summary>Archive of <c>AccessTestAccount</c> (Hidden attribute <c>PasswordHash</c>); the row points at an account with a canary.</summary>
+    public OctoObjectId HiddenArchive { get; private set; }
+
+    /// <summary>Archive of <c>ServiceCredential</c> (Secret attributes, also inside records); the row points at a credential with canaries.</summary>
+    public OctoObjectId SecretArchive { get; private set; }
+
+    private OctoObjectId Account { get; } = OctoObjectId.GenerateNewId();
+    private OctoObjectId Credential { get; } = OctoObjectId.GenerateNewId();
 
     public AnchorColumnsStreamDataFixture()
     {
@@ -140,6 +163,28 @@ public class AnchorColumnsStreamDataFixture : StreamDataFixture
             }
         ]);
         await RefreshArchiveTableAsync(AssetArchive.ToString());
+
+        // Archives of the types with protected attributes: the anchors carry canary values.
+        HiddenArchive = await CreateRawArchiveAsync(repository, lifecycle, "AnchorHiddenArchive", AccountType, "Name");
+        SecretArchive = await CreateRawArchiveAsync(repository, lifecycle, "AnchorSecretArchive", CredentialType, "Name");
+        await streamRepository.InsertAsync(HiddenArchive,
+        [
+            new StreamDataPoint
+            {
+                RtId = Account, CkTypeId = new RtCkId<CkTypeId>(AccountType), Timestamp = Start,
+                Attributes = new Dictionary<string, object?> { ["name"] = "row of the account" }
+            }
+        ]);
+        await streamRepository.InsertAsync(SecretArchive,
+        [
+            new StreamDataPoint
+            {
+                RtId = Credential, CkTypeId = new RtCkId<CkTypeId>(CredentialType), Timestamp = Start,
+                Attributes = new Dictionary<string, object?> { ["name"] = "row of the credential" }
+            }
+        ]);
+        await RefreshArchiveTableAsync(HiddenArchive.ToString());
+        await RefreshArchiveTableAsync(SecretArchive.ToString());
     }
 
     private async Task EnsureJobLogFilterAsync()
@@ -169,7 +214,23 @@ public class AnchorColumnsStreamDataFixture : StreamDataFixture
             new RtEntity(new RtCkId<CkTypeId>(FacilityType), Facility, new Dictionary<string, object?>
             {
                 ["Name"] = "Secret facility", ["Description"] = "protected by a data policy"
-            }) { RtWellKnownName = "AnchorFacility" }
+            }) { RtWellKnownName = "AnchorFacility" },
+            new RtEntity(new RtCkId<CkTypeId>(AccountType), Account, new Dictionary<string, object?>
+            {
+                ["Name"] = "Account 1", ["Label"] = "visible label", ["PasswordHash"] = CanaryPasswordHash
+            }) { RtWellKnownName = "AnchorAccount" },
+            new RtEntity(new RtCkId<CkTypeId>(CredentialType), Credential, new Dictionary<string, object?>
+            {
+                ["Name"] = "Credential 1", ["Password"] = CanaryPassword, ["ApiKey"] = CanaryApiKey,
+                ["PrimaryEndpoint"] = new RtRecord(new RtCkId<CkRecordId>(CredentialEntryRecord),
+                    new Dictionary<string, object?>
+                        { ["Key"] = "primary", ["Token"] = CanaryToken, ["Label"] = "visible record label" }),
+                ["Endpoints"] = new List<RtRecord>
+                {
+                    new(new RtCkId<CkRecordId>(CredentialEntryRecord),
+                        new Dictionary<string, object?> { ["Key"] = "e1", ["Token"] = CanaryEndpointToken })
+                }
+            }) { RtWellKnownName = "AnchorCredential" }
         };
 
         using var session = await repository.GetSessionAsync();
