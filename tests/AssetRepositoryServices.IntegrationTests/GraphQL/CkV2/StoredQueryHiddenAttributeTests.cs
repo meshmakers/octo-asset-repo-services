@@ -176,6 +176,25 @@ public class StoredQueryHiddenAttributeTests
         (await CountQueriesNamedAsync(name)).Should().Be(0);
     }
 
+    // AB#8081: a quoted value still open at the last ']' — the text after it looks like a path suffix ("->dummyguess0001")
+    // but belongs to the value; the redaction runs to the end of the path.
+    [Fact]
+    public async Task SelectorValueWithOpenQuoteAtLastBracket_IsRefused_WithoutEchoingAnyPartOfTheValue()
+    {
+        const string pathLikeGuess = "dummyguess0001";
+        var name = Name("selector-open-quote");
+        var result = await _fixture.ExecuteGraphQlAsync($$"""
+            mutation { runtime { systemSimpleRtQuerys { create(entities: [{ name: "{{name}}", queryCkTypeId: "{{GroupType}}",
+              columns: ["name", "members.{{AccountType}}[passwordHash='x]->{{pathLikeGuess}}"] }]) { rtId } } } }
+            """);
+
+        AssertNotQueryable(result);
+        var json = _fixture.SerializeGraphQl(result);
+        json.Should().NotContain(pathLikeGuess);
+        result.Errors!.Select(e => e.Message).Should().Contain(m => m.Contains("[passwordHash=…"));
+        (await CountQueriesNamedAsync(name)).Should().Be(0);
+    }
+
     private static string Name(string shape) => $"ab8049-{shape}";
 
     private async Task<string> CreateVisibleQueryAsync(string name, string queryCkTypeId, string filterPath)

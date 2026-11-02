@@ -96,6 +96,11 @@ public class CkAttributeAccessSchemaTests
     [InlineData("items[0].t[passwordHash='AQAA']->name", "items[0].t[passwordHash=…]->name")]
     [InlineData("a.t[x=1]::target", "a.t[x=…]::target")]
     [InlineData("a.t[x=1].b", "a.t[x=…].b")]
+    // AB#8081: balanced quotes keep the structure after the last ']'.
+    [InlineData("a.t[x='1'].b.u[y=\"z\"]->c", "a.t[x=…]->c")]
+    [InlineData("members.t[name='O''Brien']->name", "members.t[name=…]->name")]
+    // The parity check stays: an odd count of one kind redacts to the end, also inside a value of the other kind.
+    [InlineData("members.t[name='a\"b']->name", "members.t[name=…")]
     public void AccessErrors_RedactSelectorValues(string path, string expected)
     {
         // F1.5-S4 (AB#5923): access errors never carry values.
@@ -117,6 +122,15 @@ public class CkAttributeAccessSchemaTests
     [InlineData("members.t[passwordHash='AQ]AA-secret", "members.t[passwordHash=…")]
     [InlineData("members.t[passwordHash='AQ]AA.secret", "members.t[passwordHash=…")]
     [InlineData("members.t[passwordHash='AQ]->AA=secret", "members.t[passwordHash=…")]
+    [InlineData("members.t[passwordHash=\"AQ]AA-secret\"]->name", "members.t[passwordHash=…]->name")]
+    // AB#8081: a quoted value still open at the last ']' — the rest looks like a path suffix but belongs to the value.
+    [InlineData("members.t[passwordHash='AQ]->AAsecret", "members.t[passwordHash=…")]
+    [InlineData("members.t[passwordHash='AQ]AA::secret", "members.t[passwordHash=…")]
+    [InlineData("members.t[passwordHash='AQ].AAsecret", "members.t[passwordHash=…")]
+    [InlineData("members.t[passwordHash=\"AQ]->AAsecret", "members.t[passwordHash=…")]
+    [InlineData("a.t[x='1'].b.u[passwordHash='AQ]->AAsecret", "a.t[x=…")]
+    // Both counts even, but a double-quoted value is still open at the last ']' (review of #136).
+    [InlineData("a.t[x='AQ\"AA' \"secret].AAsecret", "a.t[x=…")]
     public void AccessErrors_RedactTheWholeSelectorValue_WhateverBracketsItContains(string path, string expected)
     {
         foreach (var error in new[]
