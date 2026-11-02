@@ -578,7 +578,7 @@ public class IdentityCredentialGuardGraphQlTests
 
     // Every refusal above also asserts that no log line written during the test carries a dummy value
     // (AssertNoDummyValueInTestLogs). The write of the identity store itself goes through the repository: its MongoDB command
-    // log (captured at Trace) masks the Hidden values (AB#8048).
+    // log (written at Debug; the fixture captures every level) masks the Hidden values (AB#8048).
     [Fact]
     public async Task TheIdentityStoreWrite_LeavesNoCredentialInTheMongoCommandLog()
     {
