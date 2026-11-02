@@ -10,6 +10,7 @@ using Meshmakers.Octo.Services.Contracts.DistributionEventHub.Methods;
 using Meshmakers.Octo.Services.Methods;
 using Meshmakers.Octo.Services.Methods.Audit;
 using Meshmakers.Octo.Services.Methods.Authorization;
+using Meshmakers.Octo.Services.Methods.Idempotency;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Xunit;
@@ -208,6 +209,29 @@ public class CkMethodGatewayTests
         Assert.Equal(Other, request.Caller!.SubjectId);
         Assert.Equal(Other, _principalSeenByDispatcher!.SubjectId);
         Assert.Null(CkMethodPrincipalScope.CurrentPrincipal); // the scope ends with the call
+    }
+
+    [Fact]
+    public async Task ClientCredentialsCaller_IsDispatched_WithItsClientIdAsTheTrustedSubject()
+    {
+        // AB#8078: a service token has no sub; the principal in scope carries the client id, so the idempotency filter
+        // scopes its key by client:<client_id> instead of refusing it as caller-unknown
+        var gateway = Gateway(new CkMethodAuthorizationDto { Roles = ["AssetManagement"] });
+        var client = new ClaimsPrincipal(new ClaimsIdentity(
+        [
+            new Claim("client_id", "pipeline-client"), new Claim("tenant_id", Tenant), new Claim("scope", "octo_api"),
+            new Claim("role", "AssetManagement")
+        ], "test"));
+
+        var response = await gateway.InvokeAsync(Call(client) with { IdempotencyKey = "key-1" }, new Counter().CheckAsync,
+            TestContext.Current.CancellationToken);
+
+        Assert.True(response.Success);
+        Assert.Null(_principalSeenByDispatcher!.SubjectId);
+        Assert.Equal("pipeline-client", _principalSeenByDispatcher.ClientId);
+        Assert.Equal("pipeline-client", _principalSeenByDispatcher.Subject);
+        Assert.Equal("client:pipeline-client", CkMethodIdempotencyKey.ScopeOf(_principalSeenByDispatcher));
+        Assert.Equal("pipeline-client", Assert.Single(_dispatched).Caller!.ClientId);
     }
 
     [Fact]
