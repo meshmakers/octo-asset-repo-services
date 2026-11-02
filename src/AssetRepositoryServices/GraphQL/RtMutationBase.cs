@@ -80,6 +80,24 @@ internal abstract class RtMutationBase : ObjectGraphType
         }
     }
 
+    /// <summary>
+    ///     AB#8055: on update, carries the stored values of record members the caller may not write (Hidden, MethodOnly,
+    ///     ReadOnly) into the records the update rebuilds (<see cref="RecordMemberPreservation" />). Loads the stored entity
+    ///     only when a written record has such a member.
+    /// </summary>
+    protected static async Task PreserveProtectedRecordMembersAsync(ICkCacheService ckCacheService, string tenantId,
+        ITenantRepository repository, IOctoSession session, RtEntityId rtEntityId, RtEntity document)
+    {
+        var ckTypeGraph = ckCacheService.GetRtCkType(tenantId, rtEntityId.CkTypeId);
+        if (!RecordMemberPreservation.NeedsStoredEntity(ckCacheService, tenantId, ckTypeGraph, document))
+        {
+            return;
+        }
+
+        var stored = await repository.GetRtEntityByRtIdAsync(session, rtEntityId);
+        RecordMemberPreservation.Apply(ckCacheService, tenantId, ckTypeGraph, document, stored);
+    }
+
     protected async Task<IEnumerable<RtEntityDto>> GetResultSet(IOctoSession session, ITenantRepository repository,
         List<EntityUpdateInfo<RtEntity>> entityUpdateInfos)
     {
@@ -346,7 +364,7 @@ internal abstract class RtMutationBase : ObjectGraphType
         }
 
         var ckTypeGraph = ckCacheService.GetRtCkType(tenantId, ckTypeId);
-        return names
+        var mapped = names
             .Select(name =>
             {
                 var trimmed = name.Trim();
@@ -362,6 +380,19 @@ internal abstract class RtMutationBase : ObjectGraphType
             })
             .Distinct(StringComparer.Ordinal)
             .ToList();
+
+        // AB#8055: clearing is a write - a Secret attribute the caller may not write on update (Hidden, MethodOnly,
+        // ReadOnly) cannot be cleared either (ATTRIBUTE_NOT_WRITABLE, nothing written).
+        foreach (var name in mapped)
+        {
+            if (ckTypeGraph.AllAttributesByName.TryGetValue(name, out var attribute) &&
+                !AttributeAccess.IsGenericallyWritable(attribute.Access, false))
+            {
+                throw HiddenAttributeAccessException.NotWritable(name, GetElementName(ckTypeGraph), attribute.Access);
+            }
+        }
+
+        return mapped;
     }
 
     /// <summary>

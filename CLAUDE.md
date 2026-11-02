@@ -718,10 +718,21 @@ schema initialization.
   `groupingAggregation` / `downsampling` queries, persisted `streamDataQuery` rows and both `aggregations`
   sub-connections. The check runs inside `StreamDataFieldValidation.ValidateStreamDataFields` (required parameter) and
   explicitly in the aggregation and runtime-override resolvers. Tests: `StreamData/StreamDataHiddenAttributeTests`.
-- **Generic writes can still destroy Hidden / MethodOnly values** (G3 review A-M2, backlog): `clearSecretAttributes`
-  has no access check (a Secret attribute that is also MethodOnly can be cleared), and a whole-record write rebuilds
-  the record from its input fields, so Hidden / MethodOnly sub-attributes of a written record are nulled. No current
-  model combines these.
+- **Whole-record updates keep the members the caller may not write** (AB#8055, closes G3 review A-M2): a typed or generic
+  update that writes a record (or record array) attribute rebuilds the record from its input fields; an explicit value for a
+  `Hidden` / `MethodOnly` / `ReadOnly` member is refused, so without help an omitted one would be cleared.
+  `GraphQL/RecordMemberPreservation` (called from `RtMutationBase.PreserveProtectedRecordMembersAsync` in both update resolvers, after
+  the input is built) loads the stored entity - only when a written record has such a member at any depth - and carries the stored
+  values in: a single record by position, a record-array element by its `recordKey` (same matching as the engine's Secret carry-over,
+  `SecretWriteNormalizer.FindByRecordKey`; a new element has nothing to keep, a removed element takes its members with it), nested
+  records recursively. A record array whose record has no usable key (none, or the key itself is not writable on update) cannot be
+  matched: the update is refused with `ATTRIBUTE_NOT_WRITABLE` when a stored element holds a value in a protected member, and allowed
+  when none does. Secret members are left to the engine (record key). `null` for the whole record attribute still removes it. Same idea
+  as identity-owned attributes on `ImportRt` (AB#8059, preserved on omission). `clearSecretAttributes` is a write too: clearing a Secret
+  that is Hidden / MethodOnly / ReadOnly is refused with `ATTRIBUTE_NOT_WRITABLE` (`MapClearSecretAttributes`). Not covered: query-row
+  updates of record paths (`QueryMapper`, path-wise `RtPathEvaluator.SetValue`). Tests: `UnitTests/GraphQL/RecordMemberPreservationTests`,
+  `IntegrationTests/GraphQL/CkV2/RecordMemberPreservationTests` (test type `RecordAccessThing`, records `AccessTestDetail`,
+  `AccessTestInner`, `AccessTestKeyedEntry`).
 - **GraphQL name collisions** (G3 review A-L1/A-L2, backlog): two CK elements that map to the same GraphQL name (e.g.
   a literal `Named2` next to `Named-2`, or names colliding with the generated `…Interface`, `…Input`, `…Update` names)
   make schema initialization throw, and the whole tenant schema is unavailable. `SchemaContext` builds every tenant
