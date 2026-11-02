@@ -324,6 +324,11 @@ Time-series data support (`StreamData/`):
     `ADD COLUMN`, then the definition; idempotent; 400 for a non-activated archive, a rollup or an unresolvable path).
     A blueprint update whose seed adds columns to an activated archive reports them in `archiveColumnsAdded`
     (REST result and GraphQL `BlueprintApplyResult`); rules in engine-mongodb `docs/streamdata-archive-concept.md` §10.
+  - **Archives a blueprint seed creates (AB#7991)** are activated by the engine on install and update, new rollups get a backfill job; the
+    REST results (`BlueprintApplyResultDto`, `BlueprintUpdateResultDto`) and GraphQL `BlueprintApplyResult` carry `archiveActivations`
+    (`BlueprintArchiveActivationDto`: archive, outcome `Activated|SkippedPreExisting|SkippedOptOut|SkippedStreamDataDisabled|Failed`, reason,
+    backfill `NotApplicable|Queued|NothingToBackfill|NotQueued|Failed`, job id, reason). Mapping `BlueprintUpdatePreviewMapper.ToDtos`; tests
+    `TenantApi/BlueprintArchiveActivationResultTests`. Rules: engine `docs/blueprints.md`.
   - `POST disable` is a **verified precondition, not a teardown (AB#4255)**: 409 +
     `OperationFailedErrorDto` naming the archives while any is still `Activated` (guard in the
     engine's `TenantContext.DisableStreamDataAsync`); on success only the tenant flag is switched
@@ -699,8 +704,10 @@ schema initialization.
   run every GraphQL, export, import and blueprint-seed path against the **real** System.Identity model (compiler output in
   `testData/ck-models/`, loaded by `Fixtures/SystemIdentitySnapshotCkModel`; refresh procedure in the README there) with a user whose
   `PasswordHash`, `SecurityStamp` and `UserTokens` hold fixed dummy values; no response, export file or captured log line may contain
-  them. Path table: the README of the integration test project. Open gaps are skipped tests with the bug in the skip reason:
-  AB#8048 (the MongoDB command log and slow-query buffer print Hidden values of a write). A new user is refused on every create path
+  them. Path table: the README of the integration test project. Open gaps are skipped tests with the bug in the skip reason; the
+  only one left is `Gap_GenericCreate_OfAUser_IsReplacedByCreateUser` (CK meta `replacesGenericCreate`, needs the next System.Identity
+  major, AB#8053). AB#8048 is fixed: `TheIdentityStoreWrite_LeavesNoCredentialInTheMongoCommandLog` checks the captured Debug command
+  log of the identity store write, non-vacuous (the rendered insert must be in the capture). A new user is refused on every create path
   (`GENERIC_CREATE_REPLACED_BY_METHOD` naming `User.CreateUser-1`, AB#7777, next section), so the create tests of these suites assert that refusal. A stored query whose filter or selector reaches a credential is refused when it is saved (AB#8049,
   `StoredQuery_WithACredentialFilter_IsRefusedWhenSaved`, `EntitySelector_InAStoredQuery_IsRefused`).
 - **Identity-owned User fields and identity associations (AB#8042)**: `GraphQL/Utils/IdentityOwnedWriteGuard` refuses, for every caller,
@@ -729,10 +736,21 @@ schema initialization.
   `groupingAggregation` / `downsampling` queries, persisted `streamDataQuery` rows and both `aggregations`
   sub-connections. The check runs inside `StreamDataFieldValidation.ValidateStreamDataFields` (required parameter) and
   explicitly in the aggregation and runtime-override resolvers. Tests: `StreamData/StreamDataHiddenAttributeTests`.
-- **Generic writes can still destroy Hidden / MethodOnly values** (G3 review A-M2, backlog): `clearSecretAttributes`
-  has no access check (a Secret attribute that is also MethodOnly can be cleared), and a whole-record write rebuilds
-  the record from its input fields, so Hidden / MethodOnly sub-attributes of a written record are nulled. No current
-  model combines these.
+- **Whole-record updates keep the members the caller may not write** (AB#8055, closes G3 review A-M2): a typed or generic
+  update that writes a record (or record array) attribute rebuilds the record from its input fields; an explicit value for a
+  `Hidden` / `MethodOnly` / `ReadOnly` member is refused, so without help an omitted one would be cleared.
+  `GraphQL/RecordMemberPreservation` (called from `RtMutationBase.PreserveProtectedRecordMembersAsync` in both update resolvers, after
+  the input is built) loads the stored entity - only when a written record has such a member at any depth - and carries the stored
+  values in: a single record by position, a record-array element by its `recordKey` (same matching as the engine's Secret carry-over,
+  `SecretWriteNormalizer.FindByRecordKey`; a new element has nothing to keep, a removed element takes its members with it), nested
+  records recursively. A record array whose record has no usable key (none, or the key itself is not writable on update) cannot be
+  matched: the update is refused with `ATTRIBUTE_NOT_WRITABLE` when a stored element holds a value in a protected member, and allowed
+  when none does. Secret members are left to the engine (record key). `null` for the whole record attribute still removes it. Same idea
+  as identity-owned attributes on `ImportRt` (AB#8059, preserved on omission). `clearSecretAttributes` is a write too: clearing a Secret
+  that is Hidden / MethodOnly / ReadOnly is refused with `ATTRIBUTE_NOT_WRITABLE` (`MapClearSecretAttributes`). Not covered: query-row
+  updates of record paths (`QueryMapper`, path-wise `RtPathEvaluator.SetValue`). Tests: `UnitTests/GraphQL/RecordMemberPreservationTests`,
+  `IntegrationTests/GraphQL/CkV2/RecordMemberPreservationTests` (test type `RecordAccessThing`, records `AccessTestDetail`,
+  `AccessTestInner`, `AccessTestKeyedEntry`).
 - **GraphQL name collisions** (G3 review A-L1/A-L2, backlog): two CK elements that map to the same GraphQL name (e.g.
   a literal `Named2` next to `Named-2`, or names colliding with the generated `…Interface`, `…Input`, `…Update` names)
   make schema initialization throw, and the whole tenant schema is unavailable. `SchemaContext` builds every tenant

@@ -1,0 +1,35 @@
+$schema: https://schemas.meshmakers.cloud/construction-kit-elements.schema.json
+attributes:
+  # AB#8055: record member preservation on update
+  - id: AccessTestDetailLabel
+    valueType: String
+  - id: AccessTestDetailRef
+    valueType: String
+  - id: AccessTestDetailNote
+    valueType: String
+  - id: AccessTestDetailState
+    valueType: String
+  - id: AccessTestDetailInner
+    valueType: Record
+    valueCkRecordId: ${this}/AccessTestInner
+  - id: AccessTestInnerText
+    valueType: String
+  - id: AccessTestInnerRef
+    valueType: String
+  - id: AccessTestKeyedEntryKey
+    valueType: String
+  - id: AccessTestKeyedEntryLabel
+    valueType: String
+  - id: AccessTestKeyedEntryRef
+    valueType: String
+  - id: RecordAccessThingDetail
+    valueType: Record
+    valueCkRecordId: ${this}/AccessTestDetail
+  - id: RecordAccessThingEntries
+    valueType: RecordArray
+    valueCkRecordId: ${this}/AccessTestDetail
+  - id: RecordAccessThingKeyedEntries
+    valueType: RecordArray
+    valueCkRecordId: ${this}/AccessTestKeyedEntry
+  - id: RecordAccessThingToken
+    valueType: Secret
