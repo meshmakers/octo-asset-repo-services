@@ -932,6 +932,11 @@ Every concrete CK type with methods gets one mutation field per method **next to
   `extensions.parameters`, plus `extensions.details` when the response carries details). Declared handler codes keep their own code. An accepted async response (F3.6) maps to the
   invocation id without result. A result that does not fit its declaration (`ResultJson`) becomes `METHOD_HANDLER_FAILED` with `methodId` and `correlationId`, never the value.
   The result JSON is the camelCase `CkMethodJson` wire form; enums may be the member name (any spelling) or the key; records are built as `RtRecord` from the record graph.
+  **`ResultJson` is the bare value (AB#8079):** the handler host of octo-common-services writes only `Value` of the generated `{Type}{Method}Result` (`"6ae7…"`, `21`,
+  `{"specName":...}`), never `{"value": ...}`. The converter deliberately has **no** wrapper tolerance: a String result whose JSON is not a string is still passed
+  through as its raw text (unchanged), so an older handler host keeps answering exactly as before during a rolling update instead of failing a call whose writes already
+  happened. Pinned end to end (real in-process host + this mapper, String/Int/Boolean/Record) by `UnitTests/GraphQL/Methods/CkMethodResultEndToEndTests`; it needs the
+  octo-common-services package with AB#8079.
 - **Resolver**: `CkMethodFieldResolver` goes through the gateway (AB#7026, next section).
 - **Schema build time (risk R8)**: the log line carries the CK method count; see the numbers in the PR of AB#5670 (`SchemaBuildTimingTests`, 11 runs, median, with the 50-method type
   `MethodLoadThing` in the test model).
