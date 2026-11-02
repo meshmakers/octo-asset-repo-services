@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- AB#8168 Fix: an aggregation with several STATE_DURATION columns on the same attribute (for example state 0 and state 100) no longer
+  fails with ASSET1002. A single STATE_DURATION column keeps the result key `<attribute>_stateduration`; when the same attribute has
+  several, each key carries its comparison value (`position_stateduration_0`, `position_stateduration_100`; rule:
+  `StreamDataAggregationOutputNaming` in the engine, lower-cased value, letters and digits kept, `-` as `neg`, other characters as `_`).
+  Clients that read the result by key must use that key for those columns. Needs the engine package of AB#8168.
 - AB#7812 New: Stream-data queries return attributes of the anchor entity of a row as columns. A column `anchor.<attributePath>`
   in the column list of a simple stream-data query (persisted `SimpleSdQuery` and transient `simple`, on raw, time-range and
   rollup archives) shows an attribute of the entity the row's `rtId` points at, for example the OBIS code and the unit of an

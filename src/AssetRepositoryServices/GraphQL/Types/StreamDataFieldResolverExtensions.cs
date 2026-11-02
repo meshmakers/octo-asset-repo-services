@@ -89,10 +89,15 @@ internal static class StreamDataFieldResolverExtensions
         IEnumerable<AggregationColumn> aggregationColumns,
         Func<string, CkId<CkEnumId>?>? enumIdResolver = null)
     {
-        return aggregationColumns.Select(col =>
+        var columns = aggregationColumns as IReadOnlyList<AggregationColumn> ?? aggregationColumns.ToList();
+        return columns.Select(col =>
         {
             var r = resolver.Resolve(col.AttributePath)!;
-            var suffix = AggregationFunctionWireSuffix(col.Function);
+            // Several StateDuration columns on one attribute carry their comparison value in the key
+            // (AB#8168); the engine builds its row keys with the same rule, so the lookup cannot drift.
+            var suffix = col.Function == AggregationFunction.StateDuration
+                ? StreamDataAggregationOutputNaming.StateDurationFunctionSuffix(columns, col)
+                : AggregationFunctionWireSuffix(col.Function);
             var key = $"{r.CrateDbName}_{suffix}";
             // Only value-preserving reducers keep the original enum key: MIN/MAX of an enum
             // column return one of the source integer keys, so resolving to its name is correct.
