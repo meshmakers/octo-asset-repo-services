@@ -3,5 +3,5 @@ blueprintId: CredentialSeedBp-1.0.0
 description: Credential guard test - seeds a user with Hidden credential values (fixed dummy values); the apply must be refused
 ckModelDependencies:
   - System-[2.5,3.0)
-  - System.Identity-[2.28,3.0)
+  - System.Identity-[3.0,4.0)
 seedDataPath: seed-data/entities.yaml

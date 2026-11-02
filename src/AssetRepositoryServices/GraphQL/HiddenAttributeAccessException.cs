@@ -36,7 +36,8 @@ internal sealed partial class HiddenAttributeAccessException : Exception
     public string Code => IsWrite ? Statics.GraphQlAttributeNotWritable : Statics.GraphQlAttributeNotQueryable;
 
     /// <summary>
-    ///     AB#8042: an identity-owned User field or an identity association, which only the identity service writes (its REST
+    ///     AB#8042 / AB#8053: an identity association (the identity-owned User attributes are <c>MethodOnly</c> in the model since
+    ///     System.Identity 3.0.0 and refused as an access error), which only the identity service writes (its REST
     ///     API and the identity methods). Same code as an access refusal (<c>ATTRIBUTE_NOT_WRITABLE</c>), extension
     ///     <c>reason = identity-owned</c>.
     /// </summary>

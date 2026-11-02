@@ -8,50 +8,14 @@ using Xunit;
 namespace AssetRepositoryServices.UnitTests.GraphQL;
 
 /// <summary>
-///     AB#8042: <see cref="IdentityOwnedWriteGuard" /> - the query-row path parsing and the association check. The attribute check of
-///     the entity mutations and every write path are covered against the real System.Identity model in
-///     <c>IntegrationTests/Security/IdentityCredentialGuardGraphQlTests</c>.
+///     AB#8042 / AB#8053: <see cref="IdentityOwnedWriteGuard" /> - the association check. The identity-owned User attributes are
+///     <c>access: MethodOnly</c> in System.Identity 3.0.0 and judged by the generic access guards; they and every write path
+///     are covered against the real System.Identity model in <c>IntegrationTests/Security/IdentityCredentialGuardGraphQlTests</c>.
 /// </summary>
 public class IdentityOwnedWriteGuardTests
 {
     private static readonly RtCkId<CkTypeId> User = new("System.Identity/User");
     private static readonly RtCkId<CkTypeId> Role = new("System.Identity/Role");
-
-    [Theory]
-    [InlineData("twoFactorEnabled")]
-    [InlineData("TwoFactorEnabled")]
-    [InlineData("claims.value")]
-    [InlineData("userLogins[0].loginProvider")]
-    [InlineData("lockoutEnd")] // AB#8059: the lockout fields joined the engine list; the guard reads the list
-    [InlineData("accessFailedCount")]
-    public void QueryRowPath_OnAnIdentityOwnedUserField_IsRefused_WithTheReason(string path)
-    {
-        var act = () => IdentityOwnedWriteGuard.EnsureWritablePath(User, path);
-
-        var exception = act.Should().Throw<HiddenAttributeAccessException>().Which;
-        exception.Code.Should().Be("ATTRIBUTE_NOT_WRITABLE");
-        exception.Reason.Should().Be("identity-owned");
-        exception.IsWrite.Should().BeTrue();
-    }
-
-    [Theory]
-    [InlineData("firstName")]
-    [InlineData("assignedRoles->name")]
-    [InlineData("")]
-    public void QueryRowPath_OtherFieldsOrNavigation_PassesTheGuard(string path)
-    {
-        var act = () => IdentityOwnedWriteGuard.EnsureWritablePath(User, path);
-
-        act.Should().NotThrow();
-    }
-
-    [Fact]
-    public void QueryRowPath_OnAnotherType_PassesTheGuard()
-    {
-        var act = () => IdentityOwnedWriteGuard.EnsureWritablePath(Role, "twoFactorEnabled");
-
-        act.Should().NotThrow();
-    }
 
     [Theory]
     [InlineData("System.Identity/AssignedRole")]

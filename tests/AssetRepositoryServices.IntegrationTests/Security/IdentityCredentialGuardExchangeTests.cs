@@ -146,8 +146,9 @@ public class IdentityCredentialGuardExchangeTests
         (await FindUserAsync(rtId)).Should().BeTrue();
     }
 
-    // AB#8042: a user-initiated import (caller path) cannot set an identity-owned User field or write an identity association
-    // (engine message 140); the system path (blueprint seed) is unchanged (positive control above imports the same fields).
+    // AB#8042 / AB#8053: a user-initiated import cannot set an identity-owned User field - they are MethodOnly in System.Identity
+    // 3.0.0, so every path refuses them with engine message 139 (the former runtime list answered 140 on the caller path only) -
+    // and cannot write an identity association (engine message 140, caller path only).
     [Theory]
     [InlineData("System.Identity/TwoFactorEnabled", "true")]
     [InlineData("System.Identity/EmailConfirmed", "true")]
@@ -155,7 +156,7 @@ public class IdentityCredentialGuardExchangeTests
     [InlineData("System.Identity/ResetPasswordOnLogin", "false")]
     [InlineData("System.Identity/LockoutEnd", "'2000-01-01T00:00:00Z'")] // AB#8059: a caller import cannot reset a lockout
     [InlineData("System.Identity/AccessFailedCount", "0")]
-    public async Task ImportRt_CallerPath_IdentityOwnedField_IsRefused_AndWritesNothing(string attributeId, string value)
+    public async Task ImportRt_CallerPath_IdentityOwnedField_IsRefusedByTheAccessRule_AndWritesNothing(string attributeId, string value)
     {
         var rtId = OctoObjectId.GenerateNewId().ToString();
         var file = WriteYaml(PlainUserYaml(rtId, $"""
@@ -165,7 +166,28 @@ public class IdentityCredentialGuardExchangeTests
 
         var exception = await ImportAsync(file, ImportStrategy.Insert, callerPath: true);
 
-        AssertIdentityOwnedRefusal(exception, attributeId.Split('/')[1]);
+        exception.Should().NotBeNull("the import must be refused");
+        exception!.MessageNumber.Should().Be(139);
+        exception.Messages.Should().Contain(m => m.Parameters["attributePath"].Contains(attributeId.Split('/')[1]));
+        AssertNoCredential(exception.ToString());
+        (await FindUserAsync(rtId)).Should().BeFalse("nothing is written");
+    }
+
+    [Fact]
+    public async Task ImportRt_SystemPath_IdentityOwnedField_IsRefusedByTheAccessRule_Too()
+    {
+        // Rule 139 does not distinguish the caller from the system path: no blueprint seed or system import may carry a value
+        // for a MethodOnly attribute (before 3.0.0 the system path accepted the identity-owned fields).
+        var rtId = OctoObjectId.GenerateNewId().ToString();
+        var file = WriteYaml(PlainUserYaml(rtId, """
+                  - id: System.Identity/TwoFactorEnabled
+                    value: true
+            """));
+
+        var exception = await ImportAsync(file, ImportStrategy.Insert, callerPath: false);
+
+        exception.Should().NotBeNull();
+        exception!.MessageNumber.Should().Be(139);
         (await FindUserAsync(rtId)).Should().BeFalse("nothing is written");
     }
 
@@ -272,18 +294,6 @@ public class IdentityCredentialGuardExchangeTests
               - rtId: '{rtId}'
                 ckTypeId: {F.UserCkTypeId}
                 attributes:
-                  - id: System.Identity/EmailConfirmed
-                    value: false
-                  - id: System.Identity/PhoneNumberConfirmed
-                    value: false
-                  - id: System.Identity/TwoFactorEnabled
-                    value: false
-                  - id: System.Identity/LockoutEnabled
-                    value: true
-                  - id: System.Identity/AccessFailedCount
-                    value: 0
-                  - id: System.Identity/ResetPasswordOnLogin
-                    value: false
                   - id: {attributeId}
                     value:{valueYaml}
             """;

@@ -184,9 +184,7 @@ internal abstract class RtMutationBase : ObjectGraphType
                     GetElementName(ckTypeWithAttributesGraph), ckTypeAttributeGraph.Access);
             }
 
-            // AB#8042: identity-owned User fields are written only by the identity service (REST API and methods).
-            IdentityOwnedWriteGuard.EnsureAttributeWritable(ckTypeWithAttributesGraph, ckTypeAttributeGraph.AttributeName,
-                GetElementName(ckTypeWithAttributesGraph));
+            // AB#8053: the identity-owned User attributes are MethodOnly in System.Identity 3.0.0, so the check above covers them.
 
             switch (ckTypeAttributeGraph.ValueType)
             {
