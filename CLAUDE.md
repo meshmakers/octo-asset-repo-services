@@ -324,6 +324,11 @@ Time-series data support (`StreamData/`):
     `ADD COLUMN`, then the definition; idempotent; 400 for a non-activated archive, a rollup or an unresolvable path).
     A blueprint update whose seed adds columns to an activated archive reports them in `archiveColumnsAdded`
     (REST result and GraphQL `BlueprintApplyResult`); rules in engine-mongodb `docs/streamdata-archive-concept.md` §10.
+  - **Archives a blueprint seed creates (AB#7991)** are activated by the engine on install and update, new rollups get a backfill job; the
+    REST results (`BlueprintApplyResultDto`, `BlueprintUpdateResultDto`) and GraphQL `BlueprintApplyResult` carry `archiveActivations`
+    (`BlueprintArchiveActivationDto`: archive, outcome `Activated|SkippedPreExisting|SkippedOptOut|SkippedStreamDataDisabled|Failed`, reason,
+    backfill `NotApplicable|Queued|NothingToBackfill|NotQueued|Failed`, job id, reason). Mapping `BlueprintUpdatePreviewMapper.ToDtos`; tests
+    `TenantApi/BlueprintArchiveActivationResultTests`. Rules: engine `docs/blueprints.md`.
   - `POST disable` is a **verified precondition, not a teardown (AB#4255)**: 409 +
     `OperationFailedErrorDto` naming the archives while any is still `Activated` (guard in the
     engine's `TenantContext.DisableStreamDataAsync`); on success only the tenant flag is switched

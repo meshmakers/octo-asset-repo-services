@@ -65,6 +65,7 @@ internal static class BlueprintUpdatePreviewMapper
             Warnings = result.Warnings.ToList(),
             BlankedAttributes = ToDtos(result.BlankedAttributes),
             ArchiveColumnsAdded = ToDtos(result.ArchiveColumnsAdded),
+            ArchiveActivations = ToDtos(result.ArchiveActivations),
             TenantOwnedSkipped = ToDtos(result.TenantOwnedSkipped),
             TenantOwnedStaysDeleted = ToDtos(result.TenantOwnedStaysDeleted),
             IsBlocked = result.IsCkUpgradeBlocked,
@@ -86,6 +87,26 @@ internal static class BlueprintUpdatePreviewMapper
             IsComputed = a.IsComputed,
             BackfillJobRtId = a.BackfillJobRtId?.ToString(),
             Error = a.Error
+        }).ToList();
+    }
+
+    /// <summary>
+    ///     AB#7991: the archives of a blueprint seed and what the install or update did with each.
+    /// </summary>
+    public static List<BlueprintArchiveActivationDto> ToDtos(IEnumerable<BlueprintArchiveActivation> activations)
+    {
+        return activations.Select(a => new BlueprintArchiveActivationDto
+        {
+            ArchiveRtId = a.ArchiveRtId,
+            WellKnownName = a.WellKnownName,
+            CkTypeId = a.CkTypeId,
+            BlueprintId = a.BlueprintId,
+            IsRollup = a.IsRollup,
+            Outcome = a.Outcome.ToString(),
+            Reason = a.Reason,
+            Backfill = a.Backfill.ToString(),
+            BackfillJobRtId = a.BackfillJobRtId,
+            BackfillReason = a.BackfillReason
         }).ToList();
     }
 
