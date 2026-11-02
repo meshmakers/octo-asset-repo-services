@@ -121,14 +121,22 @@ internal sealed class StreamDataQueryDtoType : ObjectGraphType<StreamDataQueryDt
             hiddenGuard.EnsureNotHidden(runtimeFieldFilters?.Select(f => f.AttributePath));
             hiddenGuard.EnsureNotHidden(loaded.FieldFilter?.Select(f => f.AttributePath));
 
+            // AB#7812: anchor columns are display only - not in a stored or a query-time filter (all operators).
+            StreamDataAnchorColumns.EnsureNone(runtimeFieldFilters?.Select(f => f.AttributePath), "a field filter");
+            StreamDataAnchorColumns.EnsureNone(loaded.FieldFilter?.Select(f => f.AttributePath), "a field filter");
+
             StreamQueryExecutionInput input;
             IReadOnlyList<ColumnNameMapping> resolvedColumnNames;
+            var anchorPlan = AnchorPlan.None([]);
 
             switch (loaded)
             {
                 case RtSimpleSdQuery simple:
                 {
-                    var columnNames = simple.Columns?.ToList() ?? [];
+                    // AB#7812: anchor columns (anchor.<path>) are split off before the stream-data repository is called.
+                    var requestedColumns = simple.Columns?.ToList() ?? [];
+                    anchorPlan = StreamDataAnchorColumns.Plan(requestedColumns, fieldResolver);
+                    var columnNames = anchorPlan.ArchiveColumns.ToList();
                     var fieldFilterList = simple.FieldFilter?.ToList();
 
                     // Downsampling override (AB#4233): a Simple query executed with
@@ -143,6 +151,13 @@ internal sealed class StreamDataQueryDtoType : ObjectGraphType<StreamDataQueryDt
                     if (execOverride?.QueryMode == QueryModeDto.Downsampling
                         && dsFrom is not null && dsTo is not null && dsLimit is not null)
                     {
+                        if (anchorPlan.HasAnchors)
+                        {
+                            throw new OctoGraphQLException(
+                                $"Anchor column '{anchorPlan.AnchorColumns[0]}' cannot be used in a downsampling query. " +
+                                StreamDataAnchorColumns.DisplayOnlyLimit);
+                        }
+
                         var dsPersistedFilterPaths = fieldFilterList is { Count: > 0 }
                             ? fieldFilterList.Where(f => f.ComparisonValue != null).Select(f => f.AttributePath)
                             : null;
@@ -211,7 +226,14 @@ internal sealed class StreamDataQueryDtoType : ObjectGraphType<StreamDataQueryDt
                         ConcatNullable(persistedFilterPaths, runtimeFilterPaths),
                 StreamDataHiddenGuard.For(ctx, gql.TenantId, ckTypeId));
 
-                    resolvedColumnNames = fieldResolver.ResolveToMappings(columnNames, enumIdResolver);
+                    if (anchorPlan.HasAnchors)
+                    {
+                        StreamDataAnchorColumns.Validate(anchorPlan, ckTypeId, LoadTypeQueryColumns(ctx, tenantId, ckTypeId),
+                            hiddenGuard);
+                    }
+
+                    resolvedColumnNames = anchorPlan.MergeMappings(
+                        fieldResolver.ResolveToMappings(columnNames, enumIdResolver), enumIdResolver);
 
                     IReadOnlyList<SortOrderItem>? sortOrders;
                     if (runtimeSortList is { Count: > 0 })
@@ -231,7 +253,7 @@ internal sealed class StreamDataQueryDtoType : ObjectGraphType<StreamDataQueryDt
                         Variant = StreamQueryVariant.Simple,
                         ArchiveRtId = uc.ArchiveRtId,
                         CkTypeId = ckTypeId,
-                        ColumnPaths = columnNames,
+                        ColumnPaths = anchorPlan.EngineColumns,
                         RtIds = execOverride?.RtIds ?? simple.RtIds?.Select(id => new OctoObjectId(id)).ToList(),
                         From = execOverride?.From ?? simple.From,
                         To = execOverride?.To ?? simple.To,
@@ -428,9 +450,9 @@ internal sealed class StreamDataQueryDtoType : ObjectGraphType<StreamDataQueryDt
             _logger.LogDebug("StreamDataQueryDtoType Rows: got {Count} rows, totalCount={Total}",
                 result.Rows.Count, result.TotalCount);
 
-            var rows = result.Rows
-                .Select(r => StreamDataQueryRowDto.FromStreamDataRow(r, resolvedColumnNames))
-                .ToList();
+            // AB#7812: one batched anchor load per page (caller's rights); a no-op without anchor columns.
+            var rows = await StreamDataAnchorColumns.BuildPageRowsAsync(ctx, gql, ckTypeId, result.Rows, resolvedColumnNames,
+                anchorPlan);
 
             var effectiveOffset = input.Offset.GetValueOrDefault(0);
             return ConnectionUtils.ToOctoConnection(rows, ctx,
@@ -484,6 +506,14 @@ internal sealed class StreamDataQueryDtoType : ObjectGraphType<StreamDataQueryDt
             if (aggInput.SumAttributePaths != null)
                 aggColumns.AddRange(aggInput.SumAttributePaths.Select(p =>
                     new AggregationColumn(p, AggregationFunction.Sum)));
+
+            // AB#7812: anchor columns are display only - not aggregated, not in a stored or a query-time filter.
+            StreamDataAnchorColumns.EnsureNone(aggColumns.Select(c => c.AttributePath), "an aggregation");
+            StreamDataAnchorColumns.EnsureNone(loaded.FieldFilter?.Select(f => f.AttributePath), "a field filter");
+            if (ctx.TryGetArgument(Statics.FieldFilterArg, out IEnumerable<FieldFilterDto>? anchorFilterDtos))
+            {
+                StreamDataAnchorColumns.EnsureNone(anchorFilterDtos?.Select(f => f.AttributePath), "a field filter");
+            }
 
             // CK v2 (review G3 E-M2): aggregation paths must not reach a Hidden attribute.
             StreamDataHiddenGuard.For(ctx, gql.TenantId, ckTypeId).EnsureNotHidden(aggColumns.Select(c => c.AttributePath));

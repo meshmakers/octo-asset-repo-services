@@ -93,16 +93,20 @@ internal sealed class StreamDataTransientQueryDtoType : ObjectGraphType<StreamDa
 
             IReadOnlyList<ColumnNameMapping> resolvedColumnNames;
             StreamQueryExecutionInput input;
+            var activeAnchorPlan = AnchorPlan.None([]);
 
             switch (uc.Variant)
             {
                 case StreamQueryVariant.Simple:
                 {
-                    var columnPaths = uc.ColumnPaths ?? [];
+                    // AB#7812: ColumnPaths holds the columns as requested; anchor columns are split off here.
+                    var anchorPlan = StreamDataAnchorColumns.Plan(uc.ColumnPaths ?? [], fieldResolver);
+                    var columnPaths = anchorPlan.ArchiveColumns;
 
                     // Allow runtime overrides for sort and time filter
                     ctx.TryGetArgument(Statics.SortOrderArg, out IEnumerable<SortDto>? runtimeSortDtos);
                     var runtimeSortList = runtimeSortDtos?.ToList();
+                    StreamDataAnchorColumns.EnsureNone(runtimeSortList?.Select(s => s.AttributePath), "a sort order");
                     // CK v2 (review G3 E-M2): a runtime sort override must not reach a Hidden attribute.
                     StreamDataHiddenGuard.For(ctx, tenantId, ckTypeId)
                         .EnsureNotHidden(runtimeSortList?.Select(s => s.AttributePath));
@@ -113,14 +117,16 @@ internal sealed class StreamDataTransientQueryDtoType : ObjectGraphType<StreamDa
                         ? StreamDataGraphQlMapper.MapSortOrders(runtimeSortList)
                         : uc.SortOrders;
 
-                    resolvedColumnNames = fieldResolver.ResolveToMappings(columnPaths, enumIdResolver);
+                    resolvedColumnNames = anchorPlan.MergeMappings(
+                        fieldResolver.ResolveToMappings(columnPaths, enumIdResolver), enumIdResolver);
+                    activeAnchorPlan = anchorPlan;
 
                     input = new StreamQueryExecutionInput
                     {
                         Variant = StreamQueryVariant.Simple,
                         ArchiveRtId = uc.ArchiveRtId,
                         CkTypeId = ckTypeId,
-                        ColumnPaths = columnPaths,
+                        ColumnPaths = anchorPlan.EngineColumns,
                         RtIds = uc.RtIds,
                         From = execOverride?.From ?? uc.From,
                         To = execOverride?.To ?? uc.To,
@@ -221,9 +227,9 @@ internal sealed class StreamDataTransientQueryDtoType : ObjectGraphType<StreamDa
                 "StreamDataTransientQueryDtoType Rows: got {Count} rows, totalCount={Total}",
                 result.Rows.Count, result.TotalCount);
 
-            var rows = result.Rows
-                .Select(r => StreamDataQueryRowDto.FromStreamDataRow(r, resolvedColumnNames))
-                .ToList();
+            // AB#7812: one batched anchor load per page (caller's rights); a no-op without anchor columns.
+            var rows = await StreamDataAnchorColumns.BuildPageRowsAsync(ctx, gql, ckTypeId, result.Rows, resolvedColumnNames,
+                activeAnchorPlan);
 
             var effectiveOffset = input.Offset.GetValueOrDefault(0);
             return ConnectionUtils.ToOctoConnection(rows, ctx,
@@ -276,6 +282,9 @@ internal sealed class StreamDataTransientQueryDtoType : ObjectGraphType<StreamDa
             if (aggInput.SumAttributePaths != null)
                 aggColumns.AddRange(aggInput.SumAttributePaths.Select(p =>
                     new AggregationColumn(p, AggregationFunction.Sum)));
+
+            // AB#7812: anchor columns are display only.
+            StreamDataAnchorColumns.EnsureNone(aggColumns.Select(c => c.AttributePath), "an aggregation");
 
             // CK v2 (review G3 E-M2): aggregation paths must not reach a Hidden attribute.
             StreamDataHiddenGuard.For(ctx, gql.TenantId, ckTypeId).EnsureNotHidden(aggColumns.Select(c => c.AttributePath));

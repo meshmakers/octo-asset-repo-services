@@ -322,8 +322,9 @@ internal sealed class StreamDataQuery : ObjectGraphType
         switch (loaded)
         {
             case RtSimpleSdQuery simple:
+                // AB#7812: anchor.<path> columns report the CK value type of the anchor attribute.
                 return (simple.Columns?.ToList() ?? [])
-                    .Select(path => StreamDataColumnBuilder.BuildSimpleColumn(path, typeQueryColumns, fieldResolver))
+                    .Select(path => StreamDataAnchorColumns.BuildColumn(path, typeQueryColumns, fieldResolver))
                     .ToList();
 
             case RtAggregationSdQuery aggregation:

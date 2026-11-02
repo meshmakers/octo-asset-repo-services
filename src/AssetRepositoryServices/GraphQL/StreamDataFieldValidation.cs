@@ -25,6 +25,13 @@ internal static class StreamDataFieldValidation
     {
         var unknownFields = new List<string>();
 
+        // AB#7812: anchor columns are display only. The simple query splits them off before it gets here, so an anchor
+        // path that reaches this check is used as a sort, a filter or a column of an aggregation / grouping /
+        // downsampling query.
+        StreamDataAnchorColumns.EnsureNone(sortFieldNames, "a sort order");
+        StreamDataAnchorColumns.EnsureNone(filterFieldNames, "a field filter");
+        StreamDataAnchorColumns.EnsureNone(columnNames, "an aggregation, grouping or downsampling query");
+
         foreach (var group in new[] { columnNames, sortFieldNames, filterFieldNames })
         {
             if (group == null) continue;
