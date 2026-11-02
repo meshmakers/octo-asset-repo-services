@@ -140,6 +140,15 @@ public class IdentityCredentialGuardFixture : MethodGatewayGraphQlTestFixture
         }
     }
 
+    /// <summary>The log lines captured after <paramref name="start" />.</summary>
+    public IReadOnlyList<string> LogLinesSince(int start)
+    {
+        lock (Logs)
+        {
+            return Logs.Skip(start).Select(l => l.Text).ToList();
+        }
+    }
+
     /// <summary>The log lines captured after <paramref name="start" /> that contain a dummy value (should be empty).</summary>
     public IReadOnlyList<string> LogLinesWithDummyValuesSince(int start)
     {
