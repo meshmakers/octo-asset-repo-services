@@ -116,6 +116,7 @@ internal sealed class BlueprintsMutation : ObjectGraphType
                     : BlueprintApplicationMode.Initial).ToString(),
                 SeedDataFilesApplied = result.AppliedSeedDataFiles.Count,
                 LoadedCkModels = result.LoadedCkModels.Select(m => m.ToString()).ToList(),
+                ArchiveActivations = BlueprintUpdatePreviewMapper.ToDtos(result.ArchiveActivations),
                 Warnings = result.OperationResult.Messages
                     .Where(m => m.MessageLevel == MessageLevel.Warning)
                     .Select(m => m.MessageText)
@@ -206,6 +207,7 @@ internal sealed class BlueprintsMutation : ObjectGraphType
                 Warnings = result.Warnings.ToList(),
                 BlankedAttributes = BlueprintUpdatePreviewMapper.ToDtos(result.BlankedAttributes),
                 ArchiveColumnsAdded = BlueprintUpdatePreviewMapper.ToDtos(result.ArchiveColumnsAdded),
+                ArchiveActivations = BlueprintUpdatePreviewMapper.ToDtos(result.ArchiveActivations),
                 TenantOwnedSkipped = BlueprintUpdatePreviewMapper.ToDtos(result.TenantOwnedSkipped),
                 TenantOwnedStaysDeleted = BlueprintUpdatePreviewMapper.ToDtos(result.TenantOwnedStaysDeleted),
                 // AB#6871: a dry run reports what a real update would be refused for.

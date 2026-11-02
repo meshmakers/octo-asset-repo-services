@@ -151,6 +151,9 @@ internal class RtEntityMutation : RtMutationBase
 
                 await RtEntityFromInputObjectAsync(ckCacheService, graphQlUserContext.TenantId, document,
                     mutationDto.Item, associationUpdateInfoList, isCreate: false);
+                // AB#8055: keep the stored values of record members the caller may not write.
+                await PreserveProtectedRecordMembersAsync(ckCacheService, graphQlUserContext.TenantId, tenantRepository,
+                    sessionAccessor.Session, rtEntityId, document);
                 var clearSecretAttributes = MapClearSecretAttributes(ckCacheService, graphQlUserContext.TenantId,
                     ckTypeId, mutationDto.ClearSecretAttributes);
                 var entityUpdateInfo = CreateUpdateInfo(rtEntityId, document, clearSecretAttributes);

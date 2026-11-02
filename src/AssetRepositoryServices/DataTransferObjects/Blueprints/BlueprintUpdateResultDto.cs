@@ -41,6 +41,13 @@ public class BlueprintUpdateResultDto
     public List<BlueprintArchiveColumnAdditionDto> ArchiveColumnsAdded { get; set; } = [];
 
     /// <summary>
+    ///     AB#7991: the archives of the seed and what the operation did with each - new archives activated (or skipped
+    ///     with a reason, or failed), pre-existing ones untouched - and for new rollups the backfill job. Empty when the
+    ///     seed carries no archive.
+    /// </summary>
+    public List<BlueprintArchiveActivationDto> ArchiveActivations { get; set; } = [];
+
+    /// <summary>
     ///     Tenant-owned seed entities the update leaves untouched because the tenant still holds them
     ///     (AB#6454, engine AB#6383). Identity only, never attribute values. Counted in the skipped total.
     /// </summary>
