@@ -1,7 +1,7 @@
 $schema: https://schemas.meshmakers.cloud/blueprint-meta.schema.json
 blueprintId: VisibleIdentitySeedBp-1.0.0
-description: Credential guard test - positive control - seeds a user with visible attributes only
+description: Credential guard test - seeds a new user with visible attributes only; refused since System.Identity 3.0 (CreateUser-1 replaces the generic create)
 ckModelDependencies:
   - System-[2.5,3.0)
-  - System.Identity-[2.28,3.0)
+  - System.Identity-[3.0,4.0)
 seedDataPath: seed-data/entities.yaml

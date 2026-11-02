@@ -1,7 +1,7 @@
 $schema: https://schemas.meshmakers.cloud/blueprint-meta.schema.json
 blueprintId: NewUserSeedBp-1.0.0
-description: AB#7777 - seeds a user on System.Identity 2.29 or later, where User.CreateUser-1 replaces the generic create
+description: AB#7777 / AB#8053 - seeds a new user (visible attributes only) on System.Identity 3.0 or later, where User.CreateUser-1 replaces the generic create
 ckModelDependencies:
   - System-[2.5,3.0)
-  - System.Identity-[2.29,3.0)
+  - System.Identity-[3.0,4.0)
 seedDataPath: seed-data/entities.yaml

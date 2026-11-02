@@ -723,27 +723,27 @@ schema initialization.
   run every GraphQL, export, import and blueprint-seed path against the **real** System.Identity model (compiler output in
   `testData/ck-models/`, loaded by `Fixtures/SystemIdentitySnapshotCkModel`; refresh procedure in the README there) with a user whose
   `PasswordHash`, `SecurityStamp` and `UserTokens` hold fixed dummy values; no response, export file or captured log line may contain
-  them. Path table: the README of the integration test project. Open gaps are skipped tests with the bug in the skip reason; the
-  only one left is `Gap_GenericCreate_OfAUser_IsReplacedByCreateUser` (CK meta `replacesGenericCreate`, needs the next System.Identity
-  major, AB#8053). AB#8048 is fixed: `TheIdentityStoreWrite_LeavesNoCredentialInTheMongoCommandLog` checks the captured Debug command
+  them. Path table: the README of the integration test project. Open gaps are skipped tests with the bug in the skip reason; none is left (the former
+  `Gap_GenericCreate_OfAUser_IsReplacedByCreateUser` passes since System.Identity 3.0.0, AB#8053: CK meta `replacesGenericCreate` is `true`). AB#8048 is fixed: `TheIdentityStoreWrite_LeavesNoCredentialInTheMongoCommandLog` checks the captured Debug command
   log of the identity store write, non-vacuous (the rendered insert must be in the capture). A new user is refused on every create path
   (`GENERIC_CREATE_REPLACED_BY_METHOD` naming `User.CreateUser-1`, AB#7777, next section), so the create tests of these suites assert that refusal. A stored query whose filter or selector reaches a credential is refused when it is saved (AB#8049,
   `StoredQuery_WithACredentialFilter_IsRefusedWhenSaved`, `EntitySelector_InAStoredQuery_IsRefused`).
-- **Identity-owned User fields and identity associations (AB#8042)**: `GraphQL/Utils/IdentityOwnedWriteGuard` refuses, for every caller,
-  the attributes and association roles listed in the engine's `IdentityOwnedWrites` (ConstructionKit.Contracts): User `NormalizedUserName`,
+- **Identity-owned User fields and identity associations (AB#8042, AB#8053)**: the identity-owned User attributes `NormalizedUserName`,
   `NormalizedEmail`, `EmailConfirmed`, `PhoneNumberConfirmed`, `TwoFactorEnabled`, `LockoutEnabled`, `ResetPasswordOnLogin`, `Claims`, `UserLogins`,
-  `PreferredChannelBindingId`, `LockoutEnd`, `AccessFailedCount` (AB#8059; both are `ReadOnly` in the model and already refused by the access
-  guard, the list adds them for the user-started import); associations `AssignedRole`, `GroupMember`, `ChildGroup`, `MayActAs`, `GrantsPermission` (insert and delete, from
-  either end). Call sites: `RtMutationBase.TryHandleAttributeAsync` (typed and generic create/update attribute input), `RtMutationBase.ApplyChangesAsync`
-  (all associations of the typed and generic create/update), `QueryMapper.RtEntityFromInputObject` (query-row cells) and `RtQueryMutation` create/update
-  (query-row navigation associations). Refusal: `ATTRIBUTE_NOT_WRITABLE` (`HiddenAttributeAccessException.IdentityOwned`) with the extra extension
-  `reason = identity-owned`; nothing is written. Only the identity service writes these values (its REST API and the identity methods, which carry the
-  role-change guard and the audit); it uses its own repository, which never passes here. The engine refuses the same values on the caller path of
-  `ImportRt` (message 140). Why a runtime list and not CK `access`: none of these attributes was `securitySensitive` in an earlier System.Identity 2.x,
-  so tightening their access is a Major (row T7); the list moves into the model's `access` with the next System.Identity major, together with AB#7777;
-  association writes cannot be expressed in CK at all. Not covered here: `PolicyPermission`, `IdentifiesUser` (open), the mesh-adapter load nodes,
-  `clearSecretAttributes` (no identity-owned attribute is a Secret). Tests: `UnitTests/GraphQL/IdentityOwnedWriteGuardTests`, the AB#8042 tests in
-  `IntegrationTests/Security/IdentityCredentialGuard{GraphQl,Exchange}Tests`.
+  `PreferredChannelBindingId`, `LockoutEnd`, `AccessFailedCount` are `access: MethodOnly` in System.Identity 3.0.0 and refused by the **generic access
+  guard** (`ATTRIBUTE_NOT_WRITABLE` with the access detail; typed inputs do not offer them; query rows: `AccessQueryGuard.EnsureWritablePath`). Nothing
+  of the attribute list lives here any more (AB#8053 removed `IdentityOwnedWriteGuard.EnsureAttributeWritable` / `EnsureWritablePath`; the 2.x guard
+  answered with the extra extension `reason = identity-owned`). `GraphQL/Utils/IdentityOwnedWriteGuard` still refuses, for every caller, the association
+  roles listed in the engine's `IdentityOwnedWrites.AssociationRoleIds` (ConstructionKit.Contracts): `AssignedRole`, `GroupMember`, `ChildGroup`, `MayActAs`,
+  `GrantsPermission` (insert and delete, from either end). **Why the associations stay in a list:** the CK access model has no association-level write
+  restriction (`access` exists only on attributes). Call sites: `RtMutationBase.ApplyChangesAsync` (all associations of the typed and generic
+  create/update) and `RtQueryMutation` create/update (query-row navigation associations). Refusal: `ATTRIBUTE_NOT_WRITABLE`
+  (`HiddenAttributeAccessException.IdentityOwned`) with the extra extension `reason = identity-owned`; nothing is written. Only the identity service writes
+  these values (its REST API and the identity methods, which carry the role-change guard and the audit); it uses its own repository, which never passes here.
+  The engine refuses the same associations on the caller path of `ImportRt` (message 140) and the attributes through rule 139. Not covered here:
+  `PolicyPermission`, `IdentifiesUser` (open), the mesh-adapter load nodes. Tests: `UnitTests/GraphQL/IdentityOwnedWriteGuardTests`, the AB#8042/AB#8053 tests in
+  `IntegrationTests/Security/IdentityCredentialGuard{GraphQl,Exchange}Tests`. A tenant still on System.Identity 2.x (until the identity service has imported 3.0.0)
+  has no MethodOnly on these attributes and no list here: roll the identity service out together with this one.
 - **Stream data** (review M12 / G3 E-M2): no archive column may reach a Hidden attribute. The engine refuses to
   activate such an archive and fails an active one when a model change makes a column reach Hidden
   (`ArchiveHiddenColumnGuard`, `ArchiveLifecycleService`). The asset-repo additionally refuses every stream-data
@@ -1084,12 +1084,12 @@ response envelope) and `extensions.parameters` = `{ ckTypeId, methodId }` (`meth
 message is fixed, contains only ids, and carries no entity data, so it is byte-identical for every caller. It needs no method right and runs after
 authentication like any mutation. Update, delete, query-row update/delete and every other mutation are untouched; types without the flag are untouched.
 The CK meta field `CkMethod.replacesGenericCreate` (`Boolean!`, additive) shows the flag; v1 CK queries are unchanged.
-**`System.Identity/User` (AB#7777):** the engine helper answers the static `User.CreateUser-1` for the user type although System.Identity 2.x does
-not set the flag (runtime rule until the next major, AB#8053), so the typed, generic and query-row create of a **new** user are refused here with
+**`System.Identity/User` (AB#7777, AB#8053):** System.Identity 3.0.0 sets `replacesGenericCreate` on the static `User.CreateUser-1` (until 2.30.0 the engine
+helper stood in with a runtime rule), so the typed, generic and query-row create of a **new** user are refused here with
 `methodId = System.Identity/User.CreateUser-1`; updates of existing users are untouched. No code in this repository changed for it (engine package only);
-the CK meta still reports `replacesGenericCreate: false` for the method. Tests: `Security/IdentityCredentialGuardGraphQlTests` (`GenericCreate_OfAUserWithOnlyVisibleFields_*`,
-`TypedCreate_OfAUser_*`, the create cases), `Security/IdentityCredentialGuardBlueprintSeedTests` (test blueprint `NewUserSeedBp`, System.Identity 2.29+: new user seed refused with 136,
-seed of an existing user rtId upserted; `VisibleIdentitySeedBp` installs 2.28.0, which has no `CreateUser`, and is still applied), `Security/IdentityCredentialGuardExchangeTests`
+the CK meta reports `replacesGenericCreate: true` for the method. Tests: `Security/IdentityCredentialGuardGraphQlTests` (`GenericCreate_OfAUserWithOnlyVisibleFields_*`,
+`TypedCreate_OfAUser_*`, the create cases), `Security/IdentityCredentialGuardBlueprintSeedTests` (test blueprint `NewUserSeedBp`, System.Identity 3.0: new user seed refused with 136,
+seed of an existing user rtId upserted; `VisibleIdentitySeedBp` (visible attributes only) is refused with 136 too since 3.0.0; `MethodOnlySeedBp` with 139), `Security/IdentityCredentialGuardExchangeTests`
 (caller `ImportRt` of a new user: 137).
 **Create paths that do not go through the GraphQL create and are therefore not covered here:** `ModelsController.ImportRt` (async `ImportRtCommandRequest`
 job), blueprint seed data and `ImportCk`-time data, the mesh-adapter `ApplyChanges` nodes (repository access), and `FileSystemService`/system

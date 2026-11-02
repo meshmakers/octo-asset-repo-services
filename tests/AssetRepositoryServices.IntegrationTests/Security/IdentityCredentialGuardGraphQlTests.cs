@@ -67,8 +67,18 @@ public class IdentityCredentialGuardGraphQlTests
         access["userTokens"].Should().Be("Hidden");
         access["userName"].Should().Be("MethodOnly");
         access["email"].Should().Be("MethodOnly");
-        access["lockoutEnd"].Should().Be("ReadOnly");
-        access["accessFailedCount"].Should().Be("ReadOnly");
+        // AB#8053 (System.Identity 3.0.0): the identity-owned attributes of the former AB#8042 runtime list are MethodOnly.
+        foreach (var name in new[]
+                 {
+                     "lockoutEnd", "accessFailedCount", "normalizedUserName", "normalizedEmail", "emailConfirmed",
+                     "phoneNumberConfirmed", "twoFactorEnabled", "lockoutEnabled", "resetPasswordOnLogin", "claims",
+                     "userLogins", "preferredChannelBindingId"
+                 })
+        {
+            access[name].Should().Be("MethodOnly", name);
+        }
+
+        access["firstName"].Should().Be("ReadWrite");
     }
 
     [Fact]
@@ -404,11 +414,11 @@ public class IdentityCredentialGuardGraphQlTests
         await AssertProbeUserUnchangedAsync();
     }
 
-    // AB#8047: ReadOnly attributes are writable on create only, like in the engine (AttributeAccess.IsGenericallyWritable).
+    // AB#8053: the lockout attributes were ReadOnly (writable on create only, AB#8047) and are MethodOnly since System.Identity 3.0.0.
     [Theory]
     [InlineData("lockoutEnd", "2020-01-01T00:00:00Z")]
     [InlineData("accessFailedCount", 0)]
-    public async Task GenericUpdate_OfAReadOnlyLockoutAttribute_IsRefused(string attribute, object value)
+    public async Task GenericUpdate_OfAMethodOnlyLockoutAttribute_IsRefused(string attribute, object value)
     {
         var result = await GenericUpdateAsync(_fixture.ProbeUserRtId, attribute, value);
 
@@ -594,8 +604,10 @@ public class IdentityCredentialGuardGraphQlTests
 
     // ------------------------------------------------------------------------------------------------- open gaps
 
-    // AB#8042: identity-owned User fields and identity associations are written only by the identity service (REST API and
-    // methods). The generic paths refuse them with ATTRIBUTE_NOT_WRITABLE and the extension reason = identity-owned.
+    // AB#8042 / AB#8053: identity-owned User fields and identity associations are written only by the identity service (REST API
+    // and methods). The fields are MethodOnly in the model (System.Identity 3.0.0): the generic paths refuse them with
+    // ATTRIBUTE_NOT_WRITABLE and the access detail. The associations stay in the engine list: ATTRIBUTE_NOT_WRITABLE with the
+    // extension reason = identity-owned.
     public static TheoryData<string, object> IdentityOwnedFlags() => new()
     {
         { "normalizedUserName", "OTHER-USER" },
@@ -616,7 +628,7 @@ public class IdentityCredentialGuardGraphQlTests
 
         var result = await GenericUpdateAsync(_fixture.ProbeUserRtId, attribute, value);
 
-        AssertIdentityOwnedRefusal(result);
+        AssertMethodOnlyRefusal(result);
         (await ProbeIdentityFieldsAsync()).Should().Equal(before);
     }
 
@@ -627,7 +639,7 @@ public class IdentityCredentialGuardGraphQlTests
     {
         var result = await GenericUpdateAsync(_fixture.ProbeUserRtId, attribute, Array.Empty<object>());
 
-        AssertIdentityOwnedRefusal(result);
+        AssertMethodOnlyRefusal(result);
     }
 
     [Theory]
@@ -655,8 +667,9 @@ public class IdentityCredentialGuardGraphQlTests
     }
 
     [Fact]
-    public async Task TypedUpdate_OfAnIdentityOwnedField_IsRefused_AndNothingChanges()
+    public async Task TypedUpdate_OfAnIdentityOwnedField_IsRefusedBySchemaValidation_AndNothingChanges()
     {
+        // MethodOnly attributes are not part of the typed inputs, so the field is unknown to the schema (AB#8053).
         var before = await ProbeIdentityFieldsAsync();
 
         var result = await _fixture.ExecuteGraphQlAsync($$"""
@@ -665,8 +678,28 @@ public class IdentityCredentialGuardGraphQlTests
             } } }
             """);
 
-        AssertIdentityOwnedRefusal(result);
+        result.Errors.Should().NotBeNullOrEmpty(_fixture.SerializeGraphQl(result));
+        _fixture.SerializeGraphQl(result).Should().Contain("twoFactorEnabled");
         (await ProbeIdentityFieldsAsync()).Should().Equal(before);
+    }
+
+    [Fact]
+    public async Task TypedInputs_DoNotOfferAnIdentityOwnedField()
+    {
+        var input = await FieldNamesAsync(F.UserTypeName + "Input", "inputFields");
+
+        foreach (var name in new[]
+                 {
+                     "normalizedUserName", "normalizedEmail", "emailConfirmed", "phoneNumberConfirmed", "twoFactorEnabled",
+                     "lockoutEnabled", "lockoutEnd", "accessFailedCount", "resetPasswordOnLogin", "claims", "userLogins",
+                     "preferredChannelBindingId"
+                 })
+        {
+            input.Should().NotContain(name);
+        }
+
+        // The update input is {rtId, item (the typed input), clearSecretAttributes}; the item carries the visible fields.
+        input.Should().Contain("firstName");
     }
 
     [Fact]
@@ -804,7 +837,7 @@ public class IdentityCredentialGuardGraphQlTests
             } } }
             """);
 
-        AssertIdentityOwnedRefusal(result);
+        AssertMethodOnlyRefusal(result);
         (await ProbeIdentityFieldsAsync()).Should().Equal(before);
     }
 
@@ -826,8 +859,8 @@ public class IdentityCredentialGuardGraphQlTests
         AssertCreateReplacedByUserCreateUser(result);
     }
 
-    [Fact(Skip = "Pending: CreateUser does not set replacesGenericCreate in System.Identity 2.29.0 (needs the next major)")]
-    public async Task Gap_GenericCreate_OfAUser_IsReplacedByCreateUser()
+    [Fact]
+    public async Task GenericCreate_OfAUser_IsReplacedByCreateUser_ByTheModelFlag()
     {
         var result = await _fixture.ExecuteGraphQlAsync(GenericCreateMutation, JsonSerializer.Serialize(new
         {
@@ -935,7 +968,7 @@ public class IdentityCredentialGuardGraphQlTests
             .Should().HaveCount(1);
     }
 
-    /// <summary>AB#7777: the generic create of a user is replaced by <c>User.CreateUser-1</c> (engine runtime rule).</summary>
+    /// <summary>AB#7777 / AB#8053: the generic create of a user is replaced by <c>User.CreateUser-1</c> (<c>replacesGenericCreate</c> in System.Identity 3.0.0).</summary>
     private void AssertCreateReplacedByUserCreateUser(ExecutionResult result)
     {
         AssertRefused(result, "GENERIC_CREATE_REPLACED_BY_METHOD");
@@ -944,6 +977,15 @@ public class IdentityCredentialGuardGraphQlTests
         var parameters = (IDictionary<string, object?>)error.Extensions!["parameters"]!;
         parameters["methodId"].Should().Be("System.Identity/User.CreateUser-1", json);
         parameters["ckTypeId"]!.ToString().Should().Contain("System.Identity", json).And.EndWith("/User", json);
+    }
+
+    /// <summary>AB#8053: the attribute is MethodOnly in the model; the refusal is the generic access one, without the identity-owned reason.</summary>
+    private void AssertMethodOnlyRefusal(ExecutionResult result)
+    {
+        AssertRefused(result, "ATTRIBUTE_NOT_WRITABLE");
+        var json = _fixture.SerializeGraphQl(result);
+        result.Errors!.Where(e => e.Code == "ATTRIBUTE_NOT_WRITABLE").Should()
+            .OnlyContain(e => e.Extensions == null || !e.Extensions.ContainsKey("reason"), json);
     }
 
     private void AssertIdentityOwnedRefusal(ExecutionResult result)

@@ -1,7 +1,7 @@
 # CK model snapshots for tests
 
-`ck-system.identity-2.29.0.yaml` is the **compiler output** of the `System.Identity` CK model of
-octo-identity-services (`src/Persistence.IdentityCkModel/ConstructionKit`, version 2.29.0, `ckLanguage: 2`).
+`ck-system.identity-3.0.0.yaml` is the **compiler output** of the `System.Identity` CK model of
+octo-identity-services (`src/Persistence.IdentityCkModel/ConstructionKit`, version 3.0.0, `ckLanguage: 2`).
 The asset repository does not ship System.Identity; the credential guard tests (`Security/IdentityCredentialGuard*Tests`)
 load this file as an embedded model (`Fixtures/SystemIdentitySnapshotCkModel`) so they run against the real access
 matrix of the user instead of a test model.
@@ -22,6 +22,13 @@ git -C ../octo-identity-services archive origin/main src/Persistence.IdentityCkM
 dotnet <engine>/bin/DebugL/net10.0/publish/octo-ckc.dll -c compile \
   -p <scratch>/src/Persistence.IdentityCkModel/ConstructionKit -o <scratch>/out -lce true -lcr <catalog root>
 
-# 3. copy <scratch>/out/ck-system.identity-2.yaml to ck-system.identity-<version>.yaml here and update
+# 3. copy <scratch>/out/ck-system.identity-3.yaml to ck-system.identity-<version>.yaml here and update
 #    SystemIdentitySnapshotCkModel.ModelFullName and the csproj item if the file name changed
 ```
+
+## `ck-system.identity-2.30.0.yaml`
+
+The compiler output of the last System.Identity 2.x release (octo-identity-services `origin/main` before AB#8053, same procedure as
+above with the 2.30.0 sources). It is **not** an embedded model of the test host; `Tenant/IdentityMajorUpgradeFlowTests` imports it
+explicitly into a tenant and then upgrades that tenant to the embedded 3.0.0 snapshot (existing tenants must upgrade cleanly). Do not
+refresh it: it documents the old major.

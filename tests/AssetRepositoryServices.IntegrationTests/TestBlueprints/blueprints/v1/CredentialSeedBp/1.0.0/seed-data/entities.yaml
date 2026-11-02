@@ -1,7 +1,7 @@
 $schema: https://schemas.meshmakers.cloud/runtime-model.schema.json
 dependencies:
   - System-[2.5,3.0)
-  - System.Identity-[2.28,3.0)
+  - System.Identity-[3.0,4.0)
 entities:
   - rtId: 67000099aaaa7781bbbb0001
     ckTypeId: System.Identity/User
