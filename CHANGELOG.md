@@ -4,7 +4,8 @@
 
 - AB#8228 Fix: the asset repository recovers without a restart after a tenant's MongoDB user was dropped and re-created. A request that
   fails with a MongoDB authentication error (error 13 / 18, failed SCRAM) evicts the tenant's cached MongoDB clients, at most once per 15 s and
-  tenant, so the next request authenticates anew; GraphQL errors (which never reach the HTTP pipeline) are covered by the unhandled-exception hook.
+  tenant, so the next request authenticates anew. GraphQL errors never reach the HTTP pipeline and resolvers map their own exceptions, so the
+  eviction is called from the central error mapping (`HandleException`) and from the unhandled-exception hook.
   Needs the common-services package of AB#8228 (`TenantDatabaseUserHealer.EvictOnAuthenticationFailureAsync`).
 - AB#8168 Fix: an aggregation with several STATE_DURATION columns on the same attribute (for example state 0 and state 100) no longer
   fails with ASSET1002. A single STATE_DURATION column keeps the result key `<attribute>_stateduration`; when the same attribute has

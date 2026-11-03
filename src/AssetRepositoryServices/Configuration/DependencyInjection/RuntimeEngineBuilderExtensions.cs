@@ -252,7 +252,8 @@ public static class RuntimeEngineBuilderExtensions
 
                     // AB#8228: MongoDB authentication failure (user re-created under a running tenant) —
                     // evict the tenant's stale pooled clients so the next request works without a restart.
-                    return GraphQlTenantPoolEviction.TryEvictAsync(ctx, logger);
+                    // (Resolver exceptions are mostly mapped by HandleException, which calls the same hook.)
+                    return GraphQlTenantPoolEviction.TryEvictAsync(ctx);
                 };
             })
             // Add required services for GraphQL request/response de/serialization
