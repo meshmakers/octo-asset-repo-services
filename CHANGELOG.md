@@ -7,6 +7,8 @@
   tenant, so the next request authenticates anew. GraphQL errors never reach the HTTP pipeline and resolvers map their own exceptions, so the
   eviction is called from the central error mapping (`HandleException`) and from the unhandled-exception hook.
   Needs the common-services package of AB#8228 (`TenantDatabaseUserHealer.EvictOnAuthenticationFailureAsync`).
+  Round 3: the CK model observability sweep (background read per tenant) evicts on an authentication failure too; REST controllers that answer
+  their own 500 (e.g. `ModelsController`) are covered by the common-services result filter (`TenantPoolEvictionResultFilter`).
 - AB#8168 Fix: an aggregation with several STATE_DURATION columns on the same attribute (for example state 0 and state 100) no longer
   fails with ASSET1002. A single STATE_DURATION column keeps the result key `<attribute>_stateduration`; when the same attribute has
   several, each key carries its comparison value (`position_stateduration_0`, `position_stateduration_100`; rule:
