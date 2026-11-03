@@ -1,5 +1,6 @@
 using Meshmakers.Octo.Backend.AssetRepositoryServices.Services;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb;
+using Meshmakers.Octo.Services.Infrastructure.Services;
 using Microsoft.Extensions.Options;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.Observability;
@@ -161,7 +162,7 @@ internal sealed class CkModelObservabilitySweepService : BackgroundService
             }
 
             observed.Add(tenantId);
-            await SweepTenantAsync(libraryStatusService, tenantId, options.PerTenantTimeout, cancellationToken);
+            await SweepTenantAsync(systemContext, libraryStatusService, tenantId, options.PerTenantTimeout, cancellationToken);
         }
 
         // Tenants that vanished from the registry (deleted, or moved out of this host's scope) must
@@ -179,7 +180,7 @@ internal sealed class CkModelObservabilitySweepService : BackgroundService
             tenantIds.Count, observed.Count);
     }
 
-    private async Task SweepTenantAsync(ICkModelLibraryStatusService libraryStatusService, string tenantId,
+    private async Task SweepTenantAsync(ISystemContext systemContext, ICkModelLibraryStatusService libraryStatusService, string tenantId,
         TimeSpan perTenantTimeout, CancellationToken cancellationToken)
     {
         try
@@ -207,6 +208,10 @@ internal sealed class CkModelObservabilitySweepService : BackgroundService
             CkModelObservabilityMetrics.SetTenantUnreachable(tenantId);
             _reportedFaults.Remove(tenantId);
 
+            // AB#8228 round 3: this background read is a trigger of its own — a tenant that is only read by
+            // timers and REST would otherwise keep its stale pooled connections after a user re-create.
+            await EvictOnAuthenticationFailureAsync(systemContext, tenantId, ex, _logger);
+
             // Warn once per transition, not once per interval.
             if (_unreachableTenants.Add(tenantId))
             {
@@ -216,6 +221,15 @@ internal sealed class CkModelObservabilitySweepService : BackgroundService
             }
         }
     }
+
+    /// <summary>
+    ///     Evicts the tenant's cached MongoDB clients when <paramref name="cause" /> is an authentication failure
+    ///     (rate-limited per tenant, never throws).
+    /// </summary>
+    internal static Task<bool> EvictOnAuthenticationFailureAsync(ISystemContext systemContext, string tenantId,
+        Exception cause, ILogger logger, TenantDatabaseUserHealer? healer = null) =>
+        (healer ?? TenantDatabaseUserHealer.Default)
+        .EvictOnAuthenticationFailureAsync(systemContext, tenantId, logger, cause);
 
     /// <summary>
     ///     Logs only what changed since the previous sweep. The metric carries the state; the log

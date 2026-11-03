@@ -80,6 +80,10 @@ internal static class ResolveConnectionContextExtensions
 
     internal static object? HandleException(this IResolveFieldContext context, Exception exception)
     {
+        // AB#8228: a MongoDB authentication failure (the tenant's user was dropped or re-created under this running
+        // process) evicts the tenant's stale pooled clients so the next request recovers without a restart.
+        _ = GraphQlTenantPoolEviction.EvictInBackground(context, exception);
+
         if (TryCreateSecretNotQueryableError(exception, out var secretError))
         {
             // Before the PersistenceException branch: the exception derives from it but has its own code.
