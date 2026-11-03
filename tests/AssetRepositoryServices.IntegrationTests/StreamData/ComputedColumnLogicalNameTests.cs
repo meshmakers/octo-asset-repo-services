@@ -190,7 +190,10 @@ public class ComputedColumnLogicalNameTests(StreamDataFixture fixture, ITestOutp
             var second = await ResolveFieldAsync(store, columnName);
             second.CrateDbName.Should().Be("changedvoltage");
             second.PhysicalName.Should().Be("changedvoltage__v2");
+            (await ReadColumnAsync(store, columnName)).Formula.Should().Be("voltage * 4",
+                "the committed formula must follow the second change");
 
+            // The backfilled row follows the second formula ...
             var afterSecond = await repo.ExecuteQueryAsync(fixture.ArchiveRtId,
                 StreamDataQueryOptions.Create()
                     .WithCkTypeId(new RtCkId<CkTypeId>(fixture.TestCkTypeId))
@@ -200,6 +203,29 @@ public class ComputedColumnLogicalNameTests(StreamDataFixture fixture, ITestOutp
             rowAfterSecond.Values.Keys.Should().NotContain(k => k.Contains("__v"));
             Convert.ToDouble(rowAfterSecond.Values["changedvoltage"], CultureInfo.InvariantCulture)
                 .Should().BeApproximately(voltage * 4, 1e-9);
+
+            // ... and so does a row ingested after it — the ingest path the first change checks too.
+            var secondTimestamp = timestamp.AddHours(1);
+            const double secondVoltage = 500.0;
+            await repo.InsertAsync(fixture.ArchiveRtId, new StreamDataPoint
+            {
+                RtId = OctoObjectId.GenerateNewId(),
+                CkTypeId = new RtCkId<CkTypeId>(fixture.TestCkTypeId),
+                Timestamp = secondTimestamp,
+                RtWellKnownName = "PostSecondChangeMeteringPoint",
+                Attributes = new Dictionary<string, object?> { ["voltage"] = secondVoltage }
+            });
+            await fixture.RefreshArchiveTableAsync(fixture.ArchiveRtIdString);
+
+            var ingestedAfterSecond = await repo.ExecuteQueryAsync(fixture.ArchiveRtId,
+                StreamDataQueryOptions.Create()
+                    .WithCkTypeId(new RtCkId<CkTypeId>(fixture.TestCkTypeId))
+                    .WithColumns(["Voltage", columnName])
+                    .WithTimeRange(secondTimestamp.AddMinutes(-1), secondTimestamp.AddMinutes(1)));
+            var ingestedRow = ingestedAfterSecond.Rows.Should().ContainSingle().Subject;
+            ingestedRow.Values.Keys.Should().NotContain(k => k.Contains("__v"));
+            Convert.ToDouble(ingestedRow.Values["changedvoltage"], CultureInfo.InvariantCulture)
+                .Should().BeApproximately(secondVoltage * 4, 1e-9);
         }
         finally
         {
