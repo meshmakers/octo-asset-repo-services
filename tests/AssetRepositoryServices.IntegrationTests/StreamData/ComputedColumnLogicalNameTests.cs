@@ -167,14 +167,65 @@ public class ComputedColumnLogicalNameTests(StreamDataFixture fixture, ITestOutp
                     .WithColumns(["Voltage", columnName])
                     .WithTimeRange(timestamp.AddMinutes(-1), timestamp.AddMinutes(1)));
 
-            var storageKey = await ResolveStorageKeyAsync(store, columnName);
-            storageKey.Should().NotBe("changedvoltage",
+            // The result key stays the LOGICAL column name (AB#8236); the versioned physical column
+            // ({name}__v{N}) is internal to the storage layer and never reaches a result.
+            var resolved = await ResolveFieldAsync(store, columnName);
+            resolved.CrateDbName.Should().Be("changedvoltage",
+                "the result key must not change when a formula change versions the column");
+            resolved.PhysicalName.Should().Be("changedvoltage__v1",
                 "a formula change moves the column to a versioned physical name");
 
             var row = result.Rows.Should().ContainSingle().Subject;
-            row.Values[storageKey].Should().NotBeNull(
+            row.Values.Keys.Should().NotContain(k => k.Contains("__v"),
+                "no physical versioned name may leak into a result row");
+            row.Values["changedvoltage"].Should().NotBeNull(
                 "a row ingested after the formula change must still be computed");
-            Convert.ToDouble(row.Values[storageKey], CultureInfo.InvariantCulture).Should().BeApproximately(voltage * 3, 1e-9);
+            Convert.ToDouble(row.Values["changedvoltage"], CultureInfo.InvariantCulture).Should().BeApproximately(voltage * 3, 1e-9);
+
+            // A second change versions the column again; the logical key must still hold.
+            await lifecycle.UpdateComputedColumnFormulaAsync(
+                fixture.ArchiveRtId, columnName, "Voltage * 4");
+            await fixture.RefreshArchiveTableAsync(fixture.ArchiveRtIdString);
+
+            var second = await ResolveFieldAsync(store, columnName);
+            second.CrateDbName.Should().Be("changedvoltage");
+            second.PhysicalName.Should().Be("changedvoltage__v2");
+            (await ReadColumnAsync(store, columnName)).Formula.Should().Be("voltage * 4",
+                "the committed formula must follow the second change");
+
+            // The backfilled row follows the second formula ...
+            var afterSecond = await repo.ExecuteQueryAsync(fixture.ArchiveRtId,
+                StreamDataQueryOptions.Create()
+                    .WithCkTypeId(new RtCkId<CkTypeId>(fixture.TestCkTypeId))
+                    .WithColumns(["Voltage", columnName])
+                    .WithTimeRange(timestamp.AddMinutes(-1), timestamp.AddMinutes(1)));
+            var rowAfterSecond = afterSecond.Rows.Should().ContainSingle().Subject;
+            rowAfterSecond.Values.Keys.Should().NotContain(k => k.Contains("__v"));
+            Convert.ToDouble(rowAfterSecond.Values["changedvoltage"], CultureInfo.InvariantCulture)
+                .Should().BeApproximately(voltage * 4, 1e-9);
+
+            // ... and so does a row ingested after it — the ingest path the first change checks too.
+            var secondTimestamp = timestamp.AddHours(1);
+            const double secondVoltage = 500.0;
+            await repo.InsertAsync(fixture.ArchiveRtId, new StreamDataPoint
+            {
+                RtId = OctoObjectId.GenerateNewId(),
+                CkTypeId = new RtCkId<CkTypeId>(fixture.TestCkTypeId),
+                Timestamp = secondTimestamp,
+                RtWellKnownName = "PostSecondChangeMeteringPoint",
+                Attributes = new Dictionary<string, object?> { ["voltage"] = secondVoltage }
+            });
+            await fixture.RefreshArchiveTableAsync(fixture.ArchiveRtIdString);
+
+            var ingestedAfterSecond = await repo.ExecuteQueryAsync(fixture.ArchiveRtId,
+                StreamDataQueryOptions.Create()
+                    .WithCkTypeId(new RtCkId<CkTypeId>(fixture.TestCkTypeId))
+                    .WithColumns(["Voltage", columnName])
+                    .WithTimeRange(secondTimestamp.AddMinutes(-1), secondTimestamp.AddMinutes(1)));
+            var ingestedRow = ingestedAfterSecond.Rows.Should().ContainSingle().Subject;
+            ingestedRow.Values.Keys.Should().NotContain(k => k.Contains("__v"));
+            Convert.ToDouble(ingestedRow.Values["changedvoltage"], CultureInfo.InvariantCulture)
+                .Should().BeApproximately(secondVoltage * 4, 1e-9);
         }
         finally
         {
@@ -252,15 +303,18 @@ public class ComputedColumnLogicalNameTests(StreamDataFixture fixture, ITestOutp
     /// <summary>
     /// The key a column's value arrives under in <c>StreamDataRow.Values</c>, asked of the storage
     /// layer's own resolver. Never derived from the column name: a computed column is lower-cased, and
-    /// after a formula change it moves to a versioned physical name — the two reasons AB#4764 made this
+    /// after a formula change its physical column is versioned, while the result key stays logical (AB#8236) — the two reasons AB#4764 made this
     /// resolver the single source of truth for every reader.
     /// </summary>
     private async Task<string> ResolveStorageKeyAsync(IArchiveRuntimeStore store, string columnName)
+        => (await ResolveFieldAsync(store, columnName)).CrateDbName;
+
+    private async Task<ResolvedField> ResolveFieldAsync(IArchiveRuntimeStore store, string columnName)
     {
         var snapshot = await store.GetAsync(fixture.ArchiveRtId)
             ?? throw new InvalidOperationException("Archive snapshot not available.");
 
-        return StreamDataFieldResolver.CreateForArchive(snapshot).Resolve(columnName)?.CrateDbName
+        return StreamDataFieldResolver.CreateForArchive(snapshot).Resolve(columnName)
                ?? throw new InvalidOperationException($"Column '{columnName}' does not resolve.");
     }
 
