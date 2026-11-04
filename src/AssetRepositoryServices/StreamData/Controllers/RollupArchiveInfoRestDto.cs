@@ -28,7 +28,13 @@ public sealed record RollupArchiveInfoRestDto(
     int DirtyWindowsPending,
     int PendingRecomputeRanges,
     // Multi-source declaration (AB#5157): every source archive with its half-open validity span.
-    IReadOnlyList<RollupSourceRestDto> Sources);
+    IReadOnlyList<RollupSourceRestDto> Sources,
+    // IANA reference time zone the calendar buckets are cut in (AB#8275, same value as the GraphQL
+    // rollupsFor.referenceTimeZone). Null => UTC calendar boundaries or a fixed-size rollup.
+    string? ReferenceTimeZone,
+    // Local day start of a CalendarDay rollup in ms after local midnight in ReferenceTimeZone (AB#8275, same
+    // value as the GraphQL rollupsFor.dayStartOffsetMs; 21600000 = 06:00 gas day). Null/0 => midnight days.
+    long? DayStartOffsetMs);
 
 /// <summary>
 /// REST projection of one source declaration of a rollup (AB#5157): the source archive plus its

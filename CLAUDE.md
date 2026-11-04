@@ -156,7 +156,8 @@ built-in or platform field; computed columns pass when their result type is nume
 `StreamDataException`. Raw archives only (rollups: AB#7920). Tests: `StreamData/StreamDataIntegralQueryTests`.
 
 **Gas days / local-day bins (AB#7361, engine AB#7358/AB#7360).** `createRollupArchive.dayStartOffsetMs` (validated by the engine
-at create time) and `rollupsFor.dayStartOffsetMs`; transient `downsampling(timeZone, binInterval, binOrigin)` builds local-day bins
+at create time) and `rollupsFor.dayStartOffsetMs` (REST `archives/{id}/rollups` carries `referenceTimeZone`/`dayStartOffsetMs` from the same
+rollup snapshot, AB#8275); transient `downsampling(timeZone, binInterval, binOrigin)` builds local-day bins
 (`GraphQL/StreamDataLocalDayBins`: parses `binOrigin` `HH:mm`, checks `binInterval >= 1`, runs `DownsamplingBinAxis.Resolve` before the
 repository call; `limit` is required only without these arguments); `resolveSeriesQuery(dayStartOffsetMs | binOrigin)` sets
 `SeriesResolutionRequest.QueryDayStartOffsetMs` in `StreamDataQuery.BuildSeriesResolutionRequest` — without it a gas-day rollup is never
