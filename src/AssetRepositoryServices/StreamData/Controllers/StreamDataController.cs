@@ -836,7 +836,9 @@ public class StreamDataController : ControllerBase
                     rollup.PendingRecomputeRanges,
                     rollup.Sources
                         .Select(src => new RollupSourceRestDto(src.SourceArchiveRtId.ToString(), src.ValidFrom, src.ValidTo))
-                        .ToList()));
+                        .ToList(),
+                    rollup.ReferenceTimeZone,
+                    rollup.DayStartOffsetMs));
             }
             return Ok(result);
         }

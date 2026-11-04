@@ -1,13 +1,19 @@
 using System.Globalization;
 using System.Text.Json;
+using FakeItEasy;
 using FluentAssertions;
 using GraphQL;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Collections;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Fixtures;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.StreamData.Controllers;
 using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.ConstructionKit.Models.StreamData.Generated.System.StreamData.v1;
 using Meshmakers.Octo.Runtime.Contracts.StreamData;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging.Abstractions;
 using Newtonsoft.Json.Linq;
 using Xunit;
 
@@ -76,6 +82,42 @@ public class GasDayGraphQlTests(StreamDataFixture fixture, ITestOutputHelper out
 
         (await _builder.LoadRollupAsync(rollup)).DayStartOffsetMs.Should().BeNull();
         (await RollupsForAsync(raw, rollup))["dayStartOffsetMs"]!.Type.Should().Be(JTokenType.Null);
+    }
+
+    /// <summary>
+    /// AB#8275 — the REST rollup list (<c>GET archives/{id}/rollups</c>, read by the SDK, octo-cli and MCP) carries
+    /// the same <c>referenceTimeZone</c> and <c>dayStartOffsetMs</c> as GraphQL <c>rollupsFor</c>: the gas-day
+    /// rollup reports Europe/Vienna and 06:00, the midnight rollup null, under the camelCase names MVC writes.
+    /// </summary>
+    [Fact]
+    public async Task RestListRollupsForArchive_ReturnsTheDayStart_LikeGraphQlRollupsFor()
+    {
+        fixture.OutputHelper = output;
+        var raw = await _builder.CreateRawArchiveAsync("GasDayRestRaw");
+        var gasDay = await CreateGasDayRollupAsync(raw, GasDayMs);
+        var midnight = await CreateGasDayRollupAsync(raw, dayStartOffsetMs: null);
+
+        var rows = OkValue(await NewController().ListRollupsForArchive(fixture.StreamDataTenantId, raw.ToString()));
+
+        var gasDayRow = rows.Single(r => r.RtId == gasDay.ToString());
+        var midnightRow = rows.Single(r => r.RtId == midnight.ToString());
+        var gasDayGraphQl = await RollupsForAsync(raw, gasDay);
+        var midnightGraphQl = await RollupsForAsync(raw, midnight);
+
+        gasDayRow.ReferenceTimeZone.Should().Be(Zone).And.Be(gasDayGraphQl["referenceTimeZone"]!.Value<string>());
+        gasDayRow.DayStartOffsetMs.Should().Be(GasDayMs).And.Be(gasDayGraphQl["dayStartOffsetMs"]!.Value<long>());
+        midnightRow.ReferenceTimeZone.Should().Be(midnightGraphQl["referenceTimeZone"]!.Value<string>());
+        midnightRow.DayStartOffsetMs.Should().BeNull();
+        midnightGraphQl["dayStartOffsetMs"]!.Type.Should().Be(JTokenType.Null);
+
+        // Wire shape: the names the SDK RollupArchiveInfoDto binds to; the existing fields stay as they were.
+        var json = JsonSerializer.SerializeToElement(gasDayRow, new JsonOptions().JsonSerializerOptions);
+        json.GetProperty("referenceTimeZone").GetString().Should().Be(Zone);
+        json.GetProperty("dayStartOffsetMs").GetInt64().Should().Be(GasDayMs);
+        json.GetProperty("bucketSizeMs").GetInt64().Should().Be((long)TimeSpan.FromDays(1).TotalMilliseconds);
+        json.GetProperty("sources").GetArrayLength().Should().Be(1);
+        JsonSerializer.SerializeToElement(midnightRow, new JsonOptions().JsonSerializerOptions)
+            .GetProperty("dayStartOffsetMs").ValueKind.Should().Be(JsonValueKind.Null);
     }
 
     [Theory]
@@ -340,6 +382,16 @@ public class GasDayGraphQlTests(StreamDataFixture fixture, ITestOutputHelper out
         output.WriteLine(node.ToString());
         return node;
     }
+
+    private StreamDataController NewController() =>
+        new(NullLogger<StreamDataController>.Instance, fixture.GetSystemContext(), A.Fake<IHostApplicationLifetime>())
+        {
+            ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() },
+        };
+
+    private static IReadOnlyList<RollupArchiveInfoRestDto> OkValue(ActionResult<IReadOnlyList<RollupArchiveInfoRestDto>> response) =>
+        response.Result.Should().BeOfType<OkObjectResult>().Subject
+            .Value.Should().BeAssignableTo<IReadOnlyList<RollupArchiveInfoRestDto>>().Subject;
 
     private async Task<JToken> RollupsForAsync(OctoObjectId source, OctoObjectId rollup)
     {
