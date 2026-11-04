@@ -40,6 +40,9 @@ internal sealed record RollupArchiveInfoDto(
     // BucketAlignment variants; ignored for FixedSize. Surfaced so the studio can show operators
     // whether a rollup is DST-correct instead of leaving it invisible on the entity.
     string? ReferenceTimeZone,
+    // Local day start of a CalendarDay rollup in ms after local midnight (AB#7361; null/0 ⇒ midnight), so a
+    // client can tell a gas-day rollup (21600000 = 06:00) from a midnight one and ask for matching bins.
+    long? DayStartOffsetMs,
     IReadOnlyList<RollupAggregationInfoDto> Aggregations,
     // Multi-source declaration (AB#5157): every source archive with its half-open validity span.
     // The authoritative form; the deprecated SourceArchiveRtId is derived from it.

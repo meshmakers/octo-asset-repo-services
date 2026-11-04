@@ -24,6 +24,11 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL;
 /// </summary>
 internal sealed class StreamDataTransientQuery : ObjectGraphType
 {
+    // Local-day bin arguments of the downsampling sub-connection (AB#7361).
+    internal const string TimeZoneArg = "timeZone";
+    internal const string BinIntervalArg = "binInterval";
+    internal const string BinOriginArg = "binOrigin";
+
     private readonly ILogger<StreamDataTransientQuery> _logger;
 
     /// <inheritdoc />
@@ -80,13 +85,19 @@ internal sealed class StreamDataTransientQuery : ObjectGraphType
             .ResolveAsync(ResolveGroupingAggregationAsync);
 
         Connection<NonNullGraphType<StreamDataTransientQueryDtoType>>("Downsampling")
-            .Description("Transient downsampling stream-data query — divides the time range into equal buckets.")
+            .Description("Transient downsampling stream-data query — divides the time range into equal buckets, or into local days when timeZone, binInterval or binOrigin is given.")
             .Argument<NonNullGraphType<OctoObjectIdType>>(Statics.ArchiveRtIdArg,
                 "CkArchive runtime id whose table should be queried.")
             .Argument<NonNullGraphType<ListGraphType<NonNullGraphType<StreamDataQueryColumnInputDtoType>>>>(Statics.ColumnPathsArg,
                 "Aggregation columns with attribute path and aggregation type.")
-            .Argument<NonNullGraphType<IntGraphType>>("limit",
-                "Number of time buckets to produce.")
+            .Argument<IntGraphType>("limit",
+                "Number of equal-width time buckets to produce. Required unless timeZone, binInterval or binOrigin is given (local-day bins are cut from the range).")
+            .Argument<StringGraphType>(TimeZoneArg,
+                "Optional IANA time zone (e.g. 'Europe/Vienna') the bins are cut in. With timeZone, binInterval or binOrigin the bins are local days: 23, 24 or 25 hours across DST changes, aligned like CALENDAR_DAY rollups. UTC when only binInterval/binOrigin is given.")
+            .Argument<IntGraphType>(BinIntervalArg,
+                "Optional width of one local-day bin in whole days (default 1 when timeZone or binOrigin is given). Weeks and months are served by calendar rollups.")
+            .Argument<StringGraphType>(BinOriginArg,
+                "Optional local time of day 'HH:mm' at which a bin starts (e.g. '06:00' for a gas day). Null means midnight. Same meaning as dayStartOffsetMs of a CALENDAR_DAY rollup.")
             .Argument<NonNullGraphType<UtcDateTimeGraphType>>("from",
                 "Start of time range.")
             .Argument<NonNullGraphType<UtcDateTimeGraphType>>("to",
@@ -384,7 +395,16 @@ internal sealed class StreamDataTransientQuery : ObjectGraphType
             var columnInputs = ctx.GetArgument<IEnumerable<StreamDataQueryColumnInputDto>>(Statics.ColumnPathsArg).ToList();
             var from = ctx.GetArgument<DateTime>("from");
             var to = ctx.GetArgument<DateTime>("to");
-            var limit = ctx.GetArgument<int>("limit");
+            var limit = ctx.GetArgument<int?>("limit");
+            var localDayBins = StreamDataLocalDayBins.Create(
+                ctx.GetArgument<string?>(TimeZoneArg),
+                ctx.GetArgument<int?>(BinIntervalArg),
+                ctx.GetArgument<string?>(BinOriginArg));
+            if (limit is null && !localDayBins.HasLocalDayBins)
+            {
+                throw new OctoGraphQLException(
+                    "downsampling: limit is required unless timeZone, binInterval or binOrigin is given.");
+            }
 
             var archiveSnapshot = await gql.TenantContext.GetArchiveRuntimeStore().GetAsync(archiveRtId)
                 ?? throw new ArchiveNotFoundException(archiveRtId);
@@ -439,7 +459,8 @@ internal sealed class StreamDataTransientQuery : ObjectGraphType
                     To = to,
                     Limit = limit,
                     FieldFilters = StreamDataGraphQlMapper.MapFieldFilters(fieldFilters),
-                    RtIds = rtIds?.ToList()
+                    RtIds = rtIds?.ToList(),
+                    LocalDayBins = localDayBins
                 }
             };
 

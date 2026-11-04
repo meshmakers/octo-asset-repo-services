@@ -155,6 +155,15 @@ refuses, with `ASSET1004` and the column named, an integral on a non-numeric col
 built-in or platform field; computed columns pass when their result type is numeric) and any integral in a downsampling query; a missing From/To is the engine's structured
 `StreamDataException`. Raw archives only (rollups: AB#7920). Tests: `StreamData/StreamDataIntegralQueryTests`.
 
+**Gas days / local-day bins (AB#7361, engine AB#7358/AB#7360).** `createRollupArchive.dayStartOffsetMs` (validated by the engine
+at create time) and `rollupsFor.dayStartOffsetMs`; transient `downsampling(timeZone, binInterval, binOrigin)` builds local-day bins
+(`GraphQL/StreamDataLocalDayBins`: parses `binOrigin` `HH:mm`, checks `binInterval >= 1`, runs `DownsamplingBinAxis.Resolve` before the
+repository call; `limit` is required only without these arguments); `resolveSeriesQuery(dayStartOffsetMs | binOrigin)` sets
+`SeriesResolutionRequest.QueryDayStartOffsetMs` in `StreamDataQuery.BuildSeriesResolutionRequest` — without it a gas-day rollup is never
+chosen under PerQuery. Persisted downsampling queries and `GetQueryByIdNode` (mesh adapter) carry no day start (midnight). Tests:
+`UnitTests/GraphQL/StreamDataLocalDayBinsTests`, `ResolveSeriesQueryDayStartTests`, `GasDaySchemaTypesTests`,
+`IntegrationTests/StreamData/GasDayGraphQlTests`.
+
 GraphQL types are dynamically created based on the tenant's construction kit model stored in MongoDB.
 
 #### StreamData Mutations

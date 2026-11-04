@@ -66,4 +66,8 @@ internal sealed class StreamDataTransientUserContext
 
     /// <summary>Scope to these entity IDs (all entities if null).</summary>
     public IReadOnlyList<OctoObjectId>? RtIds { get; init; }
+
+    // Downsampling
+    /// <summary>Local-day bins of a downsampling query (AB#7361); <see cref="StreamDataLocalDayBins.None"/> keeps UTC bins.</summary>
+    public StreamDataLocalDayBins LocalDayBins { get; init; } = StreamDataLocalDayBins.None;
 }

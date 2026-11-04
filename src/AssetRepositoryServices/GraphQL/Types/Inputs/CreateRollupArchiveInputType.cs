@@ -45,6 +45,9 @@ internal sealed class CreateRollupArchiveInputType : InputObjectGraphType<Create
         Field<LongGraphType>("carryLookbackMs")
             .Description("Optional bound on the TIME_WEIGHTED_AVG carry-in scan (last observation carried forward) in milliseconds. Null keeps the engine default of 35 days. Only meaningful when the aggregations include TIME_WEIGHTED_AVG; ignored otherwise. Must be > 0 when set.");
 
+        Field<LongGraphType>("dayStartOffsetMs")
+            .Description("Optional local time of day at which a CALENDAR_DAY bucket starts, in milliseconds after local midnight in referenceTimeZone (e.g. 21600000 = 06:00, a gas day). Null or 0 keeps midnight days. Must be a whole number of minutes in [0, 86400000) and is only allowed with CALENDAR_DAY; an invalid value is rejected naming DayStartOffsetMs. Immutable after activation.");
+
         Field<NonNullGraphType<ListGraphType<NonNullGraphType<RollupAggregationInputType>>>>("aggregations")
             .Description("Aggregation specs. At least one required; duplicate target column names are rejected.");
     }

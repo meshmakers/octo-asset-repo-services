@@ -40,6 +40,12 @@ internal sealed class ResolveSeriesQueryInputType : InputObjectGraphType<Resolve
 
         Field<SeriesComparisonPolicyGraphType>("comparisonPolicy")
             .Description("How civil boundaries are resolved across mixed-timezone series (AB#4190). PerQuery (default) applies the query timeZone uniformly; PerSeries aligns each series to its own archive reference time zone.");
+
+        Field<LongGraphType>("dayStartOffsetMs")
+            .Description("Optional local day start in milliseconds after local midnight in timeZone (e.g. 21600000 = 06:00, a gas day). Null or 0 means midnight days. Under PerQuery only a CALENDAR_DAY rollup with the same day start is chosen, so a gas-day request reads the gas-day rollup and a midnight request never reads gas days.");
+
+        Field<StringGraphType>("binOrigin")
+            .Description("Optional day start as local time of day 'HH:mm' (e.g. '06:00'), the notation of the downsampling argument binOrigin. Alternative to dayStartOffsetMs; both with different values are rejected.");
     }
 }
 

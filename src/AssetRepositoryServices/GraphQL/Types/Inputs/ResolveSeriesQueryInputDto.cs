@@ -30,4 +30,19 @@ internal sealed class ResolveSeriesQueryInputDto
     /// (AB#4190). Defaults to <see cref="SeriesComparisonPolicy.PerQuery"/>.
     /// </summary>
     public SeriesComparisonPolicy ComparisonPolicy { get; set; } = SeriesComparisonPolicy.PerQuery;
+
+    /// <summary>
+    /// Optional local day start of the query in milliseconds after local midnight in <see cref="TimeZone"/>
+    /// (AB#7361, e.g. 21600000 = 06:00 for a gas day). Null or 0 ⇒ midnight days. Under
+    /// <see cref="SeriesComparisonPolicy.PerQuery"/> only a CalendarDay rollup with the same day start can answer, so a
+    /// gas-day request reads the gas-day rollup and a midnight request never reads gas days.
+    /// </summary>
+    public long? DayStartOffsetMs { get; set; }
+
+    /// <summary>
+    /// Optional day start as a local time of day (<c>HH:mm</c>, e.g. <c>06:00</c>) — the same notation as the
+    /// downsampling argument <c>binOrigin</c>, so a client can pass the value it uses for the bins. Converted to
+    /// <see cref="DayStartOffsetMs"/>; supplying both with different values is rejected.
+    /// </summary>
+    public string? BinOrigin { get; set; }
 }

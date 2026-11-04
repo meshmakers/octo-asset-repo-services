@@ -54,6 +54,15 @@ internal sealed class CreateRollupArchiveInputDto
     /// </summary>
     public long? CarryLookbackMs { get; set; }
 
+    /// <summary>
+    /// Optional local time of day at which a <see cref="BucketAlignment.CalendarDay"/> bucket starts, in
+    /// milliseconds after local midnight in <see cref="ReferenceTimeZone"/> (AB#7361, e.g. 21600000 = 06:00 for a
+    /// gas day). Null or 0 keeps midnight days. The engine validates it at create time (whole minute in
+    /// <c>[0, 24 h)</c>, only with CalendarDay, chained day rollups must share it) and rejects an invalid value
+    /// with a STREAMDATA_ERROR naming <c>DayStartOffsetMs</c>.
+    /// </summary>
+    public long? DayStartOffsetMs { get; set; }
+
     public List<RollupAggregationInputDto> Aggregations { get; set; } = new();
 }
 

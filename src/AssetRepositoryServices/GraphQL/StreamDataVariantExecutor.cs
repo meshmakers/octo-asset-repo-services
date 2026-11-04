@@ -46,6 +46,9 @@ internal sealed class StreamQueryExecutionInput
     // Pagination for Simple queries
     public int? Offset { get; init; }
     public int? PageSize { get; init; }
+
+    // Local-day bins of a downsampling query (AB#7361). None = fixed-width UTC bins derived from range and limit.
+    public StreamDataLocalDayBins LocalDayBins { get; init; } = StreamDataLocalDayBins.None;
 }
 
 /// <summary>
@@ -93,16 +96,20 @@ internal static class StreamDataVariantExecutor
                     .WithFieldFilters(i.FieldFilters)),
 
             StreamQueryVariant.Downsampling => await repo.ExecuteDownsamplingQueryAsync(i.ArchiveRtId,
-                StreamDataDownsamplingQueryOptions.Create()
+                i.LocalDayBins.ApplyTo(StreamDataDownsamplingQueryOptions.Create()
                     .WithCkTypeId(i.CkTypeId)
                     .WithAggregationColumns(i.AggregationColumns ?? [])
                     .WithGroupByColumns(i.GroupByColumnPaths)
                     .WithTimeRange(
                         i.From ?? throw AssetRepositoryException.InvalidStreamDataQueryParams(),
                         i.To ?? throw AssetRepositoryException.InvalidStreamDataQueryParams())
-                    .WithLimit(i.Limit ?? throw AssetRepositoryException.InvalidStreamDataQueryParams())
+                    // Local-day bins (AB#7361) are cut from the range, zone, origin and interval; the limit is only
+                    // required for the fixed-width UTC bins.
+                    .WithLimit(i.LocalDayBins.HasLocalDayBins
+                        ? i.Limit
+                        : i.Limit ?? throw AssetRepositoryException.InvalidStreamDataQueryParams())
                     .WithRtIds(i.RtIds)
-                    .WithFieldFilters(i.FieldFilters)),
+                    .WithFieldFilters(i.FieldFilters))),
 
             _ => throw new ArgumentOutOfRangeException(nameof(i.Variant), i.Variant,
                 "Unknown StreamQueryVariant")
