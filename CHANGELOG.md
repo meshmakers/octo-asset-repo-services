@@ -5,7 +5,8 @@
 - AB#7361 New: gas days through GraphQL. `createRollupArchive` takes the optional `dayStartOffsetMs` (local day start of a
   `CALENDAR_DAY` rollup in ms after local midnight in `referenceTimeZone`, e.g. `21600000` = 06:00); the engine validates it at
   create time and an invalid value (outside `[0, 86400000)`, not a whole minute, another alignment, a chained rollup with another
-  day start or zone) is refused as STREAMDATA_ERROR naming `DayStartOffsetMs`. `rollupsFor` returns `dayStartOffsetMs`.
+  day start or zone) is refused as STREAMDATA_ERROR naming `DayStartOffsetMs`; an unknown `referenceTimeZone` now answers
+  a message naming the field instead of the masked "An error occurred". `rollupsFor` returns `dayStartOffsetMs`.
   The transient `downsampling` query takes `timeZone`, `binInterval` (whole days) and `binOrigin` (`HH:mm`): with any of them the
   bins are local days (23/24/25 h across DST, cut like `CALENDAR_DAY` rollups) and `limit` is no longer required (it became
   optional; without the new arguments it is still required). `resolveSeriesQuery` takes `dayStartOffsetMs` or `binOrigin` and sets

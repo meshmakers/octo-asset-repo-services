@@ -99,7 +99,7 @@ public class GasDayGraphQlTests(StreamDataFixture fixture, ITestOutputHelper out
         var error = result.Errors!.FirstOrDefault(e => e.InnerException is not null) ?? result.Errors!.First();
         output.WriteLine($"{error.Code}: {error.Message}");
         error.Code.Should().NotBeNullOrEmpty("the refusal is a structured error");
-        error.Message.Should().Contain(namedField);
+        error.Message.Should().ContainEquivalentOf(namedField);
     }
 
     // ── AC2: a seeded rollup (ImportRt / blueprint seed writes the entity directly) ────────────
@@ -304,7 +304,10 @@ public class GasDayGraphQlTests(StreamDataFixture fixture, ITestOutputHelper out
             var cells = row.SelectTokens("cells.items[*]").ToList();
             var timestamp = cells.First(c => c["attributePath"]!.Value<string>() == "timestamp")["value"]!;
             var count = cells.First(c => c["attributePath"]!.Value<string>() != "timestamp")["value"]!;
-            var start = DateTime.Parse(timestamp.ToString(), CultureInfo.InvariantCulture, DateTimeStyles.AdjustToUniversal);
+            var start = timestamp.Type == JTokenType.Date
+                ? AsUtc(timestamp.Value<DateTime>())
+                : DateTime.Parse(timestamp.Value<string>()!, CultureInfo.InvariantCulture,
+                    DateTimeStyles.AdjustToUniversal | DateTimeStyles.AssumeUniversal);
             counts[start] = count.Type == JTokenType.Null ? double.NaN : count.Value<double>();
         }
 
@@ -372,6 +375,13 @@ public class GasDayGraphQlTests(StreamDataFixture fixture, ITestOutputHelper out
         entity!.DayStartOffsetMs = dayStartOffsetMs;
         await repository.UpdateOneRtEntityByIdAsync(session, rollupRtId, entity);
     }
+
+    private static DateTime AsUtc(DateTime value) => value.Kind switch
+    {
+        DateTimeKind.Local => value.ToUniversalTime(),
+        DateTimeKind.Unspecified => DateTime.SpecifyKind(value, DateTimeKind.Utc),
+        _ => value,
+    };
 
     private static bool IsLocalSixOClock(DateTime utc)
     {

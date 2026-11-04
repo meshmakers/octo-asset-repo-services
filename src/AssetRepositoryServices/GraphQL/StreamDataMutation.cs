@@ -546,18 +546,26 @@ internal sealed class StreamDataMutation : ObjectGraphType
                 .Select(a => new CkRollupAggregationSpec(a.SourcePath, a.Function, a.TargetColumnName, a.ComparisonValue))
                 .ToList();
 
-            var rtId = await lifecycle.CreateAsync(
-                input.RtWellKnownName,
-                sources,
-                TimeSpan.FromMilliseconds(input.BucketSizeMs),
-                TimeSpan.FromMilliseconds(input.WatermarkLagMs),
-                aggregations,
-                input.BucketAlignment,
-                input.ReferenceTimeZone,
-                input.CarryLookbackMs is { } carryMs ? TimeSpan.FromMilliseconds(carryMs) : null,
-                input.DayStartOffsetMs);
-
-            return rtId;
+            try
+            {
+                return await lifecycle.CreateAsync(
+                    input.RtWellKnownName,
+                    sources,
+                    TimeSpan.FromMilliseconds(input.BucketSizeMs),
+                    TimeSpan.FromMilliseconds(input.WatermarkLagMs),
+                    aggregations,
+                    input.BucketAlignment,
+                    input.ReferenceTimeZone,
+                    input.CarryLookbackMs is { } carryMs ? TimeSpan.FromMilliseconds(carryMs) : null,
+                    input.DayStartOffsetMs);
+            }
+            catch (ArgumentException e) when (e.ParamName == "referenceTimeZone")
+            {
+                // AB#7361: the engine refuses an unknown zone with an ArgumentException, which HandleException masks
+                // as "An error occurred". It is a client input error: answer it with a message naming the field.
+                throw new OctoGraphQLException(
+                    $"createRollupArchive: referenceTimeZone '{input.ReferenceTimeZone}' is not a known IANA time-zone id (e.g. 'Europe/Vienna').");
+            }
         }
         catch (Exception e)
         {
