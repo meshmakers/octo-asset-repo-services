@@ -36,10 +36,12 @@ internal sealed record StreamDataLocalDayBins(string? TimeZone, TimeSpan? BinInt
         TimeSpan? interval = null;
         if (binIntervalDays is { } days)
         {
-            if (days < 1)
+            // Checked here, before TimeSpan.FromDays: a huge value would overflow TimeSpan and surface as a masked
+            // error instead of one naming the argument. The upper bound is the engine's own cap.
+            if (days < 1 || days > DownsamplingBinAxis.MaxBins)
             {
                 throw new OctoGraphQLException(
-                    $"downsampling: binInterval {days} is invalid. It is the width of one bin in whole local days and must be at least 1.");
+                    $"downsampling: binInterval {days} is invalid. It is the width of one bin in whole local days and must be between 1 and {DownsamplingBinAxis.MaxBins}.");
             }
 
             interval = TimeSpan.FromDays(days);

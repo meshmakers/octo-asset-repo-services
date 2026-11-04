@@ -85,7 +85,9 @@ public class StreamDataLocalDayBinsTests
     [Theory]
     [InlineData(0)]
     [InlineData(-1)]
-    public void BinIntervalBelowOneDay_IsRefused_NamingTheArgument(int binInterval)
+    [InlineData(10_001)]
+    [InlineData(int.MaxValue)]
+    public void BinIntervalOutOfRange_IsRefused_NamingTheArgument(int binInterval)
     {
         var act = () => StreamDataLocalDayBins.Create("Europe/Vienna", binInterval, null);
 
@@ -101,11 +103,9 @@ public class StreamDataLocalDayBinsTests
     }
 
     [Fact]
-    public void IntervalLongerThanTheBinCap_IsRefusedByTheEngineRule()
+    public void IntervalAtTheBinCap_IsAccepted()
     {
-        var act = () => StreamDataLocalDayBins.Create(null, 10_001, null);
-
-        act.Should().Throw<DownsamplingBinOptionsInvalidException>().WithMessage("*BinInterval*");
+        StreamDataLocalDayBins.Create(null, 10_000, null).BinInterval.Should().Be(TimeSpan.FromDays(10_000));
     }
 
     // ── resolveSeriesQuery day start ──────────────────────────────────────────────────────────
