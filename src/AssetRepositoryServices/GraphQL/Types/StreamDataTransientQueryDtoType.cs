@@ -220,7 +220,8 @@ internal sealed class StreamDataTransientQueryDtoType : ObjectGraphType<StreamDa
                         From = uc.From,
                         To = uc.To,
                         Limit = uc.Limit,
-                        FieldFilters = uc.FieldFilters
+                        FieldFilters = uc.FieldFilters,
+                        LocalDayBins = uc.LocalDayBins
                     };
                     break;
                 }

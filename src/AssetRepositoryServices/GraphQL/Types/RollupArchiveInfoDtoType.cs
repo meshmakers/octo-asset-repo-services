@@ -95,6 +95,10 @@ internal sealed class RollupArchiveInfoDtoType : ObjectGraphType<RollupArchiveIn
             .Description("IANA reference time-zone (e.g. Europe/Vienna) that aligns calendar bucket boundaries to local wall-clock time so they are DST-correct. Null means UTC calendar boundaries. Only meaningful for the calendar bucketAlignment variants; ignored for FixedSize.")
             .Resolve(ctx => ctx.Source!.ReferenceTimeZone);
 
+        Field<LongGraphType>("dayStartOffsetMs")
+            .Description("Local time of day at which a CalendarDay bucket starts, in milliseconds after local midnight in referenceTimeZone (e.g. 21600000 = 06:00, a gas day). Null or 0 means midnight days.")
+            .Resolve(ctx => ctx.Source!.DayStartOffsetMs);
+
         Field<NonNullGraphType<ListGraphType<NonNullGraphType<RollupAggregationInfoDtoType>>>>("aggregations")
             .Description("The rollup's aggregation specs (source column path + stored function), for resolution-family walking.")
             .Resolve(ctx => ctx.Source!.Aggregations);

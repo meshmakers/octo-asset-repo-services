@@ -69,6 +69,17 @@ internal sealed class StreamDataQuery : ObjectGraphType
     private static async Task<object?> ResolveSeriesQueryAsync(IResolveFieldContext<object?> ctx)
     {
         var input = ctx.GetArgument<ResolveSeriesQueryInputDto>("input");
+        SeriesResolutionRequest request;
+        try
+        {
+            // AB#7361: an invalid dayStartOffsetMs / binOrigin is a client input error with a message naming it.
+            request = BuildSeriesResolutionRequest(input);
+        }
+        catch (OctoGraphQLException e)
+        {
+            return ctx.HandleException(e);
+        }
+
         var gql = (GraphQlUserContext)ctx.UserContext;
         var rollupStore = gql.TenantContext.GetRollupArchiveRuntimeStore();
         if (rollupStore is null)
@@ -85,20 +96,6 @@ internal sealed class StreamDataQuery : ObjectGraphType
             new RollupDependencyGraph(rollupStore),
             gql.TenantContext.GetArchiveCoverageProvider());
 
-        var request = new SeriesResolutionRequest(
-            input.BaseArchiveRtId,
-            TargetCkTypeId: null,
-            input.From,
-            input.To,
-            input.TargetPoints,
-            input.RequiredAggregation,
-            input.SourcePath)
-        {
-            RtIds = input.RtIds,
-            QueryTimeZone = input.TimeZone,
-            ComparisonPolicy = input.ComparisonPolicy,
-        };
-
         var result = await service.ResolveAsync(request, ctx.CancellationToken).ConfigureAwait(false);
 
         return new ResolveSeriesQueryDto(
@@ -111,6 +108,28 @@ internal sealed class StreamDataQuery : ObjectGraphType
             result.Diagnostic,
             result.FinerRungAvailableFrom);
     }
+
+    /// <summary>
+    /// Maps the GraphQL input to the engine request. Sets <see cref="SeriesResolutionRequest.QueryDayStartOffsetMs"/>
+    /// from <c>dayStartOffsetMs</c> or <c>binOrigin</c> (AB#7361): under PerQuery a CalendarDay rung only answers a
+    /// request with its own day start, so without it every query counts as a midnight query and a gas-day rollup is
+    /// never chosen.
+    /// </summary>
+    internal static SeriesResolutionRequest BuildSeriesResolutionRequest(ResolveSeriesQueryInputDto input) =>
+        new(
+            input.BaseArchiveRtId,
+            TargetCkTypeId: null,
+            input.From,
+            input.To,
+            input.TargetPoints,
+            input.RequiredAggregation,
+            input.SourcePath)
+        {
+            RtIds = input.RtIds,
+            QueryTimeZone = input.TimeZone,
+            QueryDayStartOffsetMs = StreamDataLocalDayBins.ResolveDayStartOffsetMs(input.DayStartOffsetMs, input.BinOrigin),
+            ComparisonPolicy = input.ComparisonPolicy,
+        };
 
     private static async Task<object?> ResolveCoverageForAsync(IResolveFieldContext<object?> ctx)
     {
@@ -221,6 +240,7 @@ internal sealed class StreamDataQuery : ObjectGraphType
                 rollup.PendingRecomputeRanges,
                 rollup.BucketAlignment.ToString(),
                 rollup.ReferenceTimeZone,
+                rollup.DayStartOffsetMs,
                 rollup.Aggregations
                     .Select(a => new RollupAggregationInfoDto(a.SourcePath, a.Function.ToString()))
                     .ToList(),
