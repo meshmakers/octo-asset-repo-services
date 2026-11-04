@@ -3,9 +3,10 @@
 ## Unreleased
 
 - AB#8275 New: the REST rollup list `GET streamdata/archives/{archiveRtId}/rollups` returns `referenceTimeZone` and
-  `dayStartOffsetMs` per rollup, with the same values as GraphQL `rollupsFor` (null when the rollup has none), so the SDK,
-  octo-cli `ListRollupsForArchive` and MCP `list_rollups_for_archive` can show a gas-day rollup (`Europe/Vienna`, `21600000` =
-  06:00). Additive JSON fields; the other fields and the response shape are unchanged.
+  `dayStartOffsetMs` per rollup, with the same values as GraphQL `rollupsFor` (null when the rollup has none). Additive JSON
+  fields; the other fields and the response shape are unchanged. SDK clients read them once `RollupArchiveInfoDto` carries them
+  (octo-sdk change of AB#7362); then octo-cli `ListRollupsForArchive` and MCP `list_rollups_for_archive` can show a gas-day
+  rollup (`Europe/Vienna`, `21600000` = 06:00).
 - AB#7361 New: gas days through GraphQL. `createRollupArchive` takes the optional `dayStartOffsetMs` (local day start of a
   `CALENDAR_DAY` rollup in ms after local midnight in `referenceTimeZone`, e.g. `21600000` = 06:00); the engine validates it at
   create time and an invalid value (outside `[0, 86400000)`, not a whole minute, another alignment, a chained rollup with another
