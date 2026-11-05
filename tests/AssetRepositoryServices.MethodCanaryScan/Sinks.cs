@@ -141,13 +141,15 @@ internal sealed class CaptureSink : ILoggerProvider
 
     private sealed class CaptureLogger(CaptureSink sink, string category) : ILogger
     {
-        private static readonly AsyncLocal<List<object?>?> Scopes = new();
+        // Immutable linked stack: forked async flows share parent nodes but never mutate them,
+        // so a Dispose in one flow cannot change the scopes another flow is enumerating.
+        private static readonly AsyncLocal<ScopeNode?> Scopes = new();
 
         public IDisposable BeginScope<TState>(TState state) where TState : notnull
         {
-            var list = Scopes.Value ??= [];
-            list.Add(state);
-            return new Pop(list);
+            var node = new ScopeNode(state, Scopes.Value);
+            Scopes.Value = node;
+            return new Pop(node);
         }
 
         public bool IsEnabled(LogLevel logLevel) => true;
@@ -166,7 +168,7 @@ internal sealed class CaptureSink : ILoggerProvider
                 }
             }
 
-            foreach (var scope in Scopes.Value ?? [])
+            foreach (var scope in ScopesOutermostFirst(Scopes.Value))
             {
                 builder.Append(" |scope ").Append(scope is IEnumerable<KeyValuePair<string, object?>> pairs
                     ? string.Join(",", pairs.Select(p => $"{p.Key}={p.Value}"))
@@ -181,13 +183,27 @@ internal sealed class CaptureSink : ILoggerProvider
             sink.Add("handler-host-log", category, builder.ToString());
         }
 
-        private sealed class Pop(List<object?> list) : IDisposable
+        private static IEnumerable<object?> ScopesOutermostFirst(ScopeNode? node)
+        {
+            var states = new Stack<object?>();
+            for (var current = node; current != null; current = current.Parent)
+            {
+                states.Push(current.State);
+            }
+
+            return states;
+        }
+
+        private sealed record ScopeNode(object? State, ScopeNode? Parent);
+
+        private sealed class Pop(ScopeNode node) : IDisposable
         {
             public void Dispose()
             {
-                if (list.Count > 0)
+                // Restore the parent only if this scope is still the current one in this flow.
+                if (ReferenceEquals(Scopes.Value, node))
                 {
-                    list.RemoveAt(list.Count - 1);
+                    Scopes.Value = node.Parent;
                 }
             }
         }

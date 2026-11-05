@@ -39,7 +39,9 @@ clean result cannot come from calls that never reached the path.
 
 ## Run it
 
-Not part of the CI run: the project is not named `*Tests` and every test skips unless `OCTO_METHOD_CANARY_SCAN=1`.
+Not part of the CI run: the project is not named `*Tests` and every scan test skips unless `OCTO_METHOD_CANARY_SCAN=1`.
+`CaptureLoggerScopeTests` run without the stack: they check that the handler-host capture logger keeps its log scopes per
+async flow (an immutable scope stack, so parallel handler calls never see or remove each other's scopes).
 
 1. Local OpenTelemetry collector with the file exporter (output folder of your choice):
 
