@@ -1,0 +1,39 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <!-- AB#7118: canary scan of the method path against the LOCAL stack (Start-Octo). Not part of the CI test run: the project
+         is not named *Tests (CI glob **/*Tests.csproj) and every test skips unless OCTO_METHOD_CANARY_SCAN=1. See README.md. -->
+    <PropertyGroup>
+        <AssemblyName>Meshmakers.Octo.Backend.AssetRepositoryServices.MethodCanaryScan</AssemblyName>
+        <RootNamespace>Meshmakers.Octo.Backend.AssetRepositoryServices.MethodCanaryScan</RootNamespace>
+        <IsPackable>false</IsPackable>
+        <IsTestProject>true</IsTestProject>
+        <OutputType>Exe</OutputType>
+        <Configurations>Debug;Release;DebugL</Configurations>
+        <Platforms>AnyCPU</Platforms>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <PackageReference Include="FakeItEasy" Version="9.0.1" />
+        <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.9.0" />
+        <PackageReference Include="xunit.runner.visualstudio" Version="4.0.0">
+            <PrivateAssets>all</PrivateAssets>
+            <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+        </PackageReference>
+        <PackageReference Include="xunit.v3.mtp-off" Version="4.0.0" />
+        <!-- The scan is a client of the running stack: it needs the method SDK (handler host) and the CK engine (to read the
+             compiled scan model), not the service project. -->
+        <PackageReference Include="Meshmakers.Octo.Services.Infrastructure" Version="$(OctoCoreLibVersion)" />
+        <PackageReference Include="Meshmakers.Octo.Services.Methods" Version="$(OctoCoreLibVersion)" />
+        <PackageReference Include="Meshmakers.Octo.ConstructionKit.Engine" Version="$(OctoCoreLibVersion)" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="..\MethodCanaryScanCkModel\MethodCanaryScanCkModel.csproj" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <None Update="xunit.runner.json">
+            <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+        </None>
+    </ItemGroup>
+</Project>

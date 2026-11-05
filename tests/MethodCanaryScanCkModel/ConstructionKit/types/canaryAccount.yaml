@@ -1,0 +1,30 @@
+$schema: https://schemas.meshmakers.cloud/construction-kit-elements.schema.json
+types:
+# AB#7118: the canary scan calls these methods through the typed method mutation of the asset repository; the handler runs in
+# the scan's own handler host (bus transport), which answers success, failure, timeout or validation error by `mode`.
+- typeId: CanaryAccount
+  derivedFromCkTypeId: ${System}/Entity
+  description: "AB#7118 canary scan: target of the scan methods."
+  attributes:
+    - id: ${System}/Name
+      name: Name
+  methods:
+    - methodId: Rotate-1
+      description: "Takes a sensitive secret; the handler answers by mode (ok, fail, failjson, hang, invalid, declared)."
+      parameters:
+        - { name: secret, valueType: String, sensitive: true, description: "The canary." }
+        - { name: mode, valueType: String, isOptional: true, description: "What the scan handler does." }
+      errors:
+        - code: CANARY_REJECTED
+      authorization:
+        roles: [ AdminPanelManagement ]
+      execution:
+        timeoutSeconds: 3
+    - methodId: Guarded-1
+      description: "Declares a role nobody holds: every call is refused (METHOD_FORBIDDEN)."
+      parameters:
+        - { name: secret, valueType: String, sensitive: true, description: "The canary." }
+      authorization:
+        roles: [ MethodCanaryScanNobody ]
+      execution:
+        timeoutSeconds: 3
