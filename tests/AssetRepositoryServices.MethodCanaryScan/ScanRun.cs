@@ -25,6 +25,7 @@ internal sealed partial class ScanRun : IDisposable
     private readonly List<(string Label, string Value)> _needles = [];
     private readonly FileWindow _logs;
     private readonly FileWindow? _otlp;
+    private OtlpCoverage? _otlpCoverage;
     private readonly List<string> _notCovered = [];
 
     public ScanRun(string title, ScanSettings settings)
@@ -93,17 +94,26 @@ internal sealed partial class ScanRun : IDisposable
     {
         // Services write their log asynchronously and the trace exporter batches (default schedule 5 s): wait for both.
         await Task.Delay(TimeSpan.FromSeconds(_otlp != null ? 12 : 4), ct);
+        if (_otlp != null)
+        {
+            // Every service exports its metrics on its own 60 s cycle (SDK default). Waiting for "the file grew" is not enough:
+            // it may have grown during the calls, or by another service's export. One full interval after the last call is
+            // the point by which every service has exported the metrics that include the final calls.
+            await Task.Delay(Settings.OtlpMetricsWait, ct);
+        }
+
         var texts = new List<ScanText>(_answers);
         texts.AddRange(_logs.ReadAppended(out var logBytes));
         long otlpBytes = 0;
         if (_otlp != null)
         {
-            texts.AddRange(_otlp.ReadAppended(out otlpBytes));
-            if (otlpBytes == 0)
-            {
-                TelemetryNotCaptured = "the collector received nothing during the scan: the services do not export telemetry " +
-                                       "(start the stack with OCTO_OTLP_ENDPOINT_URL, README.md)";
-            }
+            var otlpTexts = _otlp.ReadAppended(out otlpBytes);
+            texts.AddRange(otlpTexts);
+            _otlpCoverage = OtlpCoverage.From(otlpTexts);
+            TelemetryNotCaptured = otlpBytes == 0
+                ? "the collector received nothing during the scan: the services do not export telemetry " +
+                  "(start the stack with OTLP_ENDPOINT_URL, README.md)"
+                : _otlpCoverage.Missing;
         }
         else
         {
@@ -190,9 +200,10 @@ internal sealed partial class ScanRun : IDisposable
         b.AppendLine(CultureInfo.InvariantCulture, $"| GraphQL answers | {_answers.Count} answers | {hits.Count(h => h.Sink == "graphql-answer")} |");
         b.AppendLine(CultureInfo.InvariantCulture, $"| Service log files (`{Settings.LogDirectory.FullName}`, appended bytes of every `*.log`) | {logBytes:N0} chars in {texts.Count(t => t.Sink == "service-log")} files ({string.Join(", ", texts.Where(t => t.Sink == "service-log").Select(t => t.Source))}) | {hits.Count(h => h.Sink == "service-log")} |");
         b.AppendLine(CultureInfo.InvariantCulture, $"| Audit / event log of the tenant (System.Notification events) | {events} events | {hits.Count(h => h.Sink == "audit-event")} |");
-        b.AppendLine(TelemetryNotCaptured != null
+        // a partial capture (e.g. traces without metrics) still shows what was scanned; the gap is under "Not covered"
+        b.AppendLine(_otlpCoverage == null || otlpBytes == 0
             ? "| Exported traces, metrics, logs (OTLP) | NOT CAPTURED: " + TelemetryNotCaptured + " | - |"
-            : string.Create(CultureInfo.InvariantCulture, $"| Exported traces, metrics, logs (OTLP file exporter `{Settings.OtlpDirectory!.FullName}`) | {otlpBytes:N0} chars ({string.Join(", ", texts.Where(t => t.Sink == "otlp-export").Select(t => t.Source))}) | {hits.Count(h => h.Sink == "otlp-export")} |"));
+            : string.Create(CultureInfo.InvariantCulture, $"| Exported traces, metrics, logs (OTLP file exporter `{Settings.OtlpDirectory!.FullName}`) | {otlpBytes:N0} chars: {_otlpCoverage!.Describe()} | {hits.Count(h => h.Sink == "otlp-export")} |"));
         if (HandlerHost != null)
         {
             b.AppendLine(CultureInfo.InvariantCulture, $"| Scan handler host: log (`{HandlerHost.LogFile}`) | {texts.Count(t => t.Sink == "handler-host-log")} lines | {hits.Count(h => h.Sink == "handler-host-log")} |");

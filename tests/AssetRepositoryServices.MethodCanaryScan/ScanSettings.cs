@@ -31,6 +31,14 @@ internal sealed class ScanSettings
     /// </summary>
     public DirectoryInfo? OtlpDirectory { get; init; }
 
+    /// <summary>
+    ///     How long the scan waits after the last call before it reads the collector output: at least one metric export
+    ///     interval of the services (the OpenTelemetry SDK exports metrics every 60 s by default, traces every 5 s), so every
+    ///     service has exported the metrics that include the final calls. <c>OCTO_CANARY_OTLP_METRICS_WAIT_SECONDS</c>,
+    ///     default 75.
+    /// </summary>
+    public TimeSpan OtlpMetricsWait { get; init; } = TimeSpan.FromSeconds(75);
+
     public required string BrokerHost { get; init; }
 
     public required ushort BrokerPort { get; init; }
@@ -60,6 +68,8 @@ internal sealed class ScanSettings
             ClientSecret = clientSecret,
             LogDirectory = logDirectory,
             OtlpDirectory = otlp == null ? null : new DirectoryInfo(otlp),
+            OtlpMetricsWait = TimeSpan.FromSeconds(int.Parse(Value("OCTO_CANARY_OTLP_METRICS_WAIT_SECONDS") ?? "75",
+                System.Globalization.CultureInfo.InvariantCulture)),
             BrokerHost = Value("OCTO_CANARY_BROKER_HOST") ?? "localhost",
             BrokerPort = ushort.Parse(Value("OCTO_CANARY_BROKER_PORT") ?? "5672", System.Globalization.CultureInfo.InvariantCulture),
             BrokerUser = Value("OCTO_CANARY_BROKER_USER") ?? "guest",
