@@ -40,7 +40,13 @@ internal sealed class FileWindow
         foreach (var file in Files())
         {
             var start = _offsets.TryGetValue(file.FullName, out var offset) ? offset : 0;
-            if (file.Length <= start)
+            if (file.Length < start)
+            {
+                // the file was truncated or replaced during the scan (log rotation, service restart): read all of it
+                start = 0;
+            }
+
+            if (file.Length == start)
             {
                 continue;
             }
