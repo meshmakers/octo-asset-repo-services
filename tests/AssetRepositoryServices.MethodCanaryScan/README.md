@@ -8,7 +8,7 @@ Evidence from the **running services**, not only from the in-process tests of oc
 | GraphQL answers | the raw body (and `WWW-Authenticate`) of every call the scan makes |
 | Service log files | the bytes every `*.log` in the lane's `logFiles/` folder (`Start-Octo`) gained during the scan |
 | Audit / event log | the System.Notification events of the scan tenant created during the scan (`Method.Invocation` and all others) |
-| Exported traces, metrics, logs | the bytes a local OpenTelemetry collector with the file exporter wrote during the scan, per signal (traces, metrics, logs); the scan waits up to `OCTO_CANARY_OTLP_METRICS_WAIT_SECONDS` after the last call for the next metric export (the SDK exports metrics every 60 s) |
+| Exported traces, metrics, logs | the bytes a local OpenTelemetry collector with the file exporter wrote during the scan, per signal (traces, metrics, logs); after the last call the scan waits `OCTO_CANARY_OTLP_METRICS_WAIT_SECONDS` (at least one metric export interval; the SDK exports metrics every 60 s per service), so every service has exported the metrics that include the final calls |
 | Handling service of the asset-repo method | log lines (message, exception, scopes) and activities (all sources, all tags) of the scan's handler host |
 
 Searched values: the canaries of AB#7015 (`CANARY-SECRET-123` and an escaping canary with quote, backslash, `+&<>'/`,
@@ -42,7 +42,7 @@ clean result cannot come from calls that never reached the path.
 Not part of the CI run: the project is not named `*Tests` and every scan test skips unless `OCTO_METHOD_CANARY_SCAN=1`.
 `CaptureLoggerScopeTests` and `OtlpSinkTests` run without the stack: the first check that the handler-host capture logger keeps its
 log scopes per async flow (an immutable scope stack, so parallel handler calls never see or remove each other's scopes), the
-second the per-signal coverage of the collector output and the growth check the scan waits on.
+second the per-signal coverage of the collector output and the window of the collector files.
 
 1. Local OpenTelemetry collector with the file exporter (output folder of your choice; give the container a name that
    says whose it is, and use a folder of your own):
@@ -109,7 +109,7 @@ second the per-signal coverage of the collector output and the growth check the 
 | `OCTO_CANARY_IDENTITY_URL` / `OCTO_CANARY_ASSETREPO_URL` | `https://localhost:5003/` / `https://localhost:5001/` |
 | `OCTO_CANARY_LOG_DIR` | the first `logFiles` folder above the test assembly |
 | `OCTO_CANARY_OTLP_DIR` | none (telemetry not scanned) |
-| `OCTO_CANARY_OTLP_METRICS_WAIT_SECONDS` | `75` (wait for the next metric export after the last call) |
+| `OCTO_CANARY_OTLP_METRICS_WAIT_SECONDS` | `75` (wait after the last call; keep it above the services' metric export interval) |
 | `OCTO_CANARY_BROKER_HOST` / `_PORT` / `_USER` / `_PASSWORD` / `OCTO_CANARY_INSTANCE_PREFIX` | `localhost` / `5672` / `guest` / `guest` / `default` (the local stack) |
 | `OCTO_CANARY_RESULT_DIR` | the test output folder |
 

@@ -33,21 +33,6 @@ internal sealed class FileWindow
     /// <summary>Files that exist at the start of the scan.</summary>
     public int FileCount => _offsets.Count;
 
-    /// <summary>
-    ///     True when the file changed its length since the scan started (written to, created, or truncated and rewritten).
-    /// </summary>
-    public bool HasGrown(string fileName)
-    {
-        var file = new FileInfo(Path.Combine(_directory.FullName, fileName));
-        if (!file.Exists)
-        {
-            return false;
-        }
-
-        var start = _offsets.TryGetValue(file.FullName, out var offset) ? offset : 0;
-        return file.Length != start;
-    }
-
     public IReadOnlyList<ScanText> ReadAppended(out long bytes)
     {
         var result = new List<ScanText>();

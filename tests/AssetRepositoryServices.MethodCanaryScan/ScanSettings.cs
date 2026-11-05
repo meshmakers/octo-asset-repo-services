@@ -32,8 +32,10 @@ internal sealed class ScanSettings
     public DirectoryInfo? OtlpDirectory { get; init; }
 
     /// <summary>
-    ///     How long the scan waits after the last call for the next metric export (the OpenTelemetry SDK exports metrics every
-    ///     60 s by default, traces every 5 s). <c>OCTO_CANARY_OTLP_METRICS_WAIT_SECONDS</c>, default 75.
+    ///     How long the scan waits after the last call before it reads the collector output: at least one metric export
+    ///     interval of the services (the OpenTelemetry SDK exports metrics every 60 s by default, traces every 5 s), so every
+    ///     service has exported the metrics that include the final calls. <c>OCTO_CANARY_OTLP_METRICS_WAIT_SECONDS</c>,
+    ///     default 75.
     /// </summary>
     public TimeSpan OtlpMetricsWait { get; init; } = TimeSpan.FromSeconds(75);
 

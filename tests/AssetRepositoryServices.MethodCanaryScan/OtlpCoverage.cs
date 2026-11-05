@@ -59,7 +59,7 @@ internal sealed record OtlpCoverage(long TraceChars, long MetricChars, long LogC
             return missing.Count == 0
                 ? null
                 : $"the collector received no {string.Join(" and no ", missing)} during the scan (stack started without " +
-                  "OTLP_ENDPOINT_URL, or the metric export interval is longer than OCTO_CANARY_OTLP_METRICS_WAIT_SECONDS; README.md)";
+                  "OTLP_ENDPOINT_URL, or OCTO_CANARY_OTLP_METRICS_WAIT_SECONDS is shorter than the metric export interval; README.md)";
         }
     }
 

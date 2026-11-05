@@ -96,8 +96,10 @@ internal sealed partial class ScanRun : IDisposable
         await Task.Delay(TimeSpan.FromSeconds(_otlp != null ? 12 : 4), ct);
         if (_otlp != null)
         {
-            // metrics leave the services only every 60 s (SDK default): wait for one export after the last call
-            await WaitForAsync(() => _otlp.HasGrown(OtlpCoverage.MetricsFile), Settings.OtlpMetricsWait, ct);
+            // Every service exports its metrics on its own 60 s cycle (SDK default). Waiting for "the file grew" is not enough:
+            // it may have grown during the calls, or by another service's export. One full interval after the last call is
+            // the point by which every service has exported the metrics that include the final calls.
+            await Task.Delay(Settings.OtlpMetricsWait, ct);
         }
 
         var texts = new List<ScanText>(_answers);
@@ -168,15 +170,6 @@ internal sealed partial class ScanRun : IDisposable
         }
 
         return hits.DistinctBy(h => (h.Sink, h.Source, h.Needle, h.Excerpt)).ToList();
-    }
-
-    private static async Task WaitForAsync(Func<bool> condition, TimeSpan max, CancellationToken ct)
-    {
-        var deadline = DateTime.UtcNow + max;
-        while (!condition() && DateTime.UtcNow < deadline)
-        {
-            await Task.Delay(TimeSpan.FromSeconds(2), ct);
-        }
     }
 
     private static int CountEvents(string json) => JsonNode.Parse(json) is JsonArray array ? array.Count : 0;

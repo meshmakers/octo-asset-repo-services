@@ -3,8 +3,8 @@ using Xunit;
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.MethodCanaryScan;
 
 /// <summary>
-///     The OTLP sink of the scan: per-signal coverage of the collector's file exporter and the growth check the scan uses to
-///     wait for the next metric export. Runs without the local stack.
+///     The OTLP sink of the scan: per-signal coverage of the collector's file exporter and the window of the collector files the
+///     scan reads. Runs without the local stack.
 /// </summary>
 public sealed class OtlpSinkTests : IDisposable
 {
@@ -49,28 +49,24 @@ public sealed class OtlpSinkTests : IDisposable
     }
 
     [Fact]
-    public void FileWindow_HasGrown_OnlyAfterTheFileChanged()
+    public void FileWindow_ReadsOnlyWhatWasWrittenAfterTheStart()
     {
         var metrics = Path.Combine(_directory.FullName, OtlpCoverage.MetricsFile);
         File.WriteAllText(metrics, "before");
         var window = new FileWindow("otlp-export", _directory, "*.jsonl");
 
-        Assert.False(window.HasGrown(OtlpCoverage.MetricsFile));
-        Assert.False(window.HasGrown(OtlpCoverage.TracesFile));
-
         File.AppendAllText(metrics, "+after");
         File.WriteAllText(Path.Combine(_directory.FullName, OtlpCoverage.TracesFile), "new");
 
-        Assert.True(window.HasGrown(OtlpCoverage.MetricsFile));
-        Assert.True(window.HasGrown(OtlpCoverage.TracesFile));
         var appended = window.ReadAppended(out var chars);
         Assert.Equal("+after", appended.Single(t => t.Source == OtlpCoverage.MetricsFile).Text);
         Assert.Equal("new", appended.Single(t => t.Source == OtlpCoverage.TracesFile).Text);
         Assert.Equal(9, chars);
+        Assert.Equal(new OtlpCoverage(3, 6, 0), OtlpCoverage.From(appended));
     }
 
     [Fact]
-    public void FileWindow_HasGrown_WhenTheFileWasTruncated()
+    public void FileWindow_ReadsATruncatedFileFromTheStart()
     {
         var metrics = Path.Combine(_directory.FullName, OtlpCoverage.MetricsFile);
         File.WriteAllText(metrics, "a long first content");
@@ -78,7 +74,6 @@ public sealed class OtlpSinkTests : IDisposable
 
         File.WriteAllText(metrics, "short");
 
-        Assert.True(window.HasGrown(OtlpCoverage.MetricsFile));
         Assert.Equal("short", window.ReadAppended(out _).Single().Text);
     }
 }
