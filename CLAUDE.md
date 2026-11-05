@@ -1080,6 +1080,17 @@ Rerun: `dotnet test tests/AssetRepositoryServices.UnitTests -c DebugL --filter "
 `dotnet test tests/AssetRepositoryServices.IntegrationTests -c DebugL --filter "FullyQualifiedName~MethodAdversarialGraphQlTests"`
 (Docker needed for the second). A closed gap turns its `_Gap_`/`_Limitation_` pin red; enable the skipped test next to it.
 
+### Method canary scan on the local stack (AB#7118, F3.7)
+
+`tests/AssetRepositoryServices.MethodCanaryScan` proves on the **running** services that a sensitive method parameter and the caller's token reach
+no GraphQL answer, no service log file (`logFiles/*.log`), no event of the tenant's audit log and no exported trace/metric/log (local OpenTelemetry
+collector with the file exporter, services started with `OCTO_OTLP_ENDPOINT_URL`). Two tests: `MethodCanaryScan/CanaryAccount.Rotate-1` (test model
+`tests/MethodCanaryScanCkModel`, `OctoPublishCkModel=false`, handled by the scan's own bus handler host: success, handler failure, timeout, validation,
+declared error, refused) and `System.Identity/User.CreateUser-1` (hosted by identity). Canaries of AB#7015 in every serializer form, the scan's tokens
+and client secrets; every case also asserts its outcome. Not in CI: the project is not named `*Tests` and skips unless `OCTO_METHOD_CANARY_SCAN=1`.
+Set-up, command and variables: the project's `README.md`; user docs: octo-documentation `ckLanguage2/methodHandlers.md#canary-scan`. A hit is a Bug
+under F3.7 (AB#6884).
+
 ### Generic create refused for types whose method replaces it (AB#7025, F3.7)
 
 A static CK method with `replacesGenericCreate: true` (AB#7024; engine/engine-mongodb >= 3.5.34) means entities of its declaring type **and of every

@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <!-- AB#7118: test CK model of the method canary scan (tests/AssetRepositoryServices.MethodCanaryScan). It is imported into a
+         scratch tenant of the local stack only and is never published to a CK catalog. -->
+    <PropertyGroup>
+        <AssemblyName>MethodCanaryScanCkModel</AssemblyName>
+        <RootNamespace>MethodCanaryScanCkModel</RootNamespace>
+        <Configurations>Debug;Release;DebugL</Configurations>
+        <IsPackable>false</IsPackable>
+        <OctoPublishCkModel>false</OctoPublishCkModel>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <PackageReference Include="Meshmakers.Octo.Runtime.Contracts" Version="$(OctoCoreLibVersion)" />
+        <PackageReference Include="Meshmakers.Octo.ConstructionKit.SourceGeneration" OutputItemType="Analyzer" ReferenceOutputAssembly="false" Version="$(OctoCoreLibVersion)" />
+        <PackageReference Include="Meshmakers.Octo.ConstructionKit.MsBuildTasks" Version="$(OctoCoreLibVersion)" PrivateAssets="all" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <ConstructionKitFolder Visible="false" Include="$(MSBuildProjectDirectory)\ConstructionKit"/>
+    </ItemGroup>
+</Project>

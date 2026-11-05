@@ -1,0 +1,6 @@
+$schema: https://schemas.meshmakers.cloud/construction-kit-meta.schema.json
+dependencies:
+  - System-[2.5,3.0)
+modelId: MethodCanaryScan
+# AB#7118: methods with a sensitive parameter for the canary scan against the local stack. Never published.
+ckLanguage: 2
