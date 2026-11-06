@@ -59,7 +59,7 @@ internal sealed class RtQueryMutation : RtMutationBase
             var queryRtId = context.Parent.GetArgument<OctoObjectId>(Statics.RtIdArg);
             var inputObjects = context.GetArgument<List<RtSimpleQueryRowDto>>(Statics.EntitiesArg);
 
-            var rtQuery = await tenantRepository.GetRtEntityByRtIdAsync<RtSimpleRtQuery>(sessionAccessor.Session, queryRtId);
+            var rtQuery = await PersistedQueryLookup.GetActiveAsync<RtSimpleRtQuery>(tenantRepository, sessionAccessor.Session, queryRtId);
             if (rtQuery == null)
             {
                 throw AssetRepositoryException.QueryNotFound(queryRtId);
@@ -179,7 +179,7 @@ internal sealed class RtQueryMutation : RtMutationBase
             var queryRtId = context.Parent.GetArgument<OctoObjectId>(Statics.RtIdArg);
             var inputObjects = context.GetArgument<List<MutationDto<RtSimpleQueryRowDto>>>(Statics.EntitiesArg);
 
-            var rtQuery = await tenantRepository.GetRtEntityByRtIdAsync<RtSimpleRtQuery>(sessionAccessor.Session, queryRtId);
+            var rtQuery = await PersistedQueryLookup.GetActiveAsync<RtSimpleRtQuery>(tenantRepository, sessionAccessor.Session, queryRtId);
             if (rtQuery == null)
             {
                 throw AssetRepositoryException.QueryNotFound(queryRtId);

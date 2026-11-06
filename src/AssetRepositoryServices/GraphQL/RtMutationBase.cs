@@ -120,8 +120,7 @@ internal abstract class RtMutationBase : ObjectGraphType
         List<EntityUpdateInfo<RtEntity>> entityUpdateInfos, OctoObjectId queryRtId)
     {
         var rtQuery =
-            await repository.GetRtEntityByRtIdAsync<RtSimpleRtQuery>(session,
-                queryRtId);
+            await PersistedQueryLookup.GetActiveAsync<RtSimpleRtQuery>(repository, session, queryRtId);
         if (rtQuery == null)
         {
             throw OctoGraphQLException.RtQueryNotFound(queryRtId);
