@@ -276,7 +276,8 @@ internal sealed class StreamDataQuery : ObjectGraphType
             var tenantRepository = graphQlUserContext.TenantContext.GetTenantRepository();
 
             var queryRtId = arg.GetArgument<OctoObjectId>(Statics.RtIdArg);
-            var loaded = await tenantRepository.GetRtEntityByRtIdAsync<RtStreamDataQuery>(
+            // AB#8273: a deleted (archived) query is not found, like a query that never existed.
+            var loaded = await PersistedQueryLookup.GetActiveAsync<RtStreamDataQuery>(tenantRepository,
                 sessionAccessor.Session, queryRtId)
                 ?? throw AssetRepositoryException.RtQueryNotFound(queryRtId);
 
