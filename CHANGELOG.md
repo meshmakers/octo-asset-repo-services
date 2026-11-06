@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- AB#8273 Fix: a deleted persisted query no longer runs. The default delete archives a query entity (`rtState = Archived`), and
+  the lookup by id returned it anyway, so `streamData.streamDataQuery(rtId)`, `runtime.runtimeQuery(rtId)` and the query-row
+  mutations `runtimeQuery(rtId) { create / update }` kept working for anyone who knew the rtId while the query lists no longer
+  showed it (found on test-2 `energyiq`). They now answer the not-found error of a query that never existed
+  (`RtQuery with id '…' not found` / `Query with id '…' not found`, code `GraphQlModelValidationErrors`) and no row. There is no
+  query-definition cache: every execution reads the stored query, so an update is visible at once on every replica.
+  `GraphQL/Utils/PersistedQueryLookup`; tests `UnitTests/GraphQL/PersistedQueryLookupTests`,
+  `IntegrationTests/StreamData/DeletedPersistedQueryTests`.
 - AB#8275 New: the REST rollup list `GET streamdata/archives/{archiveRtId}/rollups` returns `referenceTimeZone` and
   `dayStartOffsetMs` per rollup, with the same values as GraphQL `rollupsFor` (null when the rollup has none). Additive JSON
   fields; the other fields and the response shape are unchanged. SDK clients read them once `RollupArchiveInfoDto` carries them

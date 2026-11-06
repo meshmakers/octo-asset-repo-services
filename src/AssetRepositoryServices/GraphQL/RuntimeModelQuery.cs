@@ -204,7 +204,7 @@ internal sealed class RuntimeModelQuery : ObjectGraphType
             var graphQlUserContext = (GraphQlUserContext)arg.UserContext;
             var tenantRepository = graphQlUserContext.TenantContext.GetTenantRepository();
             var rtQuery =
-                await tenantRepository.GetRtEntityByRtIdAsync<RtPersistentQuery>(
+                await PersistedQueryLookup.GetActiveAsync<RtPersistentQuery>(tenantRepository,
                     sessionAccessor.Session, queryRtId);
 
             if (rtQuery == null)
