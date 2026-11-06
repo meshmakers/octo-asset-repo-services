@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- AB#8331 New: repair of an active computed column. `POST streamdata/archives/{archiveRtId}/computed-columns/{name}/repair?from=&to=`
+  and the GraphQL mutation `repairComputedColumn(rtId, name, from, to)` queue a recompute job that re-evaluates the rows whose
+  cell is NULL although an operand of the formula is not NULL (default range: first row to now); the column stays Active, the job
+  appears in the recompute jobs with `computedColumnName`. Additive (new endpoint and mutation). With the engine of AB#8331 a
+  computed-column backfill no longer runs out of memory on multi-million-row archives (mXparser formula parsed once per thread
+  instead of per row) and an evaluation aborted by an exception is never stored as NULL: ingest fails the write, the backfill retries
+  the page once and then fails its job with the affected time slice in the reason. The mXparser license warning is gone.
 - AB#8275 New: the REST rollup list `GET streamdata/archives/{archiveRtId}/rollups` returns `referenceTimeZone` and
   `dayStartOffsetMs` per rollup, with the same values as GraphQL `rollupsFor` (null when the rollup has none). Additive JSON
   fields; the other fields and the response shape are unchanged. SDK clients read them once `RollupArchiveInfoDto` carries them

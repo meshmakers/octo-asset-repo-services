@@ -141,6 +141,14 @@ internal sealed class StreamDataMutation : ObjectGraphType
             .Argument<NonNullGraphType<OctoObjectIdType>>(Statics.RtIdArg, "Runtime id of the archive carrying the computed column.")
             .Argument<NonNullGraphType<StringGraphType>>("name", "Name of the computed column whose backfill is retried.")
             .ResolveAsync(ResolveRetryComputedColumnBackfillAsync);
+
+        Field<RecomputeJobInfoDtoType>("repairComputedColumn")
+            .Description("Queues a repair of an Active computed column as a background job (AB#8331): re-evaluates the rows in [from, to) whose cell is NULL although an operand the formula references is not NULL (e.g. rows an aborted evaluation left NULL) and writes the results; the column stays Active and readable. Formulas that legitimately yield NULL stay NULL. Returns the queued job (computedColumnName set, an already queued repair of the column is returned as is); poll it with recomputeJobsFor(archive). Rejected when the column is not Active. Requires StreamDataAdmin.")
+            .Argument<NonNullGraphType<OctoObjectIdType>>(Statics.RtIdArg, "Runtime id of the archive carrying the computed column.")
+            .Argument<NonNullGraphType<StringGraphType>>("name", "Name of the computed column to repair.")
+            .Argument<UtcDateTimeGraphType>("from", "Inclusive start of the repaired range; defaults to the first row of the archive.")
+            .Argument<UtcDateTimeGraphType>("to", "Exclusive end of the repaired range; defaults to now.")
+            .ResolveAsync(ResolveRepairComputedColumnAsync);
     }
 
     private async Task<object?> ResolveRecomputeAsync(IResolveFieldContext<object?> ctx)
@@ -391,6 +399,44 @@ internal sealed class StreamDataMutation : ObjectGraphType
             return ctx.HandleException(e);
         }
     }
+
+    private async Task<object?> ResolveRepairComputedColumnAsync(IResolveFieldContext<object?> ctx)
+    {
+        try
+        {
+            var archiveRtId = ctx.GetArgument<OctoObjectId>(Statics.RtIdArg);
+            var name = ctx.GetArgument<string>("name");
+            var from = ctx.GetArgument<DateTime?>("from");
+            var to = ctx.GetArgument<DateTime?>("to");
+            _logger.LogDebug("Repair of computed column '{Column}' requested for archive {ArchiveRtId}", name, archiveRtId);
+
+            var gql = (GraphQlUserContext)ctx.UserContext;
+            if (gql.User?.IsInRole(CommonConstants.StreamDataAdminRole) != true)
+            {
+                ctx.Errors.Add(new ExecutionError(
+                    $"Repairing a computed column requires the '{CommonConstants.StreamDataAdminRole}' role.")
+                {
+                    Code = Statics.GraphQlForbidden,
+                });
+                return null;
+            }
+
+            var lifecycle = gql.TenantContext.GetArchiveLifecycleService()
+                ?? throw AssetRepositoryException.StreamDataNotAvailable();
+
+            var job = await lifecycle.RepairComputedColumnAsync(
+                archiveRtId, name, ToUtc(from), ToUtc(to), HostToken(ctx));
+            return job is null ? null : RecomputeJobInfoDto.From(job);
+        }
+        catch (Exception e)
+        {
+            return ctx.HandleException(e);
+        }
+    }
+
+    private static DateTime? ToUtc(DateTime? value) => value is { } v
+        ? v.Kind == DateTimeKind.Utc ? v : v.ToUniversalTime()
+        : null;
 
     /// <summary>
     /// The host's stopping token for the quick queuing writes of a computed-column mutation

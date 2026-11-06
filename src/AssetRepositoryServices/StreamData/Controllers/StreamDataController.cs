@@ -300,6 +300,42 @@ public class StreamDataController : ControllerBase
     }
 
     /// <summary>
+    /// Queues a repair of an Active computed column (AB#8331): a background job re-evaluates the rows in
+    /// <c>[from, to)</c> whose cell is NULL although an operand the formula references is not NULL and writes
+    /// the results; the column stays Active. <paramref name="from"/> defaults to the first row,
+    /// <paramref name="to"/> to now. Returns the queued job (an already queued repair is returned as is); poll it
+    /// via the recompute-jobs endpoint. 400 when the column is not Active or does not exist.
+    /// </summary>
+    [HttpPost("archives/{archiveRtId}/computed-columns/{name}/repair")]
+    [Microsoft.AspNetCore.Authorization.Authorize(AssetRepositoryServiceConstants.TenantAssetApiReadWritePolicy)]
+    public async Task<ActionResult<RecomputeJobInfoRestDto>> RepairComputedColumn(
+        [Required] string tenantId, [Required] string archiveRtId, [Required] string name,
+        DateTime? from, DateTime? to)
+    {
+        try
+        {
+            var tenantContext = await _systemContext.FindTenantContextAsync(tenantId);
+            var lifecycle = tenantContext.GetArchiveLifecycleService()
+                ?? throw new StreamDataException(
+                    $"StreamData is not enabled for tenant '{tenantId}'. Call POST /streamdata/enable first.");
+            var job = await lifecycle.RepairComputedColumnAsync(
+                new OctoObjectId(archiveRtId), name, from?.ToUniversalTime(), to?.ToUniversalTime(),
+                _appLifetime.ApplicationStopping);
+            return job is null ? NoContent() : Ok(RecomputeJobInfoRestDto.From(job));
+        }
+        catch (ConfigurationException e)
+        {
+            return BadRequest(e.Message);
+        }
+        catch (Exception e) when (e is StreamDataException or InvalidOperationException)
+        {
+            _logger.LogWarning("RepairComputedColumn refused for tenant '{TenantId}', archive '{ArchiveRtId}', column '{Column}': {Reason}",
+                tenantId, archiveRtId, name, e.Message);
+            return BadRequest(e.Message);
+        }
+    }
+
+    /// <summary>
     /// Triggers (or coalesces) an optimistic recompute of a rollup archive over the half-open range
     /// <c>[from, to)</c>, optionally scoped to a single entity. Returns the resulting job snapshot.
     /// AB#4184.
