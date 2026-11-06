@@ -348,6 +348,14 @@ Time-series data support (`StreamData/`):
     and the mutation `retryComputedColumnBackfill` re-queue a `Failed` column (400 / error for an
     `Active` one). Never call the inline `AddComputedColumnAsync` / `UpdateComputedColumnFormulaAsync`
     from a request again — they backfill in the call.
+  - **Repair of an active computed column (AB#8331).** `POST .../computed-columns/{name}/repair?from=&to=` and the
+    mutation `repairComputedColumn(rtId, name, from, to)` call `IArchiveLifecycleService.RepairComputedColumnAsync`:
+    a recompute job (marker `computed-column:repair:<name>`, visible in the recompute jobs with `computedColumnName`)
+    that the backfill service runs after the queued backfills. It re-evaluates only rows whose cell is NULL while an
+    operand of the formula is not NULL, inside `[from, to)` (default: first row to now); the column stays `Active`.
+    400 / error for a column that is not `Active`. Since AB#8331 an evaluation aborted by an exception (out of memory)
+    is no longer stored as NULL: ingest fails the write, a backfill retries the page once and then fails the job with
+    the time slice in the reason.
   - **Ingested column on an active archive (AB#7997).** `POST .../archives/{rtId}/columns?path=&indexed=` and the
     mutation `addArchiveColumn` call `IArchiveLifecycleService.AddArchiveColumnAsync` (storage first, nullable
     `ADD COLUMN`, then the definition; idempotent; 400 for a non-activated archive, a rollup or an unresolvable path).
