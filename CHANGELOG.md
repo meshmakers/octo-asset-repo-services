@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- AB#8355 Refactor: `PersistedQueryLookup` (AB#8273) delegates to the engine's `GetActiveRtEntityByRtIdAsync`, the same rule the
+  mesh-adapter node `GetQueryById@1` and the MCP persisted-query tools use now. Behaviour unchanged.
 - AB#8331 New: repair of an active computed column. `POST streamdata/archives/{archiveRtId}/computed-columns/{name}/repair?from=&to=`
   and the GraphQL mutation `repairComputedColumn(rtId, name, from, to)` queue a recompute job that re-evaluates the rows whose
   cell is NULL although an operand of the formula is not NULL (default range: first row to now); the column stays Active, the job
