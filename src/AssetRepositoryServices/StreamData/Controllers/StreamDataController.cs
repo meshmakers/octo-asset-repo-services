@@ -319,7 +319,7 @@ public class StreamDataController : ControllerBase
                 ?? throw new StreamDataException(
                     $"StreamData is not enabled for tenant '{tenantId}'. Call POST /streamdata/enable first.");
             var job = await lifecycle.RepairComputedColumnAsync(
-                new OctoObjectId(archiveRtId), name, from?.ToUniversalTime(), to?.ToUniversalTime(),
+                new OctoObjectId(archiveRtId), name, AsUtc(from), AsUtc(to),
                 _appLifetime.ApplicationStopping);
             return job is null ? NoContent() : Ok(RecomputeJobInfoRestDto.From(job));
         }
@@ -967,4 +967,15 @@ public class StreamDataController : ControllerBase
             return BadRequest(e.Message);
         }
     }
+
+    /// <summary>
+    /// Interprets an offset-free repair bound as UTC (like the GraphQL mutation) instead of the server's local time zone.
+    /// </summary>
+    private static DateTime? AsUtc(DateTime? value) => value switch
+    {
+        null => null,
+        { Kind: DateTimeKind.Utc } v => v,
+        { Kind: DateTimeKind.Local } v => v.ToUniversalTime(),
+        { } v => DateTime.SpecifyKind(v, DateTimeKind.Utc)
+    };
 }
