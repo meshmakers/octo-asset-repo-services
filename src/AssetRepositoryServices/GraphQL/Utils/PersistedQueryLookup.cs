@@ -16,7 +16,8 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Utils;
 ///     returns the document whatever its state. Without this check a deleted query kept running for every caller who knew
 ///     its rtId (<c>streamData.streamDataQuery</c>, <c>runtime.runtimeQuery</c> and the query-row mutations), while the
 ///     query lists no longer showed it. There is no cache of query definitions: every execution reads the stored entity,
-///     so an update is visible at once on every replica.
+///     so an update is visible at once on every replica. Since AB#8355 the check itself is the engine's
+///     <see cref="RuntimeRepositoryExtensions.GetActiveRtEntityByRtIdAsync{TEntity}" />.
 /// </remarks>
 internal static class PersistedQueryLookup
 {
@@ -27,7 +28,8 @@ internal static class PersistedQueryLookup
         OctoObjectId queryRtId)
         where TEntity : RtEntity, new()
     {
-        var entity = await repository.GetRtEntityByRtIdAsync<TEntity>(session, queryRtId).ConfigureAwait(false);
-        return entity is null || entity.RtState == RtState.Archived ? null : entity;
+        // AB#8355: the rule lives in the engine (RuntimeRepositoryExtensions), shared with the mesh adapter and the MCP
+        // service; this helper keeps the asset repository's call sites and tests.
+        return await repository.GetActiveRtEntityByRtIdAsync<TEntity>(session, queryRtId).ConfigureAwait(false);
     }
 }
