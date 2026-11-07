@@ -52,9 +52,11 @@ types:
       authorization:
         roles: [ AccessTestAdmin ]
       # The pipeline-handled method of this model (no sensitive parameter, explicit timeout).
+      # AB#6926: an explicitly declared sync mode (pipeline handlers are sync only, message 142).
       execution:
         timeoutSeconds: 30
         handler: pipeline
+        mode: sync
     - methodId: IssueToken-1
       description: "Returns a one-time token; the result is sensitive (AB#7008) and a pipeline handler would be refused."
       result:
@@ -62,8 +64,11 @@ types:
         sensitive: true
       authorization:
         roles: [ AccessTestAdmin ]
+      # AB#6926: the asynchronous method of this model (async requires a service handler, message 142); only its CK
+      # meta is tested, it is never invoked.
       execution:
         handler: service
+        mode: async
     - methodId: Touch-1
       description: "Parameterless instance method."
       authorization:

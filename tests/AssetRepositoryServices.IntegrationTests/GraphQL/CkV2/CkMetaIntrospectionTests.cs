@@ -58,7 +58,7 @@ public class CkMetaIntrospectionTests
               result { valueType sensitive }
               errors { code }
               authorization { roles allowSelf scopes }
-              execution { timeoutSeconds idempotent handler }
+              execution { timeoutSeconds idempotent handler mode }
             }
             """);
 
@@ -93,6 +93,31 @@ public class CkMetaIntrospectionTests
         methods["ResetPassword-2"].SelectToken("result.sensitive")!.Value<bool>().Should()
             .BeFalse("a result without the marker reads as not sensitive");
         methods["Lookup-1"]["kind"]!.Value<string>().Should().Be("Static");
+        // Execution mode (AB#6926): async, an explicitly declared sync and an undeclared mode (reads as 'sync').
+        methods["IssueToken-1"].SelectToken("execution.mode")!.Value<string>().Should().Be("async");
+        methods["ResetPassword-2"].SelectToken("execution.mode")!.Value<string>().Should().Be("sync");
+        methods["Touch-1"].SelectToken("execution.mode")!.Value<string>().Should()
+            .Be("sync", "an undeclared mode reads as the default 'sync'");
+    }
+
+    [Fact]
+    public async Task V2Type_MethodExecutionWithoutTheModeField_BehavesAsBefore()
+    {
+        // AB#6926: a query that does not select the new field returns exactly the fields it asks for.
+        var type = await TypeAsync(AccountType, """
+            methods {
+              methodId
+              execution { timeoutSeconds idempotent handler }
+            }
+            """);
+
+        var methods = type["methods"]!.ToDictionary(m => m["methodId"]!.Value<string>()!);
+        var execution = (JObject)methods["IssueToken-1"]["execution"]!;
+        execution.Properties().Select(p => p.Name).Should().Equal("timeoutSeconds", "idempotent", "handler");
+        execution["timeoutSeconds"]!.Value<int>().Should().Be(15);
+        execution["handler"]!.Value<string>().Should().Be("service");
+        ((JObject)methods["Touch-1"]["execution"]!).Properties().Select(p => p.Name).Should()
+            .Equal("timeoutSeconds", "idempotent", "handler");
     }
 
     [Fact]
