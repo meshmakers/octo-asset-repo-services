@@ -244,8 +244,25 @@ public sealed class CkModelDraftValidator(
             File = RelativeFile(message.Location, sourceRoot),
             ElementPath = ElementPath(message.Parameters),
             Message = sourceRoot == null ? message.MessageText : StripRoot(message.MessageText, sourceRoot),
-            Parameters = message.Parameters.ToDictionary(p => p.Key, p => p.Value)
+            Parameters = message.Parameters.ToDictionary(p => p.Key,
+                p => sourceRoot == null ? p.Value : RelativeParameter(p.Value, sourceRoot))
         };
+
+    /// <summary>
+    ///     A placeholder value without the server's temp folder: a path (e.g. <c>file</c> of message 110) becomes
+    ///     relative to the draft's <c>ConstructionKit/</c> folder, any other text loses the temp root.
+    /// </summary>
+    internal static string RelativeParameter(string value, string sourceRoot)
+    {
+        if (string.IsNullOrEmpty(value))
+        {
+            return value;
+        }
+
+        return Path.IsPathRooted(value)
+            ? RelativeFile(value, sourceRoot) ?? value
+            : StripRoot(value, sourceRoot);
+    }
 
     /// <summary>The draft-relative file of a message location; a server path never leaves the service.</summary>
     internal static string? RelativeFile(string? location, string? sourceRoot)

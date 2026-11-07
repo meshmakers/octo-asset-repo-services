@@ -50,6 +50,38 @@ public class CkModelDraftValidatorTests
     }
 
     [Fact]
+    public void ToDto_Message110_LeaksNoServerPathInParameters()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "octo-ck-validate-x");
+        var file = Path.Combine(root, "pumps.yaml");
+        var message = new OperationMessage(MessageLevel.Warning, file, 110,
+            $"File '{file}' declares 'types', which is only read from files in the 'types/' folder.",
+            new Dictionary<string, string>
+            {
+                ["file"] = file, ["key"] = "types", ["expectedFolder"] = "types", ["note"] = $"see {file}"
+            });
+
+        var dto = CkModelDraftValidator.ToDto(message, root);
+
+        dto.MessageNumber.Should().Be(110);
+        dto.File.Should().Be("pumps.yaml");
+        dto.Parameters["file"].Should().Be("pumps.yaml");
+        dto.Parameters["key"].Should().Be("types");
+        dto.Parameters["expectedFolder"].Should().Be("types");
+        dto.Parameters.Values.Should().NotContain(v => v.Contains(root));
+        dto.Message.Should().NotContain(root);
+    }
+
+    [Fact]
+    public void RelativeParameter_APathOutsideTheDraft_KeepsOnlyTheFileName()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "octo-ck-validate-x");
+        CkModelDraftValidator.RelativeParameter("/srv/secret/other.yaml", root).Should().Be("other.yaml");
+        CkModelDraftValidator.RelativeParameter("Demo/Pump-1", root).Should().Be("Demo/Pump-1");
+        CkModelDraftValidator.RelativeParameter(string.Empty, root).Should().BeEmpty();
+    }
+
+    [Fact]
     public void TryFindSourceRoot_TakesTheShallowestCkModelYaml()
     {
         using var zip = Zip(("x/ConstructionKit/ckModel.yaml", "a"), ("x/ConstructionKit/deps/y/ckModel.yaml", "b"),
