@@ -87,7 +87,9 @@ public sealed class CkModelDraftValidator(
         }
         catch (InvalidDataException e)
         {
-            response.Errors.Add(Unreadable($"The file '{fileName}' is not a readable zip archive: {e.Message}"));
+            // Also thrown while extracting (corrupt entry data), so the text may name the temp folder: strip it.
+            response.Errors.Add(Unreadable(
+                $"The file '{fileName}' is not a readable zip archive: {WithoutRoot(e.Message, sourceRoot)}"));
             compiled = null;
         }
         catch (Exception e) when (e is not OperationCanceledException)
