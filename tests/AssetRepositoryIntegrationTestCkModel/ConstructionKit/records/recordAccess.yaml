@@ -46,3 +46,23 @@ records:
       name: Ref
       isOptional: true
       access: ReadOnly
+- recordId: AccessTestKeyedDetail
+  description: "AB#8322: record with a record key, Hidden, MethodOnly and Secret members (query-row updates)"
+  recordKey: Key
+  attributes:
+    - id: ${this}/AccessTestKeyedEntryKey
+      name: Key
+    - id: ${this}/AccessTestKeyedDetailApiKey
+      name: ApiKey
+      isOptional: true
+    - id: ${this}/AccessTestKeyedEntryLabel
+      name: Label
+      isOptional: true
+    - id: ${this}/AccessTestDetailNote
+      name: Note
+      isOptional: true
+      access: Hidden
+    - id: ${this}/AccessTestDetailState
+      name: State
+      isOptional: true
+      access: MethodOnly

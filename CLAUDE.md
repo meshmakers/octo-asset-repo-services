@@ -784,10 +784,23 @@ schema initialization.
   matched: the update is refused with `ATTRIBUTE_NOT_WRITABLE` when a stored element holds a value in a protected member, and allowed
   when none does. Secret members are left to the engine (record key). `null` for the whole record attribute still removes it. Same idea
   as identity-owned attributes on `ImportRt` (AB#8059, preserved on omission). `clearSecretAttributes` is a write too: clearing a Secret
-  that is Hidden / MethodOnly / ReadOnly is refused with `ATTRIBUTE_NOT_WRITABLE` (`MapClearSecretAttributes`). Not covered: query-row
-  updates of record paths (`QueryMapper`, path-wise `RtPathEvaluator.SetValue`). Tests: `UnitTests/GraphQL/RecordMemberPreservationTests`,
+  that is Hidden / MethodOnly / ReadOnly is refused with `ATTRIBUTE_NOT_WRITABLE` (`MapClearSecretAttributes`). Tests: `UnitTests/GraphQL/RecordMemberPreservationTests`,
   `IntegrationTests/GraphQL/CkV2/RecordMemberPreservationTests` (test type `RecordAccessThing`, records `AccessTestDetail`,
   `AccessTestInner`, `AccessTestKeyedEntry`).
+- **Query-row updates of record paths change exactly their path** (AB#8322): `RtQueryMutation.ResolveUpdate` builds the update
+  document from the cells (`QueryMapper`, path-wise `RtPathEvaluator.SetValue`), and the repository `$set`s every top-level attribute
+  of that document as a whole. A cell `detail.label` alone would therefore replace the stored record with `{ label }` and drop every
+  other member (protected or not). Before the cells are applied, `CopyStoredRecordsAsync` reads the stored entity (request session =
+  caller's data permissions, inside the request transaction; only when a cell writes a record member) and
+  `GraphQL/Mapping/QueryRowRecordMerge` copies the stored value of each record / record array attribute whose member a cell writes
+  into the document, **without Secret members** (the engine carries them over, AB#5533). The cells then change only their path: a
+  single record and nested records keep all other members; a record array element is addressed by position (`entries[0].label`,
+  the form `availableQueryColumns` offers) and changed in place, so it keeps its members with or without a record key - no element
+  matching is needed, so the keyless refusal of AB#8055 / message 141 of AB#8141 does not apply here; other elements stay as stored.
+  A cell that names the record attribute itself is not merged; an explicit value for a protected member is refused before anything
+  is written (`AccessQueryGuard.EnsureWritablePath`). Tests: `UnitTests/GraphQL/QueryRowRecordMergeTests`,
+  `IntegrationTests/GraphQL/CkV2/QueryRowRecordMemberPreservationTests` (record `AccessTestKeyedDetail`: record key plus Hidden,
+  MethodOnly and Secret members; the Secret test pins the engine carry-over for a single record and by record key).
 - **GraphQL name collisions** (G3 review A-L1/A-L2, backlog): two CK elements that map to the same GraphQL name (e.g.
   a literal `Named2` next to `Named-2`, or names colliding with the generated `…Interface`, `…Input`, `…Update` names)
   make schema initialization throw, and the whole tenant schema is unavailable. `SchemaContext` builds every tenant

@@ -33,3 +33,12 @@ attributes:
     valueCkRecordId: ${this}/AccessTestKeyedEntry
   - id: RecordAccessThingToken
     valueType: Secret
+  # AB#8322: record array element with Hidden and MethodOnly members, matched by record key
+  - id: RecordAccessThingKeyedDetails
+    valueType: RecordArray
+    valueCkRecordId: ${this}/AccessTestKeyedDetail
+  - id: RecordAccessThingKeyedDetail
+    valueType: Record
+    valueCkRecordId: ${this}/AccessTestKeyedDetail
+  - id: AccessTestKeyedDetailApiKey
+    valueType: Secret

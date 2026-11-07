@@ -13,6 +13,7 @@ using Meshmakers.Octo.ConstructionKit.Contracts.Services;
 using Meshmakers.Octo.ConstructionKit.Models.System.Generated.System.v2;
 using Meshmakers.Octo.Runtime.Contracts;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb.Repositories;
+using Meshmakers.Octo.Runtime.Contracts.Repositories;
 using Meshmakers.Octo.Runtime.Contracts.Repositories.Query;
 using Meshmakers.Octo.Runtime.Contracts.RepositoryEntities;
 
@@ -203,6 +204,11 @@ internal sealed class RtQueryMutation : RtMutationBase
                     CkTypeId = mutationDto.Item.CkTypeId
                 };
 
+                // AB#8322: a cell writes one member of a record; start from the stored record so that the other
+                // members - also the MethodOnly / Hidden / ReadOnly ones the caller cannot write - keep their values.
+                await CopyStoredRecordsAsync(ckCacheService, graphQlUserContext.TenantId, tenantRepository,
+                    sessionAccessor.Session, rtEntityId, document, mutationDto.Item);
+
                 await queryMapper.MapAsync(document, mutationDto.Item, associationUpdateInfoList, MappingMode.Update,
                     mappingResult);
 
@@ -237,5 +243,30 @@ internal sealed class RtQueryMutation : RtMutationBase
         {
             return context.HandleException(e);
         }
+    }
+
+    /// <summary>
+    ///     AB#8322: copies the stored values of the record attributes whose members the row writes into the update document
+    ///     (<see cref="QueryRowRecordMerge" />). Reads the stored entity only when a cell writes a record member.
+    /// </summary>
+    private static async Task CopyStoredRecordsAsync(ICkCacheService ckCacheService, string tenantId,
+        ITenantRepository repository, IOctoSession session, RtEntityId rtEntityId, RtEntity document,
+        RtSimpleQueryRowDto row)
+    {
+        if (row.Cells == null || !ckCacheService.TryGetRtCkType(tenantId, rtEntityId.CkTypeId, out var ckTypeGraph))
+        {
+            return;
+        }
+
+        var recordAttributes =
+            QueryRowRecordMerge.RecordAttributesWithMemberPaths(ckTypeGraph, row.Cells.Select(c => c.AttributePath));
+        if (recordAttributes.Count == 0)
+        {
+            return;
+        }
+
+        var stored = await repository.GetRtEntityByRtIdAsync(session, rtEntityId);
+        QueryRowRecordMerge.CopyStoredRecords(ckCacheService, tenantId, ckTypeGraph, document, stored,
+            recordAttributes);
     }
 }
