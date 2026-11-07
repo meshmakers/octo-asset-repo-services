@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- AB#8322 Fix: a query-row update of a record member keeps the other members of the record. `runtimeQuery(rtId) { update }`
+  writes cells such as `detail.label`, `detail.inner.text` or `entries[0].label`; the update document held only the cell values,
+  so the whole stored record was replaced and every member the row did not carry was lost - the `MethodOnly` and `Hidden` members
+  the caller can neither see nor write, `ReadOnly` ones and visible siblings alike. The stored value of each record (or record
+  array) attribute whose member a cell writes is now copied into the update first (`GraphQL/Mapping/QueryRowRecordMerge`, without
+  Secret members, which the engine carries over), so a cell changes exactly its path. Record array elements are addressed by
+  position and changed in place (with or without a record key; before, such a cell failed with `MAPPING004`). An explicit value
+  for a protected member is still refused with `ATTRIBUTE_NOT_WRITABLE`. Tests `UnitTests/GraphQL/QueryRowRecordMergeTests`,
+  `IntegrationTests/GraphQL/CkV2/QueryRowRecordMemberPreservationTests` (test record `AccessTestKeyedDetail`).
 - AB#8355 Refactor: `PersistedQueryLookup` (AB#8273) delegates to the engine's `GetActiveRtEntityByRtIdAsync`, the same rule the
   mesh-adapter node `GetQueryById@1` and the MCP persisted-query tools use now. Behaviour unchanged.
 - AB#8331 New: repair of an active computed column. `POST streamdata/archives/{archiveRtId}/computed-columns/{name}/repair?from=&to=`

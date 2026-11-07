@@ -15,6 +15,9 @@ types:
     - id: ${this}/RecordAccessThingKeyedEntries
       name: KeyedEntries
       isOptional: true
+    - id: ${this}/RecordAccessThingKeyedDetails
+      name: KeyedDetails
+      isOptional: true
     - id: ${this}/RecordAccessThingToken
       name: Token
       isOptional: true
