@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- AB#6926 New: the GraphQL CK meta reports the execution mode of a method. `CkMethodExecution.mode: String!` is the effective
+  mode: `sync` (default when undeclared, also for tenant documents written before the field) or `async` (the call returns an
+  operation handle once the handler accepted the work; `timeoutSeconds` bounds that accept step). Additive on the v2-only meta
+  type; queries that do not select the field are unchanged. Test `IntegrationTests/GraphQL/CkV2/CkMetaIntrospectionTests`
+  (async `IssueToken-1`, explicit sync `ResetPassword-2`, undeclared `Touch-1`, a query without the field).
 - AB#8322 Fix: a query-row update of a record member keeps the other members of the record. `runtimeQuery(rtId) { update }`
   writes cells such as `detail.label`, `detail.inner.text` or `entries[0].label`; the update document held only the cell values,
   so the whole stored record was replaced and every member the row did not carry was lost - the `MethodOnly` and `Hidden` members
