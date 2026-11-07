@@ -53,7 +53,8 @@ public class ModelsControllerCheckUpgradeTests
             _libraryStatusService,
             A.Fake<ILogger<ModelsController>>(),
             A.Fake<Meshmakers.Octo.ConstructionKit.Contracts.Serialization.ICkSerializer>(),
-            A.Fake<Microsoft.AspNetCore.Authorization.IAuthorizationService>());
+            A.Fake<Microsoft.AspNetCore.Authorization.IAuthorizationService>(),
+            A.Fake<Meshmakers.Octo.Backend.AssetRepositoryServices.Services.CkModelValidation.ICkModelDraftValidator>());
         var httpContext = new DefaultHttpContext();
         httpContext.Request.RouteValues["tenantId"] = "sbeg";
         _controller.ControllerContext = new ControllerContext { HttpContext = httpContext };

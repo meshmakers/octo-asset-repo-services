@@ -49,7 +49,8 @@ public class ModelsControllerExportCallerTests
             A.Fake<ICkModelLibraryStatusService>(),
             A.Fake<ILogger<ModelsController>>(),
             A.Fake<ICkSerializer>(),
-            A.Fake<Microsoft.AspNetCore.Authorization.IAuthorizationService>());
+            A.Fake<Microsoft.AspNetCore.Authorization.IAuthorizationService>(),
+            A.Fake<Meshmakers.Octo.Backend.AssetRepositoryServices.Services.CkModelValidation.ICkModelDraftValidator>());
 
         A.CallTo(() => _exportByQuery.GetResponse<JobCreatedResponse>(A<ExportRtByQueryCommandRequest>._))
             .Returns(new JobCreatedResponse("job-q"));

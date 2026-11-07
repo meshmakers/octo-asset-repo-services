@@ -70,7 +70,8 @@ public class ModelsControllerImportFromCatalogBatchTests
             _libraryStatusService,
             A.Fake<ILogger<ModelsController>>(),
             A.Fake<Meshmakers.Octo.ConstructionKit.Contracts.Serialization.ICkSerializer>(),
-            A.Fake<Microsoft.AspNetCore.Authorization.IAuthorizationService>());
+            A.Fake<Microsoft.AspNetCore.Authorization.IAuthorizationService>(),
+            A.Fake<Meshmakers.Octo.Backend.AssetRepositoryServices.Services.CkModelValidation.ICkModelDraftValidator>());
 
         var httpContext = new DefaultHttpContext();
         httpContext.Request.RouteValues["tenantId"] = "test-tenant";
