@@ -96,7 +96,8 @@ public class ModelsControllerImportTransitiveSystemPinTests
             new CkModelLibraryStatusService(_catalogService, systemContext),
             A.Fake<ILogger<ModelsController>>(),
             A.Fake<ICkSerializer>(),
-            A.Fake<Microsoft.AspNetCore.Authorization.IAuthorizationService>());
+            A.Fake<Microsoft.AspNetCore.Authorization.IAuthorizationService>(),
+            A.Fake<Meshmakers.Octo.Backend.AssetRepositoryServices.Services.CkModelValidation.ICkModelDraftValidator>());
 
         var httpContext = new DefaultHttpContext();
         httpContext.Request.RouteValues["tenantId"] = TenantId;

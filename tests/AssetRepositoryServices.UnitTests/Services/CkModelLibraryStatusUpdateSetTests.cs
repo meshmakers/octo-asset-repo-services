@@ -355,7 +355,8 @@ public class CkModelLibraryStatusUpdateSetTests
             libraryStatusService,
             A.Fake<ILogger<ModelsController>>(),
             A.Fake<ICkSerializer>(),
-            A.Fake<Microsoft.AspNetCore.Authorization.IAuthorizationService>());
+            A.Fake<Microsoft.AspNetCore.Authorization.IAuthorizationService>(),
+            A.Fake<Meshmakers.Octo.Backend.AssetRepositoryServices.Services.CkModelValidation.ICkModelDraftValidator>());
         var httpContext = new DefaultHttpContext();
         httpContext.Request.RouteValues["tenantId"] = TenantId;
         controller.ControllerContext = new ControllerContext { HttpContext = httpContext };

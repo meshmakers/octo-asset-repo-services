@@ -1,9 +1,9 @@
 ﻿using System.ComponentModel.DataAnnotations;
-using System.IO.Compression;
 using Asp.Versioning;
 using Duende.IdentityModel;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.DataTransferObjects.CkModelCatalog;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.Services;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.Services.CkModelValidation;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.UpgradeGuard;
 using Meshmakers.Octo.Common.DistributionEventHub.Services;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
@@ -48,6 +48,7 @@ public class ModelsController : ControllerBase
     private readonly ICkModelMigrationService _migrationService;
     private readonly ISystemContext _systemContext;
     private readonly ICkModelUpgradeService _upgradeService;
+    private readonly ICkModelDraftValidator _draftValidator;
 
     /// <summary>
     ///     Constructor
@@ -67,6 +68,7 @@ public class ModelsController : ControllerBase
     /// <param name="logger">Logger (audit line of a forced breaking update, AB#6870)</param>
     /// <param name="ckSerializer">Reads the uploaded CK model of ImportCk for the upgrade guard (AB#6966)</param>
     /// <param name="authorizationService">Checks the data model management policy of a forced import (AB#6966)</param>
+    /// <param name="draftValidator">Validates a CK model draft without importing it (AB#8492)</param>
     public ModelsController(IDistributedCacheService distributedCache,
         ICommandClient<ExportRtByQueryCommandRequest> exportRtByQueryCommandClient,
         ICommandClient<ExportRtByDeepGraphCommandRequest> exportRtByDeepGraphCommandClient,
@@ -81,8 +83,10 @@ public class ModelsController : ControllerBase
         ICkModelLibraryStatusService libraryStatusService,
         ILogger<ModelsController> logger,
         ICkSerializer ckSerializer,
-        IAuthorizationService authorizationService)
+        IAuthorizationService authorizationService,
+        ICkModelDraftValidator draftValidator)
     {
+        _draftValidator = draftValidator;
         _ckSerializer = ckSerializer;
         _authorizationService = authorizationService;
         _distributedCache = distributedCache;
@@ -380,6 +384,61 @@ public class ModelsController : ControllerBase
             return StatusCode(StatusCodes.Status500InternalServerError, new InternalServerErrorDto(ex.Message));
         }
     }
+
+    // POST: {tenantId}/v1/Models/ValidateCk
+    /// <summary>
+    ///     Validates a CK model draft against the models installed in the tenant <b>without importing it</b> (AB#8492).
+    ///     <para>
+    ///         Accepts a zip of the source <c>ConstructionKit/</c> folder (the folder with <c>ckModel.yaml</c>; compiled
+    ///         here, dependencies from the configured catalogs) or a compiled model (json, yaml or a zip of one, as
+    ///         <c>ImportCk</c> accepts it). The compiled model is checked with the import's own checks against the tenant
+    ///         (CK language, engine version, system references, dependency resolution) and, without errors, with the tenant
+    ///         upgrade guard. Nothing is imported, cached, queued or written.
+    ///     </para>
+    ///     <para>
+    ///         Always <c>200</c> with the result for a draft, valid or not: errors (with file and element path) and
+    ///         missing dependencies are in <c>errors</c>, never a failed call. <c>400</c> only without a file.
+    ///     </para>
+    /// </summary>
+    /// <param name="file">The CK model draft (zip, json or yaml)</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>The validation result</returns>
+    [HttpPost]
+    [Route("ValidateCk")]
+    [Authorize(AssetRepositoryServiceConstants.TenantAssetApiReadOnlyPolicy)]
+    [RequestSizeLimit(MaxValidateCkBytes)]
+    [ProducesResponseType(typeof(CkModelValidationResponseDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(OperationFailedErrorDto), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(InternalServerErrorDto), StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> ValidateCk(IFormFile? file, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var tenantId = HttpContext.GetTenantId();
+            if (string.IsNullOrEmpty(tenantId))
+            {
+                return BadRequest(new OperationFailedErrorDto("TenantId is required"));
+            }
+
+            if (file == null || file.Length == 0)
+            {
+                return BadRequest(new OperationFailedErrorDto("A CK model file is required."));
+            }
+
+            await using var upload = file.OpenReadStream();
+            var result = await _draftValidator.ValidateAsync(tenantId, upload, file.FileName, file.ContentType,
+                cancellationToken);
+            return Ok(result);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            return StatusCode(StatusCodes.Status500InternalServerError, new InternalServerErrorDto(ex.Message));
+        }
+    }
+
+    /// <summary>Request size limit of <see cref="ValidateCk" /> (a CK model draft, not data).</summary>
+    public const long MaxValidateCkBytes = 20L * 1024 * 1024;
 
     // POST: {tenantId}/v1/Models/ImportFromCatalog
     /// <summary>
@@ -1003,43 +1062,8 @@ public class ModelsController : ControllerBase
         }
 
         await using var upload = file.OpenReadStream();
-        var isZip = file.ContentType.Equals("application/zip", StringComparison.OrdinalIgnoreCase) ||
-                    file.ContentType.Equals("application/x-zip-compressed", StringComparison.OrdinalIgnoreCase);
-        var operationResult = new OperationResult();
-        CkCompiledModelRoot? model;
-        try
-        {
-            if (isZip)
-            {
-                using var archive = new ZipArchive(upload);
-                var entry = archive.Entries.FirstOrDefault(e => Path.GetExtension(e.Name).Equals(".json", StringComparison.OrdinalIgnoreCase))
-                            ?? archive.Entries.FirstOrDefault(e => Path.GetExtension(e.Name).Equals(".yaml", StringComparison.OrdinalIgnoreCase));
-                if (entry == null)
-                {
-                    throw new InvalidOperationException("The zip archive contains no .json or .yaml CK model file.");
-                }
-
-                await using var entryStream = entry.Open();
-                model = await _ckSerializer.DeserializeCompiledModelRootAsync(entryStream, entry.Name, operationResult);
-            }
-            else
-            {
-                model = await _ckSerializer.DeserializeCompiledModelRootAsync(upload, file.FileName, operationResult);
-            }
-        }
-        catch (InvalidDataException e)
-        {
-            throw new InvalidOperationException($"The file '{file.FileName}' is not a readable CK model archive: {e.Message}");
-        }
-
-        if (model == null || operationResult.HasErrors || operationResult.HasFatalErrors)
-        {
-            var reasons = string.Join("; ", operationResult.Messages.Select(m => m.MessageText));
-            throw new InvalidOperationException(
-                $"The file '{file.FileName}' cannot be read as a compiled CK model{(reasons.Length > 0 ? ": " + reasons : ".")}");
-        }
-
-        return model;
+        return await CkModelFileReader.ReadCompiledModelAsync(_ckSerializer, upload, file.FileName,
+            CkModelFileReader.IsZip(file.ContentType));
     }
 
     /// <summary>

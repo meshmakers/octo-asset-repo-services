@@ -1266,6 +1266,35 @@ attributes) of an opted-in type with an error `OperationMessage` of number **638
   System.Identity CK model is not part of the test tenant) and `tests/.../UnitTests/BlueprintLock/`.
 - User documentation: octo-documentation, `dataAccess/runtime/errorHandling.md` (#blueprint-locked-entities).
 
+### Validate a CK model draft without importing it: `Models/ValidateCk` (AB#8492)
+
+`POST {tenantId}/v1/Models/ValidateCk` (multipart member `file`, policy `TenantAssetApiReadOnlyPolicy`, request limit 20 MB) answers
+**200** with `CkModelValidationResponseDto` for every draft, valid or not (`isValid`, `modelId`, `sourceKind` `Source|Compiled`,
+`errors`/`warnings` = `CkModelValidationMessageDto`: `messageNumber`, `level`, `file`, `elementPath`, `message`, `parameters`; `isBlocked`,
+`blockers`); 400 only without a file. Backs the MCP tool `validate_ck_model` (SDK `IAssetServicesClient.ValidateCkModelAsync`).
+Code: `Services/CkModelValidation/CkModelDraftValidator` (registered transient in `RuntimeEngineBuilderExtensions`), `CkModelFileReader`.
+
+- **No second validator.** A zip that contains `ckModel.yaml` (the shallowest one marks the folder) is a source draft: it is extracted
+  to a temp folder and compiled with the engine's `ICompilerService.CompileInMemoryAsync` (dependencies from the configured catalogs),
+  every other upload is read by `CkModelFileReader`, the reader `ImportCk` uses too (moved out of the controller, same behaviour). The
+  compiled model then goes through the engine's `ITenantContext.ValidateCkModelAsync` (octo-construction-kit-engine-mongodb: the import's
+  pre-write checks, read-only) and, without errors, `EvaluateFileImportBlockersAsync` (the guard of `ImportCk`, AB#6966).
+- **Nothing is written**: no cache stream, no import command, no tenant write; the temp folder is deleted.
+- **A bad draft is a finding, not a failed call**: compiler errors, YAML syntax errors, an unreadable file, a missing dependency are
+  errors in the list. Numbers: the engine's message catalog; 8492 with `parameters.reason` `unreadable-draft` (asset repository),
+  `system-reference-mismatch` / `dependency-resolution` (engine). An unknown dependency of a **source** draft is message 1 (no `file`:
+  the compiler names the draft folder itself) plus 8492 with `dependency-resolution` (asset repository, `IsDependencyResolutionFailure`).
+- **Zip safety**: entries with `..` or an absolute path are refused, at most 2,000 entries and 50 MB unpacked.
+- **File and element**: `file` is relative to the `ConstructionKit/` folder, `null` for the folder itself (a server path and the temp folder
+  name `octo-ck-validate-<guid>` never leave the service, under any spelling such as `/private/var` on macOS; temp paths are also
+  stripped from the message text and the parameters), `elementPath` is built from the message placeholders (type/record/enum/interface/model, then attribute/
+  role/method).
+- `ImportCk` still does **not** compile a source zip (it reads the first `.json`/`.yaml` entry as a compiled model); only `ValidateCk` does.
+- Tests: `UnitTests/Services/CkModelValidation/CkModelDraftValidatorTests`, `UnitTests/TenantApi/ModelsControllerValidateCkTests`,
+  `IntegrationTests/Tenant/CkModelDraftValidationTests` (real compiler, catalogs, tenant and MongoDB: valid source folder not imported, unknown
+  attribute with file and element, missing dependency of a compiled model and of a source draft, broken YAML, unreadable file, zip slip;
+  every case asserts that the serialized response contains no temp folder name or temp path).
+
 ### Export entry points run as the caller (AB#6734)
 
 `POST {tenantId}/v1/Models/ExportRtByQuery` and `ExportRtByDeepGraph` (`ModelsController`, policy

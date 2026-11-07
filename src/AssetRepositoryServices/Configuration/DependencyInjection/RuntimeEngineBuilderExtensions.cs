@@ -470,6 +470,8 @@ public static class RuntimeEngineBuilderExtensions
         // ICatalogService is, and a scope-per-sweep keeps the sweep off the request pipeline's
         // lifetimes entirely.
         builder.Services.AddTransient<ICkModelLibraryStatusService, CkModelLibraryStatusService>();
+        // AB#8492: validate a CK model draft without importing it (Models/ValidateCk, MCP validate_ck_model)
+        builder.Services.AddTransient<Meshmakers.Octo.Backend.AssetRepositoryServices.Services.CkModelValidation.ICkModelDraftValidator, Meshmakers.Octo.Backend.AssetRepositoryServices.Services.CkModelValidation.CkModelDraftValidator>();
         // AB#6871: the tenant upgrade guard of blueprint apply and update (the engine's BlueprintService asks it).
         builder.Services.AddTransient<IBlueprintCkUpgradeGuard, BlueprintCkUpgradeGuard>();
         builder.Services.AddTransient<ITenantObservabilityOptIn, TenantObservabilityOptIn>();

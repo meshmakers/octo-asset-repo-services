@@ -84,7 +84,8 @@ public class ModelsControllerUpgradeGuardEnforcementTests
             _libraryStatusService,
             _logger,
             _ckSerializer,
-            _authorization);
+            _authorization,
+            A.Fake<Meshmakers.Octo.Backend.AssetRepositoryServices.Services.CkModelValidation.ICkModelDraftValidator>());
 
         var httpContext = new DefaultHttpContext();
         httpContext.Request.RouteValues["tenantId"] = "sbeg";
