@@ -1282,15 +1282,18 @@ Code: `Services/CkModelValidation/CkModelDraftValidator` (registered transient i
 - **Nothing is written**: no cache stream, no import command, no tenant write; the temp folder is deleted.
 - **A bad draft is a finding, not a failed call**: compiler errors, YAML syntax errors, an unreadable file, a missing dependency are
   errors in the list. Numbers: the engine's message catalog; 8492 with `parameters.reason` `unreadable-draft` (asset repository),
-  `system-reference-mismatch` / `dependency-resolution` (engine).
+  `system-reference-mismatch` / `dependency-resolution` (engine). An unknown dependency of a **source** draft is message 1 (no `file`:
+  the compiler names the draft folder itself) plus 8492 with `dependency-resolution` (asset repository, `IsDependencyResolutionFailure`).
 - **Zip safety**: entries with `..` or an absolute path are refused, at most 2,000 entries and 50 MB unpacked.
-- **File and element**: `file` is relative to the `ConstructionKit/` folder (a server path never leaves the service; temp paths are also
-  stripped from the message text), `elementPath` is built from the message placeholders (type/record/enum/interface/model, then attribute/
+- **File and element**: `file` is relative to the `ConstructionKit/` folder, `null` for the folder itself (a server path and the temp folder
+  name `octo-ck-validate-<guid>` never leave the service, under any spelling such as `/private/var` on macOS; temp paths are also
+  stripped from the message text and the parameters), `elementPath` is built from the message placeholders (type/record/enum/interface/model, then attribute/
   role/method).
 - `ImportCk` still does **not** compile a source zip (it reads the first `.json`/`.yaml` entry as a compiled model); only `ValidateCk` does.
 - Tests: `UnitTests/Services/CkModelValidation/CkModelDraftValidatorTests`, `UnitTests/TenantApi/ModelsControllerValidateCkTests`,
   `IntegrationTests/Tenant/CkModelDraftValidationTests` (real compiler, catalogs, tenant and MongoDB: valid source folder not imported, unknown
-  attribute with file and element, missing dependency of a compiled model, broken YAML, unreadable file, zip slip).
+  attribute with file and element, missing dependency of a compiled model and of a source draft, broken YAML, unreadable file, zip slip;
+  every case asserts that the serialized response contains no temp folder name or temp path).
 
 ### Export entry points run as the caller (AB#6734)
 

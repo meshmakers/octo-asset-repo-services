@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.IO.Compression;
+using System.Text.RegularExpressions;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.DataTransferObjects.CkModelCatalog;
 using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.ConstructionKit.Contracts.DataTransferObjects;
@@ -152,14 +153,27 @@ public sealed class CkModelDraftValidator(
         catch (Exception e) when (e is not OperationCanceledException)
         {
             // A draft that the compiler cannot even parse (YAML syntax, wrong shape) is a finding, not a server error.
+            // An unknown dependency is reported by the resolver as message 1 and then thrown: that is a dependency
+            // finding, not an unreadable draft.
+            var reason = IsDependencyResolutionFailure(e, operationResult)
+                ? ReasonDependencyResolution
+                : ReasonUnreadableDraft;
             operationResult.AddMessage(new OperationMessage(MessageLevel.Error, null, UnreadableDraftNumber,
                 StripRoot(e.Message, sourceRoot),
-                new Dictionary<string, string> { ["reason"] = ReasonUnreadableDraft }));
+                new Dictionary<string, string> { ["reason"] = reason }));
         }
 
         AddMessages(response, operationResult, sourceRoot);
         return operationResult.HasErrors || operationResult.HasFatalErrors ? null : compiled;
     }
+
+    /// <summary>
+    ///     The compiler's dependency resolver adds message <see cref="UnknownCkModelNumber" /> for every unknown dependency and
+    ///     then throws a <see cref="ModelValidationException" /> that lists them.
+    /// </summary>
+    internal static bool IsDependencyResolutionFailure(Exception exception, OperationResult operationResult) =>
+        exception is ModelValidationException &&
+        operationResult.Messages.Any(m => m.MessageNumber == UnknownCkModelNumber);
 
     /// <summary>The folder inside the zip that holds <c>ckModel.yaml</c> (shallowest one), as an entry prefix.</summary>
     internal static bool TryFindSourceRoot(Stream zip, out string prefix)
@@ -280,11 +294,34 @@ public sealed class CkModelDraftValidator(
         }
 
         var full = Path.GetFullPath(sourceRoot);
-        var normalized = location.Replace('\\', '/');
-        var root = full.Replace('\\', '/').TrimEnd('/') + "/";
-        if (normalized.StartsWith(root, StringComparison.Ordinal))
+        var normalized = location.Replace('\\', '/').TrimEnd('/');
+        var root = full.Replace('\\', '/').TrimEnd('/');
+        if (normalized == root)
         {
-            return normalized[root.Length..];
+            // The draft folder itself (e.g. message 1, unknown dependency): no file, and never the temp folder name.
+            return null;
+        }
+
+        if (normalized.StartsWith(root + "/", StringComparison.Ordinal))
+        {
+            return normalized[(root.Length + 1)..];
+        }
+
+        // The same folder under another spelling (e.g. /private/var vs. /var on macOS): cut at the temp folder segment.
+        var segment = "/" + Path.GetFileName(root);
+        var index = normalized.IndexOf(segment, StringComparison.Ordinal);
+        if (index >= 0)
+        {
+            var rest = normalized[(index + segment.Length)..];
+            if (rest.Length == 0)
+            {
+                return null;
+            }
+
+            if (rest[0] == '/')
+            {
+                return rest[1..];
+            }
         }
 
         return Path.IsPathRooted(location) ? Path.GetFileName(location) : location;
@@ -293,11 +330,21 @@ public sealed class CkModelDraftValidator(
     private static string WithoutRoot(string text, string? sourceRoot) =>
         sourceRoot == null ? text : StripRoot(text, sourceRoot);
 
-    private static string StripRoot(string text, string sourceRoot)
+    /// <summary>
+    ///     The text without the server's temp folder: a path inside the draft becomes relative to it, the folder itself
+    ///     becomes <c>.</c>. Matches every spelling of the folder (e.g. <c>/private/var</c> vs. <c>/var</c> on macOS) by its
+    ///     unique folder name, so neither the server path nor the folder name leaves the service.
+    /// </summary>
+    internal static string StripRoot(string text, string sourceRoot)
     {
-        var root = Path.GetFullPath(sourceRoot).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
-        return text.Replace(root, string.Empty, StringComparison.Ordinal)
-            .Replace(root.TrimEnd(Path.DirectorySeparatorChar), ".", StringComparison.Ordinal);
+        var folderName = Path.GetFileName(Path.GetFullPath(sourceRoot).TrimEnd(Path.DirectorySeparatorChar, '/'));
+        if (string.IsNullOrEmpty(folderName) || !text.Contains(folderName, StringComparison.Ordinal))
+        {
+            return text;
+        }
+
+        return Regex.Replace(text, $@"[^\s'""]*{Regex.Escape(folderName)}(?<sep>[/\\])?",
+            m => m.Groups["sep"].Success ? string.Empty : ".");
     }
 
     private static readonly string[] ContainerKeys =
@@ -325,6 +372,12 @@ public sealed class CkModelDraftValidator(
 
     /// <summary>The <c>reason</c> parameter of a draft that cannot be read.</summary>
     public const string ReasonUnreadableDraft = "unreadable-draft";
+
+    /// <summary>The <c>reason</c> parameter of a draft whose dependencies cannot be resolved (same value as the engine's).</summary>
+    public const string ReasonDependencyResolution = "dependency-resolution";
+
+    /// <summary>Number of UnknownCkModel in the construction kit engine message catalog.</summary>
+    public const int UnknownCkModelNumber = 1;
 
     private static CkModelValidationMessageDto Unreadable(string text) =>
         new()

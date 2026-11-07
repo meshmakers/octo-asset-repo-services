@@ -2,6 +2,7 @@ using System.IO.Compression;
 using System.Text;
 using FluentAssertions;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.Services.CkModelValidation;
+using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.ConstructionKit.Contracts.Messages;
 using Xunit;
 
@@ -35,6 +36,52 @@ public class CkModelDraftValidatorTests
         CkModelDraftValidator.RelativeFile("/srv/x/model.json", null).Should().Be("model.json");
         CkModelDraftValidator.RelativeFile("-", root).Should().BeNull();
         CkModelDraftValidator.RelativeFile(null, root).Should().BeNull();
+    }
+
+    [Fact]
+    public void RelativeFile_TheDraftFolderItself_IsNoFile_AndNeverTheTempFolderName()
+    {
+        // Message 1 (unknown dependency of a source draft) names the draft folder itself as its location.
+        var root = Path.Combine(Path.GetTempPath(), "octo-ck-validate-x");
+        CkModelDraftValidator.RelativeFile(root, root).Should().BeNull();
+        CkModelDraftValidator.RelativeFile(root + Path.DirectorySeparatorChar, root).Should().BeNull();
+    }
+
+    [Fact]
+    public void RelativeFile_TheDraftFolderUnderAnotherSpelling_IsStillRelative()
+    {
+        // macOS: the temp folder is /var/... but a resolved path reads /private/var/...
+        var root = Path.Combine(Path.GetTempPath(), "octo-ck-validate-x");
+        var aliased = "/private" + root.Replace('\\', '/');
+        CkModelDraftValidator.RelativeFile(aliased, root).Should().BeNull();
+        CkModelDraftValidator.RelativeFile(aliased + "/types/pump.yaml", root).Should().Be("types/pump.yaml");
+    }
+
+    [Fact]
+    public void StripRoot_RemovesTheTempFolderUnderAnotherSpelling()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "octo-ck-validate-x");
+        var aliased = "/private" + root.Replace('\\', '/');
+
+        var text = CkModelDraftValidator.StripRoot($"Cannot read '{aliased}/types/pump.yaml' in {aliased}", root);
+
+        text.Should().NotContain("octo-ck-validate-").And.NotContain("/private");
+        text.Should().Contain("types/pump.yaml");
+    }
+
+    [Fact]
+    public void AModelValidationException_AfterUnknownCkModel_IsADependencyResolutionFailure()
+    {
+        var withMessage1 = new OperationResult();
+        withMessage1.AddMessage(new OperationMessage(MessageLevel.FatalError, null,
+            CkModelDraftValidator.UnknownCkModelNumber, "'X-[1.0,2.0)' is not a known construction kit model."));
+
+        CkModelDraftValidator.IsDependencyResolutionFailure(new ModelValidationException("unknown"), withMessage1)
+            .Should().BeTrue();
+        CkModelDraftValidator.IsDependencyResolutionFailure(new ModelValidationException("other"), new OperationResult())
+            .Should().BeFalse();
+        CkModelDraftValidator.IsDependencyResolutionFailure(new InvalidOperationException("yaml"), withMessage1)
+            .Should().BeFalse();
     }
 
     [Fact]

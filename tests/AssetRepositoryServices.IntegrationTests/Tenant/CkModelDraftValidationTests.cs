@@ -1,5 +1,6 @@
 using System.IO.Compression;
 using System.Text;
+using System.Text.Json;
 using FakeItEasy;
 using FluentAssertions;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.DataTransferObjects.CkModelCatalog;
@@ -62,6 +63,7 @@ public class CkModelDraftValidationTests(BlueprintUpdateFlowFixture fixture)
                 ("types/pump.yaml", PumpYaml("FlowRate")));
 
             var result = await sut.ValidateAsync(tenantId, zip, "draft.zip", "application/zip", ct);
+            AssertNoServerPath(result);
 
             result.Errors.Should().BeEmpty();
             result.IsValid.Should().BeTrue();
@@ -83,6 +85,7 @@ public class CkModelDraftValidationTests(BlueprintUpdateFlowFixture fixture)
                 ("ConstructionKit/types/pump.yaml", PumpYaml("NoSuchAttribute")));
 
             var result = await sut.ValidateAsync(tenantId, zip, "draft.zip", "application/zip", ct);
+            AssertNoServerPath(result);
 
             result.IsValid.Should().BeFalse();
             result.Errors.Should().Contain(e => e.Message.Contains("NoSuchAttribute"));
@@ -109,12 +112,43 @@ public class CkModelDraftValidationTests(BlueprintUpdateFlowFixture fixture)
             using var yaml = await CompiledYamlAsync(compiled);
 
             var result = await sut.ValidateAsync(tenantId, yaml, "draft.yaml", "application/yaml", ct);
+            AssertNoServerPath(result);
 
             result.IsValid.Should().BeFalse();
             result.SourceKind.Should().Be(CkModelValidationResponseDto.SourceKindCompiled);
             var refusal = result.Errors.Should().Contain(e => e.MessageNumber == 8492).Subject;
             refusal.Parameters["reason"].Should().Be("dependency-resolution");
             refusal.Message.Should().Contain("NotInstalledAnywhere");
+        });
+    }
+
+    [Fact(Timeout = TestTimeoutMs)]
+    public async Task AMissingDependency_OfASourceDraft_IsADependencyError_WithoutTheTempFolder()
+    {
+        await WithTenantAsync("ckv-srcdep", TestContext.Current.CancellationToken, async (tenantId, sut, ct) =>
+        {
+            const string needsMissing = """
+                $schema: https://schemas.meshmakers.cloud/construction-kit-meta.schema.json
+                modelId: DraftNeedsMissing-1.0.0
+                dependencies:
+                  - System-[2.5,3.0)
+                  - NotInstalledAnywhere-[1.0,2.0)
+                """;
+            using var zip = SourceZip(("ckModel.yaml", needsMissing), ("attributes/attributes.yaml", AttributesYaml));
+
+            var result = await sut.ValidateAsync(tenantId, zip, "draft.zip", "application/zip", ct);
+            AssertNoServerPath(result);
+
+            result.IsValid.Should().BeFalse();
+            result.SourceKind.Should().Be(CkModelValidationResponseDto.SourceKindSource);
+            // Message 1 names the draft folder itself as its location: no file, never the temp folder name.
+            var unknown = result.Errors.Should().Contain(e => e.MessageNumber == CkModelDraftValidator.UnknownCkModelNumber)
+                .Subject;
+            unknown.File.Should().BeNull();
+            unknown.Message.Should().Contain("NotInstalledAnywhere");
+            result.Errors.Where(e => e.MessageNumber == CkModelDraftValidator.UnreadableDraftNumber)
+                .Should().NotBeEmpty()
+                .And.OnlyContain(e => e.Parameters["reason"] == CkModelDraftValidator.ReasonDependencyResolution);
         });
     }
 
@@ -126,6 +160,7 @@ public class CkModelDraftValidationTests(BlueprintUpdateFlowFixture fixture)
             using var broken = new MemoryStream("modelId: X-1.0.0\n  types: [\n"u8.ToArray());
 
             var result = await sut.ValidateAsync(tenantId, broken, "draft.yaml", "application/yaml", ct);
+            AssertNoServerPath(result);
 
             result.IsValid.Should().BeFalse();
             result.Errors.Should().ContainSingle().Which.Parameters["reason"].Should().Be("unreadable-draft");
@@ -140,6 +175,7 @@ public class CkModelDraftValidationTests(BlueprintUpdateFlowFixture fixture)
             using var garbage = new MemoryStream("not a zip"u8.ToArray());
 
             var result = await sut.ValidateAsync(tenantId, garbage, "draft.zip", "application/zip", ct);
+            AssertNoServerPath(result);
 
             result.IsValid.Should().BeFalse();
             result.Errors.Should().ContainSingle().Which.Parameters["reason"].Should().Be("unreadable-draft");
@@ -156,6 +192,7 @@ public class CkModelDraftValidationTests(BlueprintUpdateFlowFixture fixture)
             using var zip = SourceZip(("ckModel.yaml", CkModelYaml), ($"../{outside}", "x: 1"));
 
             var result = await sut.ValidateAsync(tenantId, zip, "draft.zip", "application/zip", ct);
+            AssertNoServerPath(result);
 
             result.IsValid.Should().BeFalse();
             result.Errors.Should().ContainSingle().Which.Message.Should().Contain("not allowed");
@@ -173,6 +210,7 @@ public class CkModelDraftValidationTests(BlueprintUpdateFlowFixture fixture)
                 ("types/pump.yaml", "x: 2"));
 
             var result = await sut.ValidateAsync(tenantId, zip, "draft.zip", "application/zip", ct);
+            AssertNoServerPath(result);
 
             result.IsValid.Should().BeFalse();
             var texts = result.Errors.Concat(result.Warnings)
@@ -181,6 +219,17 @@ public class CkModelDraftValidationTests(BlueprintUpdateFlowFixture fixture)
             texts.Should().NotContain(t => t.Contains("octo-ck-validate-"));
             texts.Should().NotContain(t => t.Contains(Path.GetTempPath().TrimEnd(Path.DirectorySeparatorChar)));
         });
+    }
+
+    /// <summary>
+    ///     Guard for every case: the serialized response (what REST and MCP return) names neither the server's temp folder
+    ///     nor the temp path.
+    /// </summary>
+    private static void AssertNoServerPath(CkModelValidationResponseDto result)
+    {
+        var json = JsonSerializer.Serialize(result);
+        json.Should().NotContain("octo-ck-validate-");
+        json.Should().NotContain(Path.GetTempPath().TrimEnd(Path.DirectorySeparatorChar).Replace("\\", "\\\\"));
     }
 
     private CkModelDraftValidator CreateValidator()
