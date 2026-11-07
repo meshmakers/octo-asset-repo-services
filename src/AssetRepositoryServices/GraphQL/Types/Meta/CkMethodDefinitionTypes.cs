@@ -155,7 +155,7 @@ internal sealed class CkMethodExecutionDtoType : ObjectGraphType<CkMethodExecuti
     public CkMethodExecutionDtoType()
     {
         Name = "CkMethodExecution";
-        Description = "Execution settings of a construction kit method definition (synchronous only).";
+        Description = "Execution settings of a construction kit method definition.";
 
         Field<NonNullGraphType<IntGraphType>>("timeoutSeconds")
             .Description("Effective timeout (declared value, otherwise 15).")
@@ -165,5 +165,10 @@ internal sealed class CkMethodExecutionDtoType : ObjectGraphType<CkMethodExecuti
             .Description("Effective handler kind (AB#6878): 'service' (default when undeclared) or 'pipeline' " +
                          "(the call is routed to a deployed pipeline by the gateway, AB#6879).")
             .Resolve(ctx => CkMethodHandlers.Effective(ctx.Source.Handler));
+        Field<NonNullGraphType<StringGraphType>>("mode")
+            .Description("Effective execution mode (AB#6926): 'sync' (default when undeclared, the call returns the " +
+                         "result) or 'async' (the call returns an operation handle once the handler accepted the work; " +
+                         "timeoutSeconds then bounds that accept step).")
+            .Resolve(ctx => CkMethodModes.Effective(ctx.Source.Mode));
     }
 }
