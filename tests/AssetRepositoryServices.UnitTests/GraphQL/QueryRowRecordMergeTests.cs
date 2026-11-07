@@ -69,6 +69,33 @@ public class QueryRowRecordMergeTests
         inner.Attributes.Should().ContainKey("Text").And.NotContainKey("Token");
     }
 
+    // A record attribute may hold a record derived from its declared record: the members of the stored record count, so a
+    // Secret member that only the derived record declares is left out of the copy too.
+    [Fact]
+    public void Copy_OfADerivedRecord_LeavesOutTheSecretMembersOfTheDerivedRecord()
+    {
+        var derived = Record("Test/DerivedDetail", Attribute("Label", AttributeValueTypesDto.String),
+            Attribute("Note", AttributeValueTypesDto.String, CkAttributeAccessDto.Hidden),
+            Attribute("Pin", AttributeValueTypesDto.Secret));
+        var derivedId = new RtCkId<CkRecordId>("Test/DerivedDetail");
+        CkRecordGraph? found = derived;
+        A.CallTo(() => _ckCacheService.TryGetRtCkRecord(TenantId, derivedId, out found)).Returns(true)
+            .AssignsOutAndRefParameters(derived);
+        var storedRecord = new RtRecord { CkRecordId = derivedId };
+        storedRecord.SetAttributeRawValue("Label", "label");
+        storedRecord.SetAttributeRawValue("Note", "note");
+        storedRecord.SetAttributeRawValue("Pin", "stored-secret");
+        var stored = new RtEntity();
+        stored.SetAttributeRawValue("Entries", new List<object?> { storedRecord });
+        var document = new RtEntity();
+
+        QueryRowRecordMerge.CopyStoredRecords(_ckCacheService, TenantId, _owner, document, stored, ["Entries"]);
+
+        var copy = ((IEnumerable<object?>)document.Attributes["Entries"]!).Cast<RtRecord>().Single();
+        copy.CkRecordId.Should().Be(derivedId);
+        copy.Attributes.Should().ContainKeys("Label", "Note").And.NotContainKey("Pin");
+    }
+
     [Fact]
     public void Copy_OfARecordArray_CopiesEveryElementInOrder_AndDoesNotShareTheStoredRecords()
     {

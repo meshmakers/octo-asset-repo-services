@@ -37,3 +37,8 @@ attributes:
   - id: RecordAccessThingKeyedDetails
     valueType: RecordArray
     valueCkRecordId: ${this}/AccessTestKeyedDetail
+  - id: RecordAccessThingKeyedDetail
+    valueType: Record
+    valueCkRecordId: ${this}/AccessTestKeyedDetail
+  - id: AccessTestKeyedDetailApiKey
+    valueType: Secret

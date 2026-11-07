@@ -799,8 +799,8 @@ schema initialization.
   matching is needed, so the keyless refusal of AB#8055 / message 141 of AB#8141 does not apply here; other elements stay as stored.
   A cell that names the record attribute itself is not merged; an explicit value for a protected member is refused before anything
   is written (`AccessQueryGuard.EnsureWritablePath`). Tests: `UnitTests/GraphQL/QueryRowRecordMergeTests`,
-  `IntegrationTests/GraphQL/CkV2/QueryRowRecordMemberPreservationTests` (record `AccessTestKeyedDetail`: record key plus Hidden and
-  MethodOnly members).
+  `IntegrationTests/GraphQL/CkV2/QueryRowRecordMemberPreservationTests` (record `AccessTestKeyedDetail`: record key plus Hidden,
+  MethodOnly and Secret members; the Secret test pins the engine carry-over for a single record and by record key).
 - **GraphQL name collisions** (G3 review A-L1/A-L2, backlog): two CK elements that map to the same GraphQL name (e.g.
   a literal `Named2` next to `Named-2`, or names colliding with the generated `…Interface`, `…Input`, `…Update` names)
   make schema initialization throw, and the whole tenant schema is unavailable. `SchemaContext` builds every tenant

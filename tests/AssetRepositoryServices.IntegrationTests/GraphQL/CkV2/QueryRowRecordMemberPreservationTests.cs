@@ -29,6 +29,7 @@ public class QueryRowRecordMemberPreservationTests
     private const string StoredInnerRef = "dummy-inner-ref-8322";
     private const string StoredNote = "dummy-hidden-note-8322";
     private const string StoredState = "dummy-method-state-8322";
+    private const string SecretPlain = "dummy-secret-8322";
 
     private readonly GraphQlTestFixture _fixture;
 
@@ -114,6 +115,37 @@ public class QueryRowRecordMemberPreservationTests
         Member(elements[0], "note").Should().Be(StoredNote);
         Member(elements[0], "state").Should().Be(StoredState);
         Member(elements[1], "label").Should().Be("e2");
+    }
+
+    // Secret members are not copied into the update; the engine carries them over (AB#5533): a single record by position,
+    // a record array element by its record key (a record with Secret members always declares one, compiler message 76).
+    [Fact]
+    public async Task Update_OfARecordMember_KeepsTheStoredSecretMembers_OfASingleRecordAndOfEveryArrayElement()
+    {
+        var rtId = await CreateAsync("secret-members", $$"""
+            keyedDetail: { key: "p", label: "pl", apiKey: "{{SecretPlain}}-p" },
+            keyedDetails: [{ key: "k1", label: "l1", apiKey: "{{SecretPlain}}-k1" }, { key: "k2", label: "l2", apiKey: "{{SecretPlain}}-k2" }]
+            """);
+        await SetRawAsync(rtId, "keyedDetail.attributes.note", StoredNote);
+        var single = await StoredDocumentAsync(rtId, "keyedDetail");
+        var elements = await StoredElementsAsync(rtId, "keyedDetails");
+        var storedSingleSecret = single["attributes"]["apiKey"];
+        var storedElementSecrets = elements.Select(e => e["attributes"]["apiKey"]).ToList();
+        storedSingleSecret.IsBsonNull.Should().BeFalse();
+        storedElementSecrets.Should().AllSatisfy(v => v.IsBsonNull.Should().BeFalse());
+        var queryRtId = await CreatePersistentQueryAsync();
+
+        var result = await UpdateRowAsync(queryRtId, rtId, ("keyedDetail.label", "pl-new"), ("keyedDetails[1].label", "l2-new"));
+
+        AssertOk(result);
+        _fixture.SerializeGraphQl(result).Should().NotContain(SecretPlain);
+        single = await StoredDocumentAsync(rtId, "keyedDetail");
+        Member(single, "label").Should().Be("pl-new");
+        Member(single, "note").Should().Be(StoredNote);
+        single["attributes"]["apiKey"].Should().Be(storedSingleSecret);
+        elements = await StoredElementsAsync(rtId, "keyedDetails");
+        Member(elements[1], "label").Should().Be("l2-new");
+        elements.Select(e => e["attributes"]["apiKey"]).Should().Equal(storedElementSecrets);
     }
 
     [Theory]
@@ -263,7 +295,7 @@ public class QueryRowRecordMemberPreservationTests
         var result = await _fixture.ExecuteGraphQlAsync($$"""
             mutation { runtime { systemSimpleRtQuerys {
               create(entities: [{ name: "ab8322-rows", queryCkTypeId: "{{CkTypeId}}",
-                columns: ["name", "detail.label", "detail.inner.text", "keyedDetails[*].label", "entries[*].label"] }]) { rtId }
+                columns: ["name", "detail.label", "detail.inner.text", "keyedDetail.label", "keyedDetails[*].label", "entries[*].label"] }]) { rtId }
             } } }
             """);
         var json = _fixture.SerializeGraphQl(result);
