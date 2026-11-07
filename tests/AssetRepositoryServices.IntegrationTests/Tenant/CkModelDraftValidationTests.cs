@@ -163,6 +163,26 @@ public class CkModelDraftValidationTests(BlueprintUpdateFlowFixture fixture)
         });
     }
 
+    [Fact(Timeout = TestTimeoutMs)]
+    public async Task ADuplicateZipEntry_IsRefused_WithoutAServerPath()
+    {
+        await WithTenantAsync("ckv-dup", TestContext.Current.CancellationToken, async (tenantId, sut, ct) =>
+        {
+            // ZipArchive reads duplicate names; the second extraction fails with an IOException naming the temp file.
+            using var zip = SourceZip(("ckModel.yaml", CkModelYaml), ("types/pump.yaml", "x: 1"),
+                ("types/pump.yaml", "x: 2"));
+
+            var result = await sut.ValidateAsync(tenantId, zip, "draft.zip", "application/zip", ct);
+
+            result.IsValid.Should().BeFalse();
+            var texts = result.Errors.Concat(result.Warnings)
+                .SelectMany(m => new[] { m.Message, m.File ?? string.Empty }.Concat(m.Parameters.Values))
+                .ToList();
+            texts.Should().NotContain(t => t.Contains("octo-ck-validate-"));
+            texts.Should().NotContain(t => t.Contains(Path.GetTempPath().TrimEnd(Path.DirectorySeparatorChar)));
+        });
+    }
+
     private CkModelDraftValidator CreateValidator()
     {
         var systemContext = fixture.GetSystemContext();

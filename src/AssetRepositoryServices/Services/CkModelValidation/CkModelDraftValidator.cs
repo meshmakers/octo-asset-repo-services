@@ -81,7 +81,7 @@ public sealed class CkModelDraftValidator(
         }
         catch (InvalidOperationException e)
         {
-            response.Errors.Add(Unreadable(e.Message));
+            response.Errors.Add(Unreadable(WithoutRoot(e.Message, sourceRoot)));
             compiled = null;
         }
         catch (InvalidDataException e)
@@ -92,7 +92,9 @@ public sealed class CkModelDraftValidator(
         catch (Exception e) when (e is not OperationCanceledException)
         {
             // e.g. a YAML syntax error in a compiled model: a finding about the draft, not a server error.
-            response.Errors.Add(Unreadable($"The file '{fileName}' cannot be read as a CK model: {e.Message}"));
+            // An I/O failure while extracting (e.g. a duplicate zip entry) names the temp path: strip it.
+            response.Errors.Add(Unreadable(
+                $"The file '{fileName}' cannot be read as a CK model: {WithoutRoot(e.Message, sourceRoot)}"));
             compiled = null;
         }
         finally
@@ -287,6 +289,9 @@ public sealed class CkModelDraftValidator(
 
         return Path.IsPathRooted(location) ? Path.GetFileName(location) : location;
     }
+
+    private static string WithoutRoot(string text, string? sourceRoot) =>
+        sourceRoot == null ? text : StripRoot(text, sourceRoot);
 
     private static string StripRoot(string text, string sourceRoot)
     {
