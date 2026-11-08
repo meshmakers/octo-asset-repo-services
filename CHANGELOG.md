@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- AB#8529 New (**breaking change for external clients**): changing a tenant's data model requires the tenant role
+  `DataModelManagement`. `DataModelManagementPolicy` is now scope `octo_api` AND the role (central `AddTenantRolePolicy`; until now
+  it was scope-only, so every `octo_api` token passed it), and it guards `Models/ImportCk` (before: any read-write token),
+  `Models/ImportFromCatalog`, `Models/ImportFromCatalogBatch` (octo-cli `FixAll`), `blueprints/apply`, `blueprints/updates/apply`,
+  `DELETE blueprints/{name}` (before: any read-write token) and the CK model / blueprint catalog refresh endpoints. The GraphQL
+  blueprint mutations `install`, `applyUpdate`, `uninstall` require `DataModelManagement` in addition to `AdminPanelManagement`.
+  A caller without the role gets `403` with `{"message": "...", "code": "DataModelManagementRequired"}` (GraphQL: error code
+  `DataModelManagementRequired`) and nothing changes. Members of `TenantOwners` (tenant creators, provisioned administrators,
+  scratch-tenant creators) already hold the role; other users and client-credentials clients that import models or install
+  blueprints must be granted it (`octo-cli -c AddUserToRole -un <user> -r DataModelManagement`, or a group that carries it).
+  Service-internal installs (service CK models, service-managed blueprints) run in-process and are not affected. Needs
+  octo-common-services with the AB#8529 error code. Tests `UnitTests/Configuration/DataModelManagementAuthorizationTests`,
+  `UnitTests/GraphQL/BlueprintsMutationCkUpgradeBlockedTests`.
 - AB#6926 New: the GraphQL CK meta reports the execution mode of a method. `CkMethodExecution.mode: String!` is the effective
   mode: `sync` (default when undeclared, also for tenant documents written before the field) or `async` (the call returns an
   operation handle once the handler accepted the work; `timeoutSeconds` bounds that accept step). Additive on the v2-only meta

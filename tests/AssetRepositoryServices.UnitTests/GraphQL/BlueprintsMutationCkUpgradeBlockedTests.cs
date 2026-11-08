@@ -76,6 +76,9 @@ public class BlueprintsMutationCkUpgradeBlockedTests
     private const string InstallMutation =
         $$"""mutation { blueprints { install(blueprintId: "{{Target}}") { success blueprintId } } }""";
 
+    private const string UninstallMutation =
+        """mutation { blueprints { uninstall(blueprintName: "Shop") { success } } }""";
+
     private const string ApplyUpdateMutation =
         $$"""mutation { blueprints { applyUpdate(input: { targetVersion: "{{Target}}" }) { success blueprintId } } }""";
 
@@ -176,6 +179,34 @@ public class BlueprintsMutationCkUpgradeBlockedTests
         A.CallTo(_blueprintService).MustNotHaveHappened();
     }
 
+    /// <summary>
+    ///     AB#8529: a blueprint changes the tenant's data model, so the admin panel role alone is not enough; the
+    ///     refusal carries the code <c>DataModelManagementRequired</c> and the service is never called.
+    /// </summary>
+    [Theory]
+    [InlineData(InstallMutation)]
+    [InlineData(ApplyUpdateMutation)]
+    [InlineData(UninstallMutation)]
+    public async Task AdminRoleWithoutDataModelManagement_IsRefusedWithTheCode(string mutation)
+    {
+        var root = await ExecuteWithRolesAsync(mutation, CommonConstants.AdminPanelManagementRole);
+
+        var error = root.GetProperty("errors").EnumerateArray().Should().ContainSingle().Subject;
+        error.GetProperty("extensions").GetProperty("code").GetString().Should().Be("DataModelManagementRequired");
+        error.GetProperty("message").GetString().Should().Contain(CommonConstants.DataModelManagementRole);
+        A.CallTo(_blueprintService).MustNotHaveHappened();
+    }
+
+    [Fact]
+    public async Task DataModelManagementWithoutTheAdminRole_IsStillForbidden()
+    {
+        var root = await ExecuteWithRolesAsync(InstallMutation, CommonConstants.DataModelManagementRole);
+
+        var error = root.GetProperty("errors").EnumerateArray().Should().ContainSingle().Subject;
+        error.GetProperty("extensions").GetProperty("code").GetString().Should().Be(Statics.GraphQlForbidden);
+        A.CallTo(_blueprintService).MustNotHaveHappened();
+    }
+
     [Fact]
     public void MutationFields_AreNullable_SoAnErrorDoesNotCascadeToTheParents()
     {
@@ -187,7 +218,13 @@ public class BlueprintsMutationCkUpgradeBlockedTests
         }
     }
 
-    private async Task<JsonElement> ExecuteAsync(string query, bool withAdminRole = true)
+    private Task<JsonElement> ExecuteAsync(string query, bool withAdminRole = true) =>
+        withAdminRole
+            ? ExecuteWithRolesAsync(query, CommonConstants.AdminPanelManagementRole,
+                CommonConstants.DataModelManagementRole)
+            : ExecuteWithRolesAsync(query);
+
+    private async Task<JsonElement> ExecuteWithRolesAsync(string query, params string[] roles)
     {
         var environment = A.Fake<IHostEnvironment>();
         A.CallTo(() => environment.EnvironmentName).Returns("Production");
@@ -212,10 +249,8 @@ public class BlueprintsMutationCkUpgradeBlockedTests
         await using var provider = services.BuildServiceProvider();
         var tenant = A.Fake<ITenantContext>();
         A.CallTo(() => tenant.TenantId).Returns(TenantId);
-        var identity = withAdminRole
-            ? new ClaimsIdentity([new Claim(ClaimTypes.Role, CommonConstants.AdminPanelManagementRole)], "Bearer",
-                ClaimTypes.Name, ClaimTypes.Role)
-            : new ClaimsIdentity("Bearer");
+        var identity = new ClaimsIdentity(roles.Select(r => new Claim(ClaimTypes.Role, r)), "Bearer",
+            ClaimTypes.Name, ClaimTypes.Role);
 
         var executer = provider.GetRequiredService<IDocumentExecuter<TestSchema>>();
         var result = await executer.ExecuteAsync(o =>

@@ -153,7 +153,8 @@ public static class RuntimeEngineBuilderExtensions
 
 
         builder.Services.AddAuthorization(options => options.AddAssetRepositoryPolicies());
-        // AB#7319: handler and 403 reason writer of the central tenant role policies (TenantAdministrationPolicy).
+        // AB#7319: handler and 403 reason writer of the central tenant role policies (TenantAdministrationPolicy,
+        // DataModelManagementPolicy since AB#8529).
         builder.Services.AddOctoTenantRoleAuthorization();
 
         // AB#6385: REST answers a blueprint-lock refusal with 403 problem details (code BLUEPRINT_LOCKED).
@@ -201,8 +202,9 @@ public static class RuntimeEngineBuilderExtensions
                     new List<string> { CommonConstants.OctoApiFullAccess }
                 },
                 {
+                    // AB#8529: full-access scope plus the tenant role DataModelManagement
                     AssetRepositoryServiceConstants.DataModelManagementPolicy,
-                    new List<string> { CommonConstants.OctoApiDataModelManagement }
+                    new List<string> { CommonConstants.OctoApiFullAccess }
                 }
             };
 

@@ -8,6 +8,7 @@ using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.ConstructionKit.Contracts.BlueprintCatalogs;
 using Meshmakers.Octo.ConstructionKit.Contracts.Messages;
 using Meshmakers.Octo.Runtime.Contracts.Blueprints;
+using Meshmakers.Octo.Services.Infrastructure.Authorization;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL;
 
@@ -16,9 +17,11 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL;
 /// <c>OctoMutation</c> root. Mirrors the REST <see cref="TenantApi.v1.Controllers.BlueprintsController"/>
 /// surface (install / applyUpdate / uninstall) but as typed GraphQL.
 ///
-/// Each mutation enforces the <see cref="CommonConstants.AdminPanelManagementRole"/> role at
-/// field level — the AspNetCore policy on the GraphQL endpoint only verifies authentication,
-/// not the specific role needed for blueprint write operations.
+/// Each mutation enforces the <see cref="CommonConstants.AdminPanelManagementRole"/> role and, since AB#8529, the
+/// <see cref="CommonConstants.DataModelManagementRole"/> role at field level (a blueprint installs and changes CK
+/// models) — the AspNetCore policy on the GraphQL endpoint only verifies authentication, not the specific roles needed
+/// for blueprint write operations. A missing <c>DataModelManagement</c> role is the error code
+/// <c>DataModelManagementRequired</c>, like the REST <c>403</c>.
 /// </summary>
 [DoNotRegister]
 internal sealed class BlueprintsMutation : ObjectGraphType
@@ -53,7 +56,7 @@ internal sealed class BlueprintsMutation : ObjectGraphType
     {
         try
         {
-            if (!RequireAdminPanelRole(ctx, "install")) return null;
+            if (!RequireBlueprintWriteRoles(ctx, "install")) return null;
 
             var blueprintIdRaw = ctx.GetArgument<string>("blueprintId");
             var force = ctx.GetArgument<bool?>("force") ?? false;
@@ -134,7 +137,7 @@ internal sealed class BlueprintsMutation : ObjectGraphType
     {
         try
         {
-            if (!RequireAdminPanelRole(ctx, "applyUpdate")) return null;
+            if (!RequireBlueprintWriteRoles(ctx, "applyUpdate")) return null;
 
             var input = ctx.GetArgument<BlueprintUpdateRequestInputDto>("input");
             if (string.IsNullOrWhiteSpace(input.TargetVersion))
@@ -227,7 +230,7 @@ internal sealed class BlueprintsMutation : ObjectGraphType
     {
         try
         {
-            if (!RequireAdminPanelRole(ctx, "uninstall")) return null;
+            if (!RequireBlueprintWriteRoles(ctx, "uninstall")) return null;
 
             var blueprintName = ctx.GetArgument<string>("blueprintName");
             var cascade = ctx.GetArgument<bool?>("cascade") ?? false;
@@ -260,19 +263,32 @@ internal sealed class BlueprintsMutation : ObjectGraphType
         }
     }
 
-    private static bool RequireAdminPanelRole(IResolveFieldContext<object?> ctx, string operation)
+    private static bool RequireBlueprintWriteRoles(IResolveFieldContext<object?> ctx, string operation)
     {
         var gql = (GraphQlUserContext)ctx.UserContext;
-        if (gql.User?.IsInRole(CommonConstants.AdminPanelManagementRole) == true)
+        if (gql.User?.IsInRole(CommonConstants.AdminPanelManagementRole) != true)
         {
-            return true;
+            ctx.Errors.Add(new ExecutionError(
+                $"Blueprint {operation} requires the '{CommonConstants.AdminPanelManagementRole}' role.")
+            {
+                Code = Statics.GraphQlForbidden,
+            });
+            return false;
         }
 
-        ctx.Errors.Add(new ExecutionError(
-            $"Blueprint {operation} requires the '{CommonConstants.AdminPanelManagementRole}' role.")
+        // AB#8529: a blueprint changes the tenant's data model, the same right as the REST DataModelManagementPolicy.
+        if (gql.User == null ||
+            !TenantRoleAuthorizationHandler.HasTenantRole(gql.User, CommonConstants.DataModelManagementRole))
         {
-            Code = Statics.GraphQlForbidden,
-        });
-        return false;
+            ctx.Errors.Add(new ExecutionError(
+                $"Access is denied: blueprint {operation} requires the role '{CommonConstants.DataModelManagementRole}' " +
+                "in the tenant. The token carries no such role; ask a tenant administrator to grant it.")
+            {
+                Code = AssetRepositoryServiceConstants.DataModelManagementRequiredCode,
+            });
+            return false;
+        }
+
+        return true;
     }
 }
