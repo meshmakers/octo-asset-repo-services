@@ -17,7 +17,18 @@ public static class AssetRepositoryServiceConstants
     ///     Full-access scope plus the tenant role <c>TenantManagement</c>.
     /// </summary>
     internal const string TenantAdministrationPolicy = "TenantAdministrationPolicy";
+    /// <summary>
+    ///     Changing the tenant's data model (AB#8529): ImportCk, ImportFromCatalog(Batch) / FixAll, blueprint
+    ///     install / update / uninstall, CK model and blueprint catalog refresh. Full-access scope plus the tenant role
+    ///     <c>DataModelManagement</c>; a refusal is a <c>403</c> with code <see cref="DataModelManagementRequiredCode" />.
+    /// </summary>
     internal const string DataModelManagementPolicy = "DataModelManagementPolicy";
+
+    /// <summary>
+    ///     AB#8529: stable error code of a refused <see cref="DataModelManagementPolicy" /> (REST <c>403</c> body
+    ///     <c>code</c>, GraphQL error <c>extensions.code</c>).
+    /// </summary>
+    internal const string DataModelManagementRequiredCode = "DataModelManagementRequired";
 
 
     /// <summary>

@@ -471,10 +471,11 @@ public class ModelsControllerUpgradeGuardEnforcementTests
     }
 
     [Fact]
-    public void ImportCk_StaysOnTheReadWritePolicy_ForcingIsCheckedInTheAction()
+    public void ImportCk_RequiresTheDataModelManagementPolicy_ForcingIsCheckedAgainInTheAction()
     {
+        // AB#8529: the import itself needs the role; the action's force check stays as a second line of defence.
         typeof(ModelsController).GetMethod(nameof(ModelsController.ImportCk))!.GetCustomAttribute<AuthorizeAttribute>()!
-            .Policy.Should().Be("TenantAssetApiReadWritePolicy");
+            .Policy.Should().Be("DataModelManagementPolicy");
     }
 
     // ---- Authorization, additive DTOs ----

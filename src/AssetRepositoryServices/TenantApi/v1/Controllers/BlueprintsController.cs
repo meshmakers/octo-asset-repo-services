@@ -62,12 +62,16 @@ public class BlueprintsController : ControllerBase
     ///         the structured blockers) before the first change. <c>ForceBreakingUpdate = true</c> (data model
     ///         management policy) applies anyway and logs the blockers and the caller at WARN.
     ///     </para>
+    ///     <para>
+    ///         Requires the data model management policy (AB#8529): scope <c>octo_api</c> and the tenant role
+    ///         <c>DataModelManagement</c>; otherwise <c>403</c> with the code <c>DataModelManagementRequired</c>.
+    ///     </para>
     /// </summary>
     /// <param name="request">Apply request</param>
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>Apply result with summary of changes</returns>
     [HttpPost("apply")]
-    [Authorize(AssetRepositoryServiceConstants.TenantAssetApiReadWritePolicy)]
+    [Authorize(AssetRepositoryServiceConstants.DataModelManagementPolicy)]
     [ProducesResponseType(typeof(BlueprintApplyResultDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(OperationFailedErrorDto), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
@@ -406,6 +410,10 @@ public class BlueprintsController : ControllerBase
     ///         <c>ForceBreakingUpdate = true</c> (data model management policy) applies anyway and logs the blockers and
     ///         the caller at WARN. A dry run never refuses: it answers 200 with <c>isBlocked</c> and the blockers.
     ///     </para>
+    ///     <para>
+    ///         Requires the data model management policy (AB#8529): scope <c>octo_api</c> and the tenant role
+    ///         <c>DataModelManagement</c>; otherwise <c>403</c> with the code <c>DataModelManagementRequired</c>.
+    ///     </para>
     /// </summary>
     /// <param name="request">Update request</param>
     /// <param name="cancellationToken">Cancellation token</param>
@@ -415,7 +423,7 @@ public class BlueprintsController : ControllerBase
     ///     <c>allowBlanking</c> / <c>confirmedBlankings</c>).
     /// </returns>
     [HttpPost("updates/apply")]
-    [Authorize(AssetRepositoryServiceConstants.TenantAssetApiReadWritePolicy)]
+    [Authorize(AssetRepositoryServiceConstants.DataModelManagementPolicy)]
     [ProducesResponseType(typeof(BlueprintUpdateResultDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(OperationFailedErrorDto), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
@@ -515,8 +523,8 @@ public class BlueprintsController : ControllerBase
         forceBreakingUpdate ? BlueprintCkUpgradeGuardMode.ForceBreakingUpdate : BlueprintCkUpgradeGuardMode.Enforce;
 
     /// <summary>
-    ///     AB#6871: overriding the tenant upgrade guard is a data model operation, like importing a CK model - the
-    ///     blueprint endpoints themselves only need the tenant read-write policy.
+    ///     AB#6871: overriding the tenant upgrade guard is a data model operation. Since AB#8529 the blueprint write
+    ///     endpoints themselves require the same policy, so this check is a second line of defence (fail closed).
     /// </summary>
     private async Task<bool> MayForceBreakingUpdateAsync()
     {
@@ -600,13 +608,18 @@ public class BlueprintsController : ControllerBase
     /// <summary>
     ///     Uninstalls a blueprint from the tenant. With cascade=true, dependents
     ///     are uninstalled first and orphaned dependencies are auto-cleaned.
+    ///     <para>
+    ///         Requires the data model management policy (AB#8529): scope <c>octo_api</c> and the tenant role
+    ///         <c>DataModelManagement</c>; otherwise <c>403</c> with the code <c>DataModelManagementRequired</c>.
+    ///     </para>
     /// </summary>
     /// <param name="blueprintName">Name of the blueprint to remove (without version).</param>
     /// <param name="cascade">When true, also remove blueprints that depend on the target.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     [HttpDelete("{blueprintName}")]
-    [Authorize(AssetRepositoryServiceConstants.TenantAssetApiReadWritePolicy)]
+    [Authorize(AssetRepositoryServiceConstants.DataModelManagementPolicy)]
     [ProducesResponseType(typeof(BlueprintUninstallResultDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(typeof(BlueprintUninstallResultDto), StatusCodes.Status409Conflict)]
     [ProducesResponseType(typeof(OperationFailedErrorDto), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]

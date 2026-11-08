@@ -323,13 +323,18 @@ public class ModelsController : ControllerBase
     ///         management policy (403 otherwise) and logs the blockers and the caller at WARN. A file that cannot be read
     ///         is a 400; a guard failure is a 500 even when forced (fail closed).
     ///     </para>
+    ///     <para>
+    ///         Requires the data model management policy (AB#8529): scope <c>octo_api</c> and the tenant role
+    ///         <c>DataModelManagement</c>; otherwise <c>403</c> with the code <c>DataModelManagementRequired</c> and
+    ///         nothing happens.
+    ///     </para>
     /// </summary>
     /// <param name="file">The file with the CK model definition</param>
     /// <param name="forceBreakingUpdate">Import even if it breaks an installed model (default false)</param>
     /// <returns></returns>
     [HttpPost]
     [Route("ImportCk")]
-    [Authorize(AssetRepositoryServiceConstants.TenantAssetApiReadWritePolicy)]
+    [Authorize(AssetRepositoryServiceConstants.DataModelManagementPolicy)]
     [ProducesResponseType(typeof(TransferModelResponseDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(InternalServerErrorDto), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
@@ -1067,8 +1072,8 @@ public class ModelsController : ControllerBase
     }
 
     /// <summary>
-    ///     AB#6966: overriding the tenant upgrade guard is a data model operation, like importing from a catalog - the
-    ///     <c>ImportCk</c> endpoint itself only needs the tenant read-write policy.
+    ///     AB#6966: overriding the tenant upgrade guard is a data model operation. Since AB#8529 the <c>ImportCk</c>
+    ///     endpoint itself requires the same policy, so this check is a second line of defence (fail closed).
     /// </summary>
     private async Task<bool> MayForceBreakingUpdateAsync()
     {

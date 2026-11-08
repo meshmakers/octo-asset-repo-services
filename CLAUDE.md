@@ -1679,17 +1679,36 @@ service-managed blueprints at tenant setup in `TenantContext`) runs unguarded.
   `Tenant/BlueprintCkUpgradeGuardFlowTests` (integration: real controller, blueprint service and MongoDB; the guard decision is switched by
   `SwitchableBlueprintCkUpgradeGuard`; blueprint `CkGuardFlowBp`). User documentation: octo-documentation `constructionKits/blueprints.md#ck-upgrade-guard`.
 
-### Authorization: Data Model Management
+### Authorization: Data Model Management (role-based since AB#8529)
 
-Write operations on CK model catalogs (import, refresh) are gated by the `DataModelManagementPolicy`. This requires the `octo_api.data_model_management` or `octo_api` scope claim.
+Every operation that changes a tenant's data model is gated by `DataModelManagementPolicy`: scope `octo_api` **and the tenant role
+`DataModelManagement`** (central `AddTenantRolePolicy` of octo-common-services, same pattern as `TenantAdministrationPolicy`; both
+`role` claim spellings are probed). Until AB#8529 the policy was scope-only (`octo_api` or `octo_api.data_model_management`), which
+every token passed; `octo_api.data_model_management` alone is no longer enough. A refusal is `403` with the body
+`{"message": "...", "code": "DataModelManagementRequired"}` (message names the missing scope or role); nothing is changed.
+The role is carried by the group `TenantOwners` (bootstrap seed), so tenant creators, provisioned administrators
+(`ProvisionCurrentUser`, admin provisioning mappings) and scratch-tenant creators have it; any other user or client-credentials
+client needs it granted (`AddUserToRole`, or membership in a group that carries it). **Breaking change for external clients.**
 
 | Endpoint | Policy |
 |----------|--------|
-| Catalog browsing (GET) | `SystemAssetApiReadOnlyPolicy` |
-| Catalog refresh (POST) | `DataModelManagementPolicy` |
-| ImportFromCatalog, ImportFromCatalogBatch (incl. `forceBreakingUpdate`) | `DataModelManagementPolicy` |
-| ResolveDependencies | `TenantAssetApiReadOnlyPolicy` |
-| CheckUpgrade | `TenantAssetApiReadOnlyPolicy` |
+| `POST {tenant}/v1/Models/ImportCk` (incl. `forceBreakingUpdate`) | `DataModelManagementPolicy` (was read-write until AB#8529) |
+| `POST {tenant}/v1/Models/ImportFromCatalog`, `ImportFromCatalogBatch` (octo-cli `FixAll`, incl. `forceBreakingUpdate`) | `DataModelManagementPolicy` |
+| `POST {tenant}/v1/blueprints/apply`, `POST blueprints/updates/apply`, `DELETE blueprints/{name}` | `DataModelManagementPolicy` (was read-write until AB#8529) |
+| GraphQL `blueprints { install, applyUpdate, uninstall }` | roles `AdminPanelManagement` **and** `DataModelManagement` (field level; missing `DataModelManagement` = error code `DataModelManagementRequired`) |
+| `POST system/v1/ckmodelcatalog/refresh`, `ckmodelcatalog/{name}/refresh` | `DataModelManagementPolicy` |
+| `POST system/v1/blueprints/catalogs/refresh`, `blueprints/catalogs/{name}/refresh` | `DataModelManagementPolicy` |
+| Catalog browsing (GET), blueprint history/current/updates/installations, `updates/preview` | read-only policies |
+| ResolveDependencies, CheckUpgrade, LibraryStatus, ValidateCk | `TenantAssetApiReadOnlyPolicy` |
+
+In-process paths do not pass the HTTP policy and are not affected: the services' own CK models and service-managed blueprints
+(`DefaultConfigurationCreatorService*`, `ApplyServiceManagedBlueprintsAsync`, EnableAi, platform-services tenant mode), the
+bot-services Hangfire job that executes a queued import (only reachable through the guarded controller actions). Tests:
+`UnitTests/Configuration/DataModelManagementAuthorizationTests` (per endpoint: policy carried, read-write without role refused,
+other admin roles not enough, role allowed, 403 body with code through a TestServer pipeline),
+`UnitTests/GraphQL/BlueprintsMutationCkUpgradeBlockedTests` (GraphQL role check). A new model-changing endpoint must carry
+`DataModelManagementPolicy` and be added to `DataModelManagementAuthorizationTests.ModelChangingEndpoints`.
+
 ## Scratch tenants (AB#7192)
 
 `POST {tenantId}/v1/tenants?childTenantId=..&databaseName=..&scratch=true` creates a child as a **scratch tenant**: the creating
