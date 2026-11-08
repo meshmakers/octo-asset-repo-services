@@ -1709,6 +1709,37 @@ other admin roles not enough, role allowed, 403 body with code through a TestSer
 `UnitTests/GraphQL/BlueprintsMutationCkUpgradeBlockedTests` (GraphQL role check). A new model-changing endpoint must carry
 `DataModelManagementPolicy` and be added to `DataModelManagementAuthorizationTests.ModelChangingEndpoints`.
 
+### Authorization: stream-data reads (staged since AB#8559)
+
+Every stream-data read resolver calls `DataPermissionStreamGuard.EnsureStreamReadAllowedAsync`; since AB#8559 it first runs
+`GraphQL/Utils/StreamDataReadRoleGate`: the caller must hold one of the tenant roles `StreamDataReader`, `StreamDataWriter` or
+`StreamDataAdmin` (both `role` claim spellings, `TenantRoleAuthorizationHandler.HasTenantRole`), then the data-policy check
+(AB#4973) applies as before. Before AB#8559 the GraphQL endpoint (`AuthenticatedUserPolicyGraphApi`, authenticated user only)
+let every token of the tenant read all stream data of types without a data policy.
+
+| Setting | Env | Values |
+|---------|-----|--------|
+| `StreamDataReadAuthorization:RoleEnforcement` | `OCTO_STREAMDATAREADAUTHORIZATION__ROLEENFORCEMENT` | `Off` (unchanged), `Warn` (**default**), `Enforce` |
+| `StreamDataReadAuthorization:WarnLogInterval` | `OCTO_STREAMDATAREADAUTHORIZATION__WARNLOGINTERVAL` | default `01:00:00`; `00:00:00` logs every read |
+
+- Gated resolvers: transient `simple`, `aggregation`, `groupingAggregation`, `downsampling`, persisted `streamDataQuery` and its
+  `rows` / `aggregations`. Not gated: archive metadata (`rollupsFor`, `coverageFor`, `recomputeJobsFor`, `archivesStorageStats`,
+  `rollupQueryMetadata`, `resolveSeriesQuery`) and archive entity queries (runtime queries, data policies only).
+- `Warn`: the read goes ahead; warning `Stream-data read without a stream-data role allowed by StreamDataReadRoleEnforcement=Warn:
+  query {kind} in tenant {tenant} by subject {sub} / client {client_id} ... (AB#8559)`, once per caller, tenant and query kind
+  per `WarnLogInterval`. Ids only, never token content.
+- `Enforce`: GraphQL error code `StreamDataReadRoleRequired` (`AssetRepositoryServiceConstants.StreamDataReadRoleRequiredCode`,
+  mapped in `HandleException`), message names the three roles; nothing is read.
+- Always allowed: an `RtSecurityContext.IsSystem` context and an in-process execution without a principal (`GraphQlUserContext.User`
+  null; the HTTP endpoint always has an authenticated principal). Pipelines run by the mesh adapter read archives in-process through
+  the engine and never reach this gate; pipeline GraphQL calls run as the HTTP caller or the adapter's pipeline service account.
+- **Before `Enforce`**: grant `StreamDataReader` to every caller in the warn log - the adapters' pipeline service accounts (default
+  role only `CommunicationManagement`, communication controller `PipelineServiceAccountProvisioningService`), app clients and
+  users that read time series in Studio, Grafana, Excel or the solution frontends.
+- Tests: `UnitTests/GraphQL/StreamDataReadRoleGateTests` (modes x roles, claim spellings, system context, warn window, error code),
+  `IntegrationTests/StreamData/StreamDataReadRoleGateTests` (mode x caller x query kind through the GraphQL layer). A new
+  stream-data read resolver must call `EnsureStreamReadAllowedAsync`.
+
 ## Scratch tenants (AB#7192)
 
 `POST {tenantId}/v1/tenants?childTenantId=..&databaseName=..&scratch=true` creates a child as a **scratch tenant**: the creating

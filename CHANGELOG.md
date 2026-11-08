@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+- AB#8559 Fix (security, staged): stream-data reads require one of the tenant roles `StreamDataReader`, `StreamDataWriter`
+  or `StreamDataAdmin`. Until now every authenticated token of a tenant read all stream data, because the GraphQL endpoint only
+  requires an authenticated user and the data-policy check (AB#4973) is open for CK types without a policy; the seeded role
+  `StreamDataReader` was never checked. The requirement covers every stream-data read resolver (transient `simple`,
+  `aggregation`, `groupingAggregation`, `downsampling`, the persisted `streamDataQuery` and its `rows` / `aggregations`; all go
+  through `DataPermissionStreamGuard.EnsureStreamReadAllowedAsync`, the role check runs before the data-policy check) and is
+  staged by `StreamDataReadAuthorization:RoleEnforcement` (env `OCTO_STREAMDATAREADAUTHORIZATION__ROLEENFORCEMENT`):
+  `Off` (unchanged), `Warn` (**default of this release**: the read goes ahead and a warning names tenant, query kind, subject
+  and client id, once per caller, tenant and query kind within `StreamDataReadAuthorization:WarnLogInterval`, default 1 h) and
+  `Enforce` (refused with the GraphQL error code `StreamDataReadRoleRequired`). In-process executions without a principal and
+  system security contexts always read. **Before switching an environment to `Enforce`**, grant `StreamDataReader` to every
+  caller of the warn log, in particular the adapters' pipeline service accounts (default role only `CommunicationManagement`;
+  pipelines that read archives - EC allocation, billing, simulation - run as that account), app clients and Grafana / Excel
+  / Studio users that read time series. Archive metadata queries (`rollupsFor`, `coverageFor`, `recomputeJobsFor`,
+  `archivesStorageStats`, `rollupQueryMetadata`, `resolveSeriesQuery`) are not gated. Tests
+  `UnitTests/GraphQL/StreamDataReadRoleGateTests`, `IntegrationTests/StreamData/StreamDataReadRoleGateTests` (mode x caller x
+  query kind).
 - AB#8529 New (**breaking change for external clients**): changing a tenant's data model requires the tenant role
   `DataModelManagement`. `DataModelManagementPolicy` is now scope `octo_api` AND the role (central `AddTenantRolePolicy`; until now
   it was scope-only, so every `octo_api` token passed it), and it guards `Models/ImportCk` (before: any read-write token),

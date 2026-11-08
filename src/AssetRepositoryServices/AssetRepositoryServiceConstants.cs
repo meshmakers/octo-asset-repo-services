@@ -30,6 +30,13 @@ public static class AssetRepositoryServiceConstants
     /// </summary>
     internal const string DataModelManagementRequiredCode = "DataModelManagementRequired";
 
+    /// <summary>
+    ///     AB#8559: stable error code of a stream-data read refused because the caller holds none of the tenant roles
+    ///     <c>StreamDataReader</c>, <c>StreamDataWriter</c> or <c>StreamDataAdmin</c> (GraphQL error <c>extensions.code</c>,
+    ///     only with <c>StreamDataReadAuthorization:RoleEnforcement=Enforce</c>).
+    /// </summary>
+    internal const string StreamDataReadRoleRequiredCode = "StreamDataReadRoleRequired";
+
 
     /// <summary>
     /// Policy used for Graph API to allow authenticated users
