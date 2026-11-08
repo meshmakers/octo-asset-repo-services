@@ -16,9 +16,18 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Utils;
 /// </summary>
 internal static class DataPermissionStreamGuard
 {
+    /// <remarks>
+    ///     AB#8559: before the data-policy check, the caller must hold a stream-data role (<c>StreamDataReader</c>,
+    ///     <c>StreamDataWriter</c> or <c>StreamDataAdmin</c>), staged by <see cref="StreamDataReadRoleGate" />. Every
+    ///     stream-data read resolver calls this method, so the role requirement covers all of them.
+    /// </remarks>
     internal static Task EnsureStreamReadAllowedAsync(IResolveFieldContext ctx, GraphQlUserContext gql,
         RtCkId<CkTypeId> ckTypeId)
     {
+        var gate = ctx.RequestServices?.GetService<StreamDataReadRoleGate>() ?? StreamDataReadRoleGate.Default;
+        gate.EnsureAllowed(gql.User, Helpers.GetSecurityContext(gql), gql.TenantId,
+            ctx.FieldDefinition?.Name ?? "unknown");
+
         return EnsureFullReadAllowedAsync(ctx, gql, ckTypeId, "stream data");
     }
 

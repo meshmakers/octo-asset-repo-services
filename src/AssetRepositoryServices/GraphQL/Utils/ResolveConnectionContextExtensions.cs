@@ -84,7 +84,13 @@ internal static class ResolveConnectionContextExtensions
         // process) evicts the tenant's stale pooled clients so the next request recovers without a restart.
         _ = GraphQlTenantPoolEviction.EvictInBackground(context, exception);
 
-        if (TryCreateSecretNotQueryableError(exception, out var secretError))
+        if (exception is StreamDataReadRoleRequiredException streamDataReadRoleRequired)
+        {
+            // AB#8559: the stable code of the stream-data read role requirement (Enforce mode).
+            context.Errors.Add(new ExecutionError(streamDataReadRoleRequired.Message, streamDataReadRoleRequired)
+                { Code = AssetRepositoryServiceConstants.StreamDataReadRoleRequiredCode });
+        }
+        else if (TryCreateSecretNotQueryableError(exception, out var secretError))
         {
             // Before the PersistenceException branch: the exception derives from it but has its own code.
             context.Errors.Add(secretError);

@@ -36,6 +36,7 @@ using Meshmakers.Octo.ConstructionKit.Models.System.Files.Generated.System.Files
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 
 // ReSharper disable once CheckNamespace
@@ -303,6 +304,12 @@ public static class RuntimeEngineBuilderExtensions
             o.EnforceMutationScope =
                 bool.TryParse(configurationRoot?["GraphQl:EnforceMutationScope"], out var enforce) && enforce;
         });
+
+        // AB#8559: stream-data reads need a stream-data role, staged Off/Warn/Enforce (default Warn). Bound from the
+        // StreamDataReadAuthorization section when the host has a configuration (integration-test collections may not).
+        builder.Services.AddOptions<StreamDataReadAuthorizationOptions>().Configure<IServiceProvider>((o, sp) =>
+            sp.GetService<IConfiguration>()?.GetSection(StreamDataReadAuthorizationOptions.SectionName).Bind(o));
+        builder.Services.TryAddSingleton<StreamDataReadRoleGate>();
 
         builder.Services.AddSingleton<IDocumentExecuter<OctoSchema>, TenantDocumentExecutor>();
 
