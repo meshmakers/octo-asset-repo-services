@@ -277,7 +277,7 @@ public class StreamDataInsertTimeRangeRestTests(StreamDataFixture fixture, ITest
                       "ckTypeId": "{{fixture.TestCkTypeId}}",
                       "from": "{{WindowStart:O}}",
                       "to": "{{WindowEnd:O}}",
-                      "attributes": { "MeterReading": {{reading}} },
+                      "attributes": {{ManualRow(reading)}},
                       "origin": "manual",
                       "reason": "corrected"
                     }]
@@ -365,6 +365,84 @@ public class StreamDataInsertTimeRangeRestTests(StreamDataFixture fixture, ITest
             await DropChildIfExistingAsync(childTenantId);
         }
     }
+
+    /// <summary>
+    /// AB#8590 AC 9: the upsert writes every ingested column and binds an unsent one as NULL, so a manual point that
+    /// left a column out cleared its stored value silently. Such a point is now refused with 400 naming the missing
+    /// column and the stored row stays as it was; a manual point that names every column (one explicitly null) is
+    /// stored as sent.
+    /// </summary>
+    [Fact]
+    public async Task InsertTimeRange_AManualPointMustNameEveryColumn_AndIsStoredAsSentWhenItDoes()
+    {
+        fixture.OutputHelper = output;
+        const string childTenantId = "restmanualcols";
+        await CreateChildAsync(childTenantId);
+
+        try
+        {
+            var child = await PrepareChildAsync(childTenantId);
+            var archiveRtId = await CreateAndActivateTimeRangeArchiveAsync(child);
+            var rtId = OctoObjectId.GenerateNewId();
+            var controller = ControllerFor(childTenantId, ("sub", "8a4c1f00-0000-4000-8000-000000000004"), ("role", CommonConstants.StreamDataAdminRole));
+
+            var delivered = await controller.InsertTimeRange(childTenantId, archiveRtId.ToString(), Points(rtId,
+                """{ "MeterReading": 100, "Voltage": 230.5, "MeteringPointNumber": "AT001", "IsEstimated": false, "OperatingStatus": 1 }""",
+                manual: false));
+            delivered.Should().BeOfType<OkObjectResult>();
+
+            var refused = await controller.InsertTimeRange(childTenantId, archiveRtId.ToString(), Points(rtId,
+                """{ "MeterReading": 200, "MeteringPointNumber": "AT001", "IsEstimated": false, "OperatingStatus": 1 }""",
+                manual: true));
+
+            var message = refused.Should().BeOfType<BadRequestObjectResult>().Which.Value.Should().BeOfType<string>().Subject;
+            message.Should().Contain("Point 0").And.Contain("'Voltage'");
+            var unchanged = await ReadStoredRowAsync(childTenantId, archiveRtId, rtId);
+            unchanged["meterreading"].Should().Be(100, "a refused manual point writes nothing");
+            unchanged["voltage"].Should().Be(230.5, "the column the point left out keeps its stored value");
+
+            var corrected = await controller.InsertTimeRange(childTenantId, archiveRtId.ToString(), Points(rtId,
+                """{ "MeterReading": 200, "Voltage": null, "MeteringPointNumber": "AT001", "IsEstimated": true, "OperatingStatus": 1 }""",
+                manual: true));
+
+            corrected.Should().BeOfType<OkObjectResult>().Which.Value
+                .Should().BeOfType<StreamDataWriteResultRestDto>().Which.Stored.Should().Be(1);
+            var stored = await ReadStoredRowAsync(childTenantId, archiveRtId, rtId);
+            stored["meterreading"].Should().Be(200);
+            stored["voltage"].Should().BeNull("the correction set it to null explicitly");
+            stored["meteringpointnumber"].Should().Be("AT001");
+            stored["isestimated"].Should().Be(true);
+        }
+        finally
+        {
+            await DropChildIfExistingAsync(childTenantId);
+        }
+    }
+
+    /// <summary>One window of <paramref name="rtId" /> with the given attributes object, bound like MVC binds it.</summary>
+    private IReadOnlyList<InsertTimeRangePointRestDto> Points(OctoObjectId rtId, string attributes, bool manual)
+    {
+        var origin = manual ? "\"origin\": \"manual\"," : "";
+        var body = $$"""
+            [{
+              {{origin}}
+              "rtId": "{{rtId}}",
+              "ckTypeId": "{{fixture.TestCkTypeId}}",
+              "from": "{{WindowStart:O}}",
+              "to": "{{WindowEnd:O}}",
+              "attributes": {{attributes}}
+            }]
+            """;
+        return JsonSerializer.Deserialize<IReadOnlyList<InsertTimeRangePointRestDto>>(body, MvcBodyOptions)
+            ?? throw new InvalidOperationException("The body deserialized to null.");
+    }
+
+    /// <summary>
+    /// The attributes of a manual point that names every ingested column of the test archive (AB#8590 AC 9): the
+    /// reading as given, the other columns explicitly null.
+    /// </summary>
+    private static string ManualRow(int reading) =>
+        $$"""{ "MeterReading": {{reading}}, "Voltage": null, "MeteringPointNumber": null, "IsEstimated": null, "OperatingStatus": null }""";
 
     // ── helpers ───────────────────────────────────────────────────────────────────────────────
 
@@ -490,6 +568,8 @@ public class StreamDataInsertTimeRangeRestTests(StreamDataFixture fixture, ITest
         OctoObjectId archiveRtId, OctoObjectId rtId, int reading, bool manual)
     {
         var origin = manual ? "\"origin\": \"manual\"," : "";
+        // AB#8590 AC 9: a manual point names every ingested column; the other columns are explicitly null here.
+        var attributes = manual ? ManualRow(reading) : $$"""{ "MeterReading": {{reading}} }""";
         var body = $$"""
             [{
               {{origin}}
@@ -497,7 +577,7 @@ public class StreamDataInsertTimeRangeRestTests(StreamDataFixture fixture, ITest
               "ckTypeId": "{{fixture.TestCkTypeId}}",
               "from": "{{WindowStart:O}}",
               "to": "{{WindowEnd:O}}",
-              "attributes": { "MeterReading": {{reading}} }
+              "attributes": {{attributes}}
             }]
             """;
         var points = JsonSerializer.Deserialize<IReadOnlyList<InsertTimeRangePointRestDto>>(body, MvcBodyOptions)

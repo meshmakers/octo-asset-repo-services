@@ -29,7 +29,9 @@ public sealed class InsertTimeRangePointRestDto
 
     /// <summary>
     /// User-column values keyed by attribute path (e.g. <c>Amount.Value</c>). Unknown keys are
-    /// dropped server-side.
+    /// dropped server-side. A manual point must name every ingested column of the archive (an explicit
+    /// <c>null</c> is allowed), otherwise the batch is refused with HTTP 400 listing the missing columns, so a
+    /// correction never clears a value silently (AB#8590 AC 9).
     /// </summary>
     /// <remarks>
     /// AB#5185: ASP.NET Core binds this body with the System.Text.Json web defaults, which leave

@@ -33,12 +33,14 @@ public class StreamDataControllerInsertTimeRangeTests
     private readonly OctoObjectId _archiveRtId = OctoObjectId.GenerateNewId();
     private readonly OctoObjectId _rtId = OctoObjectId.GenerateNewId();
     private readonly IStreamDataRepository _repository = A.Fake<IStreamDataRepository>();
+    private readonly IArchiveRuntimeStore _archiveStore = A.Fake<IArchiveRuntimeStore>();
     private readonly StreamDataController _controller;
 
     public StreamDataControllerInsertTimeRangeTests()
     {
         var tenantContext = A.Fake<ITenantContext>();
         A.CallTo(() => tenantContext.GetStreamDataRepository()).Returns(_repository);
+        A.CallTo(() => tenantContext.GetArchiveRuntimeStore()).Returns(_archiveStore);
         var systemContext = A.Fake<ISystemContext>();
         A.CallTo(() => systemContext.FindTenantContextAsync(TenantId)).Returns(tenantContext);
 
@@ -382,6 +384,87 @@ public class StreamDataControllerInsertTimeRangeTests
         writeResultBody.GetProperty("skipped").GetInt32().Should().Be(1);
         writeResultBody.GetProperty("skippedByReason").GetProperty("LowerPrecedence").GetInt32().Should().Be(1);
         writeResultBody.GetProperty("skippedRows")[0].GetProperty("origin").GetString().Should().Be("manual");
+    }
+
+    // ---- AB#8590 AC 9: a manual point names every ingested column -------------------------------------------
+
+    /// <summary>
+    /// A time-range archive with two ingested columns and one computed column. The upsert writes every ingested
+    /// column and binds an unsent one as NULL, so a manual point that leaves one out would clear its stored value.
+    /// </summary>
+    private void GivenTimeRangeArchiveWithTwoColumns() =>
+        A.CallTo(() => _archiveStore.GetAsync(_archiveRtId)).Returns(
+            new ArchiveSnapshot(_archiveRtId, new RtCkId<CkTypeId>(CkTypeId), CkArchiveStatus.Activated, "timeRange",
+            [
+                new CkArchiveColumnSpec("Amount.Value", false, false),
+                new CkArchiveColumnSpec("Amount.Unit", false, false),
+                new CkArchiveColumnSpec(string.Empty, false, false) { Name = "Doubled", Formula = "amountvalue * 2" }
+            ]) { IsTimeRange = true });
+
+    [Fact]
+    public async Task InsertTimeRange_AManualPointMissingAColumn_Answers400NamingTheColumn_AndWritesNothing()
+    {
+        GivenTimeRangeArchiveWithTwoColumns();
+        SignInAs(new System.Security.Claims.Claim("sub", "user-1"), StreamDataAdmin);
+
+        var result = await _controller.InsertTimeRange(TenantId, _archiveRtId.ToString(), Bind(OnePoint(", \"origin\": \"manual\"")));
+
+        var message = result.Should().BeOfType<BadRequestObjectResult>().Subject.Value.Should().BeOfType<string>().Subject;
+        message.Should().Contain("Point 0").And.Contain("'Amount.Unit'").And.NotContain("'Amount.Value'");
+        message.Should().NotContain("Doubled", "a computed column is never named by the caller");
+        Fake.GetCalls(_repository).Should().NotContain(c => c.Method.Name == nameof(IStreamDataRepository.InsertTimeRangeAsync));
+    }
+
+    [Fact]
+    public async Task InsertTimeRange_AManualPointWithEveryColumn_OneExplicitlyNull_IsWrittenAsSent()
+    {
+        GivenTimeRangeArchiveWithTwoColumns();
+        SignInAs(new System.Security.Claims.Claim("sub", "user-1"), StreamDataAdmin);
+        var body = $$"""
+            [{ "rtId": "{{_rtId}}", "ckTypeId": "{{CkTypeId}}",
+               "from": "2026-08-31T22:00:00Z", "to": "2026-09-01T22:00:00Z",
+               "attributes": { "amount.value": 1.5, "Amount.Unit": null }, "origin": "manual" }]
+            """;
+
+        var result = await _controller.InsertTimeRange(TenantId, _archiveRtId.ToString(), Bind(body));
+
+        result.Should().BeOfType<OkObjectResult>();
+        var attributes = CapturedInsert().Points.Single().Attributes;
+        attributes.Should().HaveCount(2);
+        attributes["amount.value"].Should().Be(1.5);
+        attributes.Should().ContainKey("Amount.Unit").WhoseValue.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task InsertTimeRange_AnAutomatedPointMissingAColumn_IsPassedOnUnchanged()
+    {
+        GivenTimeRangeArchiveWithTwoColumns();
+
+        var result = await _controller.InsertTimeRange(TenantId, _archiveRtId.ToString(), Bind(OnePoint("")));
+
+        result.Should().BeOfType<OkObjectResult>();
+        CapturedInsert().Points.Single().Attributes.Should().ContainSingle().Which.Key.Should().Be("Amount.Value");
+    }
+
+    [Fact]
+    public async Task InsertTimeRange_AManualPointMissingAColumn_IsRefusedAsAWholeBatch()
+    {
+        GivenTimeRangeArchiveWithTwoColumns();
+        SignInAs(new System.Security.Claims.Claim("sub", "user-1"), StreamDataAdmin);
+        var body = $$"""
+            [{ "rtId": "{{_rtId}}", "ckTypeId": "{{CkTypeId}}",
+               "from": "2026-08-31T22:00:00Z", "to": "2026-09-01T22:00:00Z",
+               "attributes": { "Amount.Value": 1.5, "Amount.Unit": "kWh" }, "origin": "manual" },
+             { "rtId": "{{_rtId}}", "ckTypeId": "{{CkTypeId}}",
+               "from": "2026-09-01T22:00:00Z", "to": "2026-09-02T22:00:00Z",
+               "attributes": { "Amount.Unit": "kWh" }, "origin": "manual" }]
+            """;
+
+        var result = await _controller.InsertTimeRange(TenantId, _archiveRtId.ToString(), Bind(body));
+
+        result.Should().BeOfType<BadRequestObjectResult>().Subject.Value.Should().BeOfType<string>()
+            .Which.Should().Contain("Point 1").And.Contain("'Amount.Value'");
+        Fake.GetCalls(_repository).Should().NotContain(c => c.Method.Name == nameof(IStreamDataRepository.InsertTimeRangeAsync));
     }
 
     private static IReadOnlyList<InsertTimeRangePointRestDto> Bind(string body) =>

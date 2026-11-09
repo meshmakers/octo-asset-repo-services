@@ -668,7 +668,7 @@ public class StreamDataController : ControllerBase
                     return BadRequest($"Point {i}: rtId '{point.RtId}' is not a valid runtime id.");
                 }
 
-                var timestampError = RawArchivePointValidation.NormalizeTimestamp(i, point.Timestamp, out timestamps[i]);
+                var timestampError = ArchivePointValidation.NormalizeTimestamp(i, point.Timestamp, out timestamps[i]);
                 if (timestampError is not null)
                 {
                     return BadRequest(timestampError);
@@ -687,7 +687,7 @@ public class StreamDataController : ControllerBase
 
                 if (snapshot is not null)
                 {
-                    var columnError = RawArchivePointValidation.CheckColumns(
+                    var columnError = ArchivePointValidation.CheckColumns(
                         i, point.Attributes, snapshot, origins[i] == ArchiveRowOrigin.Manual);
                     if (columnError is not null)
                     {
@@ -760,8 +760,10 @@ public class StreamDataController : ControllerBase
     /// true. Time-range concept §3. The archive must be in <c>Activated</c> status; non-time-
     /// range archives reject the call with HTTP 400. Answers 200 with the write result (rows stored, rows not
     /// stored with the reason, AB#7598) — an empty batch still answers 204 — and 409 with the result when a
-    /// manual row could not be stored. A batch with a manual point needs the tenant role <c>StreamDataAdmin</c>
-    /// besides the write scope, otherwise the whole batch answers 403 (AB#8590 AC 8).
+    /// manual row could not be stored. A manual point must name every ingested column of the archive (explicit null
+    /// allowed), otherwise the batch answers 400 listing the missing columns and nothing is written (AB#8590 AC 9).
+    /// A batch with a manual point needs the tenant role <c>StreamDataAdmin</c> besides the write scope, otherwise the
+    /// whole batch answers 403 (AB#8590 AC 8).
     /// </summary>
     [HttpPost("archives/{archiveRtId}/insertTimeRange")]
     [ProducesResponseType(typeof(StreamDataWriteResultRestDto), StatusCodes.Status200OK)]
@@ -815,6 +817,17 @@ public class StreamDataController : ControllerBase
                 if (origins[i] != ArchiveRowOrigin.Manual && !string.IsNullOrEmpty(points[i].Reason))
                 {
                     return BadRequest($"Point {i}: a reason is only recorded for a manual write; set origin 'manual' or remove the reason.");
+                }
+
+                // AB#8590 AC 9: the upsert binds every ingested column, so an unsent attribute of a manual point would
+                // overwrite the stored value with NULL. Automated points are passed on unchanged (not judged here).
+                if (origins[i] == ArchiveRowOrigin.Manual && snapshot is not null)
+                {
+                    var columnError = ArchivePointValidation.CheckManualPointNamesEveryColumn(i, points[i].Attributes, snapshot);
+                    if (columnError is not null)
+                    {
+                        return BadRequest(columnError);
+                    }
                 }
             }
 

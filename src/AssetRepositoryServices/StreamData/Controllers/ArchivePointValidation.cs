@@ -3,10 +3,11 @@ using Meshmakers.Octo.Runtime.Contracts.StreamData;
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.StreamData.Controllers;
 
 /// <summary>
-/// Checks of a raw-archive insert (AB#8590) that need only the request and the archive snapshot. Each check answers
-/// <c>null</c> when the point is fine, otherwise the 400 message naming the point (index in the batch) and the field.
+/// Checks of the archive inserts (raw <c>insert</c> and <c>insertTimeRange</c>, AB#8590) that need only the request and the
+/// archive snapshot. Each check answers <c>null</c> when the point is fine, otherwise the 400 message naming the point
+/// (index in the batch) and the field.
 /// </summary>
-internal static class RawArchivePointValidation
+internal static class ArchivePointValidation
 {
     /// <summary>
     /// Brings the timestamp to UTC (a value without offset is read as UTC, a value with offset is converted) and refuses
@@ -36,26 +37,19 @@ internal static class RawArchivePointValidation
     /// <summary>
     /// Refuses attribute keys that are no ingested column of the archive (unknown, or a computed column the archive
     /// calculates itself), keys that address the same column twice, and — for a manual point — a point that does not
-    /// name every ingested column. Keys are matched like the repository maps them to the storage column: segments
-    /// concatenated, case-insensitive.
+    /// name every ingested column (<see cref="CheckManualPointNamesEveryColumn" />). Keys are matched like the
+    /// repository maps them to the storage column: segments concatenated, case-insensitive. Used by the raw insert.
     /// </summary>
     public static string? CheckColumns(int index, IReadOnlyDictionary<string, object?> attributes, ArchiveSnapshot snapshot,
         bool manual)
     {
-        var ingested = new Dictionary<string, string>(StringComparer.Ordinal);
+        var ingested = IngestedColumns(snapshot);
         var computed = new Dictionary<string, string>(StringComparer.Ordinal);
-        foreach (var column in snapshot.Columns)
+        foreach (var column in snapshot.Columns.Where(c => c.IsComputed))
         {
-            if (column.IsComputed)
+            if (!string.IsNullOrWhiteSpace(column.Name) && TryStorageName(column.Name, out var computedName))
             {
-                if (!string.IsNullOrWhiteSpace(column.Name) && TryStorageName(column.Name, out var computedName))
-                {
-                    computed.TryAdd(computedName, column.Name);
-                }
-            }
-            else if (TryStorageName(column.Path, out var name))
-            {
-                ingested.TryAdd(name, column.Path);
+                computed.TryAdd(computedName, column.Name);
             }
         }
 
@@ -85,14 +79,51 @@ internal static class RawArchivePointValidation
             }
         }
 
-        if (!manual)
+        return manual ? MissingColumnsMessage(index, ingested, named.Keys, snapshot) : null;
+    }
+
+    /// <summary>
+    /// AB#8590 decision D1 (raw, AC 3) and AC 9 (time range): the upsert writes every ingested column of the archive
+    /// and binds an unsent one as NULL, so a manual point that leaves a column out would clear the stored value of that
+    /// column silently. A manual point must therefore name every ingested column; an explicit <c>null</c> is a valid
+    /// answer. Keys are matched like the storage column (segments concatenated, case-insensitive); keys that are no
+    /// column are not judged here. Answers the 400 message listing the missing columns, or <c>null</c>.
+    /// </summary>
+    public static string? CheckManualPointNamesEveryColumn(int index, IReadOnlyDictionary<string, object?> attributes,
+        ArchiveSnapshot snapshot)
+    {
+        var named = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var key in attributes.Keys)
         {
-            return null;
+            if (TryStorageName(key, out var name))
+            {
+                named.Add(name);
+            }
         }
 
-        // AB#8590 decision D1: the upsert writes every ingested column, so an unsent attribute would become NULL.
-        // A correction must say what each column holds; an explicit null is a valid answer.
-        var missing = ingested.Where(c => !named.ContainsKey(c.Key)).Select(c => c.Value).ToList();
+        return MissingColumnsMessage(index, IngestedColumns(snapshot), named, snapshot);
+    }
+
+    /// <summary>The ingested (non-computed) columns of the archive: storage name to the column path.</summary>
+    private static Dictionary<string, string> IngestedColumns(ArchiveSnapshot snapshot)
+    {
+        var ingested = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var column in snapshot.Columns.Where(c => !c.IsComputed))
+        {
+            if (TryStorageName(column.Path, out var name))
+            {
+                ingested.TryAdd(name, column.Path);
+            }
+        }
+
+        return ingested;
+    }
+
+    private static string? MissingColumnsMessage(int index, Dictionary<string, string> ingested,
+        IEnumerable<string> namedStorageNames, ArchiveSnapshot snapshot)
+    {
+        var named = namedStorageNames as ISet<string> ?? new HashSet<string>(namedStorageNames, StringComparer.Ordinal);
+        var missing = ingested.Where(c => !named.Contains(c.Key)).Select(c => c.Value).ToList();
         return missing.Count == 0
             ? null
             : $"Point {index}: a manual point must name every ingested column of archive '{snapshot.RtId}' " +

@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- AB#8590 Fix: `insertTimeRange` refuses a manual point that leaves columns out. The time-range upsert writes every ingested
+  column of the archive and binds an unsent attribute as NULL, so a manual correction that sent only the changed column
+  silently cleared the stored values of the other columns. A point with origin `manual` must now name every ingested column
+  (explicit `null` allowed), exactly like the raw `insert`; otherwise the batch answers 400 listing the missing columns and
+  nothing is written. Same check as the raw endpoint (`ArchivePointValidation`, shared). Automated points are unchanged.
+  Callers that send manual points (Studio sends the whole row) must send every column.
 - AB#8590 New: `POST {tenantId}/v1/streamdata/archives/{archiveRtId}/insert` writes and corrects rows of a raw archive with
   `origin` (`manual` | `automated`) and an optional `reason`, through the existing raw `IStreamDataRepository.InsertAsync` (origin,
   writer, manual protection and write result since AB#5968). Row identity: archive + `rtId` + `timestamp` (UTC, milliseconds);

@@ -389,8 +389,13 @@ Time-series data support (`StreamData/`):
     (`StreamDataController.CallerIdentity`, AB#7647: `preferred_username`, else `name`, else `ClaimTypes.Name`, else the
     subject id; `client_id` only when the token has no subject), **never** a body field;
     the platform time is set by the repository. 400 for an unknown origin (names the valid values), a reason without
-    `manual`, and a manual write whose token names no identity; nothing of the batch is written. Tests:
-    `StreamDataControllerInsertTimeRangeTests`. SDK: `IStreamDataServicesClient.InsertTimeRangeAsync` (`TimeRangePointDto`).
+    `manual`, and a manual write whose token names no identity; nothing of the batch is written. **A manual point must name
+    every ingested column of the archive (AB#8590 AC 9)**, explicit `null` allowed: the upsert writes every ingested column and
+    binds an unsent one as NULL (engine-mongodb `CrateDatabaseClient` time-range insert, `DO UPDATE SET <col> = EXCLUDED.<col>`), so a
+    correction of one column would clear the others. Otherwise 400 listing the missing columns, nothing written; same check as the
+    raw `insert` (`ArchivePointValidation.CheckManualPointNamesEveryColumn`, keys matched like the storage column). Automated points
+    are passed on unchanged (unknown keys dropped by the repository). Tests:
+    `StreamDataControllerInsertTimeRangeTests`, `IntegrationTests/StreamData/StreamDataInsertTimeRangeRestTests`. SDK: `IStreamDataServicesClient.InsertTimeRangeAsync` (`TimeRangePointDto`).
     **Write result (AB#7598):** answers **200** with `StreamDataWriteResultRestDto` (`stored`, `skipped`,
     `skippedByReason` — `LowerPrecedence` / `ManualValueProtected` / `CkTypeMismatch` —, `skippedRows` up to 1,000);
     an empty batch stays 204. A manual row the archive did not store (`ManualStreamDataNotAppliedException`) answers
@@ -403,7 +408,7 @@ Time-series data support (`StreamData/`):
     per row**: the origin is stored once per row, so a manual correction of one attribute also protects the other attributes
     of that row against automated re-deliveries. Origin, reason and writer as `insertTimeRange` (shared `TryParseOrigin`,
     `CallerIdentity`; writer and write time never from the body). Checks before anything is written, each a 400 naming the
-    point (index) and the field (`RawArchivePointValidation`, against the archive snapshot): invalid `rtId`, missing or
+    point (index) and the field (`ArchivePointValidation`, against the archive snapshot): invalid `rtId`, missing or
     sub-millisecond timestamp, invalid origin, reason without `manual`, manual write with a token without writer, `ckTypeId`
     not the archive's target (shared `CkTypeMismatchMessage`), an attribute that is no ingested column or a computed column, two
     keys for the same column (keys are matched like the storage column: segments concatenated, case-insensitive), a time-range
