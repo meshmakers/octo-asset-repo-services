@@ -4,6 +4,8 @@ using FakeItEasy;
 using FluentAssertions;
 using Meshmakers.Octo.Backend.AssetRepositoryServices;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.StreamData.Controllers;
+using Meshmakers.Octo.Communication.Contracts;
+using Meshmakers.Octo.Communication.Contracts.DataTransferObjects.ApiErrors;
 using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb;
 using Meshmakers.Octo.Runtime.Contracts.StreamData;
@@ -49,7 +51,7 @@ public class StreamDataControllerInsertRawTests
             A.Fake<ILogger<StreamDataController>>(),
             systemContext,
             A.Fake<IHostApplicationLifetime>());
-        SignInAs(new Claim("sub", "user-1"), new Claim("preferred_username", "jane.doe"));
+        SignInAs(new Claim("sub", "user-1"), new Claim("preferred_username", "jane.doe"), StreamDataAdmin);
 
         // Raw archive with two ingested columns and one computed column.
         GivenArchive(new ArchiveSnapshot(_archiveRtId, new RtCkId<CkTypeId>(CkTypeId), CkArchiveStatus.Activated, "raw",
@@ -164,7 +166,7 @@ public class StreamDataControllerInsertRawTests
     [Fact]
     public async Task Insert_AClientCredentialsToken_IsRecordedByItsClientId()
     {
-        SignInAs(new Claim("client_id", "import-service"));
+        SignInAs(new Claim("client_id", "import-service"), StreamDataAdmin);
 
         await Insert(OnePoint(FullRow, ", \"origin\": \"manual\""));
 
@@ -194,11 +196,74 @@ public class StreamDataControllerInsertRawTests
     [Fact]
     public async Task Insert_AManualPointWithATokenWithoutWriter_Answers400()
     {
-        SignInAs();
+        SignInAs(StreamDataAdmin);
 
         var result = await Insert(OnePoint(FullRow, ", \"origin\": \"manual\""));
 
         BadRequestMessage(result).Should().Contain("names no subject or client");
+        NothingWritten();
+    }
+
+    // ---- AC 8: a manual point needs the tenant role StreamDataAdmin ------------------------------------------
+
+    [Fact]
+    public async Task Insert_AManualPointWithoutTheStreamDataAdminRole_Answers403_AndWritesNothing()
+    {
+        SignInAs(new Claim("sub", "user-1"), new Claim("scope", CommonConstants.OctoApiFullAccess));
+
+        var result = await Insert(OnePoint(FullRow, ", \"origin\": \"manual\""));
+
+        ForbiddenMessage(result).Should().Contain(CommonConstants.StreamDataAdminRole).And.Contain("manual");
+        NothingWritten();
+    }
+
+    [Fact]
+    public async Task Insert_AMixedBatchWithoutTheStreamDataAdminRole_IsRefusedAsAWhole()
+    {
+        SignInAs(new Claim("sub", "user-1"), new Claim("scope", CommonConstants.OctoApiFullAccess));
+
+        var result = await Insert($$"""
+            [{ "rtId": "{{_rtId}}", "ckTypeId": "{{CkTypeId}}", "timestamp": "2026-03-01T10:00:00Z", "attributes": {{FullRow}} },
+             { "rtId": "{{_rtId}}", "ckTypeId": "{{CkTypeId}}", "timestamp": "2026-03-01T10:15:00Z", "attributes": {{FullRow}},
+               "origin": "manual" }]
+            """);
+
+        ForbiddenMessage(result).Should().Contain(CommonConstants.StreamDataAdminRole);
+        NothingWritten();
+    }
+
+    [Fact]
+    public async Task Insert_AnAutomatedPointWithoutTheStreamDataAdminRole_IsWritten()
+    {
+        SignInAs(new Claim("sub", "user-1"), new Claim("scope", CommonConstants.OctoApiFullAccess));
+
+        var result = await Insert(OnePoint(FullRow, ", \"origin\": \"automated\""));
+
+        result.Should().BeOfType<OkObjectResult>();
+        CapturedInsert().Points.Single().Origin.Should().Be(ArchiveRowOrigin.Automated);
+    }
+
+    [Theory]
+    [InlineData("role")]
+    [InlineData(ClaimTypes.Role)]
+    public async Task Insert_AManualPointWithTheStreamDataAdminRole_IsWritten_UnderBothRoleClaimSpellings(string claimType)
+    {
+        SignInAs(new Claim("sub", "user-1"), new Claim(claimType, CommonConstants.StreamDataAdminRole));
+
+        var result = await Insert(OnePoint(FullRow, ", \"origin\": \"manual\""));
+
+        result.Should().BeOfType<OkObjectResult>();
+        CapturedInsert().Points.Single().Origin.Should().Be(ArchiveRowOrigin.Manual);
+    }
+
+    [Fact]
+    public async Task Insert_AManualPointWithAnotherStreamDataRole_Answers403()
+    {
+        SignInAs(new Claim("sub", "user-1"), new Claim("role", CommonConstants.StreamDataWriterRole));
+
+        var result = await Insert(OnePoint(FullRow, ", \"origin\": \"manual\""));
+
+        ForbiddenMessage(result).Should().Contain(CommonConstants.StreamDataAdminRole);
         NothingWritten();
     }
 
@@ -399,6 +464,8 @@ public class StreamDataControllerInsertRawTests
 
     // ---- helpers ----------------------------------------------------------------------------------------------
 
+    private static readonly Claim StreamDataAdmin = new("role", CommonConstants.StreamDataAdminRole);
+
     private const string FullRow = """{ "Amount.Value": 1.5, "Amount.Unit": "kWh" }""";
 
     private string OnePoint(string attributes, string extra) => $$"""
@@ -420,6 +487,13 @@ public class StreamDataControllerInsertRawTests
     private static IReadOnlyList<InsertRawPointRestDto> Bind(string body) =>
         JsonSerializer.Deserialize<IReadOnlyList<InsertRawPointRestDto>>(body, MvcBodyOptions)
         ?? throw new InvalidOperationException("The body deserialized to null.");
+
+    private static string ForbiddenMessage(IActionResult result)
+    {
+        var forbidden = result.Should().BeOfType<ObjectResult>().Subject;
+        forbidden.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
+        return forbidden.Value.Should().BeOfType<ForbiddenErrorDto>().Subject.Message!;
+    }
 
     private static string BadRequestMessage(IActionResult result) =>
         result.Should().BeOfType<BadRequestObjectResult>().Subject.Value!.ToString()!;

@@ -6,6 +6,7 @@ using FluentAssertions;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Collections;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Fixtures;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.StreamData.Controllers;
+using Meshmakers.Octo.Communication.Contracts;
 using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.ConstructionKit.Models.StreamData.Generated.System.StreamData.v1;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb;
@@ -42,7 +43,7 @@ public class StreamDataInsertRawRestTests(StreamDataFixture fixture, ITestOutput
         {
             var archiveRtId = await PrepareRawArchiveAsync(childTenantId);
             var rtId = OctoObjectId.GenerateNewId();
-            var controller = ControllerFor(("sub", "8a4c1f00-0000-4000-8000-000000000010"), ("preferred_username", "jane.doe"));
+            var controller = ControllerFor(("sub", "8a4c1f00-0000-4000-8000-000000000010"), ("preferred_username", "jane.doe"), ("role", CommonConstants.StreamDataAdminRole));
 
             (await WriteAsync(controller, childTenantId, archiveRtId, rtId, 100, 230.0, null)).Stored.Should().Be(1);
             (await WriteAsync(controller, childTenantId, archiveRtId, rtId, 200, 230.0, "meter exchanged")).Stored.Should().Be(1);
@@ -79,7 +80,7 @@ public class StreamDataInsertRawRestTests(StreamDataFixture fixture, ITestOutput
         try
         {
             var archiveRtId = await PrepareRawArchiveAsync(childTenantId);
-            var controller = ControllerFor(("sub", "user-1"));
+            var controller = ControllerFor(("sub", "user-1"), ("role", CommonConstants.StreamDataAdminRole));
             var points = Bind($$"""
                 [{ "rtId": "{{OctoObjectId.GenerateNewId()}}", "ckTypeId": "{{fixture.TestCkTypeId}}",
                    "timestamp": "{{Timestamp:O}}", "attributes": { "MeterReading": 1 }, "origin": "manual" }]
@@ -89,6 +90,39 @@ public class StreamDataInsertRawRestTests(StreamDataFixture fixture, ITestOutput
 
             result.Should().BeOfType<BadRequestObjectResult>().Which.Value.Should().BeOfType<string>()
                 .Which.Should().Contain("Point 0").And.Contain("'Voltage'");
+            (await CountRowsAsync(childTenantId, archiveRtId)).Should().Be(0);
+        }
+        finally
+        {
+            await DropChildIfExistingAsync(childTenantId);
+        }
+    }
+
+    /// <summary>
+    ///     AC 8: a batch with a manual point from a caller without the tenant role StreamDataAdmin is refused as a whole
+    ///     with 403 - the automated point of the same batch is not written either.
+    /// </summary>
+    [Fact]
+    public async Task Insert_AManualPointWithoutTheStreamDataAdminRole_Answers403_AndWritesNothing()
+    {
+        fixture.OutputHelper = output;
+        const string childTenantId = "rawrestnorole";
+        await CreateChildAsync(childTenantId);
+
+        try
+        {
+            var archiveRtId = await PrepareRawArchiveAsync(childTenantId);
+            var controller = ControllerFor(("sub", "user-1"));
+            var points = Bind($$"""
+                [{ "rtId": "{{OctoObjectId.GenerateNewId()}}", "ckTypeId": "{{fixture.TestCkTypeId}}",
+                   "timestamp": "{{Timestamp:O}}", "attributes": { "MeterReading": 1, "Voltage": 230.0 } },
+                 { "rtId": "{{OctoObjectId.GenerateNewId()}}", "ckTypeId": "{{fixture.TestCkTypeId}}",
+                   "timestamp": "{{Timestamp:O}}", "attributes": { "MeterReading": 2, "Voltage": 231.0 }, "origin": "manual" }]
+                """);
+
+            var result = await controller.Insert(childTenantId, archiveRtId.ToString(), points);
+
+            result.Should().BeOfType<ObjectResult>().Which.StatusCode.Should().Be(403);
             (await CountRowsAsync(childTenantId, archiveRtId)).Should().Be(0);
         }
         finally

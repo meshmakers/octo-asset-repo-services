@@ -5,6 +5,7 @@ using FluentAssertions;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Collections;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Fixtures;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.StreamData.Controllers;
+using Meshmakers.Octo.Communication.Contracts;
 using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.ConstructionKit.Models.StreamData.Generated.System.StreamData.v1;
 using Meshmakers.Octo.Runtime.Contracts.RepositoryEntities;
@@ -266,7 +267,7 @@ public class StreamDataInsertTimeRangeRestTests(StreamDataFixture fixture, ITest
             var child = await PrepareChildAsync(childTenantId);
             var archiveRtId = await CreateAndActivateTimeRangeArchiveAsync(child);
             var rtId = OctoObjectId.GenerateNewId();
-            var controller = ControllerFor(childTenantId, ("sub", "8a4c1f00-0000-4000-8000-000000000001"));
+            var controller = ControllerFor(childTenantId, ("sub", "8a4c1f00-0000-4000-8000-000000000001"), ("role", CommonConstants.StreamDataAdminRole));
 
             foreach (var reading in new[] { 100, 200 })
             {
@@ -314,7 +315,7 @@ public class StreamDataInsertTimeRangeRestTests(StreamDataFixture fixture, ITest
             var child = await PrepareChildAsync(childTenantId);
             var archiveRtId = await CreateAndActivateTimeRangeArchiveAsync(child);
             var rtId = OctoObjectId.GenerateNewId();
-            var controller = ControllerFor(childTenantId, ("sub", "8a4c1f00-0000-4000-8000-000000000002"));
+            var controller = ControllerFor(childTenantId, ("sub", "8a4c1f00-0000-4000-8000-000000000002"), ("role", CommonConstants.StreamDataAdminRole));
 
             (await WriteReadingAsync(controller, childTenantId, archiveRtId, rtId, 100, manual: false)).Stored.Should().Be(1);
             (await WriteReadingAsync(controller, childTenantId, archiveRtId, rtId, 200, manual: true)).Stored.Should().Be(1);
@@ -350,7 +351,7 @@ public class StreamDataInsertTimeRangeRestTests(StreamDataFixture fixture, ITest
             var child = await PrepareChildAsync(childTenantId);
             var archiveRtId = await CreateAndActivateTimeRangeArchiveAsync(child, ignoreOrigin: true);
             var rtId = OctoObjectId.GenerateNewId();
-            var controller = ControllerFor(childTenantId, ("sub", "8a4c1f00-0000-4000-8000-000000000003"));
+            var controller = ControllerFor(childTenantId, ("sub", "8a4c1f00-0000-4000-8000-000000000003"), ("role", CommonConstants.StreamDataAdminRole));
 
             (await WriteReadingAsync(controller, childTenantId, archiveRtId, rtId, 200, manual: true)).Stored.Should().Be(1);
             var automated = await WriteReadingAsync(controller, childTenantId, archiveRtId, rtId, 300, manual: false);

@@ -9,6 +9,12 @@
   origin, reason without manual, token without writer, ckTypeId mismatch, unknown or computed column, sub-millisecond timestamp,
   time-range or rollup archive, value not fitting its column) answer 400 naming point and field; 200 with the write result, 204
   for an empty batch, 409 when a manual row was not stored. The ckTypeId check of `insertTimeRange` is shared, unchanged.
+- AB#8590 New (security): a write with origin `manual` - on the new `insert` and on the existing `insertTimeRange` - needs the
+  tenant role `StreamDataAdmin` (the role Studio checks for corrections) besides the write scope; without it the whole batch
+  answers 403 `ForbiddenErrorDto` naming the role and nothing is written, also when it mixes manual and automated points.
+  Automated writes keep the scope-only check (`TenantAssetApiReadWritePolicy`), so pipelines and adapters are unaffected.
+  **Before the rollout**, grant `StreamDataAdmin` to every user or client that sends manual points over REST (pipeline nodes
+  write through the repository and are not affected).
 - AB#8559 Fix (security, staged): stream-data reads require one of the tenant roles `StreamDataReader`, `StreamDataWriter`
   or `StreamDataAdmin`. Until now every authenticated token of a tenant read all stream data, because the GraphQL endpoint only
   requires an authenticated user and the data-policy check (AB#4973) is open for CK types without a policy; the seeded role

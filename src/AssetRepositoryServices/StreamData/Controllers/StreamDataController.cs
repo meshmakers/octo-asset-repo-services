@@ -2,6 +2,7 @@ using System.ComponentModel.DataAnnotations;
 using Asp.Versioning;
 using GraphQL;
 using Duende.IdentityModel;
+using Meshmakers.Octo.Communication.Contracts;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects.ApiErrors;
 using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb;
@@ -9,6 +10,7 @@ using Meshmakers.Octo.Runtime.Contracts.MongoDb.Configuration;
 using Meshmakers.Octo.Runtime.Contracts.Formulas;
 using Meshmakers.Octo.Runtime.Contracts.StreamData;
 using Meshmakers.Octo.Services.Infrastructure;
+using Meshmakers.Octo.Services.Infrastructure.Authorization;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -614,12 +616,14 @@ public class StreamDataController : ControllerBase
     /// never from the body. A manual point must name every ingested column of the archive (explicit null allowed).
     /// Answers 200 with the write result, 204 for an empty batch, 409 with the result when a manual row could not be
     /// stored, and 400 naming the point and the field for every client error; nothing of a refused batch is written.
+    /// A batch with a manual point needs the tenant role <c>StreamDataAdmin</c> besides the write scope, otherwise the
+    /// whole batch answers 403 (AB#8590 AC 8); automated points need the scope only.
     /// </summary>
     [HttpPost("archives/{archiveRtId}/insert")]
     [ProducesResponseType(typeof(StreamDataWriteResultRestDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(typeof(string), StatusCodes.Status400BadRequest)]
-    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ForbiddenErrorDto), StatusCodes.Status403Forbidden)]
     [ProducesResponseType(typeof(ManualWriteNotStoredRestDto), StatusCodes.Status409Conflict)]
     [Microsoft.AspNetCore.Authorization.Authorize(AssetRepositoryServiceConstants.TenantAssetApiReadWritePolicy)]
     public async Task<IActionResult> Insert(
@@ -692,6 +696,12 @@ public class StreamDataController : ControllerBase
                 }
             }
 
+            var refusal = RefuseManualWriteWithoutRole(tenantId, archiveRtId, origins);
+            if (refusal is not null)
+            {
+                return refusal;
+            }
+
             var writer = origins.Contains(ArchiveRowOrigin.Manual) ? CallerIdentity(User) : null;
             if (origins.Contains(ArchiveRowOrigin.Manual) && writer is null)
             {
@@ -750,12 +760,14 @@ public class StreamDataController : ControllerBase
     /// true. Time-range concept §3. The archive must be in <c>Activated</c> status; non-time-
     /// range archives reject the call with HTTP 400. Answers 200 with the write result (rows stored, rows not
     /// stored with the reason, AB#7598) — an empty batch still answers 204 — and 409 with the result when a
-    /// manual row could not be stored.
+    /// manual row could not be stored. A batch with a manual point needs the tenant role <c>StreamDataAdmin</c>
+    /// besides the write scope, otherwise the whole batch answers 403 (AB#8590 AC 8).
     /// </summary>
     [HttpPost("archives/{archiveRtId}/insertTimeRange")]
     [ProducesResponseType(typeof(StreamDataWriteResultRestDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(typeof(string), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ForbiddenErrorDto), StatusCodes.Status403Forbidden)]
     [ProducesResponseType(typeof(ManualWriteNotStoredRestDto), StatusCodes.Status409Conflict)]
     [Microsoft.AspNetCore.Authorization.Authorize(AssetRepositoryServiceConstants.TenantAssetApiReadWritePolicy)]
     public async Task<IActionResult> InsertTimeRange(
@@ -804,6 +816,12 @@ public class StreamDataController : ControllerBase
                 {
                     return BadRequest($"Point {i}: a reason is only recorded for a manual write; set origin 'manual' or remove the reason.");
                 }
+            }
+
+            var refusal = RefuseManualWriteWithoutRole(tenantId, archiveRtId, origins);
+            if (refusal is not null)
+            {
+                return refusal;
             }
 
             var writer = origins.Contains(ArchiveRowOrigin.Manual) ? CallerIdentity(User) : null;
@@ -859,6 +877,31 @@ public class StreamDataController : ControllerBase
             return BadRequest(e.Message);
         }
     }
+
+    /// <summary>
+    /// AB#8590 AC 8: a manual point corrects data by hand, so besides the write scope of the endpoint policy the verified
+    /// caller must hold the tenant role <c>StreamDataAdmin</c> (the role Studio checks for corrections). A batch with at
+    /// least one manual point from a caller without the role is refused as a whole with 403 before anything is written;
+    /// a purely automated batch is not checked here. Returns <c>null</c> when the batch may be written.
+    /// </summary>
+    private ObjectResult? RefuseManualWriteWithoutRole(string tenantId, string archiveRtId, ArchiveRowOrigin[] origins)
+    {
+        if (!origins.Contains(ArchiveRowOrigin.Manual) ||
+            TenantRoleAuthorizationHandler.HasTenantRole(User, CommonConstants.StreamDataAdminRole))
+        {
+            return null;
+        }
+
+        _logger.LogWarning(
+            "Manual stream-data write refused for tenant '{TenantId}', archive '{ArchiveRtId}': the caller lacks the role '{Role}'.",
+            tenantId, archiveRtId, CommonConstants.StreamDataAdminRole);
+        return StatusCode(StatusCodes.Status403Forbidden, new ForbiddenErrorDto(ManualWriteRoleRefusal));
+    }
+
+    /// <summary>The 403 message of a manual write without the <c>StreamDataAdmin</c> role (AB#8590 AC 8).</summary>
+    internal static readonly string ManualWriteRoleRefusal =
+        $"Access is denied: a write with origin 'manual' requires the role '{CommonConstants.StreamDataAdminRole}' in the tenant. " +
+        "The token carries no such role; ask a tenant administrator to grant it.";
 
     /// <summary>
     /// Parses the optional origin of a REST point: absent or empty is automated, otherwise <c>manual</c> or

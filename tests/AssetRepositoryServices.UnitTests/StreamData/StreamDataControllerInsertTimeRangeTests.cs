@@ -2,6 +2,8 @@ using System.Text.Json;
 using FakeItEasy;
 using FluentAssertions;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.StreamData.Controllers;
+using Meshmakers.Octo.Communication.Contracts;
+using Meshmakers.Octo.Communication.Contracts.DataTransferObjects.ApiErrors;
 using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb;
 using Meshmakers.Octo.Runtime.Contracts.StreamData;
@@ -134,6 +136,8 @@ public class StreamDataControllerInsertTimeRangeTests
            "attributes": { "Amount.Value": 1.5 } {{extra}} }]
         """;
 
+    private static readonly System.Security.Claims.Claim StreamDataAdmin = new("role", CommonConstants.StreamDataAdminRole);
+
     private void SignInAs(params System.Security.Claims.Claim[] claims)
     {
         _controller.ControllerContext = new ControllerContext
@@ -163,7 +167,7 @@ public class StreamDataControllerInsertTimeRangeTests
     [InlineData("Manual")]
     public async Task InsertTimeRange_ManualOrigin_RecordsTheTokenSubjectAsWriterAndTheReasonAsGiven(string origin)
     {
-        SignInAs(new System.Security.Claims.Claim("sub", "user-1"));
+        SignInAs(new System.Security.Claims.Claim("sub", "user-1"), StreamDataAdmin);
 
         var result = await _controller.InsertTimeRange(TenantId, _archiveRtId.ToString(),
             Bind(OnePoint($", \"origin\": \"{origin}\", \"reason\": \"meter exchanged\"")));
@@ -181,7 +185,7 @@ public class StreamDataControllerInsertTimeRangeTests
         // AB#7647: the writer is the readable name of the verified user, not the opaque subject id.
         SignInAs(new System.Security.Claims.Claim("sub", "8a4c1f00-0000-4000-8000-000000000001"),
             new System.Security.Claims.Claim("preferred_username", "jane.doe"),
-            new System.Security.Claims.Claim("name", "Jane Doe"));
+            new System.Security.Claims.Claim("name", "Jane Doe"), StreamDataAdmin);
 
         await _controller.InsertTimeRange(TenantId, _archiveRtId.ToString(), Bind(OnePoint(", \"origin\": \"manual\"")));
 
@@ -192,7 +196,7 @@ public class StreamDataControllerInsertTimeRangeTests
     public async Task InsertTimeRange_ManualOrigin_WithoutAPreferredUsername_RecordsTheName()
     {
         SignInAs(new System.Security.Claims.Claim("sub", "8a4c1f00-0000-4000-8000-000000000001"),
-            new System.Security.Claims.Claim("name", "Jane Doe"));
+            new System.Security.Claims.Claim("name", "Jane Doe"), StreamDataAdmin);
 
         await _controller.InsertTimeRange(TenantId, _archiveRtId.ToString(), Bind(OnePoint(", \"origin\": \"manual\"")));
 
@@ -202,7 +206,7 @@ public class StreamDataControllerInsertTimeRangeTests
     [Fact]
     public async Task InsertTimeRange_ManualOrigin_ANameInTheBodyIsNeverTheWriter()
     {
-        SignInAs(new System.Security.Claims.Claim("sub", "user-1"), new System.Security.Claims.Claim("preferred_username", "jane.doe"));
+        SignInAs(new System.Security.Claims.Claim("sub", "user-1"), new System.Security.Claims.Claim("preferred_username", "jane.doe"), StreamDataAdmin);
 
         await _controller.InsertTimeRange(TenantId, _archiveRtId.ToString(),
             Bind(OnePoint(", \"origin\": \"manual\", \"manualWrittenBy\": \"mallory\", \"writer\": \"mallory\"")));
@@ -213,7 +217,7 @@ public class StreamDataControllerInsertTimeRangeTests
     [Fact]
     public async Task InsertTimeRange_ManualOriginWithoutReason_IsAccepted()
     {
-        SignInAs(new System.Security.Claims.Claim("sub", "user-1"));
+        SignInAs(new System.Security.Claims.Claim("sub", "user-1"), StreamDataAdmin);
 
         var result = await _controller.InsertTimeRange(TenantId, _archiveRtId.ToString(), Bind(OnePoint(", \"origin\": \"manual\"")));
 
@@ -224,7 +228,7 @@ public class StreamDataControllerInsertTimeRangeTests
     [Fact]
     public async Task InsertTimeRange_AClientCredentialsToken_IsRecordedByItsClientId()
     {
-        SignInAs(new System.Security.Claims.Claim("client_id", "import-service"));
+        SignInAs(new System.Security.Claims.Claim("client_id", "import-service"), StreamDataAdmin);
 
         await _controller.InsertTimeRange(TenantId, _archiveRtId.ToString(), Bind(OnePoint(", \"origin\": \"manual\"")));
 
@@ -260,7 +264,7 @@ public class StreamDataControllerInsertTimeRangeTests
     [Fact]
     public async Task InsertTimeRange_AManualWriteWithoutCallerIdentity_IsRefused()
     {
-        SignInAs();
+        SignInAs(StreamDataAdmin);
 
         var result = await _controller.InsertTimeRange(TenantId, _archiveRtId.ToString(), Bind(OnePoint(", \"origin\": \"manual\"")));
 
@@ -275,6 +279,60 @@ public class StreamDataControllerInsertTimeRangeTests
             .Cast<Microsoft.AspNetCore.Authorization.AuthorizeAttribute>().Select(a => a.Policy);
 
         policies.Should().Contain(Meshmakers.Octo.Backend.AssetRepositoryServices.AssetRepositoryServiceConstants.TenantAssetApiReadWritePolicy);
+    }
+
+    // ---- AB#8590 AC 8: a manual point needs the tenant role StreamDataAdmin -----------------------------------
+
+    [Fact]
+    public async Task InsertTimeRange_AManualPointWithoutTheStreamDataAdminRole_Answers403_AndWritesNothing()
+    {
+        SignInAs(new System.Security.Claims.Claim("sub", "user-1"), new System.Security.Claims.Claim("scope", CommonConstants.OctoApiFullAccess));
+
+        var result = await _controller.InsertTimeRange(TenantId, _archiveRtId.ToString(), Bind(OnePoint(", \"origin\": \"manual\"")));
+
+        var forbidden = result.Should().BeOfType<ObjectResult>().Subject;
+        forbidden.StatusCode.Should().Be(403);
+        forbidden.Value.Should().BeOfType<ForbiddenErrorDto>().Which.Message.Should().Contain(CommonConstants.StreamDataAdminRole);
+        Fake.GetCalls(_repository).Should().NotContain(c => c.Method.Name == nameof(IStreamDataRepository.InsertTimeRangeAsync));
+    }
+
+    [Fact]
+    public async Task InsertTimeRange_AMixedBatchWithoutTheStreamDataAdminRole_IsRefusedAsAWhole()
+    {
+        SignInAs(new System.Security.Claims.Claim("sub", "user-1"), new System.Security.Claims.Claim("scope", CommonConstants.OctoApiFullAccess));
+        var body = $$"""
+            [{ "rtId": "{{_rtId}}", "ckTypeId": "{{CkTypeId}}", "from": "2026-08-31T22:00:00Z", "to": "2026-09-01T22:00:00Z" },
+             { "rtId": "{{_rtId}}", "ckTypeId": "{{CkTypeId}}", "from": "2026-09-01T22:00:00Z", "to": "2026-09-02T22:00:00Z",
+               "origin": "manual" }]
+            """;
+
+        var result = await _controller.InsertTimeRange(TenantId, _archiveRtId.ToString(), Bind(body));
+
+        result.Should().BeOfType<ObjectResult>().Which.StatusCode.Should().Be(403);
+        Fake.GetCalls(_repository).Should().NotContain(c => c.Method.Name == nameof(IStreamDataRepository.InsertTimeRangeAsync));
+    }
+
+    [Fact]
+    public async Task InsertTimeRange_AnAutomatedPointWithoutTheStreamDataAdminRole_IsWritten()
+    {
+        SignInAs(new System.Security.Claims.Claim("sub", "user-1"), new System.Security.Claims.Claim("scope", CommonConstants.OctoApiFullAccess));
+
+        var result = await _controller.InsertTimeRange(TenantId, _archiveRtId.ToString(), Bind(OnePoint(", \"origin\": \"automated\"")));
+
+        result.Should().BeOfType<OkObjectResult>();
+        CapturedInsert().Points.Single().Origin.Should().Be(ArchiveRowOrigin.Automated);
+    }
+
+    [Fact]
+    public async Task InsertTimeRange_AManualPointWithTheStreamDataAdminRole_IsWritten()
+    {
+        SignInAs(new System.Security.Claims.Claim("sub", "user-1"),
+            new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.Role, CommonConstants.StreamDataAdminRole));
+
+        var result = await _controller.InsertTimeRange(TenantId, _archiveRtId.ToString(), Bind(OnePoint(", \"origin\": \"manual\"")));
+
+        result.Should().BeOfType<OkObjectResult>();
+        CapturedInsert().Points.Single().Origin.Should().Be(ArchiveRowOrigin.Manual);
     }
 
     // ---- AB#7598: the write result ---------------------------------------------------------------------------
@@ -302,7 +360,7 @@ public class StreamDataControllerInsertTimeRangeTests
     [Fact]
     public async Task InsertTimeRange_AManualRowNotStored_Answers409WithTheResult()
     {
-        SignInAs(new System.Security.Claims.Claim("sub", "user-1"));
+        SignInAs(new System.Security.Claims.Claim("sub", "user-1"), StreamDataAdmin);
         var writeResult = new StreamDataWriteResult(0,
         [
             new StreamDataSkippedRow(_rtId, new DateTime(2026, 3, 1, 0, 0, 0, DateTimeKind.Utc), null,

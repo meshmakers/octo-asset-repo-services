@@ -412,9 +412,16 @@ Time-series data support (`StreamData/`):
     would become NULL. A value that does not fit its column type is refused by the repository's value check (engine-mongodb
     AB#8606, `ArgumentException`) and answered 400 like the time-range path. Answers 200 `StreamDataWriteResultRestDto`
     (a skipped raw row has `from` = timestamp, `to` = null), 204 for an empty batch, 409 `ManualWriteNotStoredRestDto` when a
-    manual row was not stored, 403 via the policy. Without a readable archive snapshot (stream data off, unknown archive) the
+    manual row was not stored, 403 via the policy and for a manual point without the role `StreamDataAdmin` (see below). Without a readable archive snapshot (stream data off, unknown archive) the
     column checks are skipped and the repository's own error answers 400. Tests: `UnitTests/StreamData/StreamDataControllerInsertRawTests`, `IntegrationTests/StreamData/StreamDataInsertRawRestTests` (real CrateDB: manual correction, automated re-delivery skipped with `ManualValueProtected`, whole row stays manual). SDK:
     `IStreamDataServicesClient.InsertAsync` (`RawPointDto`).
+  - **Manual writes need the role `StreamDataAdmin` (AB#8590 AC 8)** on both `insert` and `insertTimeRange`: a batch with at
+    least one point of origin `manual` is written only when the verified caller holds the tenant role `StreamDataAdmin`
+    (`CommonConstants.StreamDataAdminRole`, both role claim spellings via `TenantRoleAuthorizationHandler.HasTenantRole`;
+    `StreamDataReader`/`StreamDataWriter` are not enough). Otherwise the whole batch answers **403** `ForbiddenErrorDto` naming
+    the role, nothing written (`StreamDataController.RefuseManualWriteWithoutRole`, after the per-point 400 checks). Automated
+    points keep the scope-only check of `TenantAssetApiReadWritePolicy`. The adapter's archive-write nodes write through the
+    repository and are not gated by this check.
   - **Reading the origin (AB#7616)**: the GraphQL stream-data queries (`streamData.transientStreamDataQuery` /
     persisted queries: simple, groupingAggregation, downsampling, fieldFilter) accept `row_origin` (`manual` |
     `automated`; rows written before AB#5356 read `automated`), `manual_written_by`, `manual_written_at`,
