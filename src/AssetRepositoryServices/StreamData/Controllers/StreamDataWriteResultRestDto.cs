@@ -18,9 +18,11 @@ public sealed class StreamDataWriteResultRestDto
     public int Skipped { get; init; }
 
     /// <summary>
-    /// Rows not stored per reason: <c>LowerPrecedence</c> (the archive's conflict precedence ranks the stored row
-    /// above), <c>ManualValueProtected</c> (a manual value is never replaced by an automated delivery),
-    /// <c>CkTypeMismatch</c> (not the archive's CK type).
+    /// Rows not stored per reason, named after the key that decided (AB#8637): <c>LowerPrecedence</c> (a ranking
+    /// column of the archive's conflict precedence ranks the stored row above, also against a stored manual value
+    /// when that column comes before <c>$Origin</c>), <c>ManualValueProtected</c> (<c>$Origin</c> decided: the stored
+    /// row is manual, the write automated and no ranking column before <c>$Origin</c> differs; a ranking column the
+    /// write does not send ties, AB#8622), <c>CkTypeMismatch</c> (not the archive's CK type).
     /// </summary>
     public IReadOnlyDictionary<string, int> SkippedByReason { get; init; } = new Dictionary<string, int>();
 
