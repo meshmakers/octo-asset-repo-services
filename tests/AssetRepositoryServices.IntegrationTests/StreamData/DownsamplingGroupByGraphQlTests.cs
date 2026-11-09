@@ -145,6 +145,35 @@ public class DownsamplingGroupByGraphQlTests(StreamDataFixture fixture, ITestOut
             "the pages together are the unpaged result in the same order");
     }
 
+    // ── fixed-width bins: grouped, but an empty bin stays one row without rtId ────────────────
+
+    [Fact]
+    public async Task GroupedByRtId_FixedWidthBins_AnEmptyBinIsOneRowWithANullRtId()
+    {
+        fixture.OutputHelper = output;
+        var (raw, series) = await CreateRawWithThreeSeriesAsync("DsGroupFixedWidth");
+        // Four 24 h bins from 2026-03-27T05:00Z; the data ends 2026-03-30T04:00Z, so the last bin has no samples.
+        var from = new DateTime(2026, 3, 27, 5, 0, 0, DateTimeKind.Utc);
+        var to = from.AddDays(4);
+        var emptyBin = from.AddDays(3);
+
+        var query = Downsampling(await ExecuteDownsamplingAsync(raw, from, to, ["rtId"], RowsSelection,
+            fixedWidthLimit: 4));
+        var rows = ParseRows(query);
+        foreach (var row in rows)
+        {
+            output.WriteLine($"{row.Bin:O} {row.RtId} count={row.Count}");
+        }
+
+        var empty = rows.Where(r => r.Bin == emptyBin).ToList();
+        empty.Should().ContainSingle("an empty fixed-width bin is not filled per series");
+        empty[0].RtId.Should().BeNull();
+        empty[0].Count.Should().Be(0);
+        rows.Where(r => r.Bin == from).Select(r => r.RtId).Should().BeEquivalentTo(series,
+            "a populated bin has one row per series");
+        rows.Where(r => r.RtId is not null).Select(r => (r.RtId, r.Bin)).Should().OnlyHaveUniqueItems();
+    }
+
     // ── AC5: without the argument the result is unchanged ─────────────────────────────────────
 
     [Fact]
@@ -271,12 +300,15 @@ public class DownsamplingGroupByGraphQlTests(StreamDataFixture fixture, ITestOut
     }
 
     private async Task<ExecutionResult> ExecuteDownsamplingAsync(OctoObjectId archive, DateTime from, DateTime to,
-        string[]? groupBy, string selection, bool withSum = false, bool expectErrors = false)
+        string[]? groupBy, string selection, bool withSum = false, bool expectErrors = false, int? fixedWidthLimit = null)
     {
         var columns = withSum
             ? @"[{ attributePath: ""Voltage"", aggregationType: COUNT }, { attributePath: ""Voltage"", aggregationType: SUM }]"
             : @"[{ attributePath: ""Voltage"", aggregationType: COUNT }]";
         var groupByArg = groupBy is null ? "" : "groupByColumnPaths: $groupBy";
+        var binArgs = fixedWidthLimit is { } limit
+            ? $"limit: {limit}"
+            : $@"timeZone: ""{Zone}"" binOrigin: ""06:00"" binInterval: 1";
         var groupByVar = groupBy is null ? "" : ", $groupBy: [String!]";
         var query = $@"
             query ($archiveRtId: OctoObjectId!, $from: DateTime!, $to: DateTime!{groupByVar}) {{
@@ -287,9 +319,7 @@ public class DownsamplingGroupByGraphQlTests(StreamDataFixture fixture, ITestOut
                     columnPaths: {columns}
                     from: $from
                     to: $to
-                    timeZone: ""{Zone}""
-                    binOrigin: ""06:00""
-                    binInterval: 1
+                    {binArgs}
                     {groupByArg}
                     first: 1
                   ) {{

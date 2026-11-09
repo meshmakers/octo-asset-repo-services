@@ -6,9 +6,9 @@
   `["rtId"]`) and returns one row per series and bin instead of one total per bin. The value goes to the engine's
   `StreamDataDownsamplingQueryOptions.GroupByColumnPaths` (AB#7360); the series key is the cell `rtId` after `timestamp` and the
   first entry of `columns`. With local-day bins (`timeZone` / `binOrigin` / `binInterval`) every series gets every bin of the range,
-  an empty one with `COUNT` 0 and the other aggregations null, on raw archives and on `CalendarDay` rollups (the engine builds the
-  whole result and refuses more than 100,000 bins x series rows, independent of the page size); with fixed-width bins (`limit`) an
-  empty bin stays one row with a null `rtId`. `totalCount` and paging count series x bins. Other paths are refused with an error that names them (the engine's downsampling row carries
+  an empty one with `COUNT` 0 and the other aggregations null, on raw archives and on `CalendarDay` rollups (a series without data in the
+  whole range gets no rows; the engine builds the whole result and refuses more than 100,000 bins x series rows, independent of the
+  page size); with fixed-width bins (`limit`) there is no per-series fill and no such cap, an empty bin stays one row with a null `rtId`. `totalCount` and paging count series x bins. Other paths are refused with an error that names them (the engine's downsampling row carries
   no other group value; use `groupingAggregation`). Additive: without the argument the query, its engine call and its cells are
   unchanged; the simple-downsampling path (AB#4233) keeps its cells. Code `GraphQL/StreamDataDownsamplingGroupColumns`. Tests
   `UnitTests/GraphQL/StreamDataDownsamplingGroupColumnsTests`, `IntegrationTests/StreamData/DownsamplingGroupByGraphQlTests`
