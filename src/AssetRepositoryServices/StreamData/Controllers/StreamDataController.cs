@@ -632,6 +632,7 @@ public class StreamDataController : ControllerBase
     [ProducesResponseType(typeof(string), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ForbiddenErrorDto), StatusCodes.Status403Forbidden)]
     [ProducesResponseType(typeof(ManualWriteNotStoredRestDto), StatusCodes.Status409Conflict)]
+    [ProducesResponseType(typeof(string), StatusCodes.Status503ServiceUnavailable)]
     [Microsoft.AspNetCore.Authorization.Authorize(AssetRepositoryServiceConstants.TenantAssetApiReadWritePolicy)]
     public async Task<IActionResult> Insert(
         [Required] string tenantId,
@@ -730,6 +731,14 @@ public class StreamDataController : ControllerBase
             var result = await repository.InsertAsync(new OctoObjectId(archiveRtId), domainPoints);
             return Ok(StreamDataWriteResultRestDto.From(result));
         }
+        catch (Meshmakers.Octo.Runtime.Engine.CrateDb.StreamDataWriteIncompleteException e)
+        {
+            // AB#8679: CrateDB did not store every row (a memory circuit breaker, no error from CrateDB) and the retry
+            // did not either. The write failed; nothing of it may be read as stored or skipped. Sending it again is safe.
+            _logger.LogError(e, "Insert for tenant '{TenantId}', archive '{ArchiveRtId}' failed: {Reason}",
+                tenantId, archiveRtId, e.Message);
+            return StatusCode(StatusCodes.Status503ServiceUnavailable, e.Message);
+        }
         catch (ManualStreamDataNotAppliedException e)
         {
             // A manual value that could not be stored is never a success; the body says what was stored.
@@ -787,6 +796,7 @@ public class StreamDataController : ControllerBase
     [ProducesResponseType(typeof(string), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ForbiddenErrorDto), StatusCodes.Status403Forbidden)]
     [ProducesResponseType(typeof(ManualWriteNotStoredRestDto), StatusCodes.Status409Conflict)]
+    [ProducesResponseType(typeof(string), StatusCodes.Status503ServiceUnavailable)]
     [Microsoft.AspNetCore.Authorization.Authorize(AssetRepositoryServiceConstants.TenantAssetApiReadWritePolicy)]
     public async Task<IActionResult> InsertTimeRange(
         [Required] string tenantId,
@@ -887,6 +897,14 @@ public class StreamDataController : ControllerBase
             // AB#7598: the caller learns how many rows were stored and why the others were not.
             var result = await repository.InsertTimeRangeAsync(new OctoObjectId(archiveRtId), domainPoints);
             return Ok(StreamDataWriteResultRestDto.From(result));
+        }
+        catch (Meshmakers.Octo.Runtime.Engine.CrateDb.StreamDataWriteIncompleteException e)
+        {
+            // AB#8679: CrateDB did not store every row (a memory circuit breaker, no error from CrateDB) and the retry
+            // did not either. The write failed; nothing of it may be read as stored or skipped. Sending it again is safe.
+            _logger.LogError(e, "Insert for tenant '{TenantId}', archive '{ArchiveRtId}' failed: {Reason}",
+                tenantId, archiveRtId, e.Message);
+            return StatusCode(StatusCodes.Status503ServiceUnavailable, e.Message);
         }
         catch (ManualStreamDataNotAppliedException e)
         {
