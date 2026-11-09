@@ -1,0 +1,27 @@
+$schema: https://schemas.meshmakers.cloud/construction-kit-elements.schema.json
+types:
+# AB#8444 (F3.6): an asynchronous method that is actually invoked (AccessTestAccount.IssueToken-1 is async too, but its
+# result is sensitive, so it refuses an idempotency key). The tests' in-process handler accepts the call and finishes the
+# operation with the String result, or with the declared error.
+- typeId: AsyncOperationThing
+  derivedFromCkTypeId: ${System}/Entity
+  description: "AB#8444 test type with an asynchronous static method that returns an operation handle."
+  attributes:
+    - id: ${System}/Name
+      name: Name
+  methods:
+    - methodId: Export-1
+      kind: Static
+      description: "Asynchronous static method: the call returns the operation handle, the result is read later."
+      parameters:
+        - { name: label, valueType: String, isOptional: true }
+      result:
+        valueType: String
+      errors:
+        - code: EXPORT_FAILED
+      authorization:
+        roles: [ AccessTestAdmin ]
+      execution:
+        timeoutSeconds: 5
+        handler: service
+        mode: async

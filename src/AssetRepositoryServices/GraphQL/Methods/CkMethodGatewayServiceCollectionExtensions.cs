@@ -56,6 +56,20 @@ public static class CkMethodGatewayServiceCollectionExtensions
     }
 
     /// <summary>
+    ///     AB#8444 (F3.6): the read side of the operations of asynchronous methods: <see cref="ICkMethodOperationReader" />
+    ///     (who may read which record) for <c>runtime.operations</c>, and the sweep of AB#8443 that ends operations whose
+    ///     handler was lost (a reader runs no operation itself, so it registers no heartbeat). Needs a store
+    ///     (<c>AddCkMethodMongoOperationStore()</c> in production, the in-memory store in tests) and the method
+    ///     authorization options (<c>AddCkMethodAuthorization()</c>: the administrator roles).
+    /// </summary>
+    public static IServiceCollection AddCkMethodOperationReads(this IServiceCollection services)
+    {
+        services.AddCkMethodOperationSweep();
+        services.TryAddSingleton<ICkMethodOperationReader, CkMethodOperationReader>();
+        return services;
+    }
+
+    /// <summary>
     ///     Registers <see cref="OctoSessionAmbientStateProbe" /> as in-process ambient state probe, once (idempotent).
     /// </summary>
     internal static IServiceCollection AddOctoSessionAmbientStateProbe(this IServiceCollection services)

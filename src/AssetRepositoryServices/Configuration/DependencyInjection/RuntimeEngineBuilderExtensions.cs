@@ -403,6 +403,10 @@ public static class RuntimeEngineBuilderExtensions
             Meshmakers.Octo.Backend.AssetRepositoryServices.Services.Methods.MongoMethodIdempotencyStore>();
         // AB#6893: methods the gateway owns itself run in-process (no bus hop, not announced), through the same pipeline.
         builder.Services.AddGatewayOwnedCkMethodHandlers();
+        // AB#8444 (F3.6): runtime.operations reads the operation records of asynchronous methods from the system database
+        // (collection MethodOperations, AB#8443 store), and the sweep of this reader ends operations whose handler was lost.
+        builder.Services.AddCkMethodMongoOperationStore();
+        builder.Services.AddCkMethodOperationReads();
 
         // Mongo-backed repositories + blueprint history/installations.
         // Don't call AddRuntimeEngine() here: Program.cs already does, and

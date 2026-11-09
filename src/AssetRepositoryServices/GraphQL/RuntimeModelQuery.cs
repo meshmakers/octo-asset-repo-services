@@ -3,6 +3,7 @@ using GraphQL;
 using GraphQL.Builders;
 using GraphQL.Types;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Caches;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Methods;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Inputs;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Scalars;
@@ -50,6 +51,9 @@ internal sealed class RuntimeModelQuery : ObjectGraphType
             .Resolve(_ => new { });
 
         AddByInterfaceField(graphTypesCache);
+
+        // AB#8444 (F3.6): the operations of asynchronous CK methods; on every tenant, so a client can always poll a handle.
+        CkMethodOperationQueryField.Add(this);
 
         foreach (var rtEntityDtoType in graphTypesCache.GetTypes())
         {

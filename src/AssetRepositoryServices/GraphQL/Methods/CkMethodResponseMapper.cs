@@ -37,7 +37,27 @@ internal static class CkMethodResponseMapper
                 Allowed(error.Code, method) ? error : HandlerFailed(response, method, error.Code, logger)));
         }
 
-        // An accepted asynchronous call (F3.6) has no result yet: the caller gets the invocation id only.
+        // AB#8444 (F3.6): an asynchronous method answers with the operation handle; its result is read later through
+        // runtime.operations. A success without a handle breaks the contract of the method (an older handler that ran it
+        // synchronously): a handler failure with the correlation id, like a result that does not fit its declaration.
+        if (CkMethodGraphTypes.IsAsync(method.Definition))
+        {
+            if (response.Operation == null || string.IsNullOrWhiteSpace(response.Operation.OperationId))
+            {
+                logger?.LogError(
+                    "CK method {MethodId} invocation {InvocationId}: the asynchronous method was answered without an operation handle; answered METHOD_HANDLER_FAILED",
+                    method.QualifiedMethodId, response.InvocationId);
+                return new CkMethodGraphQlOutcome(null, CkMethodGraphQlError.Create(CkMethodError.Create(
+                    CkMethodErrorCodes.MethodHandlerFailed,
+                    (CkMethodErrorParameters.MethodId, method.QualifiedMethodId),
+                    (CkMethodErrorParameters.CorrelationId, response.InvocationId.ToString("D")))));
+            }
+
+            return new CkMethodGraphQlOutcome(
+                new CkMethodCallResult(response.InvocationId, null, response.Operation), null);
+        }
+
+        // A synchronous method that was nevertheless accepted has no result to show: the invocation id only (unchanged).
         if (response.Operation != null || method.Definition.Result == null || string.IsNullOrEmpty(response.ResultJson))
         {
             return new CkMethodGraphQlOutcome(new CkMethodCallResult(response.InvocationId, null), null);
