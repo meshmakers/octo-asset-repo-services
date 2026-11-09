@@ -613,12 +613,14 @@ public class StreamDataController : ControllerBase
     /// automated delivery, and protection is per row (a manual correction of one attribute protects the whole row).
     /// Each point may carry <c>origin</c> (<c>manual</c> | <c>automated</c>, absent = automated) and, only with
     /// <c>manual</c>, a <c>reason</c>; the writer and the write time come from the verified caller and the platform,
-    /// never from the body. A manual point must name every ingested column of the archive (explicit null allowed).
+    /// never from the body. A manual point must name every ingested column of the archive (explicit null allowed) except
+    /// the ranking columns.
     /// Absent and null differ (AB#8622): an attribute the point does not name keeps the stored value of its column, an
     /// attribute sent as <c>null</c> clears it, and a new row stores NULL for every column the point does not name.
     /// A ranking column (a column key of the archive's <c>ConflictPrecedence</c>) cannot be null: an explicit <c>null</c>
     /// on one answers 400 naming the point and the field, for automated and manual points; left out, it keeps its stored
-    /// value, which the conflict guard then compares (engine-mongodb AB#8622).
+    /// value, which the conflict guard then compares (engine-mongodb AB#8622). A manual point may therefore leave a
+    /// ranking column out, so a row whose ranking column is stored as NULL can still be corrected.
     /// Answers 200 with the write result, 204 for an empty batch, 409 with the result when a manual row could not be
     /// stored, and 400 naming the point and the field for every client error; nothing of a refused batch is written.
     /// A batch with a manual point needs the tenant role <c>StreamDataAdmin</c> besides the write scope, otherwise the
@@ -768,13 +770,14 @@ public class StreamDataController : ControllerBase
     /// manual row could not be stored. Every point is checked like the raw <c>insert</c> before anything is written, each
     /// a 400 naming the point and the field (AB#8590): missing or sub-millisecond <c>from</c>/<c>to</c>, invalid origin,
     /// reason without manual, ckTypeId mismatch, and an attribute that is no ingested column or a computed column (also
-    /// for automated points). A manual point must name every ingested column of the archive (explicit null allowed),
-    /// otherwise the batch answers 400 listing the missing columns (AB#8590 AC 9).
+    /// for automated points). A manual point must name every ingested column of the archive (explicit null allowed) except
+    /// the ranking columns, otherwise the batch answers 400 listing the missing columns (AB#8590 AC 9).
     /// Absent and null differ (AB#8622): an attribute the point does not name keeps the stored value of its column, an
     /// attribute sent as <c>null</c> clears it, and a new row stores NULL for every column the point does not name.
     /// A ranking column (a column key of the archive's <c>ConflictPrecedence</c>) cannot be null: an explicit <c>null</c>
     /// on one answers 400 naming the point and the field, for automated and manual points; left out, it keeps its stored
-    /// value, which the conflict guard then compares (engine-mongodb AB#8622).
+    /// value, which the conflict guard then compares (engine-mongodb AB#8622). A manual point may therefore leave a
+    /// ranking column out, so a row whose ranking column is stored as NULL can still be corrected.
     /// A batch with a manual point needs the tenant role <c>StreamDataAdmin</c> besides the write scope, otherwise the
     /// whole batch answers 403 (AB#8590 AC 8).
     /// </summary>
@@ -844,7 +847,7 @@ public class StreamDataController : ControllerBase
 
                 // AB#8590 point 11: the same column checks as the raw insert, for every point. An unknown or computed key
                 // would be dropped by the repository without a word, so the caller would believe it was written. AC 9: a
-                // manual point protects the whole row, so it must name every ingested column.
+                // manual point protects the whole row, so it must name every ingested column except the ranking columns.
                 if (snapshot is not null)
                 {
                     var columnError = ArchivePointValidation.CheckColumns(

@@ -42,14 +42,15 @@ internal static class ArchivePointValidation
     /// name every ingested column (AB#8590 decision D1 for the raw insert, AC 9 for the time range: the origin is stored
     /// per row, so a manual point marks the whole row manual and protects every column of it, and it has to state each
     /// value it protects; an explicit <c>null</c> is a valid answer. Before engine-mongodb AB#8622 an unsent column was
-    /// also cleared; since then it keeps its stored value). Keys are matched like the repository maps them to the storage column: segments
+    /// also cleared; since then it keeps its stored value). Ranking columns are exempt from that rule (below). Keys are matched like the repository maps them to the storage column: segments
     /// concatenated, case-insensitive. Used by both the raw <c>insert</c> and <c>insertTimeRange</c>, for automated and
     /// manual points: an unknown or computed key would otherwise be dropped by the repository without a word.
     /// <para>
     /// A ranking column (a column key of the archive's <c>ConflictPrecedence</c>; <c>$Origin</c> is no column) cannot be
     /// null (engine-mongodb AB#8622, decided by Reimar 2026-11-09): an explicit <c>null</c> on one is refused for automated
     /// and manual points. A ranking column a point leaves out keeps its stored value and counts as that value when the
-    /// write is ranked.
+    /// write is ranked. That is why a manual point need not name the ranking columns (decided by Odin 2026-11-09): a
+    /// correction of a row whose ranking column is stored as NULL can only leave it out, since it cannot send null.
     /// </para>
     /// </summary>
     public static string? CheckColumns(int index, IReadOnlyDictionary<string, object?> attributes, ArchiveSnapshot snapshot,
@@ -94,14 +95,11 @@ internal static class ArchivePointValidation
             if (IsNull(attributes[key]) && ranking.Contains(name))
             {
                 return $"Point {index}: attribute '{key}' is a ranking column of archive '{snapshot.RtId}' (ConflictPrecedence) " +
-                       "and cannot be null. " +
-                       (manual
-                           ? "Send its value."
-                           : "Send a value, or leave the attribute out to keep the stored value.");
+                       "and cannot be null. Send a value, or leave the attribute out to keep the stored value.";
             }
         }
 
-        return manual ? MissingColumnsMessage(index, ingested, named.Keys, snapshot) : null;
+        return manual ? MissingColumnsMessage(index, ingested, ranking, named.Keys, snapshot) : null;
     }
 
     /// <summary>The storage names of the archive's ranking columns (column keys of the conflict precedence).</summary>
@@ -138,14 +136,14 @@ internal static class ArchivePointValidation
     }
 
     private static string? MissingColumnsMessage(int index, Dictionary<string, string> ingested,
-        IEnumerable<string> namedStorageNames, ArchiveSnapshot snapshot)
+        HashSet<string> ranking, IEnumerable<string> namedStorageNames, ArchiveSnapshot snapshot)
     {
         var named = namedStorageNames as ISet<string> ?? new HashSet<string>(namedStorageNames, StringComparer.Ordinal);
-        var missing = ingested.Where(c => !named.Contains(c.Key)).Select(c => c.Value).ToList();
+        var missing = ingested.Where(c => !named.Contains(c.Key) && !ranking.Contains(c.Key)).Select(c => c.Value).ToList();
         return missing.Count == 0
             ? null
             : $"Point {index}: a manual point must name every ingested column of archive '{snapshot.RtId}' " +
-              $"(null is allowed). Missing: {Describe(missing)}.";
+              $"(null is allowed; ranking columns may be left out and keep their stored value). Missing: {Describe(missing)}.";
     }
 
     private static string Describe(IEnumerable<string> paths)

@@ -366,6 +366,33 @@ public class StreamDataControllerInsertRawTests
         result.Should().BeOfType<OkObjectResult>();
     }
 
+    [Fact]
+    public async Task Insert_AManualPointWithoutItsRankingColumns_IsAccepted_TheyKeepTheirStoredValues()
+    {
+        GivenRankedArchive();
+
+        var result = await Insert(OnePoint("""{ "Amount.Value": 1.5 }""", ", \"origin\": \"manual\""));
+
+        result.Should().BeOfType<OkObjectResult>();
+        var point = CapturedInsert().Points.Single();
+        point.Origin.Should().Be(ArchiveRowOrigin.Manual);
+        point.Attributes.Should().ContainSingle().Which.Key.Should().Be("Amount.Value",
+            "a ranking column the point leaves out is not sent, so it keeps its stored value");
+    }
+
+    [Fact]
+    public async Task Insert_AManualPointWithoutANormalColumn_StillAnswers400NamingIt_NotTheRankingColumns()
+    {
+        GivenRankedArchive();
+
+        var result = await Insert(OnePoint("""{ "DataQuality": 1 }""", ", \"origin\": \"manual\""));
+
+        var message = BadRequestMessage(result);
+        message.Should().Contain("Point 0").And.Contain("Missing: 'Amount.Value'.");
+        message.Should().NotContain("'Source.DocumentDate'", "a ranking column may be left out");
+        NothingWritten();
+    }
+
     // ---- unknown and computed columns, ckTypeId, identity --------------------------------------------------
 
     [Fact]

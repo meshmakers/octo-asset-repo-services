@@ -493,6 +493,40 @@ public class StreamDataControllerInsertTimeRangeTests
     }
 
     [Fact]
+    public async Task InsertTimeRange_AManualPointWithoutItsRankingColumns_IsAccepted()
+    {
+        GivenRankedTimeRangeArchive();
+        SignInAs(new System.Security.Claims.Claim("sub", "user-1"), StreamDataAdmin);
+
+        var result = await _controller.InsertTimeRange(TenantId, _archiveRtId.ToString(), Bind(OnePoint(", \"origin\": \"manual\"")));
+
+        result.Should().BeOfType<OkObjectResult>();
+        var point = CapturedInsert().Points.Single();
+        point.Origin.Should().Be(ArchiveRowOrigin.Manual);
+        point.Attributes.Should().ContainSingle().Which.Key.Should().Be("Amount.Value",
+            "a ranking column the point leaves out is not sent, so it keeps its stored value");
+    }
+
+    [Fact]
+    public async Task InsertTimeRange_AManualPointWithoutANormalColumn_StillAnswers400NamingIt()
+    {
+        GivenRankedTimeRangeArchive();
+        SignInAs(new System.Security.Claims.Claim("sub", "user-1"), StreamDataAdmin);
+        var body = $$"""
+            [{ "rtId": "{{_rtId}}", "ckTypeId": "{{CkTypeId}}",
+               "from": "2026-08-31T22:00:00Z", "to": "2026-09-01T22:00:00Z",
+               "attributes": { "DataQuality": 2 }, "origin": "manual" }]
+            """;
+
+        var result = await _controller.InsertTimeRange(TenantId, _archiveRtId.ToString(), Bind(body));
+
+        var message = BadRequestMessage(result);
+        message.Should().Contain("Point 0").And.Contain("Missing: 'Amount.Value'.");
+        message.Should().NotContain("'SourceDocumentDate'", "a ranking column may be left out");
+        RepositoryWasNotCalled();
+    }
+
+    [Fact]
     public async Task InsertTimeRange_AnAutomatedPointMissingAColumn_IsPassedOnUnchanged()
     {
         GivenTimeRangeArchiveWithTwoColumns();

@@ -34,10 +34,11 @@ public sealed class InsertRawPointRestDto
     /// <summary>
     /// Ingested column values keyed by attribute path (e.g. <c>Amount.Value</c>), as in the archive's columns. A key that
     /// is no ingested column of the archive, or that names a computed column, refuses the batch with HTTP 400. A manual
-    /// point must name every ingested column (an explicit <c>null</c> is allowed), so a manual row states every value it
-    /// protects. An attribute the point does not name keeps the stored value of its column, an attribute sent as
+    /// point must name every ingested column except the ranking columns (an explicit <c>null</c> is allowed), so a manual
+    /// row states every value it protects. An attribute the point does not name keeps the stored value of its column, an attribute sent as
     /// <c>null</c> clears it; a new row stores NULL for every column the point does not name (AB#8622). A ranking column
-    /// of the archive's conflict precedence cannot be null: an explicit <c>null</c> on one is refused with HTTP 400.
+    /// of the archive's conflict precedence cannot be null: an explicit <c>null</c> on one is refused with HTTP 400. A
+    /// manual point may leave a ranking column out; it then keeps its stored value (AB#8622).
     /// </summary>
     /// <remarks>
     /// Materialized by <see cref="RtAttributesConverter" /> to CLR scalars, the same rules as

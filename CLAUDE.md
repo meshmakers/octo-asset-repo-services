@@ -397,8 +397,9 @@ Time-series data support (`StreamData/`):
     (column key of the archive's `ConflictPrecedence`; `$Origin` is no column) cannot be null** (engine-mongodb AB#8622, decided by
     Reimar 2026-11-09): an explicit `null` on one answers 400 naming the point and the key, on `insert` and `insertTimeRange`,
     automated and manual (`ArchivePointValidation.CheckColumns`; the engine refuses it too, `ArchiveRankingColumnValidator`).
-    Left out, a ranking column keeps its stored value and the guard compares that value. A manual point must therefore send
-    each ranking column with a value. **Same point checks
+    Left out, a ranking column keeps its stored value and the guard compares that value. **Ranking columns are exempt from the
+    manual full-row rule** (decided by Odin 2026-11-09): a manual point may leave them out and they keep their stored value, so a
+    correction of a row whose ranking column is stored as NULL is possible. **Same point checks
     as the raw `insert` (AB#8590)**, for automated and manual points, each a 400 naming the point and the field, nothing of the batch
     written: missing or sub-millisecond `from`/`to` (UTC normalization like the raw timestamp, `ArchivePointValidation.NormalizeTimestamp`),
     and an attribute that is no ingested column, a computed column, or a second key for the same column
