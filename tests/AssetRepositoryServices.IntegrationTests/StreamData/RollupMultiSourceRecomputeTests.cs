@@ -276,14 +276,14 @@ public class RollupMultiSourceRecomputeTests(ImmediateSweepStreamDataFixture fix
     [Fact]
     public async Task ASingleTimestampCorrection_SchedulesExactlyOneBucketRecomputeOnTheDependent()
     {
-        // The retroactive-write detector builds the dirty window as [earliest, latest + 1 tick) so a
+        // The retroactive-write detector builds the dirty window as [earliest, latest + 1 ms) so a
         // correction consisting of ONE timestamp still covers a non-empty interval. Mongo stores
-        // DateTime at millisecond resolution, so that single tick is lost and the persisted window
-        // is degenerate ([t, t)). Since AB#5157 the propagation clips the window to the writing
-        // source's validity span BEFORE aligning it to buckets, and RollupSourceReference.Clip
-        // requires from < to — which would discard the correction outright. The orchestrator
-        // therefore widens a degenerate window back to one tick before clipping it, so a
-        // single-point correction (the most common shape of a corrected meter reading) still
+        // DateTime at millisecond resolution; until AB#8621 the end was latest + 1 tick, which the
+        // store cut away, leaving a degenerate window ([t, t)). Since AB#5157 the propagation clips
+        // the window to the writing source's validity span BEFORE aligning it to buckets, and
+        // RollupSourceReference.Clip requires from < to, so the window must keep its width through
+        // the store (the orchestrator still widens a degenerate window an older engine recorded).
+        // Either way a single-point correction (the most common shape of a corrected meter reading)
         // enqueues exactly the one bucket that contains it.
         fixture.OutputHelper = output;
         var ladder = await BuildLadderAsync("RecSingleTimestamp");
@@ -297,14 +297,13 @@ public class RollupMultiSourceRecomputeTests(ImmediateSweepStreamDataFixture fix
 
         var windows = await DirtyWindowsAsync(ladder.Legacy);
         windows.Should().ContainSingle("the write IS detected as retroactive");
-        windows[0].WindowEnd.Should().Be(windows[0].WindowStart,
-            "the one-tick width the detector added does not survive Mongo's millisecond resolution");
+        windows[0].WindowEnd.Should().Be(windows[0].WindowStart.AddMilliseconds(1),
+            "the detector's one-millisecond width survives Mongo's millisecond resolution (AB#8621)");
 
         await (await OrchestratorAsync()).PropagateDirtyWindowsAsync(ladder.Legacy, CancellationToken.None);
 
         var range = (await PendingRangesAsync(ladder.Rollup)).Should().ContainSingle(
-            "the degenerate window is widened to one tick before it is clipped to the legacy span, "
-            + "so it still aligns to exactly one bucket").Subject;
+            "the one-millisecond window is clipped to the legacy span and aligns to exactly one bucket").Subject;
         range.RangeStart.Should().Be(correctedBucket);
         range.RangeEnd.Should().Be(correctedBucket.AddHours(1),
             "exactly the bucket that contains the corrected timestamp — no neighbour is dragged in");
