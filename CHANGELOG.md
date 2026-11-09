@@ -19,8 +19,9 @@
   in-process through the engine and never reach this gate (corrected by AB#8583). **Operator note:** pipeline service accounts
   need no manual grant - the communication controller adds `StreamDataReader` to declarative pipeline service accounts on
   reconcile (AB#8563), and identity grants it to legacy `octo-pipeline-sa-*` accounts at every tenant setup (AB#8581); the
-  manual `octo-cli -c AddClientToRole ... StreamDataReader` step is no longer needed once those versions run. Archive metadata queries (`rollupsFor`, `coverageFor`, `recomputeJobsFor`,
-  `archivesStorageStats`, `rollupQueryMetadata`, `resolveSeriesQuery`) are not gated. Tests
+  manual `octo-cli -c AddClientToRole ... StreamDataReader` step is no longer needed once those versions run and a
+  reconcile or tenant setup has granted the role (until then the account may lack it and its reads fail under `Enforce`).
+  Archive metadata queries (`rollupsFor`, `coverageFor`, `recomputeJobsFor`, `archivesStorageStats`, `rollupQueryMetadata`, `resolveSeriesQuery`) are not gated. Tests
   `UnitTests/GraphQL/StreamDataReadRoleGateTests`, `IntegrationTests/StreamData/StreamDataReadRoleGateTests` (mode x caller x
   query kind).
 - AB#8529 New (**breaking change for external clients**): changing a tenant's data model requires the tenant role

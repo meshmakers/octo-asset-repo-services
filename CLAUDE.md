@@ -1738,8 +1738,9 @@ let every token of the tenant read all stream data of types without a data polic
   time series in Studio, Grafana, Excel or the solution frontends. Mesh-adapter pipelines (EC allocation, billing, simulation, ...)
   read in-process and are not affected (AB#8583 corrected the earlier note). Pipeline service accounts get `StreamDataReader`
   automatically: declarative accounts from the communication controller on reconcile (AB#8563,
-  `PipelineServiceAccountProvisioningService`), legacy `octo-pipeline-sa-*` accounts from identity at tenant setup (AB#8581);
-  no manual `AddClientToRole` any more.
+  `PipelineServiceAccountProvisioningService`), legacy `octo-pipeline-sa-*` accounts from identity at tenant setup (AB#8581).
+  A manual `AddClientToRole` is unnecessary only once both versions run and a reconcile or tenant setup has granted the role;
+  until then a pipeline service account may lack `StreamDataReader` and its gated GraphQL reads fail under `Enforce`.
 - Tests: `UnitTests/GraphQL/StreamDataReadRoleGateTests` (modes x roles, claim spellings, system context, warn window, error code),
   `IntegrationTests/StreamData/StreamDataReadRoleGateTests` (mode x caller x query kind through the GraphQL layer). A new
   stream-data read resolver must call `EnsureStreamReadAllowedAsync`.
