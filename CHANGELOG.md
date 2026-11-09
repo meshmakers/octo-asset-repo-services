@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- AB#8622 Docs: `insert` and `insertTimeRange` name the absent-versus-null rule of the archive writes (engine-mongodb AB#8622):
+  an attribute the point does not name keeps the stored value of its column, an attribute sent as `null` clears it, and a
+  new row stores NULL for every column the point does not name. **Behaviour change for automated points** (no code change
+  here, it comes with the engine package): a partial re-delivery no longer clears the columns it did not send. The REST
+  body keeps the two apart (`RtAttributesConverter` keeps a JSON `null` as a key with a null value). Manual points must
+  still name every ingested column (AB#8590): a manual point protects the whole row.
 - AB#8590 Fix: `insertTimeRange` refuses unknown and computed columns and sub-millisecond windows, with the same rules as the raw
   `insert` (shared `ArchivePointValidation`). A key that is no ingested column of the archive, a computed column, or a second key for
   the same column used to be dropped by the repository while the call answered 200, so a manual correction looked stored. Such a

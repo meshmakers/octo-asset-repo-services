@@ -390,9 +390,10 @@ Time-series data support (`StreamData/`):
     subject id; `client_id` only when the token has no subject), **never** a body field;
     the platform time is set by the repository. 400 for an unknown origin (names the valid values), a reason without
     `manual`, and a manual write whose token names no identity; nothing of the batch is written. **A manual point must name
-    every ingested column of the archive (AB#8590 AC 9)**, explicit `null` allowed: the upsert writes every ingested column and
-    binds an unsent one as NULL (engine-mongodb `CrateDatabaseClient` time-range insert, `DO UPDATE SET <col> = EXCLUDED.<col>`), so a
-    correction of one column would clear the others. Otherwise 400 listing the missing columns, nothing written. **Same point checks
+    every ingested column of the archive (AB#8590 AC 9)**, explicit `null` allowed. Before engine-mongodb AB#8622 the upsert bound
+    an unsent column as NULL and a correction of one column cleared the others; since AB#8622 an unsent column keeps its stored
+    value, and the rule stays because the origin is stored per row: a manual point marks the whole row manual and protects it,
+    so it has to state every value it protects. Otherwise 400 listing the missing columns, nothing written. **Same point checks
     as the raw `insert` (AB#8590)**, for automated and manual points, each a 400 naming the point and the field, nothing of the batch
     written: missing or sub-millisecond `from`/`to` (UTC normalization like the raw timestamp, `ArchivePointValidation.NormalizeTimestamp`),
     and an attribute that is no ingested column, a computed column, or a second key for the same column
@@ -417,8 +418,7 @@ Time-series data support (`StreamData/`):
     not the archive's target (shared `CkTypeMismatchMessage`), an attribute that is no ingested column or a computed column, two
     keys for the same column (keys are matched like the storage column: segments concatenated, case-insensitive), a time-range
     or rollup archive, and — decision D1 of AB#7657 — a **manual** point that does not name every ingested column (explicit
-    `null` allowed; the message lists the missing columns), because the upsert writes every ingested column and an unsent one
-    would become NULL. A value that does not fit its column type is refused by the repository's value check (engine-mongodb
+    `null` allowed; the message lists the missing columns), because a manual point protects the whole row (see `insertTimeRange`). A value that does not fit its column type is refused by the repository's value check (engine-mongodb
     AB#8606, `ArgumentException`) and answered 400 like the time-range path. Answers 200 `StreamDataWriteResultRestDto`
     (a skipped raw row has `from` = timestamp, `to` = null), 204 for an empty batch, 409 `ManualWriteNotStoredRestDto` when a
     manual row was not stored, 403 via the policy and for a manual point without the role `StreamDataAdmin` (see below). Without a readable archive snapshot (stream data off, unknown archive) the

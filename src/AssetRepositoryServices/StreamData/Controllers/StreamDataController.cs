@@ -614,6 +614,8 @@ public class StreamDataController : ControllerBase
     /// Each point may carry <c>origin</c> (<c>manual</c> | <c>automated</c>, absent = automated) and, only with
     /// <c>manual</c>, a <c>reason</c>; the writer and the write time come from the verified caller and the platform,
     /// never from the body. A manual point must name every ingested column of the archive (explicit null allowed).
+    /// Absent and null differ (AB#8622): an attribute the point does not name keeps the stored value of its column, an
+    /// attribute sent as <c>null</c> clears it, and a new row stores NULL for every column the point does not name.
     /// Answers 200 with the write result, 204 for an empty batch, 409 with the result when a manual row could not be
     /// stored, and 400 naming the point and the field for every client error; nothing of a refused batch is written.
     /// A batch with a manual point needs the tenant role <c>StreamDataAdmin</c> besides the write scope, otherwise the
@@ -765,6 +767,8 @@ public class StreamDataController : ControllerBase
     /// reason without manual, ckTypeId mismatch, and an attribute that is no ingested column or a computed column (also
     /// for automated points). A manual point must name every ingested column of the archive (explicit null allowed),
     /// otherwise the batch answers 400 listing the missing columns (AB#8590 AC 9).
+    /// Absent and null differ (AB#8622): an attribute the point does not name keeps the stored value of its column, an
+    /// attribute sent as <c>null</c> clears it, and a new row stores NULL for every column the point does not name.
     /// A batch with a manual point needs the tenant role <c>StreamDataAdmin</c> besides the write scope, otherwise the
     /// whole batch answers 403 (AB#8590 AC 8).
     /// </summary>
@@ -833,8 +837,8 @@ public class StreamDataController : ControllerBase
                 }
 
                 // AB#8590 point 11: the same column checks as the raw insert, for every point. An unknown or computed key
-                // would be dropped by the repository without a word, so the caller would believe it was written. AC 9: the
-                // upsert binds every ingested column, so a manual point must name each one (an unsent one would become NULL).
+                // would be dropped by the repository without a word, so the caller would believe it was written. AC 9: a
+                // manual point protects the whole row, so it must name every ingested column.
                 if (snapshot is not null)
                 {
                     var columnError = ArchivePointValidation.CheckColumns(

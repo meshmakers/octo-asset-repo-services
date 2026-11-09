@@ -393,8 +393,8 @@ public class StreamDataControllerInsertTimeRangeTests
     // ---- AB#8590 AC 9: a manual point names every ingested column -------------------------------------------
 
     /// <summary>
-    /// A time-range archive with two ingested columns and one computed column. The upsert writes every ingested
-    /// column and binds an unsent one as NULL, so a manual point that leaves one out would clear its stored value.
+    /// A time-range archive with two ingested columns and one computed column. A manual point protects the whole row,
+    /// so it must name both ingested columns (AB#8590 AC 9).
     /// </summary>
     private void GivenTimeRangeArchiveWithTwoColumns() =>
         A.CallTo(() => _archiveStore.GetAsync(_archiveRtId)).Returns(

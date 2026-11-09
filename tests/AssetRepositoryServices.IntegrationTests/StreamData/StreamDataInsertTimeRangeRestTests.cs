@@ -368,8 +368,8 @@ public class StreamDataInsertTimeRangeRestTests(StreamDataFixture fixture, ITest
     }
 
     /// <summary>
-    /// AB#8590 AC 9: the upsert writes every ingested column and binds an unsent one as NULL, so a manual point that
-    /// left a column out cleared its stored value silently. Such a point is now refused with 400 naming the missing
+    /// AB#8590 AC 9: a manual point protects the whole row, so it must name every column (before engine-mongodb
+    /// AB#8622 a point that left a column out also cleared its stored value). A point that leaves one out is refused with 400 naming the missing
     /// column and the stored row stays as it was; a manual point that names every column (one explicitly null) is
     /// stored as sent.
     /// </summary>

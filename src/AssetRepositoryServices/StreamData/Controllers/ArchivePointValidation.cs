@@ -38,9 +38,10 @@ internal static class ArchivePointValidation
     /// <summary>
     /// Refuses attribute keys that are no ingested column of the archive (unknown, or a computed column the archive
     /// calculates itself), keys that address the same column twice, and — for a manual point — a point that does not
-    /// name every ingested column (AB#8590 decision D1 for the raw insert, AC 9 for the time range: the upsert writes every
-    /// ingested column and binds an unsent one as NULL, so a left-out column would be cleared silently; an explicit
-    /// <c>null</c> is a valid answer). Keys are matched like the repository maps them to the storage column: segments
+    /// name every ingested column (AB#8590 decision D1 for the raw insert, AC 9 for the time range: the origin is stored
+    /// per row, so a manual point marks the whole row manual and protects every column of it, and it has to state each
+    /// value it protects; an explicit <c>null</c> is a valid answer. Before engine-mongodb AB#8622 an unsent column was
+    /// also cleared; since then it keeps its stored value). Keys are matched like the repository maps them to the storage column: segments
     /// concatenated, case-insensitive. Used by both the raw <c>insert</c> and <c>insertTimeRange</c>, for automated and
     /// manual points: an unknown or computed key would otherwise be dropped by the repository without a word.
     /// </summary>
