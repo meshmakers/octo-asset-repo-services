@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- AB#8667 Fix: the GraphQL schema of a tenant follows its CK cache. The cached schema remembers the CK cache load it was
+  built from and is rebuilt when the cache was unloaded or reloaded since - also when no `PosUpdateTenant` reached this
+  process (a reload by the AB#5415 fallback or the display-rule sweeper, or an event published before the service listened
+  to the bus at start). Before, a schema built at start from a cache that predated another service's import (e.g. the
+  System.StreamData bump that adds the time-range archive types) stayed without the new types until a manual ClearCache,
+  and Studio showed "Failed to load archive content". An unchanged cache keeps the cached schema. Needs engine-mongodb
+  AB#8667 for the cache itself to drop the stale model at start.
+
 - AB#8622 Fix: a manual point of `insert` and `insertTimeRange` may leave the ranking columns out (the column keys of the
   archive's `ConflictPrecedence`); they keep their stored value. Every other ingested column still has to be named (AB#8590).
   Before, a correction of a row whose ranking column is stored as NULL was impossible: naming the column needs a value, and

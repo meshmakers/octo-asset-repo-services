@@ -649,7 +649,14 @@ N:M associations are exposed as query columns with `::totalCount` (INT64) and `:
   schema init); `OctoSchema` maps CLR `DateTime` to the UTC scalar for auto-mapped fields.
   `SimpleScalarType.Serialize` applies the same normalization to top-level DateTime cell values.
 - Schema caching is automatic per tenant (up to 64 cached schemas)
-- Schema invalidation happens via `SchemaContext.Invalidate(tenantId)`
+- Schema invalidation happens via `SchemaContext.Invalidate(tenantId)` (on `PosUpdateTenant` / `PreDeleteTenant`) **and**
+  whenever the tenant's CK cache was unloaded or reloaded since the schema was built (AB#8667): the cached schema carries
+  the marker of the CK cache load it was populated from (`CkCacheGeneration`, the type collection instance that is replaced
+  on every reload, the same marker as the hidden-name cache), and `GetOrCreateAsync` rebuilds when it no longer matches.
+  This covers the reloads that send no tenant event - the AB#5415 stale-type fallback, the display-rule sweeper - and a
+  `PosUpdateTenant` that was published before this process listened to the bus (service start). An unchanged cache costs
+  one dictionary lookup and a reference compare per request. Tests: `GraphQL/Schema/SchemaFollowsCkCacheTests`,
+  `UnitTests/GraphQL/CkCacheGenerationTests`.
 - The schema is **initialized eagerly** inside `SchemaContext.GetOrCreateAsync` (not lazily on the first request),
   so an invalid schema is never cached and the build time is measured completely. Every build logs at Information:
   `GraphQL schema for tenant {TenantId} built in {ElapsedMs} ms ({TypeCount} types, {InterfaceCount} CK interfaces,
