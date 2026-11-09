@@ -99,7 +99,7 @@ internal sealed class StreamDataTransientQuery : ObjectGraphType
             .Argument<StringGraphType>(BinOriginArg,
                 "Optional local time of day 'HH:mm' at which a bin starts (e.g. '06:00' for a gas day). Null means midnight. Same meaning as dayStartOffsetMs of a CALENDAR_DAY rollup.")
             .Argument<ListGraphType<NonNullGraphType<StringGraphType>>>(Statics.GroupByColumnPathsArg,
-                "Optional series key: one row per series and bin instead of one total per bin. Supported: 'rtId'. The key is returned as a cell after 'timestamp'. With local-day bins every series gets every bin (COUNT 0, other aggregations null on an empty bin).")
+                "Optional series key: one row per series and bin instead of one total per bin. Supported: 'rtId'. The key is returned as a cell after 'timestamp'. With local-day bins every series gets every bin (COUNT 0, other aggregations null on an empty bin); at most 100,000 bins x series rows per query, else the query is refused. With fixed-width bins (limit) an empty bin is one row with a null rtId.")
             .Argument<NonNullGraphType<UtcDateTimeGraphType>>("from",
                 "Start of time range.")
             .Argument<NonNullGraphType<UtcDateTimeGraphType>>("to",

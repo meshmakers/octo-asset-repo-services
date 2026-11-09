@@ -160,7 +160,8 @@ at create time) and `rollupsFor.dayStartOffsetMs` (REST `archives/{id}/rollups` 
 rollup snapshot, AB#8275); transient `downsampling(timeZone, binInterval, binOrigin)` builds local-day bins
 (`GraphQL/StreamDataLocalDayBins`: parses `binOrigin` `HH:mm`, checks `binInterval >= 1`, runs `DownsamplingBinAxis.Resolve` before the
 repository call; `limit` is required only without these arguments; `groupByColumnPaths: ["rtId"]` (AB#8647,
-`GraphQL/StreamDataDownsamplingGroupColumns`) gives one row per series and bin with the cell `rtId` after `timestamp`, other paths
+`GraphQL/StreamDataDownsamplingGroupColumns`) gives one row per series and bin with the cell `rtId` after `timestamp` (per-series empty bins only with local-day bins, engine cap
+100,000 bins x series rows; fixed-width empty bins stay one row with a null `rtId`), other paths
 are refused because the engine's downsampling row carries only the rtId; `StreamDataTransientUserContext.GroupColumnsInRows` keeps
 the AB#4233 simple-downsampling cells unchanged); `resolveSeriesQuery(dayStartOffsetMs | binOrigin)` sets
 `SeriesResolutionRequest.QueryDayStartOffsetMs` in `StreamDataQuery.BuildSeriesResolutionRequest` — without it a gas-day rollup is never
