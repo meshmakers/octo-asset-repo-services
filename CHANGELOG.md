@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- AB#8590 New: `POST {tenantId}/v1/streamdata/archives/{archiveRtId}/insert` writes and corrects rows of a raw archive with
+  `origin` (`manual` | `automated`) and an optional `reason`, through the existing raw `IStreamDataRepository.InsertAsync` (origin,
+  writer, manual protection and write result since AB#5968). Row identity: archive + `rtId` + `timestamp` (UTC, milliseconds);
+  protection is per row. A manual point must name every ingested column (explicit null allowed). Client errors (invalid id,
+  origin, reason without manual, token without writer, ckTypeId mismatch, unknown or computed column, sub-millisecond timestamp,
+  time-range or rollup archive, value not fitting its column) answer 400 naming point and field; 200 with the write result, 204
+  for an empty batch, 409 when a manual row was not stored. The ckTypeId check of `insertTimeRange` is shared, unchanged.
 - AB#8559 Fix (security, staged): stream-data reads require one of the tenant roles `StreamDataReader`, `StreamDataWriter`
   or `StreamDataAdmin`. Until now every authenticated token of a tenant read all stream data, because the GraphQL endpoint only
   requires an authenticated user and the data-policy check (AB#4973) is open for CK types without a policy; the seeded role

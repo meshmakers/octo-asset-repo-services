@@ -605,6 +605,145 @@ public class StreamDataController : ControllerBase
     }
 
     /// <summary>
+    /// Inserts or corrects data points of a raw archive (AB#8590). A raw row is identified by archive + <c>rtId</c> +
+    /// <c>timestamp</c> (UTC, millisecond precision); the CK type is fixed per archive. A write with an existing identity
+    /// replaces the stored row subject to the archive's conflict precedence: a manual row is never replaced by an
+    /// automated delivery, and protection is per row (a manual correction of one attribute protects the whole row).
+    /// Each point may carry <c>origin</c> (<c>manual</c> | <c>automated</c>, absent = automated) and, only with
+    /// <c>manual</c>, a <c>reason</c>; the writer and the write time come from the verified caller and the platform,
+    /// never from the body. A manual point must name every ingested column of the archive (explicit null allowed).
+    /// Answers 200 with the write result, 204 for an empty batch, 409 with the result when a manual row could not be
+    /// stored, and 400 naming the point and the field for every client error; nothing of a refused batch is written.
+    /// </summary>
+    [HttpPost("archives/{archiveRtId}/insert")]
+    [ProducesResponseType(typeof(StreamDataWriteResultRestDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(typeof(string), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ManualWriteNotStoredRestDto), StatusCodes.Status409Conflict)]
+    [Microsoft.AspNetCore.Authorization.Authorize(AssetRepositoryServiceConstants.TenantAssetApiReadWritePolicy)]
+    public async Task<IActionResult> Insert(
+        [Required] string tenantId,
+        [Required] string archiveRtId,
+        [FromBody] IReadOnlyList<InsertRawPointRestDto> points)
+    {
+        try
+        {
+            if (points is null || points.Count == 0)
+            {
+                return NoContent();
+            }
+
+            var tenantContext = await _systemContext.FindTenantContextAsync(tenantId);
+            var repository = tenantContext.GetStreamDataRepository()
+                ?? throw new StreamDataException(
+                    $"StreamData is not enabled for tenant '{tenantId}'. Call POST /streamdata/enable first.");
+
+            var snapshot = await LoadArchiveSnapshotAsync(tenantContext, archiveRtId);
+            if (snapshot is { UsesWindowedStorage: true })
+            {
+                return BadRequest(snapshot.IsTimeRange
+                    ? $"Archive '{archiveRtId}' is a time-range archive. Write its rows with POST archives/{archiveRtId}/insertTimeRange."
+                    : $"Archive '{archiveRtId}' is a rollup archive. Its rows are computed from the source archive and cannot be written.");
+            }
+
+            var mismatch = CkTypeMismatchMessage(archiveRtId, snapshot, points.Select(p => p.CkTypeId));
+            if (mismatch is not null)
+            {
+                return BadRequest(mismatch);
+            }
+
+            var rtIds = new OctoObjectId[points.Count];
+            var timestamps = new DateTime[points.Count];
+            var origins = new ArchiveRowOrigin[points.Count];
+            for (var i = 0; i < points.Count; i++)
+            {
+                var point = points[i];
+                if (!OctoObjectId.TryParse(point.RtId, out rtIds[i]))
+                {
+                    return BadRequest($"Point {i}: rtId '{point.RtId}' is not a valid runtime id.");
+                }
+
+                var timestampError = RawArchivePointValidation.NormalizeTimestamp(i, point.Timestamp, out timestamps[i]);
+                if (timestampError is not null)
+                {
+                    return BadRequest(timestampError);
+                }
+
+                if (!TryParseOrigin(point.Origin, out origins[i]))
+                {
+                    return BadRequest(
+                        $"Point {i}: origin '{point.Origin}' is not valid. Use 'manual' or 'automated', or leave it out for automated.");
+                }
+
+                if (origins[i] != ArchiveRowOrigin.Manual && !string.IsNullOrEmpty(point.Reason))
+                {
+                    return BadRequest($"Point {i}: a reason is only recorded for a manual write; set origin 'manual' or remove the reason.");
+                }
+
+                if (snapshot is not null)
+                {
+                    var columnError = RawArchivePointValidation.CheckColumns(
+                        i, point.Attributes, snapshot, origins[i] == ArchiveRowOrigin.Manual);
+                    if (columnError is not null)
+                    {
+                        return BadRequest(columnError);
+                    }
+                }
+            }
+
+            var writer = origins.Contains(ArchiveRowOrigin.Manual) ? CallerIdentity(User) : null;
+            if (origins.Contains(ArchiveRowOrigin.Manual) && writer is null)
+            {
+                return BadRequest("A manual write records who wrote it, and the caller's token names no subject or client.");
+            }
+
+            var domainPoints = points.Select((p, i) => new StreamDataPoint
+            {
+                RtId = rtIds[i],
+                CkTypeId = new RtCkId<CkTypeId>(p.CkTypeId),
+                Timestamp = timestamps[i],
+                RtWellKnownName = p.RtWellKnownName,
+                Attributes = p.Attributes,
+                Origin = origins[i],
+                ManualWrittenBy = origins[i] == ArchiveRowOrigin.Manual ? writer : null,
+                ManualReason = origins[i] == ArchiveRowOrigin.Manual ? p.Reason : null,
+            }).ToList();
+
+            var result = await repository.InsertAsync(new OctoObjectId(archiveRtId), domainPoints);
+            return Ok(StreamDataWriteResultRestDto.From(result));
+        }
+        catch (ManualStreamDataNotAppliedException e)
+        {
+            // A manual value that could not be stored is never a success; the body says what was stored.
+            _logger.LogWarning(
+                "Insert for tenant '{TenantId}', archive '{ArchiveRtId}': {Skipped} manual row(s) not stored.",
+                tenantId, archiveRtId, e.Result.Skipped.Count(s => s.Origin == ArchiveRowOrigin.Manual));
+            return Conflict(new ManualWriteNotStoredRestDto
+            {
+                Message = e.Message,
+                Result = StreamDataWriteResultRestDto.From(e.Result)
+            });
+        }
+        catch (ConfigurationException e)
+        {
+            return BadRequest(e.Message);
+        }
+        catch (StreamDataException e)
+        {
+            _logger.LogWarning(
+                "Insert refused for tenant '{TenantId}', archive '{ArchiveRtId}': {Reason}",
+                tenantId, archiveRtId, e.Message);
+            return BadRequest(e.Message);
+        }
+        catch (ArgumentException e)
+        {
+            // The repository's value check (a value that does not fit its column type, AB#8606) and malformed ids.
+            return BadRequest(e.Message);
+        }
+    }
+
+    /// <summary>
     /// Inserts a batch of externally-aggregated time-range data points into a
     /// <c>TimeRangeArchive</c>. Each row covers a half-open <c>[from, to)</c> window;
     /// re-deliveries upsert via the natural key and set the row's <c>was_updated</c> flag to
@@ -643,13 +782,11 @@ public class StreamDataController : ControllerBase
             // usual cause is sending the VERSIONED id ('Model-1.0.0/Type-1') where an RtCkId is
             // expected ('Model/Type'): it parses, it just never matches. Refuse the batch here and
             // name both sides (AB#5157 validation finding 4).
-            var mismatched = await FindMismatchedCkTypeIdsAsync(tenantContext, archiveRtId, points);
-            if (mismatched is { Expected: { } expected, Values.Count: > 0 })
+            var snapshot = await LoadArchiveSnapshotAsync(tenantContext, archiveRtId);
+            var mismatch = CkTypeMismatchMessage(archiveRtId, snapshot, points.Select(p => p.CkTypeId));
+            if (mismatch is not null)
             {
-                return BadRequest(
-                    $"Archive '{archiveRtId}' captures '{expected}'. The batch carries " +
-                    $"{string.Join(", ", mismatched.Values.Select(v => $"'{v}'"))}, whose rows would all be " +
-                    "discarded. Send the ckTypeId in its unversioned form, e.g. 'Model/Type'.");
+                return BadRequest(mismatch);
             }
 
             // AB#5356 / AB#7593 / AB#7596: the caller declares the origin; the writer of a manual row is
@@ -767,21 +904,37 @@ public class StreamDataController : ControllerBase
     }
 
     /// <summary>
-    /// The distinct <c>ckTypeId</c> values in an insert batch that are not the archive's target,
-    /// together with the target itself. <c>Expected</c> is <c>null</c> when the archive cannot be
-    /// read here — the repository then reports the real problem (unknown archive, not activated,
-    /// stream data disabled) with its own message.
+    /// The archive snapshot the insert checks run against, or <c>null</c> when the archive cannot be read here — the
+    /// repository then reports the real problem (unknown archive, not activated, stream data disabled) with its own message.
     /// </summary>
-    private static async Task<(string? Expected, IReadOnlyList<string> Values)> FindMismatchedCkTypeIdsAsync(
-        ITenantContext tenantContext, string archiveRtId, IReadOnlyList<InsertTimeRangePointRestDto> points)
+    private static async Task<ArchiveSnapshot?> LoadArchiveSnapshotAsync(ITenantContext tenantContext, string archiveRtId)
     {
         var store = tenantContext.GetArchiveRuntimeStore();
-        if (store is null)
-        {
-            return (null, Array.Empty<string>());
-        }
+        return store is null ? null : await store.GetAsync(new OctoObjectId(archiveRtId));
+    }
 
-        var snapshot = await store.GetAsync(new OctoObjectId(archiveRtId));
+    /// <summary>
+    /// The 400 message when an insert batch carries <c>ckTypeId</c> values that are not the archive's target, naming both
+    /// sides; <c>null</c> when every value matches or the archive gives nothing to judge against. Shared by the raw and
+    /// the time-range insert.
+    /// </summary>
+    private static string? CkTypeMismatchMessage(string archiveRtId, ArchiveSnapshot? snapshot, IEnumerable<string> ckTypeIds)
+    {
+        var (expected, values) = FindMismatchedCkTypeIds(snapshot, ckTypeIds);
+        return expected is null || values.Count == 0
+            ? null
+            : $"Archive '{archiveRtId}' captures '{expected}'. The batch carries " +
+              $"{string.Join(", ", values.Select(v => $"'{v}'"))}, whose rows would all be " +
+              "discarded. Send the ckTypeId in its unversioned form, e.g. 'Model/Type'.";
+    }
+
+    /// <summary>
+    /// The distinct <c>ckTypeId</c> values in an insert batch that are not the archive's target,
+    /// together with the target itself. <c>Expected</c> is <c>null</c> when there is no snapshot.
+    /// </summary>
+    private static (string? Expected, IReadOnlyList<string> Values) FindMismatchedCkTypeIds(
+        ArchiveSnapshot? snapshot, IEnumerable<string> ckTypeIds)
+    {
         if (snapshot is null)
         {
             return (null, Array.Empty<string>());
@@ -803,8 +956,7 @@ public class StreamDataController : ControllerBase
             return (null, Array.Empty<string>());
         }
 
-        var values = points
-            .Select(p => p.CkTypeId)
+        var values = ckTypeIds
             .Where(id => !MatchesTarget(id, expected))
             .Distinct(StringComparer.Ordinal)
             .ToList();

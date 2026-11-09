@@ -3,7 +3,7 @@ using Meshmakers.Octo.Runtime.Contracts.StreamData;
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.StreamData.Controllers;
 
 /// <summary>
-/// Response of <c>POST archives/{archiveRtId}/insertTimeRange</c> (AB#7598): how many rows the archive stored and
+/// Response of <c>POST archives/{archiveRtId}/insert</c> (AB#8590) and <c>POST archives/{archiveRtId}/insertTimeRange</c> (AB#7598): how many rows the archive stored and
 /// which were not, with the reason, so no caller reports success for a value that was not stored.
 /// </summary>
 public sealed class StreamDataWriteResultRestDto
@@ -45,7 +45,7 @@ public sealed class StreamDataWriteResultRestDto
 }
 
 /// <summary>
-/// Body of the 409 of <c>POST archives/{archiveRtId}/insertTimeRange</c> (AB#7598): a manual row could not be stored.
+/// Body of the 409 of <c>POST archives/{archiveRtId}/insert</c> and <c>POST archives/{archiveRtId}/insertTimeRange</c> (AB#7598): a manual row could not be stored.
 /// The SDK and the energy pipelines read <c>message</c> and <c>result</c>, so these names are the wire contract.
 /// </summary>
 public sealed class ManualWriteNotStoredRestDto
@@ -63,10 +63,10 @@ public sealed class SkippedRowRestDto
     /// <summary>Entity the row belongs to.</summary>
     public string RtId { get; init; } = string.Empty;
 
-    /// <summary>Inclusive window start (UTC).</summary>
+    /// <summary>Timestamp of a raw row, or the inclusive window start of a time-range row (UTC).</summary>
     public DateTime From { get; init; }
 
-    /// <summary>Exclusive window end (UTC).</summary>
+    /// <summary>Exclusive window end of a time-range row (UTC); <c>null</c> for a raw row.</summary>
     public DateTime? To { get; init; }
 
     /// <summary><c>manual</c> or <c>automated</c>, as the caller declared it.</summary>
