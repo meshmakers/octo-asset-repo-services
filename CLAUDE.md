@@ -392,9 +392,13 @@ Time-series data support (`StreamData/`):
     `manual`, and a manual write whose token names no identity; nothing of the batch is written. **A manual point must name
     every ingested column of the archive (AB#8590 AC 9)**, explicit `null` allowed: the upsert writes every ingested column and
     binds an unsent one as NULL (engine-mongodb `CrateDatabaseClient` time-range insert, `DO UPDATE SET <col> = EXCLUDED.<col>`), so a
-    correction of one column would clear the others. Otherwise 400 listing the missing columns, nothing written; same check as the
-    raw `insert` (`ArchivePointValidation.CheckManualPointNamesEveryColumn`, keys matched like the storage column). Automated points
-    are passed on unchanged (unknown keys dropped by the repository). Tests:
+    correction of one column would clear the others. Otherwise 400 listing the missing columns, nothing written. **Same point checks
+    as the raw `insert` (AB#8590)**, for automated and manual points, each a 400 naming the point and the field, nothing of the batch
+    written: missing or sub-millisecond `from`/`to` (UTC normalization like the raw timestamp, `ArchivePointValidation.NormalizeTimestamp`),
+    and an attribute that is no ingested column, a computed column, or a second key for the same column
+    (`ArchivePointValidation.CheckColumns`, keys matched like the storage column). Before, the repository dropped unknown and computed
+    keys silently and the call answered 200. Pipeline nodes write through the repository and are not affected. Without a readable
+    archive snapshot the column checks are skipped. Tests:
     `StreamDataControllerInsertTimeRangeTests`, `IntegrationTests/StreamData/StreamDataInsertTimeRangeRestTests`. SDK: `IStreamDataServicesClient.InsertTimeRangeAsync` (`TimeRangePointDto`).
     **Write result (AB#7598):** answers **200** with `StreamDataWriteResultRestDto` (`stored`, `skipped`,
     `skippedByReason` — `LowerPrecedence` / `ManualValueProtected` / `CkTypeMismatch` —, `skippedRows` up to 1,000);

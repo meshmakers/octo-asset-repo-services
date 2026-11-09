@@ -760,8 +760,11 @@ public class StreamDataController : ControllerBase
     /// true. Time-range concept §3. The archive must be in <c>Activated</c> status; non-time-
     /// range archives reject the call with HTTP 400. Answers 200 with the write result (rows stored, rows not
     /// stored with the reason, AB#7598) — an empty batch still answers 204 — and 409 with the result when a
-    /// manual row could not be stored. A manual point must name every ingested column of the archive (explicit null
-    /// allowed), otherwise the batch answers 400 listing the missing columns and nothing is written (AB#8590 AC 9).
+    /// manual row could not be stored. Every point is checked like the raw <c>insert</c> before anything is written, each
+    /// a 400 naming the point and the field (AB#8590): missing or sub-millisecond <c>from</c>/<c>to</c>, invalid origin,
+    /// reason without manual, ckTypeId mismatch, and an attribute that is no ingested column or a computed column (also
+    /// for automated points). A manual point must name every ingested column of the archive (explicit null allowed),
+    /// otherwise the batch answers 400 listing the missing columns (AB#8590 AC 9).
     /// A batch with a manual point needs the tenant role <c>StreamDataAdmin</c> besides the write scope, otherwise the
     /// whole batch answers 403 (AB#8590 AC 8).
     /// </summary>
@@ -806,8 +809,18 @@ public class StreamDataController : ControllerBase
             // AB#5356 / AB#7593 / AB#7596: the caller declares the origin; the writer of a manual row is
             // the authenticated caller, never a value from the body.
             var origins = new ArchiveRowOrigin[points.Count];
+            var froms = new DateTime[points.Count];
+            var tos = new DateTime[points.Count];
             for (var i = 0; i < points.Count; i++)
             {
+                // AB#8590 point 11: the window bounds are the row key, held in milliseconds, like the raw timestamp.
+                var windowError = ArchivePointValidation.NormalizeTimestamp(i, points[i].From, out froms[i], "from")
+                                  ?? ArchivePointValidation.NormalizeTimestamp(i, points[i].To, out tos[i], "to");
+                if (windowError is not null)
+                {
+                    return BadRequest(windowError);
+                }
+
                 if (!TryParseOrigin(points[i].Origin, out origins[i]))
                 {
                     return BadRequest(
@@ -819,11 +832,13 @@ public class StreamDataController : ControllerBase
                     return BadRequest($"Point {i}: a reason is only recorded for a manual write; set origin 'manual' or remove the reason.");
                 }
 
-                // AB#8590 AC 9: the upsert binds every ingested column, so an unsent attribute of a manual point would
-                // overwrite the stored value with NULL. Automated points are passed on unchanged (not judged here).
-                if (origins[i] == ArchiveRowOrigin.Manual && snapshot is not null)
+                // AB#8590 point 11: the same column checks as the raw insert, for every point. An unknown or computed key
+                // would be dropped by the repository without a word, so the caller would believe it was written. AC 9: the
+                // upsert binds every ingested column, so a manual point must name each one (an unsent one would become NULL).
+                if (snapshot is not null)
                 {
-                    var columnError = ArchivePointValidation.CheckManualPointNamesEveryColumn(i, points[i].Attributes, snapshot);
+                    var columnError = ArchivePointValidation.CheckColumns(
+                        i, points[i].Attributes, snapshot, origins[i] == ArchiveRowOrigin.Manual);
                     if (columnError is not null)
                     {
                         return BadRequest(columnError);
@@ -847,8 +862,8 @@ public class StreamDataController : ControllerBase
             {
                 RtId = new OctoObjectId(p.RtId),
                 CkTypeId = new RtCkId<CkTypeId>(p.CkTypeId),
-                From = p.From,
-                To = p.To,
+                From = froms[i],
+                To = tos[i],
                 RtWellKnownName = p.RtWellKnownName,
                 Attributes = p.Attributes,
                 Origin = origins[i],

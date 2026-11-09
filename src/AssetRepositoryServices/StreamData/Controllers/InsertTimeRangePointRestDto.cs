@@ -18,18 +18,25 @@ public sealed class InsertTimeRangePointRestDto
     /// <summary>CK type id of the entity (must match the archive's target).</summary>
     public string CkTypeId { get; set; } = string.Empty;
 
-    /// <summary>Inclusive window start (UTC).</summary>
+    /// <summary>
+    /// Inclusive window start (UTC; a value without offset is read as UTC). Missing or sub-millisecond precision is
+    /// refused with HTTP 400 (AB#8590).
+    /// </summary>
     public DateTime From { get; set; }
 
-    /// <summary>Exclusive window end (UTC). Must be strictly greater than <see cref="From"/>.</summary>
+    /// <summary>
+    /// Exclusive window end (UTC). Must be strictly greater than <see cref="From"/>. Missing or sub-millisecond precision
+    /// is refused with HTTP 400 (AB#8590).
+    /// </summary>
     public DateTime To { get; set; }
 
     /// <summary>Optional human-readable name. <c>MAX(rtwellknownname)</c> on re-deliveries.</summary>
     public string? RtWellKnownName { get; set; }
 
     /// <summary>
-    /// User-column values keyed by attribute path (e.g. <c>Amount.Value</c>). Unknown keys are
-    /// dropped server-side. A manual point must name every ingested column of the archive (an explicit
+    /// User-column values keyed by attribute path (e.g. <c>Amount.Value</c>). A key that is no ingested column of the
+    /// archive (unknown, or a computed column) is refused with HTTP 400 naming the point and the key, for automated and
+    /// manual points alike (AB#8590). A manual point must name every ingested column of the archive (an explicit
     /// <c>null</c> is allowed), otherwise the batch is refused with HTTP 400 listing the missing columns, so a
     /// correction never clears a value silently (AB#8590 AC 9).
     /// </summary>

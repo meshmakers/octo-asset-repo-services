@@ -10,11 +10,12 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.StreamData.Controllers
 internal static class ArchivePointValidation
 {
     /// <summary>
-    /// Brings the timestamp to UTC (a value without offset is read as UTC, a value with offset is converted) and refuses
-    /// sub-millisecond precision: the row identity holds milliseconds, so two timestamps that differ below a millisecond
-    /// would silently address the same row.
+    /// Brings a row-key time (the raw <c>timestamp</c>, the time-range <c>from</c> and <c>to</c>) to UTC (a value without
+    /// offset is read as UTC, a value with offset is converted) and refuses a missing value and sub-millisecond precision:
+    /// the row identity holds milliseconds, so two times that differ below a millisecond would silently address the same
+    /// row. <paramref name="field" /> is the wire name the message names.
     /// </summary>
-    public static string? NormalizeTimestamp(int index, DateTime timestamp, out DateTime utc)
+    public static string? NormalizeTimestamp(int index, DateTime timestamp, out DateTime utc, string field = "timestamp")
     {
         utc = timestamp.Kind switch
         {
@@ -25,20 +26,23 @@ internal static class ArchivePointValidation
 
         if (utc == default)
         {
-            return $"Point {index}: timestamp is missing.";
+            return $"Point {index}: {field} is missing.";
         }
 
         return utc.Ticks % TimeSpan.TicksPerMillisecond != 0
-            ? $"Point {index}: timestamp '{utc:O}' has sub-millisecond precision. A raw row is identified by archive, rtId " +
-              "and timestamp in milliseconds; round the timestamp to whole milliseconds."
+            ? $"Point {index}: {field} '{utc:O}' has sub-millisecond precision. An archive row is identified in " +
+              $"milliseconds; round {field} to whole milliseconds."
             : null;
     }
 
     /// <summary>
     /// Refuses attribute keys that are no ingested column of the archive (unknown, or a computed column the archive
     /// calculates itself), keys that address the same column twice, and — for a manual point — a point that does not
-    /// name every ingested column (<see cref="CheckManualPointNamesEveryColumn" />). Keys are matched like the
-    /// repository maps them to the storage column: segments concatenated, case-insensitive. Used by the raw insert.
+    /// name every ingested column (AB#8590 decision D1 for the raw insert, AC 9 for the time range: the upsert writes every
+    /// ingested column and binds an unsent one as NULL, so a left-out column would be cleared silently; an explicit
+    /// <c>null</c> is a valid answer). Keys are matched like the repository maps them to the storage column: segments
+    /// concatenated, case-insensitive. Used by both the raw <c>insert</c> and <c>insertTimeRange</c>, for automated and
+    /// manual points: an unknown or computed key would otherwise be dropped by the repository without a word.
     /// </summary>
     public static string? CheckColumns(int index, IReadOnlyDictionary<string, object?> attributes, ArchiveSnapshot snapshot,
         bool manual)
@@ -80,28 +84,6 @@ internal static class ArchivePointValidation
         }
 
         return manual ? MissingColumnsMessage(index, ingested, named.Keys, snapshot) : null;
-    }
-
-    /// <summary>
-    /// AB#8590 decision D1 (raw, AC 3) and AC 9 (time range): the upsert writes every ingested column of the archive
-    /// and binds an unsent one as NULL, so a manual point that leaves a column out would clear the stored value of that
-    /// column silently. A manual point must therefore name every ingested column; an explicit <c>null</c> is a valid
-    /// answer. Keys are matched like the storage column (segments concatenated, case-insensitive); keys that are no
-    /// column are not judged here. Answers the 400 message listing the missing columns, or <c>null</c>.
-    /// </summary>
-    public static string? CheckManualPointNamesEveryColumn(int index, IReadOnlyDictionary<string, object?> attributes,
-        ArchiveSnapshot snapshot)
-    {
-        var named = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var key in attributes.Keys)
-        {
-            if (TryStorageName(key, out var name))
-            {
-                named.Add(name);
-            }
-        }
-
-        return MissingColumnsMessage(index, IngestedColumns(snapshot), named, snapshot);
     }
 
     /// <summary>The ingested (non-computed) columns of the archive: storage name to the column path.</summary>

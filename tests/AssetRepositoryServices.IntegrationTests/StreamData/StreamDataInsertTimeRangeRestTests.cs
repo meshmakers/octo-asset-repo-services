@@ -8,6 +8,7 @@ using Meshmakers.Octo.Backend.AssetRepositoryServices.StreamData.Controllers;
 using Meshmakers.Octo.Communication.Contracts;
 using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.ConstructionKit.Models.StreamData.Generated.System.StreamData.v1;
+using Meshmakers.Octo.Runtime.Contracts.Formulas;
 using Meshmakers.Octo.Runtime.Contracts.RepositoryEntities;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb;
 using Meshmakers.Octo.Runtime.Contracts.StreamData;
@@ -419,17 +420,80 @@ public class StreamDataInsertTimeRangeRestTests(StreamDataFixture fixture, ITest
         }
     }
 
+    /// <summary>
+    /// AB#8590 point 11: <c>insertTimeRange</c> answered 200 for a key that is no column of the archive, for a computed
+    /// column and for a sub-millisecond window bound; the repository dropped the keys without a word, so a correction
+    /// looked stored. Each case now answers 400 naming the point and the field, for automated and manual points alike,
+    /// and nothing is written — the same rules as the raw <c>insert</c>.
+    /// </summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task InsertTimeRange_UnknownOrComputedColumnOrSubMillisecondWindow_Answers400_AndWritesNothing(bool manual)
+    {
+        fixture.OutputHelper = output;
+        var childTenantId = manual ? "restparitym" : "restparitya";
+        await CreateChildAsync(childTenantId);
+
+        try
+        {
+            var child = await PrepareChildAsync(childTenantId);
+            var archiveRtId = await CreateAndActivateTimeRangeArchiveAsync(child);
+            var lifecycle = child.GetArchiveLifecycleService()
+                ?? throw new InvalidOperationException("ArchiveLifecycleService not registered.");
+            await lifecycle.AddComputedColumnAsync(archiveRtId, "DoubledReading", "MeterReading * 2",
+                FormulaResultType.Double, indexed: false);
+            var rtId = OctoObjectId.GenerateNewId();
+            var controller = ControllerFor(childTenantId, ("sub", "8a4c1f00-0000-4000-8000-000000000005"),
+                ("role", CommonConstants.StreamDataAdminRole));
+            var everyColumn = ManualRow(100).TrimEnd('}', ' ');
+
+            var unknown = await controller.InsertTimeRange(childTenantId, archiveRtId.ToString(), Points(rtId,
+                everyColumn + """, "NoSuchColumn": 1 }""", manual));
+            BadRequestMessage(unknown).Should().Contain("Point 0").And.Contain("'NoSuchColumn'").And.Contain("is not a column");
+
+            var computed = await controller.InsertTimeRange(childTenantId, archiveRtId.ToString(), Points(rtId,
+                everyColumn + """, "DoubledReading": 1.0 }""", manual));
+            BadRequestMessage(computed).Should().Contain("Point 0").And.Contain("'DoubledReading'").And.Contain("computed column");
+
+            var subMsFrom = await controller.InsertTimeRange(childTenantId, archiveRtId.ToString(), Points(rtId,
+                ManualRow(100), manual, from: "2026-08-31T22:00:00.0001234Z"));
+            BadRequestMessage(subMsFrom).Should().Contain("Point 0").And.Contain("from").And.Contain("sub-millisecond");
+
+            var subMsTo = await controller.InsertTimeRange(childTenantId, archiveRtId.ToString(), Points(rtId,
+                ManualRow(100), manual, to: "2026-09-01T22:00:00.0000001Z"));
+            BadRequestMessage(subMsTo).Should().Contain("Point 0").And.Contain("to '").And.Contain("sub-millisecond");
+
+            (await CountRowsAsync(childTenantId, archiveRtId)).Should().Be(0, "every refused batch writes nothing");
+
+            // The same point without the offending key or precision is stored, so the refusals above came from the checks.
+            var stored = await controller.InsertTimeRange(childTenantId, archiveRtId.ToString(), Points(rtId, ManualRow(100), manual));
+            stored.Should().BeOfType<OkObjectResult>().Which.Value
+                .Should().BeOfType<StreamDataWriteResultRestDto>().Which.Stored.Should().Be(1);
+        }
+        finally
+        {
+            await DropChildIfExistingAsync(childTenantId);
+        }
+    }
+
+    private static string BadRequestMessage(IActionResult result) =>
+        result.Should().BeOfType<BadRequestObjectResult>().Which.Value.Should().BeOfType<string>().Subject;
+
     /// <summary>One window of <paramref name="rtId" /> with the given attributes object, bound like MVC binds it.</summary>
-    private IReadOnlyList<InsertTimeRangePointRestDto> Points(OctoObjectId rtId, string attributes, bool manual)
+    private IReadOnlyList<InsertTimeRangePointRestDto> Points(OctoObjectId rtId, string attributes, bool manual,
+        string? from = null, string? to = null)
     {
         var origin = manual ? "\"origin\": \"manual\"," : "";
+        from ??= WindowStart.ToString("O");
+        to ??= WindowEnd.ToString("O");
         var body = $$"""
             [{
               {{origin}}
               "rtId": "{{rtId}}",
               "ckTypeId": "{{fixture.TestCkTypeId}}",
-              "from": "{{WindowStart:O}}",
-              "to": "{{WindowEnd:O}}",
+              "from": "{{from}}",
+              "to": "{{to}}",
               "attributes": {{attributes}}
             }]
             """;

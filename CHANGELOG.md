@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- AB#8590 Fix: `insertTimeRange` refuses unknown and computed columns and sub-millisecond windows, with the same rules as the raw
+  `insert` (shared `ArchivePointValidation`). A key that is no ingested column of the archive, a computed column, or a second key for
+  the same column used to be dropped by the repository while the call answered 200, so a manual correction looked stored. Such a
+  point, and a `from` or `to` that is missing or has sub-millisecond precision, now answers 400 naming the point and the field, and
+  nothing of the batch is written. Applies to automated and manual points; REST callers that send extra keys must drop them
+  (pipeline nodes write through the repository and are not affected). `from`/`to` without offset are read as UTC, with offset converted.
 - AB#8590 Fix: `insertTimeRange` refuses a manual point that leaves columns out. The time-range upsert writes every ingested
   column of the archive and binds an unsent attribute as NULL, so a manual correction that sent only the changed column
   silently cleared the stored values of the other columns. A point with origin `manual` must now name every ingested column
