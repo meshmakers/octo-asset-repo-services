@@ -430,6 +430,9 @@ Time-series data support (`StreamData/`):
     manual row was not stored, 403 via the policy and for a manual point without the role `StreamDataAdmin` (see below). Without a readable archive snapshot (stream data off, unknown archive) the
     column checks are skipped and the repository's own error answers 400. Tests: `UnitTests/StreamData/StreamDataControllerInsertRawTests`, `IntegrationTests/StreamData/StreamDataInsertRawRestTests` (real CrateDB: manual correction, automated re-delivery skipped with `ManualValueProtected`, whole row stays manual). SDK:
     `IStreamDataServicesClient.InsertAsync` (`RawPointDto`).
+  - **Malformed requests of both inserts (AB#8590).** An `archiveRtId` that is not a runtime id, a point `rtId` that is not
+    one and a `null` array element answer 400 (`CheckInsertRequest`, before anything is read). Tests: the malformed-request
+    cases of `StreamDataControllerInsertRawTests` / `StreamDataControllerInsertTimeRangeTests`.
   - **Manual writes need the role `StreamDataAdmin` (AB#8590 AC 8)** on both `insert` and `insertTimeRange`: a batch with at
     least one point of origin `manual` is written only when the verified caller holds the tenant role `StreamDataAdmin`
     (`CommonConstants.StreamDataAdminRole`, both role claim spellings via `TenantRoleAuthorizationHandler.HasTenantRole`;

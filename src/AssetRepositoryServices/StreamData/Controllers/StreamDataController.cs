@@ -622,7 +622,8 @@ public class StreamDataController : ControllerBase
     /// value, which the conflict guard then compares (engine-mongodb AB#8622). A manual point may therefore leave a
     /// ranking column out, so a row whose ranking column is stored as NULL can still be corrected.
     /// Answers 200 with the write result, 204 for an empty batch, 409 with the result when a manual row could not be
-    /// stored, and 400 naming the point and the field for every client error; nothing of a refused batch is written.
+    /// stored, and 400 naming the point and the field for every client error (also an invalid archive id and a null
+    /// point); nothing of a refused batch is written.
     /// A batch with a manual point needs the tenant role <c>StreamDataAdmin</c> besides the write scope, otherwise the
     /// whole batch answers 403 (AB#8590 AC 8); automated points need the scope only.
     /// </summary>
@@ -646,12 +647,18 @@ public class StreamDataController : ControllerBase
                 return NoContent();
             }
 
+            var requestError = CheckInsertRequest(archiveRtId, points, out var archiveId);
+            if (requestError is not null)
+            {
+                return BadRequest(requestError);
+            }
+
             var tenantContext = await _systemContext.FindTenantContextAsync(tenantId);
             var repository = tenantContext.GetStreamDataRepository()
                 ?? throw new StreamDataException(
                     $"StreamData is not enabled for tenant '{tenantId}'. Call POST /streamdata/enable first.");
 
-            var snapshot = await LoadArchiveSnapshotAsync(tenantContext, archiveRtId);
+            var snapshot = await LoadArchiveSnapshotAsync(tenantContext, archiveId);
             if (snapshot is { UsesWindowedStorage: true })
             {
                 return BadRequest(snapshot.IsTimeRange
@@ -728,7 +735,7 @@ public class StreamDataController : ControllerBase
                 ManualReason = origins[i] == ArchiveRowOrigin.Manual ? p.Reason : null,
             }).ToList();
 
-            var result = await repository.InsertAsync(new OctoObjectId(archiveRtId), domainPoints);
+            var result = await repository.InsertAsync(archiveId, domainPoints);
             return Ok(StreamDataWriteResultRestDto.From(result));
         }
         catch (Meshmakers.Octo.Runtime.Engine.CrateDb.StreamDataWriteIncompleteException e)
@@ -788,7 +795,7 @@ public class StreamDataController : ControllerBase
     /// value, which the conflict guard then compares (engine-mongodb AB#8622). A manual point may therefore leave a
     /// ranking column out, so a row whose ranking column is stored as NULL can still be corrected.
     /// A batch with a manual point needs the tenant role <c>StreamDataAdmin</c> besides the write scope, otherwise the
-    /// whole batch answers 403 (AB#8590 AC 8).
+    /// whole batch answers 403 (AB#8590 AC 8). An invalid archive id, an invalid point rtId and a null point answer 400.
     /// </summary>
     [HttpPost("archives/{archiveRtId}/insertTimeRange")]
     [ProducesResponseType(typeof(StreamDataWriteResultRestDto), StatusCodes.Status200OK)]
@@ -810,6 +817,12 @@ public class StreamDataController : ControllerBase
                 return NoContent();
             }
 
+            var requestError = CheckInsertRequest(archiveRtId, points, out var archiveId);
+            if (requestError is not null)
+            {
+                return BadRequest(requestError);
+            }
+
             var tenantContext = await _systemContext.FindTenantContextAsync(tenantId);
             var repository = tenantContext.GetStreamDataRepository()
                 ?? throw new StreamDataException(
@@ -822,7 +835,7 @@ public class StreamDataController : ControllerBase
             // usual cause is sending the VERSIONED id ('Model-1.0.0/Type-1') where an RtCkId is
             // expected ('Model/Type'): it parses, it just never matches. Refuse the batch here and
             // name both sides (AB#5157 validation finding 4).
-            var snapshot = await LoadArchiveSnapshotAsync(tenantContext, archiveRtId);
+            var snapshot = await LoadArchiveSnapshotAsync(tenantContext, archiveId);
             var mismatch = CkTypeMismatchMessage(archiveRtId, snapshot, points.Select(p => p.CkTypeId));
             if (mismatch is not null)
             {
@@ -831,11 +844,17 @@ public class StreamDataController : ControllerBase
 
             // AB#5356 / AB#7593 / AB#7596: the caller declares the origin; the writer of a manual row is
             // the authenticated caller, never a value from the body.
+            var rtIds = new OctoObjectId[points.Count];
             var origins = new ArchiveRowOrigin[points.Count];
             var froms = new DateTime[points.Count];
             var tos = new DateTime[points.Count];
             for (var i = 0; i < points.Count; i++)
             {
+                if (!OctoObjectId.TryParse(points[i].RtId, out rtIds[i]))
+                {
+                    return BadRequest($"Point {i}: rtId '{points[i].RtId}' is not a valid runtime id.");
+                }
+
                 // AB#8590 point 11: the window bounds are the row key, held in milliseconds, like the raw timestamp.
                 var windowError = ArchivePointValidation.NormalizeTimestamp(i, points[i].From, out froms[i], "from")
                                   ?? ArchivePointValidation.NormalizeTimestamp(i, points[i].To, out tos[i], "to");
@@ -883,7 +902,7 @@ public class StreamDataController : ControllerBase
 
             var domainPoints = points.Select((p, i) => new TimeRangeStreamDataPoint
             {
-                RtId = new OctoObjectId(p.RtId),
+                RtId = rtIds[i],
                 CkTypeId = new RtCkId<CkTypeId>(p.CkTypeId),
                 From = froms[i],
                 To = tos[i],
@@ -895,7 +914,7 @@ public class StreamDataController : ControllerBase
             }).ToList();
 
             // AB#7598: the caller learns how many rows were stored and why the others were not.
-            var result = await repository.InsertTimeRangeAsync(new OctoObjectId(archiveRtId), domainPoints);
+            var result = await repository.InsertTimeRangeAsync(archiveId, domainPoints);
             return Ok(StreamDataWriteResultRestDto.From(result));
         }
         catch (Meshmakers.Octo.Runtime.Engine.CrateDb.StreamDataWriteIncompleteException e)
@@ -1009,10 +1028,36 @@ public class StreamDataController : ControllerBase
     /// The archive snapshot the insert checks run against, or <c>null</c> when the archive cannot be read here — the
     /// repository then reports the real problem (unknown archive, not activated, stream data disabled) with its own message.
     /// </summary>
-    private static async Task<ArchiveSnapshot?> LoadArchiveSnapshotAsync(ITenantContext tenantContext, string archiveRtId)
+    private static async Task<ArchiveSnapshot?> LoadArchiveSnapshotAsync(ITenantContext tenantContext, OctoObjectId archiveRtId)
     {
         var store = tenantContext.GetArchiveRuntimeStore();
-        return store is null ? null : await store.GetAsync(new OctoObjectId(archiveRtId));
+        return store is null ? null : await store.GetAsync(archiveRtId);
+    }
+
+    /// <summary>
+    /// AB#8590: the checks of an insert body that come before anything is read: the route's <c>archiveRtId</c> must be a
+    /// runtime id and no array element may be <c>null</c>. Returns the 400 message naming the field or the point, or
+    /// <c>null</c> when the request may go on (then <paramref name="archiveId" /> holds the parsed archive id). Without it
+    /// an invalid id threw <see cref="FormatException" /> and a null element a <see cref="NullReferenceException" />, both 500.
+    /// </summary>
+    internal static string? CheckInsertRequest<TPoint>(string archiveRtId, IReadOnlyList<TPoint?> points,
+        out OctoObjectId archiveId)
+        where TPoint : class
+    {
+        if (!OctoObjectId.TryParse(archiveRtId, out archiveId))
+        {
+            return $"archiveRtId '{archiveRtId}' is not a valid runtime id.";
+        }
+
+        for (var i = 0; i < points.Count; i++)
+        {
+            if (points[i] is null)
+            {
+                return $"Point {i} is null.";
+            }
+        }
+
+        return null;
     }
 
     /// <summary>

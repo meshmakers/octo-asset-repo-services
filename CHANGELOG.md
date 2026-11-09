@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- AB#8590 Fix: `insert` and `insertTimeRange` answer 400 instead of 500 for an `archiveRtId` that is not a runtime id (naming
+  the field), for a point `rtId` of `insertTimeRange` that is not one (naming the point and the field, like `insert`), and for a
+  `null` array element (`Point i is null.`); nothing is read or written.
+
 - AB#8667 Fix: the GraphQL schema of a tenant follows its CK cache. The cached schema remembers the CK cache load it was
   built from and is rebuilt when the cache was unloaded or reloaded since - also when no `PosUpdateTenant` reached this
   process (a reload by the AB#5415 fallback or the display-rule sweeper, or an event published before the service listened

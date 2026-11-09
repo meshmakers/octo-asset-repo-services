@@ -558,6 +558,52 @@ public class StreamDataControllerInsertRawTests
         conflict.Result.SkippedRows.Should().ContainSingle().Which.Origin.Should().Be("manual");
     }
 
+    // ---- malformed request: invalid ids and null points answer 400, never 500 ---------------------------------
+
+    [Theory]
+    [InlineData("not-an-id")]
+    [InlineData("")]
+    public async Task Insert_AnInvalidArchiveRtId_Answers400NamingTheField_AndReadsNothing(string archiveRtId)
+    {
+        var result = await _controller.Insert(TenantId, archiveRtId, Bind(OnePoint(FullRow, string.Empty)));
+
+        BadRequestMessage(result).Should().Contain("archiveRtId").And.Contain("is not a valid runtime id");
+        A.CallTo(() => _archiveStore.GetAsync(A<OctoObjectId>._)).MustNotHaveHappened();
+        NothingWritten();
+    }
+
+    [Fact]
+    public async Task Insert_AnInvalidPointRtId_Answers400NamingPointAndField_AndWritesNothing()
+    {
+        var result = await Insert($$"""
+            [{ "rtId": "no-id", "ckTypeId": "{{CkTypeId}}", "timestamp": "2026-03-01T10:00:00Z", "attributes": {{FullRow}} }]
+            """);
+
+        BadRequestMessage(result).Should().Contain("Point 0").And.Contain("rtId 'no-id'").And.Contain("is not a valid runtime id");
+        NothingWritten();
+    }
+
+    [Fact]
+    public async Task Insert_ANullPoint_Answers400NamingThePoint_AndWritesNothing()
+    {
+        var result = await Insert("[null]");
+
+        BadRequestMessage(result).Should().Be("Point 0 is null.");
+        NothingWritten();
+    }
+
+    [Fact]
+    public async Task Insert_ANullPointAfterAValidOne_Answers400NamingItsIndex_AndWritesNothing()
+    {
+        var result = await Insert($$"""
+            [{ "rtId": "{{_rtId}}", "ckTypeId": "{{CkTypeId}}", "timestamp": "2026-03-01T10:00:00Z", "attributes": {{FullRow}} },
+             null]
+            """);
+
+        BadRequestMessage(result).Should().Be("Point 1 is null.");
+        NothingWritten();
+    }
+
     // ---- helpers ----------------------------------------------------------------------------------------------
 
     private static readonly Claim StreamDataAdmin = new("role", CommonConstants.StreamDataAdminRole);

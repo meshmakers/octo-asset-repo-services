@@ -680,6 +680,61 @@ public class StreamDataControllerInsertTimeRangeTests
         RepositoryWasNotCalled();
     }
 
+    // ---- AB#8590: malformed request: invalid ids and null points answer 400, never 500 -------------------------
+
+    [Theory]
+    [InlineData("not-an-id")]
+    [InlineData("")]
+    public async Task InsertTimeRange_AnInvalidArchiveRtId_Answers400NamingTheField_AndReadsNothing(string archiveRtId)
+    {
+        SignInForParity(manual: false);
+
+        var result = await _controller.InsertTimeRange(TenantId, archiveRtId, Bind(ParityPoint(manual: false)));
+
+        BadRequestMessage(result).Should().Contain("archiveRtId").And.Contain("is not a valid runtime id");
+        A.CallTo(() => _archiveStore.GetAsync(A<OctoObjectId>._)).MustNotHaveHappened();
+        RepositoryWasNotCalled();
+    }
+
+    [Fact]
+    public async Task InsertTimeRange_AnInvalidPointRtId_Answers400NamingPointAndField_AndWritesNothing()
+    {
+        SignInForParity(manual: false);
+
+        var result = await _controller.InsertTimeRange(TenantId, _archiveRtId.ToString(), Bind($$"""
+            [{ "rtId": "{{_rtId}}", "ckTypeId": "{{CkTypeId}}", "from": "2026-08-31T22:00:00Z", "to": "2026-09-01T22:00:00Z" },
+             { "rtId": "no-id", "ckTypeId": "{{CkTypeId}}", "from": "2026-09-01T22:00:00Z", "to": "2026-09-02T22:00:00Z" }]
+            """));
+
+        BadRequestMessage(result).Should().Contain("Point 1").And.Contain("rtId 'no-id'").And.Contain("is not a valid runtime id");
+        RepositoryWasNotCalled();
+    }
+
+    [Fact]
+    public async Task InsertTimeRange_ANullPoint_Answers400NamingThePoint_AndWritesNothing()
+    {
+        SignInForParity(manual: false);
+
+        var result = await _controller.InsertTimeRange(TenantId, _archiveRtId.ToString(), Bind("[null]"));
+
+        BadRequestMessage(result).Should().Be("Point 0 is null.");
+        RepositoryWasNotCalled();
+    }
+
+    [Fact]
+    public async Task InsertTimeRange_ANullPointAfterAValidOne_Answers400NamingItsIndex_AndWritesNothing()
+    {
+        SignInForParity(manual: false);
+
+        var result = await _controller.InsertTimeRange(TenantId, _archiveRtId.ToString(), Bind($$"""
+            [{ "rtId": "{{_rtId}}", "ckTypeId": "{{CkTypeId}}", "from": "2026-08-31T22:00:00Z", "to": "2026-09-01T22:00:00Z" },
+             null]
+            """));
+
+        BadRequestMessage(result).Should().Be("Point 1 is null.");
+        RepositoryWasNotCalled();
+    }
+
     private static IReadOnlyList<InsertTimeRangePointRestDto> Bind(string body) =>
         JsonSerializer.Deserialize<IReadOnlyList<InsertTimeRangePointRestDto>>(body, MvcBodyOptions)
         ?? throw new InvalidOperationException("The body deserialized to null.");
