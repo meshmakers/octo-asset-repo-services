@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Meshmakers.Octo.Runtime.Contracts.StreamData;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.StreamData.Controllers;
@@ -44,6 +45,12 @@ internal static class ArchivePointValidation
     /// also cleared; since then it keeps its stored value). Keys are matched like the repository maps them to the storage column: segments
     /// concatenated, case-insensitive. Used by both the raw <c>insert</c> and <c>insertTimeRange</c>, for automated and
     /// manual points: an unknown or computed key would otherwise be dropped by the repository without a word.
+    /// <para>
+    /// A ranking column (a column key of the archive's <c>ConflictPrecedence</c>; <c>$Origin</c> is no column) cannot be
+    /// null (engine-mongodb AB#8622, decided by Reimar 2026-11-09): an explicit <c>null</c> on one is refused for automated
+    /// and manual points. A ranking column a point leaves out keeps its stored value and counts as that value when the
+    /// write is ranked.
+    /// </para>
     /// </summary>
     public static string? CheckColumns(int index, IReadOnlyDictionary<string, object?> attributes, ArchiveSnapshot snapshot,
         bool manual)
@@ -58,6 +65,7 @@ internal static class ArchivePointValidation
             }
         }
 
+        var ranking = RankingColumns(snapshot);
         var named = new Dictionary<string, string>(StringComparer.Ordinal);
         foreach (var key in attributes.Keys)
         {
@@ -82,10 +90,37 @@ internal static class ArchivePointValidation
             {
                 return $"Point {index}: attributes '{named[name]}' and '{key}' address the same column.";
             }
+
+            if (IsNull(attributes[key]) && ranking.Contains(name))
+            {
+                return $"Point {index}: attribute '{key}' is a ranking column of archive '{snapshot.RtId}' (ConflictPrecedence) " +
+                       "and cannot be null. " +
+                       (manual
+                           ? "Send its value."
+                           : "Send a value, or leave the attribute out to keep the stored value.");
+            }
         }
 
         return manual ? MissingColumnsMessage(index, ingested, named.Keys, snapshot) : null;
     }
+
+    /// <summary>The storage names of the archive's ranking columns (column keys of the conflict precedence).</summary>
+    private static HashSet<string> RankingColumns(ArchiveSnapshot snapshot)
+    {
+        var ranking = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var key in snapshot.ConflictPrecedence.Where(k => !k.IsOrigin))
+        {
+            if (TryStorageName(key.Column, out var name))
+            {
+                ranking.Add(name);
+            }
+        }
+
+        return ranking;
+    }
+
+    private static bool IsNull(object? value) =>
+        value is null or DBNull || value is JsonElement { ValueKind: JsonValueKind.Null or JsonValueKind.Undefined };
 
     /// <summary>The ingested (non-computed) columns of the archive: storage name to the column path.</summary>
     private static Dictionary<string, string> IngestedColumns(ArchiveSnapshot snapshot)

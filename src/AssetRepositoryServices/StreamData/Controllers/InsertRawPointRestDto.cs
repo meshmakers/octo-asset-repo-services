@@ -36,7 +36,8 @@ public sealed class InsertRawPointRestDto
     /// is no ingested column of the archive, or that names a computed column, refuses the batch with HTTP 400. A manual
     /// point must name every ingested column (an explicit <c>null</c> is allowed), so a manual row states every value it
     /// protects. An attribute the point does not name keeps the stored value of its column, an attribute sent as
-    /// <c>null</c> clears it; a new row stores NULL for every column the point does not name (AB#8622).
+    /// <c>null</c> clears it; a new row stores NULL for every column the point does not name (AB#8622). A ranking column
+    /// of the archive's conflict precedence cannot be null: an explicit <c>null</c> on one is refused with HTTP 400.
     /// </summary>
     /// <remarks>
     /// Materialized by <see cref="RtAttributesConverter" /> to CLR scalars, the same rules as

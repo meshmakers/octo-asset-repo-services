@@ -393,7 +393,12 @@ Time-series data support (`StreamData/`):
     every ingested column of the archive (AB#8590 AC 9)**, explicit `null` allowed. Before engine-mongodb AB#8622 the upsert bound
     an unsent column as NULL and a correction of one column cleared the others; since AB#8622 an unsent column keeps its stored
     value, and the rule stays because the origin is stored per row: a manual point marks the whole row manual and protects it,
-    so it has to state every value it protects. Otherwise 400 listing the missing columns, nothing written. **Same point checks
+    so it has to state every value it protects. Otherwise 400 listing the missing columns, nothing written. **A ranking column
+    (column key of the archive's `ConflictPrecedence`; `$Origin` is no column) cannot be null** (engine-mongodb AB#8622, decided by
+    Reimar 2026-11-09): an explicit `null` on one answers 400 naming the point and the key, on `insert` and `insertTimeRange`,
+    automated and manual (`ArchivePointValidation.CheckColumns`; the engine refuses it too, `ArchiveRankingColumnValidator`).
+    Left out, a ranking column keeps its stored value and the guard compares that value. A manual point must therefore send
+    each ranking column with a value. **Same point checks
     as the raw `insert` (AB#8590)**, for automated and manual points, each a 400 naming the point and the field, nothing of the batch
     written: missing or sub-millisecond `from`/`to` (UTC normalization like the raw timestamp, `ArchivePointValidation.NormalizeTimestamp`),
     and an attribute that is no ingested column, a computed column, or a second key for the same column

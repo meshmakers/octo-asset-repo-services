@@ -297,6 +297,75 @@ public class StreamDataControllerInsertRawTests
         result.Should().BeOfType<OkObjectResult>();
     }
 
+    // ---- engine-mongodb AB#8622: a ranking column cannot be null ---------------------------------------------
+
+    private void GivenRankedArchive() => GivenArchive(
+        new ArchiveSnapshot(_archiveRtId, new RtCkId<CkTypeId>(CkTypeId), CkArchiveStatus.Activated, "raw",
+        [
+            new CkArchiveColumnSpec("Amount.Value", false, false),
+            new CkArchiveColumnSpec("DataQuality", false, false),
+            new CkArchiveColumnSpec("Source.DocumentDate", false, false)
+        ])
+        {
+            ConflictPrecedence =
+            [
+                new ArchiveConflictKey("DataQuality", ConflictKeyOrder.LowerWins),
+                new ArchiveConflictKey("Source.DocumentDate", ConflictKeyOrder.HigherWins)
+            ]
+        });
+
+    [Theory]
+    [InlineData("")]
+    [InlineData(", \"origin\": \"manual\"")]
+    public async Task Insert_AnExplicitNullOnARankingColumn_Answers400NamingPointAndField_AndWritesNothing(string origin)
+    {
+        GivenRankedArchive();
+
+        var result = await Insert(OnePoint(
+            """{ "Amount.Value": 1.5, "DataQuality": null, "Source.DocumentDate": "2026-03-01T00:00:00Z" }""", origin));
+
+        BadRequestMessage(result).Should().Contain("Point 0").And.Contain("'DataQuality'").And.Contain("ranking column")
+            .And.Contain("cannot be null");
+        NothingWritten();
+    }
+
+    [Fact]
+    public async Task Insert_ANullRankingColumnInTheSecondPoint_RefusesTheWholeBatch_MatchedLikeTheStorageColumn()
+    {
+        GivenRankedArchive();
+
+        var result = await Insert($$"""
+            [{ "rtId": "{{_rtId}}", "ckTypeId": "{{CkTypeId}}", "timestamp": "2026-03-01T10:00:00Z",
+               "attributes": { "Amount.Value": 1.5, "DataQuality": 1 } },
+             { "rtId": "{{_rtId}}", "ckTypeId": "{{CkTypeId}}", "timestamp": "2026-03-01T10:15:00Z",
+               "attributes": { "Amount.Value": 2.5, "source.documentdate": null } }]
+            """);
+
+        BadRequestMessage(result).Should().Contain("Point 1").And.Contain("'source.documentdate'");
+        NothingWritten();
+    }
+
+    [Fact]
+    public async Task Insert_AnAutomatedPointWithoutItsRankingColumns_IsPassedOn_TheyKeepTheirStoredValues()
+    {
+        GivenRankedArchive();
+
+        var result = await Insert(OnePoint("""{ "Amount.Value": 1.5 }""", ""));
+
+        result.Should().BeOfType<OkObjectResult>();
+        CapturedInsert().Points.Single().Attributes.Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task Insert_AnExplicitNullOnAColumnThatDoesNotRank_IsStillAccepted()
+    {
+        GivenRankedArchive();
+
+        var result = await Insert(OnePoint("""{ "Amount.Value": null, "DataQuality": 1 }""", ""));
+
+        result.Should().BeOfType<OkObjectResult>();
+    }
+
     // ---- unknown and computed columns, ckTypeId, identity --------------------------------------------------
 
     [Fact]

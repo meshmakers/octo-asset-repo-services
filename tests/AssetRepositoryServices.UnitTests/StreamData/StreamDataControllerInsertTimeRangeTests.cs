@@ -439,6 +439,59 @@ public class StreamDataControllerInsertTimeRangeTests
         attributes.Should().ContainKey("Amount.Unit").WhoseValue.Should().BeNull();
     }
 
+    // engine-mongodb AB#8622: a ranking column of the conflict precedence cannot be null.
+
+    private void GivenRankedTimeRangeArchive() =>
+        A.CallTo(() => _archiveStore.GetAsync(_archiveRtId)).Returns(
+            new ArchiveSnapshot(_archiveRtId, new RtCkId<CkTypeId>(CkTypeId), CkArchiveStatus.Activated, "timeRange",
+            [
+                new CkArchiveColumnSpec("Amount.Value", false, false),
+                new CkArchiveColumnSpec("DataQuality", false, false),
+                new CkArchiveColumnSpec("SourceDocumentDate", false, false)
+            ])
+            {
+                IsTimeRange = true,
+                ConflictPrecedence =
+                [
+                    new ArchiveConflictKey("DataQuality", ConflictKeyOrder.LowerWins),
+                    new ArchiveConflictKey(ArchiveConflictKey.OriginKey, ConflictKeyOrder.HigherWins),
+                    new ArchiveConflictKey("SourceDocumentDate", ConflictKeyOrder.HigherWins)
+                ]
+            });
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task InsertTimeRange_AnExplicitNullOnARankingColumn_Answers400NamingPointAndField_AndWritesNothing(bool manual)
+    {
+        GivenRankedTimeRangeArchive();
+        SignInAs(new System.Security.Claims.Claim("sub", "user-1"), StreamDataAdmin);
+        var body = $$"""
+            [{ "rtId": "{{_rtId}}", "ckTypeId": "{{CkTypeId}}",
+               "from": "2026-08-31T22:00:00Z", "to": "2026-09-01T22:00:00Z",
+               "attributes": { "Amount.Value": 1.5, "DataQuality": 2, "SourceDocumentDate": null }
+               {{(manual ? ", \"origin\": \"manual\"" : "")}} }]
+            """;
+
+        var result = await _controller.InsertTimeRange(TenantId, _archiveRtId.ToString(), Bind(body));
+
+        var message = BadRequestMessage(result);
+        message.Should().Contain("Point 0").And.Contain("'SourceDocumentDate'").And.Contain("cannot be null")
+            .And.NotContain("$Origin");
+        RepositoryWasNotCalled();
+    }
+
+    [Fact]
+    public async Task InsertTimeRange_AnAutomatedPointWithoutItsRankingColumns_IsPassedOn()
+    {
+        GivenRankedTimeRangeArchive();
+
+        var result = await _controller.InsertTimeRange(TenantId, _archiveRtId.ToString(), Bind(OnePoint("")));
+
+        result.Should().BeOfType<OkObjectResult>();
+        CapturedInsert().Points.Single().Attributes.Should().ContainSingle().Which.Key.Should().Be("Amount.Value");
+    }
+
     [Fact]
     public async Task InsertTimeRange_AnAutomatedPointMissingAColumn_IsPassedOnUnchanged()
     {

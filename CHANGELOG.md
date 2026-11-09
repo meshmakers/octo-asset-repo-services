@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- AB#8622 Fix: `insert` and `insertTimeRange` refuse an explicit `null` on a ranking column (a column key of the archive's
+  `ConflictPrecedence`; `$Origin` is no column) with 400 naming the point and the key; nothing of the batch is written. Applies to
+  automated and manual points (`ArchivePointValidation.CheckColumns`, keys matched like the storage column). The engine refuses it
+  as well (engine-mongodb AB#8622). A ranking column the point leaves out keeps its stored value, and the conflict guard compares
+  the point against that merged value. **Behaviour change:** a REST caller that sent `DataQuality: null` or
+  `SourceDocumentDate: null` to a ranked archive now gets 400; a manual point must send each ranking column with a value
+  (it must name every ingested column, AB#8590).
 - AB#8622 Docs: `insert` and `insertTimeRange` name the absent-versus-null rule of the archive writes (engine-mongodb AB#8622):
   an attribute the point does not name keeps the stored value of its column, an attribute sent as `null` clears it, and a
   new row stores NULL for every column the point does not name. **Behaviour change for automated points** (no code change

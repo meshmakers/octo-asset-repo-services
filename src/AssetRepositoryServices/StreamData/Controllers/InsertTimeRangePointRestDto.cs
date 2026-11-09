@@ -40,7 +40,8 @@ public sealed class InsertTimeRangePointRestDto
     /// <c>null</c> is allowed), otherwise the batch is refused with HTTP 400 listing the missing columns, so a
     /// manual row states every value it protects (AB#8590 AC 9). An attribute the point does not name keeps the stored
     /// value of its column, an attribute sent as <c>null</c> clears it; a new row stores NULL for every column the point
-    /// does not name (AB#8622).
+    /// does not name (AB#8622). A ranking column of the archive's conflict precedence cannot be null: an explicit
+    /// <c>null</c> on one is refused with HTTP 400 naming the point and the key.
     /// </summary>
     /// <remarks>
     /// AB#5185: ASP.NET Core binds this body with the System.Text.Json web defaults, which leave

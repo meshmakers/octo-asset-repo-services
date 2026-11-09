@@ -616,6 +616,9 @@ public class StreamDataController : ControllerBase
     /// never from the body. A manual point must name every ingested column of the archive (explicit null allowed).
     /// Absent and null differ (AB#8622): an attribute the point does not name keeps the stored value of its column, an
     /// attribute sent as <c>null</c> clears it, and a new row stores NULL for every column the point does not name.
+    /// A ranking column (a column key of the archive's <c>ConflictPrecedence</c>) cannot be null: an explicit <c>null</c>
+    /// on one answers 400 naming the point and the field, for automated and manual points; left out, it keeps its stored
+    /// value, which the conflict guard then compares (engine-mongodb AB#8622).
     /// Answers 200 with the write result, 204 for an empty batch, 409 with the result when a manual row could not be
     /// stored, and 400 naming the point and the field for every client error; nothing of a refused batch is written.
     /// A batch with a manual point needs the tenant role <c>StreamDataAdmin</c> besides the write scope, otherwise the
@@ -769,6 +772,9 @@ public class StreamDataController : ControllerBase
     /// otherwise the batch answers 400 listing the missing columns (AB#8590 AC 9).
     /// Absent and null differ (AB#8622): an attribute the point does not name keeps the stored value of its column, an
     /// attribute sent as <c>null</c> clears it, and a new row stores NULL for every column the point does not name.
+    /// A ranking column (a column key of the archive's <c>ConflictPrecedence</c>) cannot be null: an explicit <c>null</c>
+    /// on one answers 400 naming the point and the field, for automated and manual points; left out, it keeps its stored
+    /// value, which the conflict guard then compares (engine-mongodb AB#8622).
     /// A batch with a manual point needs the tenant role <c>StreamDataAdmin</c> besides the write scope, otherwise the
     /// whole batch answers 403 (AB#8590 AC 8).
     /// </summary>
