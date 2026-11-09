@@ -12,10 +12,14 @@
   `Off` (unchanged), `Warn` (**default of this release**: the read goes ahead and a warning names tenant, query kind, subject
   and client id, once per caller, tenant and query kind within `StreamDataReadAuthorization:WarnLogInterval`, default 1 h) and
   `Enforce` (refused with the GraphQL error code `StreamDataReadRoleRequired`). In-process executions without a principal and
-  system security contexts always read. **Before switching an environment to `Enforce`**, grant `StreamDataReader` to every
-  caller of the warn log, in particular the adapters' pipeline service accounts (default role only `CommunicationManagement`;
-  pipelines that read archives - EC allocation, billing, simulation - run as that account), app clients and Grafana / Excel
-  / Studio users that read time series. Archive metadata queries (`rollupsFor`, `coverageFor`, `recomputeJobsFor`,
+  system security contexts always read. **Before switching an environment to `Enforce`**, every caller of the warn log must
+  hold a stream-data role. Only callers that read stream data **through the asset-repository API with their own token** are
+  affected: app clients and service accounts that call the GraphQL API with a client-credentials token, and Grafana / Excel /
+  Studio users that read time series. Pipelines the mesh adapter runs (e.g. EC allocation, billing, simulation) read archives
+  in-process through the engine and never reach this gate (corrected by AB#8583). **Operator note:** pipeline service accounts
+  need no manual grant - the communication controller adds `StreamDataReader` to declarative pipeline service accounts on
+  reconcile (AB#8563), and identity grants it to legacy `octo-pipeline-sa-*` accounts at every tenant setup (AB#8581); the
+  manual `octo-cli -c AddClientToRole ... StreamDataReader` step is no longer needed once those versions run. Archive metadata queries (`rollupsFor`, `coverageFor`, `recomputeJobsFor`,
   `archivesStorageStats`, `rollupQueryMetadata`, `resolveSeriesQuery`) are not gated. Tests
   `UnitTests/GraphQL/StreamDataReadRoleGateTests`, `IntegrationTests/StreamData/StreamDataReadRoleGateTests` (mode x caller x
   query kind).

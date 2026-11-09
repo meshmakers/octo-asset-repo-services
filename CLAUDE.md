@@ -1733,9 +1733,13 @@ let every token of the tenant read all stream data of types without a data polic
 - Always allowed: an `RtSecurityContext.IsSystem` context and an in-process execution without a principal (`GraphQlUserContext.User`
   null; the HTTP endpoint always has an authenticated principal). Pipelines run by the mesh adapter read archives in-process through
   the engine and never reach this gate; pipeline GraphQL calls run as the HTTP caller or the adapter's pipeline service account.
-- **Before `Enforce`**: grant `StreamDataReader` to every caller in the warn log - the adapters' pipeline service accounts (default
-  role only `CommunicationManagement`, communication controller `PipelineServiceAccountProvisioningService`), app clients and
-  users that read time series in Studio, Grafana, Excel or the solution frontends.
+- **Before `Enforce`**: every caller in the warn log needs a stream-data role. Affected are only callers that read through the
+  asset-repository API with their own token: app clients and service accounts with a client-credentials token, and users that read
+  time series in Studio, Grafana, Excel or the solution frontends. Mesh-adapter pipelines (EC allocation, billing, simulation, ...)
+  read in-process and are not affected (AB#8583 corrected the earlier note). Pipeline service accounts get `StreamDataReader`
+  automatically: declarative accounts from the communication controller on reconcile (AB#8563,
+  `PipelineServiceAccountProvisioningService`), legacy `octo-pipeline-sa-*` accounts from identity at tenant setup (AB#8581);
+  no manual `AddClientToRole` any more.
 - Tests: `UnitTests/GraphQL/StreamDataReadRoleGateTests` (modes x roles, claim spellings, system context, warn window, error code),
   `IntegrationTests/StreamData/StreamDataReadRoleGateTests` (mode x caller x query kind through the GraphQL layer). A new
   stream-data read resolver must call `EnsureStreamReadAllowedAsync`.
