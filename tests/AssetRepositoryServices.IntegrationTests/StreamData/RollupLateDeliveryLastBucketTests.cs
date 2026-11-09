@@ -42,7 +42,7 @@ public class RollupLateDeliveryLastBucketTests(ImmediateSweepStreamDataFixture f
         await _builder.ActivateAsync(rollup);
         await _builder.RewindAsync(rollup, anchor);
         (await _builder.TickAsync(rollup)).Should().BeGreaterThanOrEqualTo(6, "the clock closes the buckets without data");
-        (await BucketsAsync(rollup, series)).Should().BeEmpty("no data had arrived when the buckets closed");
+        (await RowStartsAsync(rollup, series)).Should().BeEmpty("no data had arrived when the buckets closed, so no row was written");
 
         var hours = Enumerable.Range(0, 4).Select(i => anchor + i * OneHour).ToList();
         await _builder.InsertWindowsAsync(archive, series, hours.Select(h => (h, h + OneHour, Delivered)));
@@ -53,6 +53,10 @@ public class RollupLateDeliveryLastBucketTests(ImmediateSweepStreamDataFixture f
 
         await (await _builder.TenantAsync()).GetRecomputeOrchestrator()!.TickAsync(CancellationToken.None);
 
+        // The rows as stored, null aggregates included, so a row written after the pause cannot hide behind a null value.
+        (await RowStartsAsync(rollup, series)).Should().Equal(hours,
+            "exactly the delivered hours have a row, the last one before the pause included, and nothing after the pause");
+
         var buckets = await BucketsAsync(rollup, series);
         foreach (var hour in hours)
         {
@@ -60,13 +64,16 @@ public class RollupLateDeliveryLastBucketTests(ImmediateSweepStreamDataFixture f
             buckets[hour].Should().BeApproximately(Delivered, Tolerance);
         }
 
-        buckets.Should().HaveCount(hours.Count, "no bucket after the pause is written");
 
         var job = (await (await _builder.TenantAsync()).GetRecomputeJobStore().GetForArchiveAsync(rollup, 50))
             .Where(j => j.State == RecomputeJobState.Completed).Should().ContainSingle().Subject;
         job.RangeStart.Should().Be(hours[0]);
         job.RangeEnd.Should().Be(hours[^1] + OneHour, "the range ends after the bucket of the latest delivered hour");
     }
+
+    private async Task<IReadOnlyList<DateTime>> RowStartsAsync(OctoObjectId rollupRtId, OctoObjectId seriesRtId) =>
+        (await _builder.ReadBucketsAsync(rollupRtId, MultiSourceArchiveBuilder.RollupColumn, seriesRtId))
+        .Select(b => b.WindowStart).Order().ToList();
 
     private async Task<IReadOnlyDictionary<DateTime, double>> BucketsAsync(OctoObjectId rollupRtId, OctoObjectId seriesRtId)
     {
