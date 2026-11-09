@@ -159,11 +159,15 @@ built-in or platform field; computed columns pass when their result type is nume
 at create time) and `rollupsFor.dayStartOffsetMs` (REST `archives/{id}/rollups` carries `referenceTimeZone`/`dayStartOffsetMs` from the same
 rollup snapshot, AB#8275); transient `downsampling(timeZone, binInterval, binOrigin)` builds local-day bins
 (`GraphQL/StreamDataLocalDayBins`: parses `binOrigin` `HH:mm`, checks `binInterval >= 1`, runs `DownsamplingBinAxis.Resolve` before the
-repository call; `limit` is required only without these arguments); `resolveSeriesQuery(dayStartOffsetMs | binOrigin)` sets
+repository call; `limit` is required only without these arguments; `groupByColumnPaths: ["rtId"]` (AB#8647,
+`GraphQL/StreamDataDownsamplingGroupColumns`) gives one row per series and bin with the cell `rtId` after `timestamp` (per-series empty bins only with local-day bins, engine cap
+100,000 bins x series rows; fixed-width empty bins stay one row with a null `rtId`), other paths
+are refused because the engine's downsampling row carries only the rtId; `StreamDataTransientUserContext.GroupColumnsInRows` keeps
+the AB#4233 simple-downsampling cells unchanged); `resolveSeriesQuery(dayStartOffsetMs | binOrigin)` sets
 `SeriesResolutionRequest.QueryDayStartOffsetMs` in `StreamDataQuery.BuildSeriesResolutionRequest` — without it a gas-day rollup is never
 chosen under PerQuery. Persisted downsampling queries and `GetQueryByIdNode` (mesh adapter) carry no day start (midnight). Tests:
 `UnitTests/GraphQL/StreamDataLocalDayBinsTests`, `ResolveSeriesQueryDayStartTests`, `GasDaySchemaTypesTests`,
-`IntegrationTests/StreamData/GasDayGraphQlTests`.
+`IntegrationTests/StreamData/GasDayGraphQlTests`, `DownsamplingGroupByGraphQlTests`, `UnitTests/GraphQL/StreamDataDownsamplingGroupColumnsTests`.
 
 GraphQL types are dynamically created based on the tenant's construction kit model stored in MongoDB.
 

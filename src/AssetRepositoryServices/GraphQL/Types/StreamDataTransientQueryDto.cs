@@ -46,6 +46,13 @@ internal sealed class StreamDataTransientUserContext
     /// <summary>Grouping aggregation: attribute paths to group by.</summary>
     public IReadOnlyList<string>? GroupByColumnPaths { get; init; }
 
+    /// <summary>
+    /// Downsampling: return the <see cref="GroupByColumnPaths"/> as cells of each row (AB#8647, the
+    /// <c>groupByColumnPaths</c> argument). False for the simple-downsampling path of AB#4233, which groups by rtId
+    /// internally and keeps its cells unchanged.
+    /// </summary>
+    public bool GroupColumnsInRows { get; init; }
+
     // Time range
     /// <summary>Start of the query time window.</summary>
     public DateTime? From { get; init; }
