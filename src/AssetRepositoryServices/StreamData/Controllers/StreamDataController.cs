@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using System.Globalization;
 using Asp.Versioning;
 using GraphQL;
 using Duende.IdentityModel;
@@ -622,8 +623,9 @@ public class StreamDataController : ControllerBase
     /// value, which the conflict guard then compares (engine-mongodb AB#8622). A manual point may therefore leave a
     /// ranking column out, so a row whose ranking column is stored as NULL can still be corrected.
     /// Answers 200 with the write result, 204 for an empty batch, 409 with the result when a manual row could not be
-    /// stored, and 400 naming the point and the field for every client error (also an invalid archive id and a null
-    /// point); nothing of a refused batch is written.
+    /// stored, 400 naming the point and the field for every client error (also an invalid archive id and a null point),
+    /// and 503 with a problem body and <c>Retry-After</c> when the archive did not store every row (AB#8679); nothing of
+    /// a refused batch is written.
     /// A batch with a manual point needs the tenant role <c>StreamDataAdmin</c> besides the write scope, otherwise the
     /// whole batch answers 403 (AB#8590 AC 8); automated points need the scope only.
     /// </summary>
@@ -633,7 +635,7 @@ public class StreamDataController : ControllerBase
     [ProducesResponseType(typeof(string), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ForbiddenErrorDto), StatusCodes.Status403Forbidden)]
     [ProducesResponseType(typeof(ManualWriteNotStoredRestDto), StatusCodes.Status409Conflict)]
-    [ProducesResponseType(typeof(string), StatusCodes.Status503ServiceUnavailable)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status503ServiceUnavailable)]
     [Microsoft.AspNetCore.Authorization.Authorize(AssetRepositoryServiceConstants.TenantAssetApiReadWritePolicy)]
     public async Task<IActionResult> Insert(
         [Required] string tenantId,
@@ -740,11 +742,7 @@ public class StreamDataController : ControllerBase
         }
         catch (Meshmakers.Octo.Runtime.Engine.CrateDb.StreamDataWriteIncompleteException e)
         {
-            // AB#8679: CrateDB did not store every row (a memory circuit breaker, no error from CrateDB) and the retry
-            // did not either. The write failed; nothing of it may be read as stored or skipped. Sending it again is safe.
-            _logger.LogError(e, "Insert for tenant '{TenantId}', archive '{ArchiveRtId}' failed: {Reason}",
-                tenantId, archiveRtId, e.Message);
-            return StatusCode(StatusCodes.Status503ServiceUnavailable, e.Message);
+            return WriteIncomplete("Insert", tenantId, archiveRtId, e);
         }
         catch (ManualStreamDataNotAppliedException e)
         {
@@ -795,7 +793,8 @@ public class StreamDataController : ControllerBase
     /// value, which the conflict guard then compares (engine-mongodb AB#8622). A manual point may therefore leave a
     /// ranking column out, so a row whose ranking column is stored as NULL can still be corrected.
     /// A batch with a manual point needs the tenant role <c>StreamDataAdmin</c> besides the write scope, otherwise the
-    /// whole batch answers 403 (AB#8590 AC 8). An invalid archive id, an invalid point rtId and a null point answer 400.
+    /// whole batch answers 403 (AB#8590 AC 8). An invalid archive id, an invalid point rtId and a null point answer 400;
+    /// a write the archive did not store completely answers 503 with a problem body and <c>Retry-After</c> (AB#8679).
     /// </summary>
     [HttpPost("archives/{archiveRtId}/insertTimeRange")]
     [ProducesResponseType(typeof(StreamDataWriteResultRestDto), StatusCodes.Status200OK)]
@@ -803,7 +802,7 @@ public class StreamDataController : ControllerBase
     [ProducesResponseType(typeof(string), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ForbiddenErrorDto), StatusCodes.Status403Forbidden)]
     [ProducesResponseType(typeof(ManualWriteNotStoredRestDto), StatusCodes.Status409Conflict)]
-    [ProducesResponseType(typeof(string), StatusCodes.Status503ServiceUnavailable)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status503ServiceUnavailable)]
     [Microsoft.AspNetCore.Authorization.Authorize(AssetRepositoryServiceConstants.TenantAssetApiReadWritePolicy)]
     public async Task<IActionResult> InsertTimeRange(
         [Required] string tenantId,
@@ -919,11 +918,7 @@ public class StreamDataController : ControllerBase
         }
         catch (Meshmakers.Octo.Runtime.Engine.CrateDb.StreamDataWriteIncompleteException e)
         {
-            // AB#8679: CrateDB did not store every row (a memory circuit breaker, no error from CrateDB) and the retry
-            // did not either. The write failed; nothing of it may be read as stored or skipped. Sending it again is safe.
-            _logger.LogError(e, "Insert for tenant '{TenantId}', archive '{ArchiveRtId}' failed: {Reason}",
-                tenantId, archiveRtId, e.Message);
-            return StatusCode(StatusCodes.Status503ServiceUnavailable, e.Message);
+            return WriteIncomplete("InsertTimeRange", tenantId, archiveRtId, e);
         }
         catch (ManualStreamDataNotAppliedException e)
         {
@@ -1058,6 +1053,37 @@ public class StreamDataController : ControllerBase
         }
 
         return null;
+    }
+
+    /// <summary>Seconds a caller should wait before it sends an incomplete archive write again (AB#8679).</summary>
+    internal const int WriteIncompleteRetryAfterSeconds = 30;
+
+    /// <summary>
+    /// AB#8679: CrateDB did not store every row (a memory circuit breaker, no error from CrateDB) and the retry did not
+    /// either. The write failed; nothing of it may be read as stored or skipped, and sending it again is safe. The answer
+    /// is a 503 problem body with the archive, the row counts and a <c>Retry-After</c> header; the CrateDB detail (schema,
+    /// table, breaker text) is logged here and never returned.
+    /// </summary>
+    private ObjectResult WriteIncomplete(string operation, string tenantId, string archiveRtId,
+        Meshmakers.Octo.Runtime.Engine.CrateDb.StreamDataWriteIncompleteException e)
+    {
+        _logger.LogError(e,
+            "{Operation} for tenant '{TenantId}', archive '{ArchiveRtId}' failed: {RowsMissing} of {RowsSent} rows not stored in {QualifiedTable}. {Reason}",
+            operation, tenantId, archiveRtId, e.RowsMissing, e.RowsSent, e.QualifiedTable, e.Message);
+
+        Response.Headers.RetryAfter = WriteIncompleteRetryAfterSeconds.ToString(CultureInfo.InvariantCulture);
+        var problem = new ProblemDetails
+        {
+            Status = StatusCodes.Status503ServiceUnavailable,
+            Title = "Archive write incomplete",
+            Detail = FormattableString.Invariant(
+                $"The archive did not store {e.RowsMissing} of {e.RowsSent} rows of this write, also after one retry. ") +
+                "The write failed; nothing of it may be counted as stored or skipped. Send the batch again later.",
+        };
+        problem.Extensions["archiveRtId"] = archiveRtId;
+        problem.Extensions["rowsSent"] = e.RowsSent;
+        problem.Extensions["rowsMissing"] = e.RowsMissing;
+        return new ObjectResult(problem) { StatusCode = StatusCodes.Status503ServiceUnavailable };
     }
 
     /// <summary>

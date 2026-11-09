@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- AB#8679 Fix: when the archive write stays incomplete (CrateDB did not store every row, also after one retry), `insert` and
+  `insertTimeRange` answer 503 with a short `application/problem+json` body (`archiveRtId`, `rowsSent`, `rowsMissing`) and
+  `Retry-After: 30`. The body no longer carries the exception text with the internal `schema.table` and the CrateDB breaker
+  detail; the full detail is logged server-side.
 - AB#8590 Fix: `insert` and `insertTimeRange` answer 400 instead of 500 for an `archiveRtId` that is not a runtime id (naming
   the field), for a point `rtId` of `insertTimeRange` that is not one (naming the point and the field, like `insert`), and for a
   `null` array element (`Point i is null.`); nothing is read or written.

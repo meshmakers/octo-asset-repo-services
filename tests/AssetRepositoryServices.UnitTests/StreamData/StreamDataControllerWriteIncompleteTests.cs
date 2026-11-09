@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Reflection;
 using System.Text.Json;
 using FakeItEasy;
@@ -19,8 +20,9 @@ namespace AssetRepositoryServices.UnitTests.StreamData;
 ///     AB#8679: when CrateDB does not store every row of an archive write (a memory circuit breaker ends a shard request
 ///     without an error) and the retry does not either, the repository throws
 ///     <see cref="StreamDataWriteIncompleteException" />. The raw <c>insert</c> and the <c>insertTimeRange</c> endpoints
-///     answer 503 with the exception message (archive table and row counts, no stack trace), so the caller sends the
-///     batch again. The other exceptions of the write keep their mapping.
+///     answer 503 with a short problem body (archive rtId, rows sent, rows missing) and a <c>Retry-After</c> header, so
+///     the caller sends the batch again. The CrateDB detail (schema, table, breaker text) is logged, never returned. The
+///     other exceptions of the write keep their mapping.
 /// </summary>
 public class StreamDataControllerWriteIncompleteTests
 {
@@ -33,6 +35,7 @@ public class StreamDataControllerWriteIncompleteTests
     private readonly OctoObjectId _archiveRtId = OctoObjectId.GenerateNewId();
     private readonly OctoObjectId _rtId = OctoObjectId.GenerateNewId();
     private readonly IStreamDataRepository _repository = A.Fake<IStreamDataRepository>();
+    private readonly CapturingLogger _logger = new();
     private readonly StreamDataController _controller;
 
     public StreamDataControllerWriteIncompleteTests()
@@ -46,7 +49,7 @@ public class StreamDataControllerWriteIncompleteTests
         A.CallTo(() => systemContext.FindTenantContextAsync(TenantId)).Returns(tenantContext);
 
         _controller = new StreamDataController(
-            A.Fake<ILogger<StreamDataController>>(),
+            _logger,
             systemContext,
             A.Fake<IHostApplicationLifetime>());
         _controller.ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() };
@@ -59,9 +62,13 @@ public class StreamDataControllerWriteIncompleteTests
     {
         GivenInsertThrows(WriteIncomplete(rowsSent: 10, rowsMissing: 3));
 
-        var result = await Insert();
+        var problem = ServiceUnavailableProblem(await Insert());
 
-        ServiceUnavailableMessage(result).Should().Contain("3 of 10 rows").And.Contain(QualifiedTable);
+        problem.Extensions["archiveRtId"].Should().Be(_archiveRtId.ToString());
+        problem.Extensions["rowsSent"].Should().Be(10);
+        problem.Extensions["rowsMissing"].Should().Be(3);
+        problem.Detail.Should().Contain("3 of 10 rows");
+        RetryAfter().Should().Be(StreamDataController.WriteIncompleteRetryAfterSeconds.ToString(CultureInfo.InvariantCulture));
     }
 
     [Fact]
@@ -69,33 +76,47 @@ public class StreamDataControllerWriteIncompleteTests
     {
         GivenInsertTimeRangeThrows(WriteIncomplete(rowsSent: 48, rowsMissing: 7));
 
-        var result = await InsertTimeRange();
+        var problem = ServiceUnavailableProblem(await InsertTimeRange());
 
-        ServiceUnavailableMessage(result).Should().Contain("7 of 48 rows").And.Contain(QualifiedTable);
+        problem.Extensions["archiveRtId"].Should().Be(_archiveRtId.ToString());
+        problem.Extensions["rowsSent"].Should().Be(48);
+        problem.Extensions["rowsMissing"].Should().Be(7);
+        problem.Detail.Should().Contain("7 of 48 rows");
+        RetryAfter().Should().Be(StreamDataController.WriteIncompleteRetryAfterSeconds.ToString(CultureInfo.InvariantCulture));
     }
 
     [Fact]
-    public async Task Insert_WriteIncomplete_BodyIsTheMessageWithoutStackTrace()
+    public async Task Insert_WriteIncomplete_BodyNamesNoTableNoCrateDbDetailAndNoStackTrace()
     {
         var exception = await Thrown(WriteIncomplete(rowsSent: 10, rowsMissing: 3));
         GivenInsertThrows(exception);
 
-        var message = ServiceUnavailableMessage(await Insert());
+        var body = SerializedBody(await Insert());
 
-        message.Should().Be(exception.Message);
-        message.Should().NotContain(" at ").And.NotContain(nameof(StreamDataControllerWriteIncompleteTests));
+        AssertNoInternals(body);
     }
 
     [Fact]
-    public async Task InsertTimeRange_WriteIncomplete_BodyIsTheMessageWithoutStackTrace()
+    public async Task InsertTimeRange_WriteIncomplete_BodyNamesNoTableNoCrateDbDetailAndNoStackTrace()
     {
         var exception = await Thrown(WriteIncomplete(rowsSent: 48, rowsMissing: 7));
         GivenInsertTimeRangeThrows(exception);
 
-        var message = ServiceUnavailableMessage(await InsertTimeRange());
+        var body = SerializedBody(await InsertTimeRange());
 
-        message.Should().Be(exception.Message);
-        message.Should().NotContain(" at ").And.NotContain(nameof(StreamDataControllerWriteIncompleteTests));
+        AssertNoInternals(body);
+    }
+
+    [Fact]
+    public async Task Insert_WriteIncomplete_LogsTheFullDetailServerSide()
+    {
+        GivenInsertThrows(WriteIncomplete(rowsSent: 10, rowsMissing: 3));
+
+        await Insert();
+
+        var logged = _logger.Entries.Should().ContainSingle(e => e.Level == LogLevel.Error).Subject;
+        logged.Message.Should().Contain(QualifiedTable).And.Contain("RETURNING").And.Contain("3 of 10 rows");
+        logged.Exception.Should().BeOfType<StreamDataWriteIncompleteException>();
     }
 
     // ---- other exceptions keep their mapping -------------------------------------------------------------------
@@ -219,10 +240,38 @@ public class StreamDataControllerWriteIncompleteTests
                "attributes": { "Amount.Value": 1.5 } }]
             """, MvcBodyOptions)!);
 
-    private static string ServiceUnavailableMessage(IActionResult result)
+    private static ProblemDetails ServiceUnavailableProblem(IActionResult result)
     {
         var objectResult = result.Should().BeOfType<ObjectResult>().Subject;
         objectResult.StatusCode.Should().Be(StatusCodes.Status503ServiceUnavailable);
-        return objectResult.Value.Should().BeOfType<string>().Subject;
+        var problem = objectResult.Value.Should().BeOfType<ProblemDetails>().Subject;
+        problem.Status.Should().Be(StatusCodes.Status503ServiceUnavailable);
+        return problem;
+    }
+
+    private static string SerializedBody(IActionResult result) =>
+        JsonSerializer.Serialize(ServiceUnavailableProblem(result), MvcBodyOptions);
+
+    private static void AssertNoInternals(string body)
+    {
+        body.Should().NotContain(QualifiedTable).And.NotContain("archive_6720a1b2c3d4e5f600000001")
+            .And.NotContain("maco.").And.NotContain("CrateDB").And.NotContain("breaker")
+            .And.NotContain("RETURNING").And.NotContain(" at ").And.NotContain(nameof(StreamDataControllerWriteIncompleteTests));
+    }
+
+    private string? RetryAfter() => _controller.Response.Headers.RetryAfter.ToString();
+
+    /// <summary>Keeps every log entry with its rendered message, so the test can see what the server logs.</summary>
+    private sealed class CapturingLogger : ILogger<StreamDataController>
+    {
+        public List<(LogLevel Level, string Message, Exception? Exception)> Entries { get; } = [];
+
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception,
+            Func<TState, Exception?, string> formatter) =>
+            Entries.Add((logLevel, formatter(state, exception), exception));
     }
 }
