@@ -183,12 +183,22 @@ public class StreamDataControllerWriteIncompleteTests
 
     // ---- helpers ----------------------------------------------------------------------------------------------
 
-    /// <summary>The constructor is internal to the engine; the controller only ever sees the thrown instance.</summary>
-    private static StreamDataWriteIncompleteException WriteIncomplete(int rowsSent, int rowsMissing) =>
-        (StreamDataWriteIncompleteException)typeof(StreamDataWriteIncompleteException)
-            .GetConstructors(BindingFlags.Instance | BindingFlags.NonPublic)
-            .Single()
-            .Invoke([QualifiedTable, rowsSent, rowsMissing, "The guarded upsert lacked RETURNING rows."]);
+    /// <summary>
+    /// Builds the exception the way the engine's write path does, through its factory <c>AfterRetry</c>. The factory
+    /// is internal to the engine (the controller only ever sees the thrown instance), so it is called by name; its
+    /// constructor is private and changes with the message wording, so the test never calls it.
+    /// </summary>
+    private static StreamDataWriteIncompleteException WriteIncomplete(int rowsSent, int rowsMissing)
+    {
+        var afterRetry = typeof(StreamDataWriteIncompleteException).GetMethod(
+            "AfterRetry",
+            BindingFlags.Static | BindingFlags.NonPublic,
+            [typeof(string), typeof(int), typeof(int), typeof(string)]);
+        afterRetry.Should().NotBeNull("the engine builds this exception through StreamDataWriteIncompleteException.AfterRetry");
+
+        return (StreamDataWriteIncompleteException)afterRetry!.Invoke(
+            null, [QualifiedTable, rowsSent, rowsMissing, "The guarded upsert lacked RETURNING rows."])!;
+    }
 
     /// <summary>Throws and catches the exception so it carries a stack trace, like the one from the repository.</summary>
     private static Task<Exception> Thrown(Exception exception)
