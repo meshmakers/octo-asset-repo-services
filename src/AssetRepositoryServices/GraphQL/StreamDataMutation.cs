@@ -5,6 +5,7 @@ using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Inputs;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Scalars;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Utils;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.StreamData.Methods;
 using Meshmakers.Octo.Communication.Contracts;
 using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.Runtime.Contracts.Formulas;
@@ -17,6 +18,11 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL;
 /// <see cref="IArchiveLifecycleService"/>; exceptions from §12 are surfaced via stable GraphQL
 /// error codes by <see cref="ResolveConnectionContextExtensions.HandleException"/>.
 /// </summary>
+/// <remarks>
+/// AB#8598 (F4.3): activateArchive, disableArchive, enableArchive, retryArchiveActivation, deleteArchive,
+/// createTimeRangeArchive and createRollupArchive are deprecated with the CK method that replaces each of them as
+/// reason (<see cref="ArchiveMethodHost"/>). They keep working unchanged; removal is a later decision.
+/// </remarks>
 [DoNotRegister]
 internal sealed class StreamDataMutation : ObjectGraphType
 {
@@ -29,30 +35,35 @@ internal sealed class StreamDataMutation : ObjectGraphType
         Description = "Archive lifecycle mutations: activate, disable, enable, retry activation, delete.";
 
         Field<NonNullGraphType<ArchiveTransitionResultDtoType>>("activateArchive")
+            .DeprecationReason(ArchiveMethodHost.DeprecationReasonOf("activateArchive"))
             .Description("Provisions the Crate table and transitions the archive to Activated. Allowed from Created/Disabled/Failed; idempotent on Activated.")
             .Argument<NonNullGraphType<OctoObjectIdType>>(Statics.RtIdArg, "Runtime id of the CkArchive to activate.")
             .ResolveAsync(ctx => ResolveTransitionAsync(ctx, "Activate",
                 (svc, id) => svc.ActivateAsync(id)));
 
         Field<NonNullGraphType<ArchiveTransitionResultDtoType>>("disableArchive")
+            .DeprecationReason(ArchiveMethodHost.DeprecationReasonOf("disableArchive"))
             .Description("Transitions the archive to Disabled. Allowed only from Activated; the Crate table is preserved.")
             .Argument<NonNullGraphType<OctoObjectIdType>>(Statics.RtIdArg, "Runtime id of the CkArchive to disable.")
             .ResolveAsync(ctx => ResolveTransitionAsync(ctx, "Disable",
                 (svc, id) => svc.DisableAsync(id)));
 
         Field<NonNullGraphType<ArchiveTransitionResultDtoType>>("enableArchive")
+            .DeprecationReason(ArchiveMethodHost.DeprecationReasonOf("enableArchive"))
             .Description("Transitions the archive from Disabled back to Activated. Re-validates column paths against the current CK model.")
             .Argument<NonNullGraphType<OctoObjectIdType>>(Statics.RtIdArg, "Runtime id of the CkArchive to enable.")
             .ResolveAsync(ctx => ResolveTransitionAsync(ctx, "Enable",
                 (svc, id) => svc.EnableAsync(id)));
 
         Field<NonNullGraphType<ArchiveTransitionResultDtoType>>("retryArchiveActivation")
+            .DeprecationReason(ArchiveMethodHost.DeprecationReasonOf("retryArchiveActivation"))
             .Description("Retries activation after a previous DDL failure. Allowed only from Failed.")
             .Argument<NonNullGraphType<OctoObjectIdType>>(Statics.RtIdArg, "Runtime id of the CkArchive to retry activation for.")
             .ResolveAsync(ctx => ResolveTransitionAsync(ctx, "RetryActivation",
                 (svc, id) => svc.RetryActivationAsync(id)));
 
         Field<NonNullGraphType<BooleanGraphType>>("deleteArchive")
+            .DeprecationReason(ArchiveMethodHost.DeprecationReasonOf("deleteArchive"))
             .Description("Drops the per-archive CrateDB table (idempotent) and soft-deletes the CkArchive entity. Destructive — historical data is lost. Allowed from any status. Returns true when the archive was deleted.")
             .Argument<NonNullGraphType<OctoObjectIdType>>(Statics.RtIdArg, "Runtime id of the CkArchive to delete.")
             .ResolveAsync(ResolveDeleteAsync);
@@ -60,6 +71,7 @@ internal sealed class StreamDataMutation : ObjectGraphType
         // ---- TimeRangeArchive create (concept-time-range §10) ----
 
         Field<NonNullGraphType<OctoObjectIdType>>("createTimeRangeArchive")
+            .DeprecationReason(ArchiveMethodHost.DeprecationReasonOf("createTimeRangeArchive"))
             .Description("Creates a new TimeRangeArchive in Created status. Takes target CK type, attribute-path columns, and optional advisory period. Unlike createRollupArchive there is no source archive to inherit anything from — the operator picks everything directly. Returns the generated rtId. Requires StreamDataAdmin.")
             .Argument<NonNullGraphType<CreateTimeRangeArchiveInputType>>("input", "Time-range-specific create payload.")
             .ResolveAsync(ResolveCreateTimeRangeAsync);
@@ -67,6 +79,7 @@ internal sealed class StreamDataMutation : ObjectGraphType
         // ---- Rollup-only mutations (rollup-archives concept §9) ----
 
         Field<NonNullGraphType<OctoObjectIdType>>("createRollupArchive")
+            .DeprecationReason(ArchiveMethodHost.DeprecationReasonOf("createRollupArchive"))
             .Description("Creates a new CkRollupArchive in Created status. The inherited CkArchive attributes (TargetCkTypeId, Columns) are resolved server-side from the source archive(s) and the supplied aggregations (RollupColumnGenerator). Sources are declared via input.sources (AB#5157, validity spans) or the deprecated input.sourceArchiveRtId — exactly one of the two. Source-rule violations (duplicate / overlapping / inverted spans, target-type mismatch, missing path, cycle) surface as STREAM_DATA errors carrying the engine message. Returns the generated rtId.")
             .Argument<NonNullGraphType<CreateRollupArchiveInputType>>("input", "Rollup-specific create payload.")
             .ResolveAsync(ResolveCreateRollupAsync);

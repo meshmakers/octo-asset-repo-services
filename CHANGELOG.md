@@ -62,6 +62,13 @@
   **Before the rollout**, grant `StreamDataAdmin` to every user or client that sends manual points over REST (pipeline nodes
   write through the repository and are not affected).
 
+- AB#8598 New: the archive lifecycle as CK methods of System.StreamData 1.24.0, handled in-process (`StreamData/Methods/`):
+  `Archive.Activate-1`, `Disable-1`, `Enable-1`, `RetryActivation-1`, `DeleteArchive-1`, `TimeRangeArchive.CreateArchive-1`,
+  `RollupArchive.CreateArchive-1`. Same engine calls, result shapes and STREAMDATA_* error codes as the mutations; role `StreamDataAdmin`
+  (METHOD_FORBIDDEN without it). The seven `streamData` mutations they replace keep working and are deprecated with
+  `Use <method id>`. Switch `Methods:StreamData:Enabled` (default true). At startup the embedded System.StreamData is imported into the
+  system tenant (Order 12) so the registration validation finds the methods. Needs the engine package with System.StreamData 1.24.0.
+
 - AB#8647 New: the transient `downsampling` query takes the optional argument `groupByColumnPaths: [String!]` (supported:
   `["rtId"]`) and returns one row per series and bin instead of one total per bin. The value goes to the engine's
   `StreamDataDownsamplingQueryOptions.GroupByColumnPaths` (AB#7360); the series key is the cell `rtId` after `timestamp` and the

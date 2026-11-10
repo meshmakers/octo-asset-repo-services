@@ -185,6 +185,44 @@ be used directly — see `createRollupArchive` below for why.
 | `createRollupArchive(input)` | `OctoObjectId` | **Server-side rollup creation.** Input carries only the rollup-specific fields (`sourceArchiveRtId`, `bucketSizeMs`, `watermarkLagMs`, `aggregations[]` + optional name); `TargetCkTypeId` is inherited from the source archive and `Columns` is derived from the aggregations via `RollupColumnGenerator` server-side. Single source of truth for the column-derivation rule — clients no longer mirror it. Requires `StreamDataAdmin`. |
 | `freezeRollupArchive(rtId, until)` / `unfreezeRollupArchive(rtId, acceptGaps)` / `rewindRollupWatermark(rtId, toBucketEnd)` | `ArchiveTransitionResult` | Rollup-only lifecycle. All require `StreamDataAdmin`. |
 
+**Archive lifecycle as CK methods (AB#8598, F4.3).** `activateArchive`, `disableArchive`, `enableArchive`, `retryArchiveActivation`,
+`deleteArchive`, `createTimeRangeArchive` and `createRollupArchive` are **deprecated** (`@deprecated(reason: "Use <method id>")`) and keep
+working unchanged; each is replaced by a method of System.StreamData 1.24.0, called through the typed method mutations
+(`runtime { systemStreamDataRawArchives { activate(rtId) { result { archiveRtId status transition } } } }`, `systemStreamDataRollupArchives { createArchive(input: { archive: {...} }) { result } }`):
+
+| Mutation | Method | Handler |
+|---|---|---|
+| `activateArchive` | `System.StreamData/Archive.Activate-1` | `ArchiveActivateHandler` |
+| `disableArchive` | `System.StreamData/Archive.Disable-1` | `ArchiveDisableHandler` |
+| `enableArchive` | `System.StreamData/Archive.Enable-1` | `ArchiveEnableHandler` |
+| `retryArchiveActivation` | `System.StreamData/Archive.RetryActivation-1` | `ArchiveRetryActivationHandler` |
+| `deleteArchive` | `System.StreamData/Archive.DeleteArchive-1` | `ArchiveDeleteArchiveHandler` |
+| `createTimeRangeArchive` | `System.StreamData/TimeRangeArchive.CreateArchive-1` | `TimeRangeArchiveCreateArchiveHandler` |
+| `createRollupArchive` | `System.StreamData/RollupArchive.CreateArchive-1` | `RollupArchiveCreateArchiveHandler` |
+
+- Code: `StreamData/Methods/` (`ArchiveMethodHost`: the table above, `AddArchiveCkMethodHandlers`, deprecation reasons; `ArchiveLifecycleMethodHandlers`,
+  `ArchiveCreateMethodHandlers`, `ArchiveMethodSupport`). Registered in `Program.cs` (not in `GatewayOwnedMethodHandlers`, so test hosts without stream data
+  are not affected), in-process (`AddCkInProcessMethodHandlers`). Switch `Methods:StreamData:Enabled` (`OCTO_METHODS__STREAMDATA__ENABLED`, default true):
+  off = no handler, a method call answers `METHOD_HANDLER_NOT_AVAILABLE`, the mutations keep working.
+- **Same semantics as the mutation.** Each handler calls the same engine service (`IArchiveLifecycleService`, `ITimeRangeArchiveRuntimeStore.InsertAsync`,
+  `IRollupArchiveLifecycleService.CreateAsync`) and returns the same shape. Authorization: role `StreamDataAdmin` (declared in the model, enforced by the gateway and the
+  pipeline: `METHOD_FORBIDDEN` instead of the mutation's `FORBIDDEN`). Errors: a `StreamDataException` becomes the declared failure with **the mutation's code**
+  (`ArchiveMethodErrors.CodeOf`, the mapping of `HandleStreamDataException`) and the parameters of its extensions (`archiveRtId`, `fromStatus`, `attemptedTransition`,
+  `actualStatus`, `path`) plus `message`. A tenant without stream data answers `STREAMDATA_NOT_ENABLED` (the mutation: generic `ASSET1002`). Input errors that the mutation
+  answers with its own validation message (`createRollupArchive` source rules, unknown time zone) are `METHOD_VALIDATION_FAILED` naming the field (`archive.sources`,
+  `archive.referenceTimeZone`). A target that is no archive of the call's tenant is `METHOD_TARGET_NOT_FOUND` (gateway); cross-tenant HTTP calls are refused by the
+  `TenantAuthorizationMiddleware` before GraphQL.
+- **System tenant import.** The startup validation of in-process registrations looks the methods up in the system tenant's CK cache, which holds System.StreamData only
+  when stream data was enabled there. `SystemTenantStreamDataModelImport` (Order 12, after the default configuration, before the validation at 15) imports the embedded model
+  into the system tenant (idempotent, downgrade guard). It does not enable stream data for the system tenant.
+- **Create parameters are plain classes.** The generated `TimeRangeArchiveCreateArchiveParameters` / `RollupArchiveCreateArchiveParameters` hold the record as
+  `Rt{Record}Record`, whose record arrays are `IAttributeValueList<T>`; System.Text.Json cannot bind them (`NotSupportedException`, the call failed with
+  `METHOD_HANDLER_FAILED`). The handlers use `TimeRangeArchiveCreateParameters` / `RollupArchiveCreateParameters` with the same members; the registration
+  validation still checks the parameter names against the model.
+- Tests: `UnitTests/StreamData/Methods/ArchiveMethodTests` (code mapping, host table, switch, source rules), `IntegrationTests/StreamData/ArchiveLifecycleMethodTests`
+  (fixture `ArchiveMethodStreamDataFixture`: MongoDB + CrateDB, real schema, gateway, pipeline and the production registration; per method the same transition as the
+  mutation side by side, METHOD_FORBIDDEN without the role for all seven, the invalid-transition code, target outside the tenant, deprecation reasons in the schema).
+
 All custom mutations use `ResolveConnectionContextExtensions.HandleException` to surface
 domain exceptions (`InvalidArchiveStateTransitionException`, `ArchiveNotFoundException`,
 `RollupSourceMissingException`, …) as stable GraphQL error codes with the underlying message
@@ -1166,7 +1204,8 @@ the real `OctoSessionListener` transaction; harness `InProcessMethodGraphQlTestF
 ### Gateway-owned methods run as in-process handlers (AB#6893, F3.7)
 
 A method the asset repository implements itself (`handler: service`, e.g. the planned `Tenant.*` / `Archive.*`) is registered in
-`GraphQL/Methods/GatewayOwnedMethodHandlers.Register` (empty today; one line per handler, version-less qualified method id). `AddGatewayOwnedCkMethodHandlers()`
+`GraphQL/Methods/GatewayOwnedMethodHandlers.Register` (empty today; one line per handler, version-less qualified method id; the `Archive.*` methods of
+System.StreamData register through `StreamData/Methods/ArchiveMethodHost` instead, see "StreamData Mutations"). `AddGatewayOwnedCkMethodHandlers()`
 (`RuntimeEngineBuilderExtensions.AddServices`, after `AddCkMethodGateway()`) hands the list to `AddCkInProcessMethodHandlers`
 (octo-common-services >= 3.5.48, which contains the host-side authorization of AB#7664 and the limits of AB#7665) and adds the session tripwire once.
 The dispatcher prefers the in-process transport, so such a method is never published to the bus and never announced as a remote handler; success, declared error,

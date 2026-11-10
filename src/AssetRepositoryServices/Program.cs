@@ -178,6 +178,11 @@ try
         _ => new Meshmakers.Octo.Runtime.Contracts.MongoDb.Services.StreamDataCkModelDescriptor(
             Meshmakers.Octo.ConstructionKit.Models.StreamData.Generated.System.StreamData.v1.SystemStreamDataCkIds.CkModelId));
 
+    // AB#8598 (F4.3): the archive lifecycle as CK methods of System.StreamData (Archive.Activate-1 ... RollupArchive.CreateArchive-1),
+    // handled in-process by this service. Switch: Methods:StreamData:Enabled (default true).
+    Meshmakers.Octo.Backend.AssetRepositoryServices.StreamData.Methods.ArchiveMethodHost.AddArchiveCkMethodHandlers(
+        builder.Services, builder.Configuration);
+
     var app = builder.Build();
     app.MapObservability();
 
