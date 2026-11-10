@@ -21,6 +21,7 @@ internal static class GatewayOwnedMethodHandlers
     internal static void Register(ICkMethodHandlerRegistrationBuilder methods)
     {
         ArgumentNullException.ThrowIfNull(methods);
-        // No production method is owned by the gateway yet (Tenant.*, Archive.* follow with their own stories).
+        // No production method is registered here yet. The Archive.* methods of System.StreamData (AB#8598) register through
+        // StreamData/Methods/ArchiveMethodHost (AddCkInProcessMethodHandlers, own switch Methods:StreamData:Enabled).
     }
 }
