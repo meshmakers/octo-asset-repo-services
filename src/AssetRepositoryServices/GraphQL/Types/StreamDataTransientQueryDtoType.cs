@@ -95,6 +95,7 @@ internal sealed class StreamDataTransientQueryDtoType : ObjectGraphType<StreamDa
             IReadOnlyList<ColumnNameMapping> resolvedColumnNames;
             StreamQueryExecutionInput input;
             var activeAnchorPlan = AnchorPlan.None([]);
+            IReadOnlyList<ColumnNameMapping> groupMappings = [];
 
             switch (uc.Variant)
             {
@@ -202,10 +203,15 @@ internal sealed class StreamDataTransientQueryDtoType : ObjectGraphType<StreamDa
                     // which throws on windowed-storage archives (their resolver has no `timestamp`
                     // default — the time axis is window_end). Aggregation columns follow with
                     // function-suffixed keys (matches engine MapAggregationRow).
+                    // AB#8647: the series key of a grouped downsampling follows the timestamp.
+                    groupMappings = uc.GroupColumnsInRows
+                        ? fieldResolver.ResolveToMappings(uc.GroupByColumnPaths ?? [], enumIdResolver)
+                        : [];
                     resolvedColumnNames = new List<ColumnNameMapping>
                         {
                             new(Constants.Timestamp, Constants.Timestamp)
                         }
+                        .Concat(groupMappings)
                         .Concat(fieldResolver.ResolveAggregationMappings(aggColumns, enumIdResolver))
                         .ToList();
 
@@ -238,7 +244,8 @@ internal sealed class StreamDataTransientQueryDtoType : ObjectGraphType<StreamDa
                 result.Rows.Count, result.TotalCount);
 
             // AB#7812: one batched anchor load per page (caller's rights); a no-op without anchor columns.
-            var rows = await StreamDataAnchorColumns.BuildPageRowsAsync(ctx, gql, ckTypeId, result.Rows, resolvedColumnNames,
+            var engineRows = StreamDataDownsamplingGroupColumns.AddGroupValues(result.Rows, groupMappings);
+            var rows = await StreamDataAnchorColumns.BuildPageRowsAsync(ctx, gql, ckTypeId, engineRows, resolvedColumnNames,
                 activeAnchorPlan);
 
             var effectiveOffset = input.Offset.GetValueOrDefault(0);

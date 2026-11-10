@@ -60,6 +60,19 @@
   Automated writes keep the scope-only check (`TenantAssetApiReadWritePolicy`), so pipelines and adapters are unaffected.
   **Before the rollout**, grant `StreamDataAdmin` to every user or client that sends manual points over REST (pipeline nodes
   write through the repository and are not affected).
+
+- AB#8647 New: the transient `downsampling` query takes the optional argument `groupByColumnPaths: [String!]` (supported:
+  `["rtId"]`) and returns one row per series and bin instead of one total per bin. The value goes to the engine's
+  `StreamDataDownsamplingQueryOptions.GroupByColumnPaths` (AB#7360); the series key is the cell `rtId` after `timestamp` and the
+  first entry of `columns`. With local-day bins (`timeZone` / `binOrigin` / `binInterval`) every series gets every bin of the range,
+  an empty one with `COUNT` 0 and the other aggregations null, on raw archives and on `CalendarDay` rollups (a series without data in the
+  whole range gets no rows; the engine builds the whole result and refuses more than 100,000 bins x series rows, independent of the
+  page size); with fixed-width bins (`limit`) there is no per-series fill and no such cap, an empty bin stays one row with a null `rtId`. `totalCount` and paging count series x bins. Other paths are refused with an error that names them (the engine's downsampling row carries
+  no other group value; use `groupingAggregation`). Additive: without the argument the query, its engine call and its cells are
+  unchanged; the simple-downsampling path (AB#4233) keeps its cells. Code `GraphQL/StreamDataDownsamplingGroupColumns`. Tests
+  `UnitTests/GraphQL/StreamDataDownsamplingGroupColumnsTests`, `IntegrationTests/StreamData/DownsamplingGroupByGraphQlTests`
+  (3 series x gas days 23/24/25, empty gas day Count 0 on raw and rollup, paging, ungrouped unchanged, introspection).
+
 - AB#8559 Fix (security, staged): stream-data reads require one of the tenant roles `StreamDataReader`, `StreamDataWriter`
   or `StreamDataAdmin`. Until now every authenticated token of a tenant read all stream data, because the GraphQL endpoint only
   requires an authenticated user and the data-policy check (AB#4973) is open for CK types without a policy; the seeded role
@@ -70,11 +83,16 @@
   `Off` (unchanged), `Warn` (**default of this release**: the read goes ahead and a warning names tenant, query kind, subject
   and client id, once per caller, tenant and query kind within `StreamDataReadAuthorization:WarnLogInterval`, default 1 h) and
   `Enforce` (refused with the GraphQL error code `StreamDataReadRoleRequired`). In-process executions without a principal and
-  system security contexts always read. **Before switching an environment to `Enforce`**, grant `StreamDataReader` to every
-  caller of the warn log, in particular the adapters' pipeline service accounts (default role only `CommunicationManagement`;
-  pipelines that read archives - EC allocation, billing, simulation - run as that account), app clients and Grafana / Excel
-  / Studio users that read time series. Archive metadata queries (`rollupsFor`, `coverageFor`, `recomputeJobsFor`,
-  `archivesStorageStats`, `rollupQueryMetadata`, `resolveSeriesQuery`) are not gated. Tests
+  system security contexts always read. **Before switching an environment to `Enforce`**, every caller of the warn log must
+  hold a stream-data role. Only callers that read stream data **through the asset-repository API with their own token** are
+  affected: app clients and service accounts that call the GraphQL API with a client-credentials token, and Grafana / Excel /
+  Studio users that read time series. Pipelines the mesh adapter runs (e.g. EC allocation, billing, simulation) read archives
+  in-process through the engine and never reach this gate (corrected by AB#8583). **Operator note:** pipeline service accounts
+  need no manual grant - the communication controller adds `StreamDataReader` to declarative pipeline service accounts on
+  reconcile (AB#8563), and identity grants it to legacy `octo-pipeline-sa-*` accounts at every tenant setup (AB#8581); the
+  manual `octo-cli -c AddClientToRole ... StreamDataReader` step is no longer needed once those versions run and a
+  reconcile or tenant setup has granted the role (until then the account may lack it and its reads fail under `Enforce`).
+  Archive metadata queries (`rollupsFor`, `coverageFor`, `recomputeJobsFor`, `archivesStorageStats`, `rollupQueryMetadata`, `resolveSeriesQuery`) are not gated. Tests
   `UnitTests/GraphQL/StreamDataReadRoleGateTests`, `IntegrationTests/StreamData/StreamDataReadRoleGateTests` (mode x caller x
   query kind).
 - AB#8529 New (**breaking change for external clients**): changing a tenant's data model requires the tenant role

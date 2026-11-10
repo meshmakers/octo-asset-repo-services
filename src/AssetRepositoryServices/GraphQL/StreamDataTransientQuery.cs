@@ -98,6 +98,8 @@ internal sealed class StreamDataTransientQuery : ObjectGraphType
                 "Optional width of one local-day bin in whole days (default 1 when timeZone or binOrigin is given). Weeks and months are served by calendar rollups.")
             .Argument<StringGraphType>(BinOriginArg,
                 "Optional local time of day 'HH:mm' at which a bin starts (e.g. '06:00' for a gas day). Null means midnight. Same meaning as dayStartOffsetMs of a CALENDAR_DAY rollup.")
+            .Argument<ListGraphType<NonNullGraphType<StringGraphType>>>(Statics.GroupByColumnPathsArg,
+                "Optional series key: one row per series and bin instead of one total per bin. Supported: 'rtId'. The key is returned as a cell after 'timestamp'. Local-day bins: every series with data in the range gets every bin (COUNT 0, other aggregations null on an empty bin); a series without data in the whole range gets no rows, and without any data each bin is one row with a null rtId; more than 100,000 bins x series rows are refused. Fixed-width bins (limit): no per-series fill and no such cap; an empty bin is one row with a null rtId.")
             .Argument<NonNullGraphType<UtcDateTimeGraphType>>("from",
                 "Start of time range.")
             .Argument<NonNullGraphType<UtcDateTimeGraphType>>("to",
@@ -406,6 +408,12 @@ internal sealed class StreamDataTransientQuery : ObjectGraphType
                     "downsampling: limit is required unless timeZone, binInterval or binOrigin is given.");
             }
 
+            // AB#8647: optional series key (one row per series and bin); validated before the archive is read.
+            ctx.TryGetArgument(Statics.GroupByColumnPathsArg, out IEnumerable<string>? groupByArg);
+            var groupByArgList = groupByArg?.ToList();
+            StreamDataAnchorColumns.EnsureNone(groupByArgList, "a grouping");
+            var groupByColumnPaths = StreamDataDownsamplingGroupColumns.Normalize(groupByArgList);
+
             var archiveSnapshot = await gql.TenantContext.GetArchiveRuntimeStore().GetAsync(archiveRtId)
                 ?? throw new ArchiveNotFoundException(archiveRtId);
             var ckTypeId = archiveSnapshot.TargetCkTypeId;
@@ -422,7 +430,7 @@ internal sealed class StreamDataTransientQuery : ObjectGraphType
 
             StreamDataFieldValidation.ValidateStreamDataFields(
                 fieldResolver,
-                columnInputs.Select(c => c.AttributePath),
+                groupByColumnPaths.Concat(columnInputs.Select(c => c.AttributePath)),
                 null,
                 fieldFilters?.Where(f => f.ComparisonValue != null).Select(f => f.AttributePath),
                 StreamDataHiddenGuard.For(ctx, gql.TenantId, ckTypeId));
@@ -441,9 +449,11 @@ internal sealed class StreamDataTransientQuery : ObjectGraphType
             var typeQueryColumns = ctx.GetCkCacheService()
                 .GetCkTypeQueryColumnPathsByRtCkId(gql.TenantId, ckTypeId,
                     new CkTypeQueryColumnOptions { IgnoreNavigationProperties = true });
-            var columns = columnInputs
-                .Select(c => StreamDataColumnBuilder.BuildAggregationColumn(c.AttributePath, MapAggregationFunctionDtoToDto(c.AggregationType), typeQueryColumns, fieldResolver))
-                .ToList();
+            var groupByColumns = groupByColumnPaths
+                .Select(p => StreamDataColumnBuilder.BuildSimpleColumn(p, typeQueryColumns, fieldResolver));
+            var aggColumnDtos = columnInputs
+                .Select(c => StreamDataColumnBuilder.BuildAggregationColumn(c.AttributePath, MapAggregationFunctionDtoToDto(c.AggregationType), typeQueryColumns, fieldResolver));
+            var columns = groupByColumns.Concat(aggColumnDtos).ToList();
 
             var dto = new StreamDataTransientQueryDto
             {
@@ -455,6 +465,9 @@ internal sealed class StreamDataTransientQuery : ObjectGraphType
                     ArchiveRtId = archiveRtId,
                     CkTypeId = ckTypeId,
                     AggregationColumns = aggColumns,
+                    // Null without grouping: the engine call stays exactly as before (AB#8647).
+                    GroupByColumnPaths = groupByColumnPaths.Count > 0 ? groupByColumnPaths : null,
+                    GroupColumnsInRows = groupByColumnPaths.Count > 0,
                     From = from,
                     To = to,
                     Limit = limit,
