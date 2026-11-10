@@ -205,12 +205,62 @@ public class CkMethodResponseMapperTests
         outcome.Value!.Value.Should().BeNull();
     }
 
-    private static CkMethodGraph Method(CkMethodResultDto? result = null) =>
+    [Fact]
+    public void Accepted_AsynchronousMethod_ReturnsTheHandleWithAllFourWireFields()
+    {
+        // AB#8444: the handle of the frozen wire contract reaches the field value unchanged
+        var accepted = new DateTime(2026, 11, 9, 22, 0, 0, DateTimeKind.Utc);
+        var handle = new CkMethodOperationHandle
+        {
+            OperationId = "op1", AcceptedAtUtc = accepted, RetryAfterSeconds = 5, ExpiresAtUtc = null
+        };
+        var response = CkMethodResponse.Accepted(Invocation, "h1", handle);
+
+        var outcome = CkMethodResponseMapper.Map(response,
+            Method(result: new CkMethodResultDto { ValueType = AttributeValueTypesDto.Int }, async: true), _cache, Tenant);
+
+        outcome.Error.Should().BeNull();
+        outcome.Value!.InvocationId.Should().Be(Invocation);
+        outcome.Value.Value.Should().BeNull();
+        outcome.Value.Operation.Should().BeSameAs(handle);
+    }
+
+    [Fact]
+    public void Success_OfAnAsynchronousMethodWithoutHandle_IsAHandlerFailure_WithoutTheValue()
+    {
+        // AB#8444: an asynchronous method answered like a synchronous one breaks its contract; the value never leaves
+        var response = CkMethodResponse.Succeeded(Invocation, "h1", "42");
+
+        var outcome = CkMethodResponseMapper.Map(response,
+            Method(result: new CkMethodResultDto { ValueType = AttributeValueTypesDto.Int }, async: true), _cache, Tenant);
+
+        outcome.Value.Should().BeNull();
+        outcome.Error!.Code.Should().Be(CkMethodErrorCodes.MethodHandlerFailed);
+        ((IDictionary<string, object?>)outcome.Error.Extensions!["parameters"]!)["correlationId"]
+            .Should().Be(Invocation.ToString("D"));
+        outcome.Error.Message.Should().NotContain("42");
+    }
+
+    [Fact]
+    public void Success_OfASynchronousMethod_HasNoHandle()
+    {
+        var response = CkMethodResponse.Succeeded(Invocation, "h1", "42");
+
+        var outcome = CkMethodResponseMapper.Map(response,
+            Method(result: new CkMethodResultDto { ValueType = AttributeValueTypesDto.Int }), _cache, Tenant);
+
+        outcome.Error.Should().BeNull();
+        outcome.Value!.Value.Should().Be(42);
+        outcome.Value.Operation.Should().BeNull();
+    }
+
+    private static CkMethodGraph Method(CkMethodResultDto? result = null, bool async = false) =>
         new(new CkId<CkTypeId>("Sample-1.0.0/Thing-1"),
             new CkMethodDto
             {
                 MethodId = "Do-1", Kind = CkMethodKindDto.Instance, Result = result,
-                Errors = [new CkMethodErrorDto { Code = "PASSWORD_POLICY_VIOLATION" }]
+                Errors = [new CkMethodErrorDto { Code = "PASSWORD_POLICY_VIOLATION" }],
+                Execution = async ? new CkMethodExecutionDto { Mode = CkMethodModes.Async } : null
             });
 
     private static CkTypeAttributeGraph Attribute(string name, AttributeValueTypesDto type, CkId<CkEnumId>? enumId = null) =>

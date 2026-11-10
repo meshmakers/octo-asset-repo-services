@@ -983,8 +983,9 @@ Every concrete CK type with methods gets one mutation field per method **next to
 - **Marker**: the field metadata key `Statics.CkMethodCall` (`"CkMethodCall"`) holds a `CkMethodCallInfo` (concrete type, method id, qualified id, kind); `Statics.CkId` holds the
   type. The gateway rules (AB#7020 one call per request, AB#7026) find a method call by this key, never by field name.
 - **Errors**: `CkMethodResponseMapper.Map` returns the typed value for a success; for every failed response ONE `ExecutionError` via `CkMethodGraphQlError.Create` (`extensions.code`,
-  `extensions.parameters`, plus `extensions.details` when the response carries details). Declared handler codes keep their own code. An accepted async response (F3.6) maps to the
-  invocation id without result. A result that does not fit its declaration (`ResultJson`) becomes `METHOD_HANDLER_FAILED` with `methodId` and `correlationId`, never the value.
+  `extensions.parameters`, plus `extensions.details` when the response carries details). Declared handler codes keep their own code. An asynchronous method (`execution.mode: async`)
+  maps an accepted response to `invocationId` + `operation` (the handle, AB#8444, next section); a sync method that was nevertheless accepted maps to the
+  invocation id without result (unchanged). A result that does not fit its declaration (`ResultJson`) becomes `METHOD_HANDLER_FAILED` with `methodId` and `correlationId`, never the value.
   The result JSON is the camelCase `CkMethodJson` wire form; enums may be the member name (any spelling) or the key; records are built as `RtRecord` from the record graph.
   **`ResultJson` is the bare value (AB#8079):** the handler host of octo-common-services writes only `Value` of the generated `{Type}{Method}Result` (`"6ae7…"`, `21`,
   `{"specName":...}`), never `{"value": ...}`. The converter deliberately has **no** wrapper tolerance: a String result whose JSON is not a string is still passed
@@ -997,6 +998,40 @@ Every concrete CK type with methods gets one mutation field per method **next to
 - Tests: `CkMethodMutationFieldsTests`, `CkMethodResponseMapperTests` (unit); `GraphQL/CkV2/TypedMethodMutationTests` (integration: introspection of instance/static/versioned/inherited
   methods, input and result types, marker, 50 methods, snapshot `GraphQL/Methods/MethodLessTypes.golden.graphql` of the mutation and input types of method-less types taken before this
   change, call answer). Test model: `types/methodTest.yaml`, `types/methodLoadTest.yaml`, `interfaces/operable.yaml`.
+
+### Asynchronous methods: operation handle and `runtime.operations` (AB#8444, F3.6)
+
+A method declared `execution.mode: async` (read from the tenant's CK cache, AB#6926; `CkMethodGraphTypes.IsAsync`) gets a result type with
+`invocationId` and `operation: CkMethodOperationHandle!` and **no** `result` field; sync methods keep their exact shape. The handle type has the four fields of the frozen wire
+contract (`operationId`, `acceptedAtUtc`, `retryAfterSeconds`, `expiresAtUtc`, `CkMethodOperationHandle` of common-services). `CkMethodResponseMapper` passes the
+envelope's handle through; an async method answered **without** a handle is `METHOD_HANDLER_FAILED` with `correlationId` (logged, no value leaves).
+
+`runtime.operations` (`GraphQL/Methods/CkMethodOperationQueryField`, added to `RuntimeModelQuery` on **every** tenant) reads the operation records of AB#8443 through
+`ICkMethodOperationReader` (`CkMethodOperationReader`) and the store contract `ICkMethodOperationStore` (no store of its own). Arguments: `operationId` (one record,
+or `OPERATION_NOT_FOUND`), `methodId`, `state`, `since` (also narrow a read by id), `allOwners` (default false), `skip` (default 0), `take` (1-200, default 50).
+Result `CkMethodOperationConnection { totalCount items }`; item `CkMethodOperation` (`operationId`, `methodId`, `invocationId`, `state`
+`ACCEPTED|RUNNING|SUCCEEDED|FAILED`, `progress { percent stageCode parameters { name value } }`, `result: SimpleScalar` (parsed `ResultJson`, null for a sensitive
+result because the record never holds it), `error { code parameters details }`, `acceptedAtUtc`, `startedAtUtc`, `completedAtUtc`, `expiresAtUtc`). The field is nullable:
+an error does not null the whole `runtime` object.
+
+- **Who reads**: within the route tenant only, the owner (`CkMethodOperationOwner.Of(CkMethodPrincipal.FromClaimsPrincipal(user))`, the same mapping the gateway uses for
+  the call: `sub`, or `client_id` of a token without `sub`) and tenant administrators (`Methods:Authorization:AdministratorRoles`, default `AdminPanelManagement`, the
+  setting of the method authorization). Another user, an unknown, expired, other-tenant, empty or over-long (> 128) id: the **same** `OPERATION_NOT_FOUND` (fixed message,
+  empty `parameters`). The list without `allOwners` is the caller's own operations (also for administrators); `allOwners: true` for a non-administrator and invalid paging
+  are `OPERATION_QUERY_REFUSED` (`reason` `administrators-only` / `invalid-paging`, `argument`). Errors are ONE `ExecutionError` with `extensions.code` + `extensions.parameters`
+  (`CkMethodOperationQueryField.CreateError`), GraphQL-layer codes, not `METHOD_*` wire codes.
+- **Registration** (`AddServices`): `AddCkMethodMongoOperationStore()` (package `Meshmakers.Octo.Services.Methods.MongoDb`, collection `MethodOperations` in the system
+  database) and `AddCkMethodOperationReads()` (reader + the AB#8443 sweep that ends lost operations; no heartbeat, the asset repository runs no operation itself; a
+  gateway-owned async handler would additionally need `AddCkMethodOperations()`). Settings `Methods:Operations:*` (retention 1 h-30 d, default 7 d).
+- **Idempotency**: a repeated key of an async method returns the stored accepted envelope, so the same `operationId` (dispatch layer of AB#8443; proven end to end here).
+- **One call per request**: an async method field still counts (`OneMethodCallPerRequestRule`, OD-2b).
+- Tests: `UnitTests/GraphQL/Methods/CkMethodOperationReaderTests` (access matrix, not-found identity, list filters, paging, configured admin roles, client-credentials owner),
+  `CkMethodResponseMapperTests` (handle passthrough, async without handle); `IntegrationTests/GraphQL/CkV2/AsyncMethodOperationTests` (fixture
+  `AsyncMethodGraphQlTestFixture`: real schema, gateway, in-process handler host with `AddCkMethodOperations`, the **MongoDB** operation store of the production
+  registration; handle fields, owner/admin read, progress, declared failure, not-found identity incl. expired and other-tenant ids, a read through another tenant's route,
+  list filters and `allOwners`, same idempotency key = same `operationId`, one call per request, schema of the async result type). Test model: `types/asyncOperationTest.yaml`
+  (`AsyncOperationThing.Export-1`, static, async, String result).
+- **Studio codegen**: the new types and the `operations` field change `schema.graphql`; a refresh is needed only to use them.
 
 ### Method mutation resolver (AB#7026, F3.7)
 
