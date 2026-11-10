@@ -610,8 +610,10 @@ public class StreamDataController : ControllerBase
     /// <summary>
     /// Inserts or corrects data points of a raw archive (AB#8590). A raw row is identified by archive + <c>rtId</c> +
     /// <c>timestamp</c> (UTC, millisecond precision); the CK type is fixed per archive. A write with an existing identity
-    /// replaces the stored row subject to the archive's conflict precedence: a manual row is never replaced by an
-    /// automated delivery, and protection is per row (a manual correction of one attribute protects the whole row).
+    /// replaces the stored row subject to the archive's conflict precedence: a stored manual row is protected from an
+    /// automated delivery while <c>$Origin</c> ranks first (the default); a ranking column before <c>$Origin</c> (or
+    /// <c>$Origin</c> set to Ignore) lets a better-ranked automated delivery replace it, and a losing write is skipped as
+    /// <c>LowerPrecedence</c>. Protection is per row (a manual correction of one attribute protects the whole row).
     /// Each point may carry <c>origin</c> (<c>manual</c> | <c>automated</c>, absent = automated) and, only with
     /// <c>manual</c>, a <c>reason</c>; the writer and the write time come from the verified caller and the platform,
     /// never from the body. A manual point must name every ingested column of the archive (explicit null allowed) except

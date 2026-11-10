@@ -11,7 +11,9 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.StreamData.Controllers
 /// <remarks>
 /// <b>Row identity:</b> a raw row is identified by archive + <see cref="RtId" /> + <see cref="Timestamp" /> (UTC,
 /// millisecond precision); the CK type is fixed per archive. A second write with the same identity replaces the stored
-/// row, subject to the archive's conflict precedence (a manual row is never replaced by an automated delivery).
+/// row, subject to the archive's conflict precedence: a stored manual row is protected from an automated delivery while
+/// <c>$Origin</c> ranks first (the default); a ranking column before <c>$Origin</c> (or <c>$Origin</c> set to Ignore)
+/// lets a better-ranked automated delivery replace it, and a losing write is skipped as <c>LowerPrecedence</c>.
 /// Protection is per row: a manual correction of one attribute also protects the other attributes of that row.
 /// </remarks>
 public sealed class InsertRawPointRestDto
