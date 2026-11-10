@@ -429,7 +429,7 @@ Time-series data support (`StreamData/`):
   - `GET rollups/validate?rollupRtId=…`, `POST rollups/repair?rollupRtId=…&dryRun=true|false`, `GET rollups/repair/{requestId}` (AB#6968):
     operator check and repair of the rollup state after a restore (octo-cli `ValidateRollups` / `RepairRollups` / `GetRollupRepairStatus`,
     MCP `validate_rollups` / `repair_rollups` / `get_rollup_repair_status`). Validate is read only (ReadOnly policy; counts and MAX/MIN, no rows).
-    Repair needs ReadWrite and **defaults to a dry run** (planned steps per rollup, nothing changed). `dryRun=false` only **requests** the
+    Repair needs `StreamDataAdministrationPolicy` (scope plus role `StreamDataAdmin`, AB#8709; also for the dry run) and **defaults to a dry run** (planned steps per rollup, nothing changed). `dryRun=false` only **requests** the
     repair: `IStreamDataRepository.EnqueueRollupRepairAsync` writes a request and the call answers **202** with the request and a `Location`
     to the status resource; the host's recompute tick (`RecomputeOrchestratorHostedService` in the engine) executes it, so a long recompute is
     never bound to an HTTP request (an ingress cuts a request long before it ends). A second request while one is active returns the
