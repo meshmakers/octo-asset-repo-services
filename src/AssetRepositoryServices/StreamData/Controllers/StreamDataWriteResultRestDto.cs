@@ -48,6 +48,8 @@ public sealed class StreamDataWriteResultRestDto
 
 /// <summary>
 /// Body of the 409 of <c>POST archives/{archiveRtId}/insert</c> and <c>POST archives/{archiveRtId}/insertTimeRange</c> (AB#7598): a manual row could not be stored.
+/// Other points of the same request may already be stored; <c>result</c> lists the points that were not stored.
+/// Reload before retrying.
 /// The SDK and the energy pipelines read <c>message</c> and <c>result</c>, so these names are the wire contract.
 /// </summary>
 public sealed class ManualWriteNotStoredRestDto

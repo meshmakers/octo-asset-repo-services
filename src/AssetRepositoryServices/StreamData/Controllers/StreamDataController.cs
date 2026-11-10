@@ -628,8 +628,9 @@ public class StreamDataController : ControllerBase
     /// stored, 400 naming the point and the field for every client error (also an invalid archive id and a null point),
     /// and 503 with a problem body and <c>Retry-After</c> when the archive did not store every row of one write statement,
     /// also after a retry (AB#8679): its <c>rowsInAffectedWrite</c> and <c>rowsNotStored</c> count that statement, not the
-    /// batch, and other points of the batch may have been stored. Nothing of a batch refused with 400, 403 or 409 is
-    /// written.
+    /// batch, and other points of the batch may have been stored. A 409 can also follow stored points of the same
+    /// request: other points of the request may already be stored, the body lists the points that were not stored, and
+    /// the caller reloads before retrying. Nothing of a batch refused with 400 or 403 is written.
     /// A batch with a manual point needs the tenant role <c>StreamDataAdmin</c> besides the write scope, otherwise the
     /// whole batch answers 403 (AB#8590 AC 8); automated points need the scope only.
     /// </summary>
@@ -785,7 +786,8 @@ public class StreamDataController : ControllerBase
     /// true. Time-range concept §3. The archive must be in <c>Activated</c> status; non-time-
     /// range archives reject the call with HTTP 400. Answers 200 with the write result (rows stored, rows not
     /// stored with the reason, AB#7598) — an empty batch still answers 204 — and 409 with the result when a
-    /// manual row could not be stored. Every point is checked like the raw <c>insert</c> before anything is written, each
+    /// manual row could not be stored; other points of the request may already be stored, the body lists the points
+    /// that were not stored, and the caller reloads before retrying. Every point is checked like the raw <c>insert</c> before anything is written, each
     /// a 400 naming the point and the field (AB#8590): missing or sub-millisecond <c>from</c>/<c>to</c>, invalid origin,
     /// reason without manual, ckTypeId mismatch, and an attribute that is no ingested column or a computed column (also
     /// for automated points). A manual point must name every ingested column of the archive (explicit null allowed) except
