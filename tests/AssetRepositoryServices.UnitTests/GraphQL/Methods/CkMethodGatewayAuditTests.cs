@@ -108,7 +108,11 @@ public class CkMethodGatewayAuditTests
 
     private static ClaimsPrincipal User(params string[] roles)
     {
-        var claims = new List<Claim> { new("sub", Caller), new("scope", "octo_api openid"), new("name", "Audit Tester") };
+        // a real token always carries the tenant it was issued for; the in-process transport checks it (AB#8711)
+        var claims = new List<Claim>
+        {
+            new("sub", Caller), new("scope", "octo_api openid"), new("name", "Audit Tester"), new("tenant_id", Tenant)
+        };
         claims.AddRange(roles.Select(r => new Claim("role", r)));
         return new ClaimsPrincipal(new ClaimsIdentity(claims, "test"));
     }

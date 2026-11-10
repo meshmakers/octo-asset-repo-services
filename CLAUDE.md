@@ -211,11 +211,13 @@ working unchanged; each is replaced by a method of System.StreamData 1.24.0, cal
   `actualStatus`, `path`) plus `message`. A tenant without stream data answers `STREAMDATA_NOT_ENABLED` (the mutation: generic `ASSET1002`). Input errors that the mutation
   answers with its own validation message (`createRollupArchive` source rules, unknown time zone) are `METHOD_VALIDATION_FAILED` naming the field (`archive.sources`,
   `archive.referenceTimeZone`). A target that is no archive of the call's tenant is `METHOD_TARGET_NOT_FOUND` (gateway).
-- **Caller tenant (`ArchiveMethodCallerTenantGuard`).** An in-process call is not re-validated by a bus host, and the HTTP tenant gate may run
-  in LogOnly (locally a token of `octosystem` could disable an archive of a child tenant through the mutation and, before this guard, through the
-  method). Every archive handler therefore first applies the claim rule of `CkMethodCallerTokenValidator`: a user token (`sub`) must carry the
-  call's tenant in `tenant_id`; a service token (no `sub`) must carry it too or be on `TenantAuthorization:CrossTenantServiceClientIds`. Otherwise
-  `METHOD_FORBIDDEN` with `reason = tenant-not-allowed`, nothing touched. The mutations keep their behaviour (they follow the HTTP gate).
+- **Caller tenant (central, AB#8711).** An in-process call is not re-validated by a bus host, and the HTTP tenant gate may run in LogOnly
+  (locally a token of `octosystem` could disable an archive of a child tenant). The in-process transport of octo-common-services refuses such a
+  call for **every** in-process method before any handler runs (`CkMethodCallerTenantFilter`, band 150, rule `CkMethodCallerTenantRule` of the
+  bus host): a user token (`sub`) must carry the call's tenant in `tenant_id`; a service token (no `sub`) must carry it too or be on
+  `TenantAuthorization:CrossTenantServiceClientIds`. Otherwise `METHOD_FORBIDDEN` with `reason = tenant-not-allowed`, nothing touched. The
+  archive handlers have no tenant check of their own any more (the stopgap `ArchiveMethodCallerTenantGuard` of AB#8598 is removed). The
+  mutations keep their behaviour (they follow the HTTP gate).
 - **System tenant import.** The startup validation of in-process registrations looks the methods up in the system tenant's CK cache, which holds System.StreamData only
   when stream data was enabled there. `SystemTenantStreamDataModelImport` (Order 12, after the default configuration, before the validation at 15) imports the embedded model
   into the system tenant (idempotent, downgrade guard). It does not enable stream data for the system tenant.

@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- AB#8711 Refactor: the archive CK methods (AB#8598) no longer check the caller tenant themselves; `ArchiveMethodCallerTenantGuard`
+  is removed. The check moved into the in-process transport of octo-common-services (`CkMethodCallerTenantFilter`), which applies
+  the same rule to every in-process method of this service before any handler runs: a caller token issued for another tenant is
+  `METHOD_FORBIDDEN` with `reason = tenant-not-allowed`, also while the HTTP tenant gate only logs; clients on
+  `TenantAuthorization:CrossTenantServiceClientIds` keep working. Answer unchanged for the archive methods (code and reason; the
+  error now also names `methodId`). Needs octo-common-services with AB#8711.
 - AB#8709 Fix (security, **breaking for callers without the role**): the stream-data REST endpoints that change an archive or
   its columns require the tenant role `StreamDataAdmin` on top of the `octo_api` scope (new `StreamDataAdministrationPolicy`),
   the same rule as the `streamData` GraphQL mutations and the Archive CK methods. Covered: archive lifecycle

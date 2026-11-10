@@ -19,14 +19,9 @@ internal static class ArchiveTransitions
     ///     with the code of the mutation.
     /// </summary>
     public static async Task<CkMethodOutcome<RtArchiveTransitionResultRecord>> RunAsync(ISystemContext systemContext,
-        ArchiveMethodCallerTenantGuard tenantGuard, ILogger logger, CkMethodContext context, string transitionName,
+        ILogger logger, CkMethodContext context, string transitionName,
         Func<IArchiveLifecycleService, OctoObjectId, Task> transition)
     {
-        if (!tenantGuard.IsAllowed(context))
-        {
-            return CkMethodOutcome<RtArchiveTransitionResultRecord>.Forbidden(ArchiveMethodCallerTenantGuard.Reason);
-        }
-
         if (!TryGetTarget(context, out var archiveRtId))
         {
             return CkMethodOutcome<RtArchiveTransitionResultRecord>.TargetNotFound();
@@ -65,14 +60,13 @@ internal static class ArchiveTransitions
 ///     Handler of <c>System.StreamData/Archive.Activate-1</c> (AB#8598). Mutation parity: <c>streamData.activateArchive</c>
 ///     (<see cref="IArchiveLifecycleService.ActivateAsync" />).
 /// </summary>
-internal sealed class ArchiveActivateHandler(ISystemContext systemContext, ArchiveMethodCallerTenantGuard tenantGuard,
-    ILogger<ArchiveActivateHandler> logger)
+internal sealed class ArchiveActivateHandler(ISystemContext systemContext, ILogger<ArchiveActivateHandler> logger)
     : ICkMethodHandler<ArchiveActivateParameters, ArchiveActivateResult>
 {
     public async Task<CkMethodOutcome<ArchiveActivateResult>> HandleAsync(CkMethodContext<ArchiveActivateParameters> context,
         CancellationToken cancellationToken)
     {
-        var outcome = await ArchiveTransitions.RunAsync(systemContext, tenantGuard, logger, context, "Activate",
+        var outcome = await ArchiveTransitions.RunAsync(systemContext, logger, context, "Activate",
             (lifecycle, id) => lifecycle.ActivateAsync(id)).ConfigureAwait(false);
         return outcome.IsSuccess
             ? new ArchiveActivateResult { Value = outcome.Value! }
@@ -84,14 +78,13 @@ internal sealed class ArchiveActivateHandler(ISystemContext systemContext, Archi
 ///     Handler of <c>System.StreamData/Archive.Disable-1</c> (AB#8598). Mutation parity: <c>streamData.disableArchive</c>
 ///     (<see cref="IArchiveLifecycleService.DisableAsync" />).
 /// </summary>
-internal sealed class ArchiveDisableHandler(ISystemContext systemContext, ArchiveMethodCallerTenantGuard tenantGuard,
-    ILogger<ArchiveDisableHandler> logger)
+internal sealed class ArchiveDisableHandler(ISystemContext systemContext, ILogger<ArchiveDisableHandler> logger)
     : ICkMethodHandler<ArchiveDisableParameters, ArchiveDisableResult>
 {
     public async Task<CkMethodOutcome<ArchiveDisableResult>> HandleAsync(CkMethodContext<ArchiveDisableParameters> context,
         CancellationToken cancellationToken)
     {
-        var outcome = await ArchiveTransitions.RunAsync(systemContext, tenantGuard, logger, context, "Disable",
+        var outcome = await ArchiveTransitions.RunAsync(systemContext, logger, context, "Disable",
             (lifecycle, id) => lifecycle.DisableAsync(id)).ConfigureAwait(false);
         return outcome.IsSuccess
             ? new ArchiveDisableResult { Value = outcome.Value! }
@@ -103,14 +96,13 @@ internal sealed class ArchiveDisableHandler(ISystemContext systemContext, Archiv
 ///     Handler of <c>System.StreamData/Archive.Enable-1</c> (AB#8598). Mutation parity: <c>streamData.enableArchive</c>
 ///     (<see cref="IArchiveLifecycleService.EnableAsync" />).
 /// </summary>
-internal sealed class ArchiveEnableHandler(ISystemContext systemContext, ArchiveMethodCallerTenantGuard tenantGuard,
-    ILogger<ArchiveEnableHandler> logger)
+internal sealed class ArchiveEnableHandler(ISystemContext systemContext, ILogger<ArchiveEnableHandler> logger)
     : ICkMethodHandler<ArchiveEnableParameters, ArchiveEnableResult>
 {
     public async Task<CkMethodOutcome<ArchiveEnableResult>> HandleAsync(CkMethodContext<ArchiveEnableParameters> context,
         CancellationToken cancellationToken)
     {
-        var outcome = await ArchiveTransitions.RunAsync(systemContext, tenantGuard, logger, context, "Enable",
+        var outcome = await ArchiveTransitions.RunAsync(systemContext, logger, context, "Enable",
             (lifecycle, id) => lifecycle.EnableAsync(id)).ConfigureAwait(false);
         return outcome.IsSuccess
             ? new ArchiveEnableResult { Value = outcome.Value! }
@@ -122,14 +114,13 @@ internal sealed class ArchiveEnableHandler(ISystemContext systemContext, Archive
 ///     Handler of <c>System.StreamData/Archive.RetryActivation-1</c> (AB#8598). Mutation parity:
 ///     <c>streamData.retryArchiveActivation</c> (<see cref="IArchiveLifecycleService.RetryActivationAsync" />).
 /// </summary>
-internal sealed class ArchiveRetryActivationHandler(ISystemContext systemContext, ArchiveMethodCallerTenantGuard tenantGuard,
-    ILogger<ArchiveRetryActivationHandler> logger)
+internal sealed class ArchiveRetryActivationHandler(ISystemContext systemContext, ILogger<ArchiveRetryActivationHandler> logger)
     : ICkMethodHandler<ArchiveRetryActivationParameters, ArchiveRetryActivationResult>
 {
     public async Task<CkMethodOutcome<ArchiveRetryActivationResult>> HandleAsync(
         CkMethodContext<ArchiveRetryActivationParameters> context, CancellationToken cancellationToken)
     {
-        var outcome = await ArchiveTransitions.RunAsync(systemContext, tenantGuard, logger, context, "RetryActivation",
+        var outcome = await ArchiveTransitions.RunAsync(systemContext, logger, context, "RetryActivation",
             (lifecycle, id) => lifecycle.RetryActivationAsync(id)).ConfigureAwait(false);
         return outcome.IsSuccess
             ? new ArchiveRetryActivationResult { Value = outcome.Value! }
@@ -142,18 +133,12 @@ internal sealed class ArchiveRetryActivationHandler(ISystemContext systemContext
 ///     (<see cref="IArchiveLifecycleService.DeleteAsync" />): drops the table (idempotent) and deletes the entity; the result is
 ///     <c>true</c>, as the mutation answers.
 /// </summary>
-internal sealed class ArchiveDeleteArchiveHandler(ISystemContext systemContext, ArchiveMethodCallerTenantGuard tenantGuard,
-    ILogger<ArchiveDeleteArchiveHandler> logger)
+internal sealed class ArchiveDeleteArchiveHandler(ISystemContext systemContext, ILogger<ArchiveDeleteArchiveHandler> logger)
     : ICkMethodHandler<ArchiveDeleteArchiveParameters, ArchiveDeleteArchiveResult>
 {
     public async Task<CkMethodOutcome<ArchiveDeleteArchiveResult>> HandleAsync(
         CkMethodContext<ArchiveDeleteArchiveParameters> context, CancellationToken cancellationToken)
     {
-        if (!tenantGuard.IsAllowed(context))
-        {
-            return CkMethodOutcome<ArchiveDeleteArchiveResult>.Forbidden(ArchiveMethodCallerTenantGuard.Reason);
-        }
-
         if (!TryGetTarget(context, out var archiveRtId))
         {
             return CkMethodOutcome<ArchiveDeleteArchiveResult>.TargetNotFound();
