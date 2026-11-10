@@ -31,6 +31,22 @@ public static class AssetRepositoryServiceConstants
     internal const string DataModelManagementRequiredCode = "DataModelManagementRequired";
 
     /// <summary>
+    ///     Changing a stream-data archive or its columns over REST (AB#8709): archive lifecycle (activate, disable, enable,
+    ///     retry, delete), rollup freeze / unfreeze / rewind / recompute / backfill-from-source, rollup repair and the
+    ///     computed / ingested column actions. Full-access scope plus the tenant role <c>StreamDataAdmin</c> - the same
+    ///     rule as the <c>streamData</c> GraphQL mutations and the Archive CK methods. A refusal is a <c>403</c> with code
+    ///     <see cref="StreamDataAdminRequiredCode" />. Before AB#8709 these endpoints carried the scope-only
+    ///     <see cref="TenantAssetApiReadWritePolicy" />, which every <c>octo_api</c> token passed.
+    /// </summary>
+    internal const string StreamDataAdministrationPolicy = "StreamDataAdministrationPolicy";
+
+    /// <summary>
+    ///     AB#8709: stable error code of a refused <see cref="StreamDataAdministrationPolicy" /> (REST <c>403</c> body
+    ///     <c>code</c>).
+    /// </summary>
+    internal const string StreamDataAdminRequiredCode = "StreamDataAdminRequired";
+
+    /// <summary>
     ///     AB#8559: stable error code of a stream-data read refused because the caller holds none of the tenant roles
     ///     <c>StreamDataReader</c>, <c>StreamDataWriter</c> or <c>StreamDataAdmin</c> (GraphQL error <c>extensions.code</c>,
     ///     only with <c>StreamDataReadAuthorization:RoleEnforcement=Enforce</c>).

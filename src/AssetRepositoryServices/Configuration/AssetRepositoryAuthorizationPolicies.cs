@@ -23,6 +23,8 @@ internal static class AssetRepositoryAuthorizationPolicies
     ///     AB#7319: both <c>role</c> claim spellings are probed). A token without the role gets <c>403</c> with a reason.
     ///     <see cref="AssetRepositoryServiceConstants.DataModelManagementPolicy" /> (AB#8529) is the same pattern with the
     ///     tenant role <c>DataModelManagement</c> and the error code <c>DataModelManagementRequired</c> in the <c>403</c> body.
+    ///     <see cref="AssetRepositoryServiceConstants.StreamDataAdministrationPolicy" /> (AB#8709) is the same pattern with the
+    ///     tenant role <c>StreamDataAdmin</c> and the error code <c>StreamDataAdminRequired</c>.
     /// </remarks>
     public static void AddAssetRepositoryPolicies(this AuthorizationOptions options)
     {
@@ -76,5 +78,12 @@ internal static class AssetRepositoryAuthorizationPolicies
         // DataModelManagementRequired.
         options.AddTenantRolePolicy(AssetRepositoryServiceConstants.DataModelManagementPolicy,
             CommonConstants.DataModelManagementRole, AssetRepositoryServiceConstants.DataModelManagementRequiredCode);
+
+        // AB#8709: changing a stream-data archive or its columns over REST needs the tenant role StreamDataAdmin on top of
+        // the full-access scope, the same rule as the streamData GraphQL mutations and the Archive CK methods (these
+        // endpoints used TenantAssetApiReadWritePolicy, which every octo_api token passed). The 403 body carries the code
+        // StreamDataAdminRequired.
+        options.AddTenantRolePolicy(AssetRepositoryServiceConstants.StreamDataAdministrationPolicy,
+            CommonConstants.StreamDataAdminRole, AssetRepositoryServiceConstants.StreamDataAdminRequiredCode);
     }
 }
