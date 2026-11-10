@@ -1414,6 +1414,16 @@ the identity's role claims and the `role` claim) plus the `client_id` claim, and
 - Tests: `ModelsControllerExportCallerTests` (subject/roles/client in the command, client-credentials subject, 401 without identity,
   nothing enqueued).
 
+### Principal kind of the caller (AB#8705)
+
+`GraphQL.Helpers.GetSecurityContext` (the one place GraphQL and REST build the caller's `RtSecurityContext`) sets
+`PrincipalKind` via `Security/CallerPrincipalKind.Resolve`: `act` or `amr` `delegation`/`impersonation` → `Client`
+(delegated tokens are Client, Odin 2026-11-10), else `sub` → `Interactive`, else `client_id` → `Client`, else
+`Unknown`. `ModelsController.ImportRt` sends it as `ImportRtCommandRequest.InitiatedByPrincipalKind` (bot services pass it
+into `RtImportCallerContext`). Only CK types with a `writeAccess` block (engine AB#8574) look at it. Any new route that
+opens a caller session must build its context through `GetSecurityContext`, never `RtSecurityContext.ForUser` without the
+kind (that is `Unknown` and refused by restricted types). Rule, compatibility and tests: `docs/principal-kind.md`.
+
 ### Authentication
 The service supports dual authentication:
 - Cookie-based authentication for GraphQL Playground

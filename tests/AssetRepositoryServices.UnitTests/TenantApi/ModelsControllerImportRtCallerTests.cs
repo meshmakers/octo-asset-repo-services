@@ -9,6 +9,7 @@ using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects.ApiErrors;
 using Meshmakers.Octo.ConstructionKit.Contracts.Serialization;
 using Meshmakers.Octo.ConstructionKit.Contracts.Services;
+using Meshmakers.Octo.Runtime.Contracts;
 using Meshmakers.Octo.Runtime.Contracts.Exchange;
 using Meshmakers.Octo.Services.Contracts.DistributionEventHub.Commands;
 using Microsoft.AspNetCore.Http;
@@ -94,6 +95,34 @@ public class ModelsControllerImportRtCallerTests
 
         A.CallTo(() => _importRtCommandClient.GetResponse<JobCreatedResponse>(
                 A<ImportRtCommandRequest>.That.Matches(r => r.InitiatedBySubjectId == "pipeline-client")))
+            .MustHaveHappenedOnceExactly();
+    }
+
+    [Theory]
+    [InlineData("user", RtPrincipalKind.Interactive)]
+    [InlineData("client", RtPrincipalKind.Client)]
+    [InlineData("delegated", RtPrincipalKind.Client)]
+    public async Task ImportRt_SendsThePrincipalKindOfTheToken(string shape, RtPrincipalKind expected)
+    {
+        // AB#8705: the job hands the kind to the engine (writeAccess, AB#8574)
+        switch (shape)
+        {
+            case "user":
+                SignIn(new Claim("sub", "user-sub-1"));
+                break;
+            case "client":
+                SignIn(new Claim("client_id", "pipeline-client"));
+                break;
+            default:
+                SignIn(new Claim("sub", "user-sub-1"), new Claim("act", "pipeline-sa"),
+                    new Claim("amr", "delegation"));
+                break;
+        }
+
+        await ImportAsync();
+
+        A.CallTo(() => _importRtCommandClient.GetResponse<JobCreatedResponse>(
+                A<ImportRtCommandRequest>.That.Matches(r => r.InitiatedByPrincipalKind == expected)))
             .MustHaveHappenedOnceExactly();
     }
 

@@ -38,7 +38,8 @@ internal static class Helpers
     /// <summary>
     ///     Builds the security context of the calling principal for repository sessions (RtCreatedBy
     ///     stamping and data-level permissions, AB#4969). Fail-closed: an unauthenticated caller yields
-    ///     an empty user context, never the system context.
+    ///     an empty user context, never the system context. Carries the principal kind of the caller
+    ///     (AB#8705, <see cref="Security.CallerPrincipalKind" />) for types with a <c>writeAccess</c> block.
     /// </summary>
     internal static Runtime.Contracts.RtSecurityContext GetSecurityContext(IDictionary<string, object?> context)
     {
@@ -71,7 +72,9 @@ internal static class Helpers
             .Distinct()
             .ToArray();
 
-        return Runtime.Contracts.RtSecurityContext.ForUser(subjectId, roles);
+        // AB#8705: person or client, from the token (types with a writeAccess block, AB#8574, check it).
+        return Runtime.Contracts.RtSecurityContext.ForUser(subjectId, roles,
+            Security.CallerPrincipalKind.Resolve(user));
     }
 
 
