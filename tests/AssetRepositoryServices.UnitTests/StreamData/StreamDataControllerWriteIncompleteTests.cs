@@ -20,8 +20,9 @@ namespace AssetRepositoryServices.UnitTests.StreamData;
 ///     AB#8679: when CrateDB does not store every row of an archive write (a memory circuit breaker ends a shard request
 ///     without an error) and the retry does not either, the repository throws
 ///     <see cref="StreamDataWriteIncompleteException" />. The raw <c>insert</c> and the <c>insertTimeRange</c> endpoints
-///     answer 503 with a short problem body (archive rtId, rows sent, rows missing) and a <c>Retry-After</c> header, so
-///     the caller sends the batch again. The CrateDB detail (schema, table, breaker text) is logged, never returned. The
+///     answer 503 with a short problem body (archive rtId, <c>rowsInAffectedWrite</c>, <c>rowsNotStored</c> - the counts
+///     of the affected write statement, not of the batch) and a <c>Retry-After</c> header, so the caller reloads and
+///     sends the batch again. The CrateDB detail (schema, table, breaker text) is logged, never returned. The
 ///     other exceptions of the write keep their mapping.
 /// </summary>
 public class StreamDataControllerWriteIncompleteTests
@@ -58,30 +59,32 @@ public class StreamDataControllerWriteIncompleteTests
     // ---- 503 for an incomplete write ---------------------------------------------------------------------------
 
     [Fact]
-    public async Task Insert_WriteIncomplete_Answers503WithArchiveAndRowCounts()
+    public async Task Insert_WriteIncomplete_Answers503WithArchiveAndAffectedWriteCounts()
     {
         GivenInsertThrows(WriteIncomplete(rowsSent: 10, rowsMissing: 3));
 
         var problem = ServiceUnavailableProblem(await Insert());
 
         problem.Extensions["archiveRtId"].Should().Be(_archiveRtId.ToString());
-        problem.Extensions["rowsSent"].Should().Be(10);
-        problem.Extensions["rowsMissing"].Should().Be(3);
-        problem.Detail.Should().Contain("3 of 10 rows");
+        problem.Extensions["rowsInAffectedWrite"].Should().Be(10);
+        problem.Extensions["rowsNotStored"].Should().Be(3);
+        problem.Detail.Should().Contain("3 of 10 rows of one write statement").And.Contain("Reload before retrying");
+        problem.Extensions.Should().NotContainKeys("rowsSent", "rowsMissing");
         RetryAfter().Should().Be(StreamDataController.WriteIncompleteRetryAfterSeconds.ToString(CultureInfo.InvariantCulture));
     }
 
     [Fact]
-    public async Task InsertTimeRange_WriteIncomplete_Answers503WithArchiveAndRowCounts()
+    public async Task InsertTimeRange_WriteIncomplete_Answers503WithArchiveAndAffectedWriteCounts()
     {
         GivenInsertTimeRangeThrows(WriteIncomplete(rowsSent: 48, rowsMissing: 7));
 
         var problem = ServiceUnavailableProblem(await InsertTimeRange());
 
         problem.Extensions["archiveRtId"].Should().Be(_archiveRtId.ToString());
-        problem.Extensions["rowsSent"].Should().Be(48);
-        problem.Extensions["rowsMissing"].Should().Be(7);
-        problem.Detail.Should().Contain("7 of 48 rows");
+        problem.Extensions["rowsInAffectedWrite"].Should().Be(48);
+        problem.Extensions["rowsNotStored"].Should().Be(7);
+        problem.Detail.Should().Contain("7 of 48 rows of one write statement").And.Contain("Reload before retrying");
+        problem.Extensions.Should().NotContainKeys("rowsSent", "rowsMissing");
         RetryAfter().Should().Be(StreamDataController.WriteIncompleteRetryAfterSeconds.ToString(CultureInfo.InvariantCulture));
     }
 

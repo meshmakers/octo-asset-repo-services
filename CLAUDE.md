@@ -437,7 +437,8 @@ Time-series data support (`StreamData/`):
   - **Malformed requests and incomplete writes of both inserts (AB#8590, AB#8679).** An `archiveRtId` that is not a runtime id,
     a point `rtId` that is not one and a `null` array element answer 400 (`CheckInsertRequest`, before anything is read). When
     CrateDB does not store every row, also after one retry (`StreamDataWriteIncompleteException`), the answer is 503 with a
-    `ProblemDetails` body (`archiveRtId`, `rowsSent`, `rowsMissing`, generic detail) and `Retry-After`
+    `ProblemDetails` body (`archiveRtId`, `rowsInAffectedWrite`, `rowsNotStored` - counts of the one failed write
+    statement, not of the request, whose other points may be stored - generic detail "reload before retrying") and `Retry-After`
     (`WriteIncompleteRetryAfterSeconds`); the qualified table and the CrateDB text are logged only, never returned. Tests:
     `StreamDataControllerWriteIncompleteTests`, the malformed-request cases of `StreamDataControllerInsertRawTests` /
     `StreamDataControllerInsertTimeRangeTests`.
