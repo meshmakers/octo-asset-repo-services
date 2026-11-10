@@ -4,7 +4,10 @@ using Meshmakers.Octo.Backend.AssetRepositoryServices.StreamData.Methods;
 using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.ConstructionKit.Models.StreamData.Generated.System.StreamData.v1;
 using Meshmakers.Octo.Runtime.Contracts.StreamData;
+using Meshmakers.Octo.Services.Contracts.DistributionEventHub.Methods;
+using Meshmakers.Octo.Services.Infrastructure.Configuration;
 using Meshmakers.Octo.Services.Methods;
+using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
@@ -111,5 +114,32 @@ public class ArchiveMethodTests
     {
         RollupArchiveCreateArchiveHandler.BuildSources(input, out var error);
         return error;
+    }
+
+    [Theory]
+    [InlineData("user-1", null, "tenant-a", "tenant-a", true)]
+    [InlineData("user-1", null, "TENANT-A", "tenant-a", true)]
+    [InlineData("user-1", null, "tenant-b", "tenant-a", false)]
+    [InlineData("user-1", null, null, "tenant-a", false)]
+    [InlineData(null, "svc", "tenant-a", "tenant-a", true)]
+    [InlineData(null, "svc", "tenant-b", "tenant-a", false)]
+    [InlineData(null, "allowed-svc", "tenant-b", "tenant-a", true)]
+    [InlineData(null, null, "tenant-a", "tenant-a", false)]
+    public void TheCallerTenantGuard_AppliesTheClaimRuleOfTheBusHost(string? subject, string? clientId, string? tokenTenant,
+        string callTenant, bool expected)
+    {
+        var options = new TenantAuthorizationOptions();
+        options.CrossTenantServiceClientIds.Add("allowed-svc");
+        var guard = new ArchiveMethodCallerTenantGuard(Options.Create(options));
+        var context = new CkMethodContext(new CkMethodRequest(callTenant)
+        {
+            InvocationId = Guid.NewGuid(),
+            MethodId = SystemStreamDataCkIds.ArchiveActivateMethodId,
+            CkTypeId = "System.StreamData/RawArchive",
+            DeadlineUtc = DateTime.UtcNow.AddMinutes(1),
+            Caller = new CkMethodCaller { SubjectId = subject, ClientId = clientId, TenantId = tokenTenant }
+        });
+
+        guard.IsAllowed(context).Should().Be(expected);
     }
 }

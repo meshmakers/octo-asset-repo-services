@@ -43,11 +43,14 @@ public class ArchiveLifecycleMethodTests
 
     // ── principals ──────────────────────────────────────────────────────────────────────────────
 
-    private static ClaimsPrincipal User(params string[] roles)
+    private ClaimsPrincipal User(params string[] roles) => UserOf(_fixture.GetSystemContext().TenantId, roles);
+
+    private static ClaimsPrincipal UserOf(string tokenTenant, params string[] roles)
     {
         var claims = new List<Claim>
         {
-            new("sub", "65f0c0ffee65f0c0ffee8598"), new("scope", "octo_api openid"), new(ClaimTypes.Name, "archive-admin")
+            new("sub", "65f0c0ffee65f0c0ffee8598"), new("scope", "octo_api openid"), new(ClaimTypes.Name, "archive-admin"),
+            new("tenant_id", tokenTenant)
         };
         foreach (var role in roles)
         {
@@ -58,9 +61,9 @@ public class ArchiveLifecycleMethodTests
         return new ClaimsPrincipal(new ClaimsIdentity(claims, "IntegrationTests"));
     }
 
-    private static ClaimsPrincipal Admin() => User(CommonConstants.StreamDataAdminRole);
+    private ClaimsPrincipal Admin() => User(CommonConstants.StreamDataAdminRole);
 
-    private static ClaimsPrincipal WithoutRole() => User("SomeOtherRole");
+    private ClaimsPrincipal WithoutRole() => User("SomeOtherRole");
 
     // ── the method table ────────────────────────────────────────────────────────────────────────
 
@@ -308,6 +311,48 @@ public class ArchiveLifecycleMethodTests
             $$"""mutation { runtime { {{Raw}} { activate(rtId: "{{archive}}") { invocationId } } } }""", Admin());
         crossTenant.Errors.Should().NotBeNullOrEmpty();
         (await SnapshotAsync(archive))!.Status.Should().Be(CkArchiveStatus.Created);
+    }
+
+    [Fact]
+    public async Task ATokenOfAnotherTenant_IsMethodForbidden_EvenWithTheRole_AndChangesNothing()
+    {
+        // The HTTP tenant gate may run in LogOnly; the archive methods apply the caller-token rule of the bus host themselves.
+        var archive = await CreateRawArchiveAsync("OtherTenant");
+        var foreignUser = UserOf("some-other-tenant", CommonConstants.StreamDataAdminRole);
+        var foreignService = new ClaimsPrincipal(new ClaimsIdentity(
+        [
+            new Claim("client_id", "foreign-service"), new Claim("scope", "octo_api"), new Claim("tenant_id", "some-other-tenant"),
+            new Claim("role", CommonConstants.StreamDataAdminRole), new Claim(ClaimTypes.Role, CommonConstants.StreamDataAdminRole)
+        ], "IntegrationTests"));
+
+        foreach (var caller in new[] { foreignUser, foreignService })
+        {
+            var result = await _fixture.ExecuteGraphQlAsync(
+                $$"""mutation { runtime { {{Raw}} { activate(rtId: "{{archive}}") { invocationId } } } }""", user: caller);
+            var error = result.Errors.Should().ContainSingle().Subject;
+            error.Code.Should().Be(CkMethodErrorCodes.MethodForbidden);
+            MethodErrorParameters(result).Value<string>("reason").Should().Be(ArchiveMethodCallerTenantGuard.Reason);
+        }
+
+        (await SnapshotAsync(archive))!.Status.Should().Be(CkArchiveStatus.Created);
+    }
+
+    [Fact]
+    public async Task AServiceTokenOfTheCallsTenant_IsAllowed()
+    {
+        var archive = await CreateRawArchiveAsync("ServiceToken");
+        var service = new ClaimsPrincipal(new ClaimsIdentity(
+        [
+            new Claim("client_id", "archive-service"), new Claim("scope", "octo_api"),
+            new Claim("tenant_id", _fixture.GetSystemContext().TenantId),
+            new Claim("role", CommonConstants.StreamDataAdminRole), new Claim(ClaimTypes.Role, CommonConstants.StreamDataAdminRole)
+        ], "IntegrationTests"));
+
+        var result = await _fixture.ExecuteGraphQlAsync(
+            $$"""mutation { runtime { {{Raw}} { activate(rtId: "{{archive}}") { invocationId } } } }""", user: service);
+
+        result.Errors.Should().BeNullOrEmpty(_fixture.SerializeGraphQl(result));
+        (await SnapshotAsync(archive))!.Status.Should().Be(CkArchiveStatus.Activated);
     }
 
     // ── helpers ─────────────────────────────────────────────────────────────────────────────────

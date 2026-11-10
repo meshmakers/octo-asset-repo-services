@@ -14,12 +14,18 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.StreamData.Methods;
 /// </summary>
 internal sealed class TimeRangeArchiveCreateArchiveHandler(
     ISystemContext systemContext,
+    ArchiveMethodCallerTenantGuard tenantGuard,
     ILogger<TimeRangeArchiveCreateArchiveHandler> logger)
     : ICkMethodHandler<TimeRangeArchiveCreateParameters, TimeRangeArchiveCreateArchiveResult>
 {
     public async Task<CkMethodOutcome<TimeRangeArchiveCreateArchiveResult>> HandleAsync(
         CkMethodContext<TimeRangeArchiveCreateParameters> context, CancellationToken cancellationToken)
     {
+        if (!tenantGuard.IsAllowed(context))
+        {
+            return CkMethodOutcome<TimeRangeArchiveCreateArchiveResult>.Forbidden(ArchiveMethodCallerTenantGuard.Reason);
+        }
+
         if (context.Parameters.Archive is not { } input)
         {
             return CkMethodOutcome<TimeRangeArchiveCreateArchiveResult>.ValidationFailed("archive", "required");
@@ -71,12 +77,18 @@ internal sealed class TimeRangeArchiveCreateArchiveHandler(
 /// </summary>
 internal sealed class RollupArchiveCreateArchiveHandler(
     ISystemContext systemContext,
+    ArchiveMethodCallerTenantGuard tenantGuard,
     ILogger<RollupArchiveCreateArchiveHandler> logger)
     : ICkMethodHandler<RollupArchiveCreateParameters, RollupArchiveCreateArchiveResult>
 {
     public async Task<CkMethodOutcome<RollupArchiveCreateArchiveResult>> HandleAsync(
         CkMethodContext<RollupArchiveCreateParameters> context, CancellationToken cancellationToken)
     {
+        if (!tenantGuard.IsAllowed(context))
+        {
+            return CkMethodOutcome<RollupArchiveCreateArchiveResult>.Forbidden(ArchiveMethodCallerTenantGuard.Reason);
+        }
+
         if (context.Parameters.Archive is not { } input)
         {
             return CkMethodOutcome<RollupArchiveCreateArchiveResult>.ValidationFailed("archive", "required");

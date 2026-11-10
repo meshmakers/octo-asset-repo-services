@@ -33,7 +33,8 @@ internal sealed record ArchiveMethodHandlerRegistration(
 ///         The handlers run in-process (<c>AddCkInProcessMethodHandlers</c>): the gateway of this service calls them without a
 ///         bus hop, through the invocation pipeline that enforces the declared authorization (role <c>StreamDataAdmin</c>, scope
 ///         <c>octo_api</c>, tenant of the token) and maps a declared failure to a GraphQL error with its code. A handler only
-///         does the operation, with the same engine services as the mutation, so the effect is the same.
+///         does the operation, with the same engine services as the mutation, so the effect is the same. Before that, every
+///         handler refuses a caller token of another tenant (<see cref="ArchiveMethodCallerTenantGuard" />).
 ///     </para>
 ///     <para>
 ///         The startup validation of the in-process registrations looks the methods up in the CK cache of the system tenant. That
@@ -87,6 +88,7 @@ internal static class ArchiveMethodHost
             return false;
         }
 
+        services.TryAddSingleton<ArchiveMethodCallerTenantGuard>();
         services.AddCkInProcessMethodHandlers(builder =>
         {
             foreach (var handler in Handlers)

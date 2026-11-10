@@ -68,6 +68,8 @@
   (METHOD_FORBIDDEN without it). The seven `streamData` mutations they replace keep working and are deprecated with
   `Use <method id>`. Switch `Methods:StreamData:Enabled` (default true). At startup the embedded System.StreamData is imported into the
   system tenant (Order 12) so the registration validation finds the methods. Needs the engine package with System.StreamData 1.24.0.
+  A caller token of another tenant is refused with `METHOD_FORBIDDEN` / `tenant-not-allowed` (claim rule of the bus host, also
+  while the HTTP tenant gate runs in LogOnly).
 
 - AB#8647 New: the transient `downsampling` query takes the optional argument `groupByColumnPaths: [String!]` (supported:
   `["rtId"]`) and returns one row per series and bin instead of one total per bin. The value goes to the engine's

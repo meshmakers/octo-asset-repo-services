@@ -2,7 +2,9 @@ using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL;
 using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb;
 using Meshmakers.Octo.Runtime.Contracts.StreamData;
+using Meshmakers.Octo.Services.Infrastructure.Configuration;
 using Meshmakers.Octo.Services.Methods;
+using Microsoft.Extensions.Options;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.StreamData.Methods;
 
@@ -85,4 +87,38 @@ internal static class ArchiveMethodSupport
     /// </summary>
     public static async Task<ITenantContext?> FindTenantAsync(ISystemContext systemContext, CkMethodContext context) =>
         await systemContext.TryFindTenantContextAsync(context.TenantId).ConfigureAwait(false);
+}
+
+/// <summary>
+///     Refuses a call whose caller token was issued for another tenant (AB#8598). An in-process call is not re-validated by
+///     the bus host (CkMethodCallerTokenValidator), and the HTTP gate (<c>TenantAuthorizationMiddleware</c>) may run in LogOnly;
+///     the archive methods therefore apply the claim rule of the bus host themselves: a user token (with <c>sub</c>) must carry
+///     the call's tenant in <c>tenant_id</c>; a service token (no <c>sub</c>) must carry it too or be on the cross-tenant
+///     allow-list <c>TenantAuthorization:CrossTenantServiceClientIds</c>. Everything else is <c>METHOD_FORBIDDEN</c> with the
+///     reason <see cref="Reason" />, before the archive is touched.
+/// </summary>
+internal sealed class ArchiveMethodCallerTenantGuard(IOptions<TenantAuthorizationOptions> tenantOptions)
+{
+    /// <summary>The reason parameter of the refusal.</summary>
+    public const string Reason = "tenant-not-allowed";
+
+    /// <summary><c>true</c> when the caller may act in the call's tenant.</summary>
+    public bool IsAllowed(CkMethodContext context)
+    {
+        var caller = context.Caller;
+        if (caller == null)
+        {
+            return false;
+        }
+
+        var tenantMatches = !string.IsNullOrEmpty(caller.TenantId) &&
+                            string.Equals(caller.TenantId, context.TenantId, StringComparison.OrdinalIgnoreCase);
+        if (!string.IsNullOrWhiteSpace(caller.SubjectId))
+        {
+            return tenantMatches;
+        }
+
+        return !string.IsNullOrWhiteSpace(caller.ClientId) &&
+               (tenantMatches || tenantOptions.Value.IsCrossTenantServiceClient(caller.ClientId));
+    }
 }
