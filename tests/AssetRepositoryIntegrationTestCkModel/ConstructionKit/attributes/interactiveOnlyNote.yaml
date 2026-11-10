@@ -1,0 +1,6 @@
+$schema: https://schemas.meshmakers.cloud/construction-kit-elements.schema.json
+attributes:
+  # AB#8705: text of the InteractiveOnlyNote test type
+  - id: NoteText
+    valueType: String
+    description: "Text of the note"

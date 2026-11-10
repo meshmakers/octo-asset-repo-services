@@ -257,7 +257,9 @@ public class ModelsController : ControllerBase
     ///     The job id. For CK types whose data policy opted in with <c>ProtectBlueprintLocked</c> the job fails
     ///     (nothing written) when the file would overwrite an entity that is locked by a blueprint, and strips the
     ///     blueprint attributes (<c>RtBlueprintLocked</c>, <c>RtBlueprintSource</c>, <c>RtBlueprintAppliedAt</c>)
-    ///     from the file (AB#6392).
+    ///     from the file (AB#6392). Entities of CK types with a <c>writeAccess</c> block (AB#8574) are refused (the job
+    ///     fails, nothing written) unless the caller's principal kind is admitted; the kind is derived from the token
+    ///     (AB#8705: user token Interactive, client-credentials and delegated tokens Client).
     /// </returns>
     [HttpPost]
     [RequestSizeLimit(300_000_000)]
@@ -286,16 +288,19 @@ public class ModelsController : ControllerBase
             // AB#6392: the import runs as a background job, so the caller is passed along; the job applies the
             // blueprint-lock protection of opted-in CK types on their behalf. A caller without an identity is
             // rejected here, never imported as if it were the system.
-            var callerSubjectId = GraphQL.Helpers.GetSecurityContext(HttpContext.User).SubjectId;
-            if (string.IsNullOrWhiteSpace(callerSubjectId))
+            var caller = GraphQL.Helpers.GetSecurityContext(HttpContext.User);
+            if (string.IsNullOrWhiteSpace(caller.SubjectId))
             {
                 return Unauthorized(new OperationFailedErrorDto("The caller identity is required to import runtime data"));
             }
 
             var cacheKey = await AddFileToCache(tenantId, file);
+            // AB#8705: the principal kind (person or client) travels along, so types with a writeAccess block
+            // (AB#8574) admit or refuse the import by it.
             var args = new ImportRtCommandRequest(tenantId, insertStrategy, cacheKey)
             {
-                InitiatedBySubjectId = callerSubjectId
+                InitiatedBySubjectId = caller.SubjectId,
+                InitiatedByPrincipalKind = caller.PrincipalKind
             };
             var r =
                 await _importRtCommandClient.GetResponse<JobCreatedResponse>(args);

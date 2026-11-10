@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- AB#8705 New: the asset repository tells the CK engine whether a write comes from a person or a service client.
+  `GraphQL.Helpers.GetSecurityContext` sets `RtSecurityContext.PrincipalKind` from the token (`Security/CallerPrincipalKind`):
+  user tokens (authorization code, device code, cross-tenant token exchange) are `Interactive`; client-credentials tokens
+  (no `sub`), delegated/on-behalf-of and impersonated tokens (`act` or `amr` `delegation`/`impersonation`) are `Client`
+  (decision Odin 2026-11-10); a token with neither `sub` nor `client_id` is `Unknown`. It covers GraphQL, REST and the
+  ImportRt user path (`ImportRtCommandRequest.InitiatedByPrincipalKind`, consumed by bot services). CK types with a
+  `writeAccess` block (engine AB#8574) refuse `Client`/`Unknown` writers as declared (message 144, nothing persisted);
+  unrestricted types are unaffected. No identity change. Docs: `docs/principal-kind.md`. Needs the engine with
+  `RtPrincipalKind` (octo-construction-kit-engine #362), engine-mongodb #240 (persists the block) and common-services
+  `ImportRtCommandRequest.InitiatedByPrincipalKind`.
+
 - AB#8679 Fix: when the archive write stays incomplete (CrateDB did not store every row, also after one retry), `insert` and
   `insertTimeRange` answer 503 with a short `application/problem+json` body (`archiveRtId`, `rowsInAffectedWrite`,
   `rowsNotStored`) and `Retry-After: 30`. The counts belong to the one write statement that failed, not to the request;

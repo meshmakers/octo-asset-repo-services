@@ -1,0 +1,12 @@
+$schema: https://schemas.meshmakers.cloud/construction-kit-elements.schema.json
+types:
+# AB#8705: a type restricted to interactive writers (writeAccess, AB#8574). The asset repository derives the principal
+# kind from the caller's token; the tests write it with user, client-credentials, delegated and claim-less tokens.
+- typeId: InteractiveOnlyNote
+  derivedFromCkTypeId: ${System}/Entity
+  description: "A note only signed-in persons may write (writeAccess principals [Interactive])"
+  writeAccess:
+    principals: [ Interactive ]
+  attributes:
+    - id: ${this}/NoteText
+      name: NoteText
