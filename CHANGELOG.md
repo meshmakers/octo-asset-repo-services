@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- AB#8709 Fix (security, **breaking for callers without the role**): the stream-data REST endpoints that change an archive or
+  its columns require the tenant role `StreamDataAdmin` on top of the `octo_api` scope (new `StreamDataAdministrationPolicy`),
+  the same rule as the `streamData` GraphQL mutations and the Archive CK methods. Covered: archive lifecycle
+  (`activate`, `disable`, `enable`, `retry`, `DELETE archives/{id}`), rollup `freeze` / `unfreeze` / `rewind` / `recompute` /
+  `backfill-from-source`, `POST rollups/repair` (also the dry run), computed columns (add, formula change, remove, retry, repair)
+  and `POST archives/{id}/columns`. Before, they carried the scope-only `TenantAssetApiReadWritePolicy`, so any `octo_api` token
+  without a stream-data role could activate, disable and delete archives (reproduced on test-2). **Callers without
+  `StreamDataAdmin` now get `403`** with `{"message": "...", "code": "StreamDataAdminRequired"}` and nothing changes; grant the
+  role to users and client-credentials clients that run these calls (the group `TenantOwners` carries it). Unchanged: tenant
+  `enable` / `disable` (`TenantManagement`), `insert` / `insertTimeRange` (scope for automated points, `StreamDataAdmin` for
+  manual points, AB#8590) and the reads.
 - AB#8705 New: the asset repository tells the CK engine whether a write comes from a person or a service client.
   `GraphQL.Helpers.GetSecurityContext` sets `RtSecurityContext.PrincipalKind` from the token (`Security/CallerPrincipalKind`):
   user tokens (authorization code, device code, cross-tenant token exchange) are `Interactive`; client-credentials tokens

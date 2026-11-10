@@ -321,12 +321,13 @@ public class StreamDataControllerRollupConsistencyTests
     // ── policies ───────────────────────────────────────────────────────────
 
     [Fact]
-    public void Validate_AndStatusAreReadOnly_AndRepairIsReadWrite()
+    public void Validate_AndStatusAreReadOnly_AndRepairNeedsStreamDataAdmin()
     {
         PolicyOf(nameof(StreamDataController.ValidateRollups))
             .Should().Be(AssetRepositoryServiceConstants.TenantAssetApiReadOnlyPolicy);
+        // AB#8709: repair changes rollups, so it needs StreamDataAdmin (it was scope-only read-write before).
         PolicyOf(nameof(StreamDataController.RepairRollups))
-            .Should().Be(AssetRepositoryServiceConstants.TenantAssetApiReadWritePolicy);
+            .Should().Be(AssetRepositoryServiceConstants.StreamDataAdministrationPolicy);
         PolicyOf(nameof(StreamDataController.GetRollupRepair))
             .Should().Be(AssetRepositoryServiceConstants.TenantAssetApiReadOnlyPolicy);
     }

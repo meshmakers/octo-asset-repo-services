@@ -376,13 +376,20 @@ Time-series data support (`StreamData/`):
 - **StreamDataController** - REST API for stream data operations. **Tenant-scoped (AB#4287):**
   the whole controller moved from `api/v1/streamdata` to `{tenantId}/v1/streamdata` — the
   tenant now travels in the route (`{tenantId:tenantId}` constraint) instead of a `tenantId`
-  query parameter on every action. Write actions (all archive/rollup/computed-
-  column lifecycle) use `TenantAssetApiReadWritePolicy`; **`POST enable` and `POST disable` use `TenantAdministrationPolicy`**
-  (AB#7319): scope plus the tenant role `TenantManagement`, a token without the role gets 403 with a `{"message"}` body naming the role; read actions (`.../rollups`,
-  `.../recompute-jobs`) use `TenantAssetApiReadOnlyPolicy` — the same policy
-  constants as `TenantApi/v1/Controllers/BlueprintsController`. Both policies are scope-only
-  (`octo_api.full_access` / `octo_api.read_only`), so CLI/MCP/client-credentials callers keep
-  working. The `api/v1/streamdata` route no longer exists.
+  query parameter on every action. **Write actions that change an archive or its columns use `StreamDataAdministrationPolicy`
+  (AB#8709)**: scope `octo_api` plus the tenant role `StreamDataAdmin` (central `AddTenantRolePolicy`, both role claim spellings),
+  the same rule as the GraphQL mutations and the Archive CK methods; a refusal is 403 with
+  `{"message", "code": "StreamDataAdminRequired"}`. Covered: archive lifecycle (activate / disable / enable / retry / delete),
+  rollup freeze / unfreeze / rewind / recompute / backfill-from-source, `rollups/repair`, computed columns (add / formula / remove /
+  retry / repair) and `archives/{id}/columns`. Until AB#8709 they used the scope-only `TenantAssetApiReadWritePolicy` (any
+  `octo_api` token passed). **`POST enable` and `POST disable` use `TenantAdministrationPolicy`**
+  (AB#7319): scope plus the tenant role `TenantManagement`, a token without the role gets 403 with a `{"message"}` body naming the role.
+  `insert` / `insertTimeRange` stay on `TenantAssetApiReadWritePolicy` (automated points: scope only; manual points: role
+  check in the action, AB#8590). Read actions (`.../rollups`, `.../recompute-jobs`, `.../coverage`, `rollups/validate`) use
+  `TenantAssetApiReadOnlyPolicy`. Tests: `UnitTests/Configuration/StreamDataAdministrationAuthorizationTests` (per endpoint
+  group: scope-only refused, role allowed; a guard that every non-GET action carries the policy or is a listed exception;
+  403 body with code through a TestServer pipeline). A new archive-changing endpoint must carry `StreamDataAdministrationPolicy`
+  and be added to an endpoint group of that test. The `api/v1/streamdata` route no longer exists.
   - **Computed columns queue their backfill (AB#8002).** `POST .../computed-columns` (add) and
     `PUT .../computed-columns/{name}` (formula change), like the GraphQL mutations `addComputedColumn` /
     `updateComputedColumnFormula`, only validate, provision and queue: they call the engine's

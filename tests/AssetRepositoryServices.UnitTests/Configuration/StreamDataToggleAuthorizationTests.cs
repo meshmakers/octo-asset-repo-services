@@ -74,9 +74,10 @@ public class StreamDataToggleAuthorizationTests
     }
 
     [Fact]
-    public void OtherStreamDataActions_KeepTheirScopeOnlyPolicy()
+    public void ArchiveActions_UseTheirOwnStreamDataAdminPolicy_NotTheToggleRole()
     {
+        // AB#8709: archive actions need StreamDataAdmin (StreamDataAdministrationAuthorizationTests), not TenantManagement.
         PolicyOf(nameof(StreamDataController.DisableArchive))
-            .Should().Be(AssetRepositoryServiceConstants.TenantAssetApiReadWritePolicy);
+            .Should().Be(AssetRepositoryServiceConstants.StreamDataAdministrationPolicy);
     }
 }
