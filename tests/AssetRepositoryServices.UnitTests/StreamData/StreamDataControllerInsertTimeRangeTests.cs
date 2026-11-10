@@ -2,6 +2,8 @@ using System.Text.Json;
 using FakeItEasy;
 using FluentAssertions;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.StreamData.Controllers;
+using Meshmakers.Octo.Communication.Contracts;
+using Meshmakers.Octo.Communication.Contracts.DataTransferObjects.ApiErrors;
 using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb;
 using Meshmakers.Octo.Runtime.Contracts.StreamData;
@@ -31,12 +33,18 @@ public class StreamDataControllerInsertTimeRangeTests
     private readonly OctoObjectId _archiveRtId = OctoObjectId.GenerateNewId();
     private readonly OctoObjectId _rtId = OctoObjectId.GenerateNewId();
     private readonly IStreamDataRepository _repository = A.Fake<IStreamDataRepository>();
+    private readonly IArchiveRuntimeStore _archiveStore = A.Fake<IArchiveRuntimeStore>();
     private readonly StreamDataController _controller;
 
     public StreamDataControllerInsertTimeRangeTests()
     {
         var tenantContext = A.Fake<ITenantContext>();
         A.CallTo(() => tenantContext.GetStreamDataRepository()).Returns(_repository);
+        A.CallTo(() => tenantContext.GetArchiveRuntimeStore()).Returns(_archiveStore);
+        // No archive snapshot by default: binding, origin and role tests do not depend on the archive's columns, and
+        // without a snapshot the column checks are skipped (the repository answers itself). The column tests declare
+        // the archive with GivenTimeRangeArchiveWithTwoColumns.
+        A.CallTo(() => _archiveStore.GetAsync(_archiveRtId)).Returns((ArchiveSnapshot?)null);
         var systemContext = A.Fake<ISystemContext>();
         A.CallTo(() => systemContext.FindTenantContextAsync(TenantId)).Returns(tenantContext);
 
@@ -134,6 +142,8 @@ public class StreamDataControllerInsertTimeRangeTests
            "attributes": { "Amount.Value": 1.5 } {{extra}} }]
         """;
 
+    private static readonly System.Security.Claims.Claim StreamDataAdmin = new("role", CommonConstants.StreamDataAdminRole);
+
     private void SignInAs(params System.Security.Claims.Claim[] claims)
     {
         _controller.ControllerContext = new ControllerContext
@@ -163,7 +173,7 @@ public class StreamDataControllerInsertTimeRangeTests
     [InlineData("Manual")]
     public async Task InsertTimeRange_ManualOrigin_RecordsTheTokenSubjectAsWriterAndTheReasonAsGiven(string origin)
     {
-        SignInAs(new System.Security.Claims.Claim("sub", "user-1"));
+        SignInAs(new System.Security.Claims.Claim("sub", "user-1"), StreamDataAdmin);
 
         var result = await _controller.InsertTimeRange(TenantId, _archiveRtId.ToString(),
             Bind(OnePoint($", \"origin\": \"{origin}\", \"reason\": \"meter exchanged\"")));
@@ -181,7 +191,7 @@ public class StreamDataControllerInsertTimeRangeTests
         // AB#7647: the writer is the readable name of the verified user, not the opaque subject id.
         SignInAs(new System.Security.Claims.Claim("sub", "8a4c1f00-0000-4000-8000-000000000001"),
             new System.Security.Claims.Claim("preferred_username", "jane.doe"),
-            new System.Security.Claims.Claim("name", "Jane Doe"));
+            new System.Security.Claims.Claim("name", "Jane Doe"), StreamDataAdmin);
 
         await _controller.InsertTimeRange(TenantId, _archiveRtId.ToString(), Bind(OnePoint(", \"origin\": \"manual\"")));
 
@@ -192,7 +202,7 @@ public class StreamDataControllerInsertTimeRangeTests
     public async Task InsertTimeRange_ManualOrigin_WithoutAPreferredUsername_RecordsTheName()
     {
         SignInAs(new System.Security.Claims.Claim("sub", "8a4c1f00-0000-4000-8000-000000000001"),
-            new System.Security.Claims.Claim("name", "Jane Doe"));
+            new System.Security.Claims.Claim("name", "Jane Doe"), StreamDataAdmin);
 
         await _controller.InsertTimeRange(TenantId, _archiveRtId.ToString(), Bind(OnePoint(", \"origin\": \"manual\"")));
 
@@ -202,7 +212,7 @@ public class StreamDataControllerInsertTimeRangeTests
     [Fact]
     public async Task InsertTimeRange_ManualOrigin_ANameInTheBodyIsNeverTheWriter()
     {
-        SignInAs(new System.Security.Claims.Claim("sub", "user-1"), new System.Security.Claims.Claim("preferred_username", "jane.doe"));
+        SignInAs(new System.Security.Claims.Claim("sub", "user-1"), new System.Security.Claims.Claim("preferred_username", "jane.doe"), StreamDataAdmin);
 
         await _controller.InsertTimeRange(TenantId, _archiveRtId.ToString(),
             Bind(OnePoint(", \"origin\": \"manual\", \"manualWrittenBy\": \"mallory\", \"writer\": \"mallory\"")));
@@ -213,7 +223,7 @@ public class StreamDataControllerInsertTimeRangeTests
     [Fact]
     public async Task InsertTimeRange_ManualOriginWithoutReason_IsAccepted()
     {
-        SignInAs(new System.Security.Claims.Claim("sub", "user-1"));
+        SignInAs(new System.Security.Claims.Claim("sub", "user-1"), StreamDataAdmin);
 
         var result = await _controller.InsertTimeRange(TenantId, _archiveRtId.ToString(), Bind(OnePoint(", \"origin\": \"manual\"")));
 
@@ -224,7 +234,7 @@ public class StreamDataControllerInsertTimeRangeTests
     [Fact]
     public async Task InsertTimeRange_AClientCredentialsToken_IsRecordedByItsClientId()
     {
-        SignInAs(new System.Security.Claims.Claim("client_id", "import-service"));
+        SignInAs(new System.Security.Claims.Claim("client_id", "import-service"), StreamDataAdmin);
 
         await _controller.InsertTimeRange(TenantId, _archiveRtId.ToString(), Bind(OnePoint(", \"origin\": \"manual\"")));
 
@@ -260,7 +270,7 @@ public class StreamDataControllerInsertTimeRangeTests
     [Fact]
     public async Task InsertTimeRange_AManualWriteWithoutCallerIdentity_IsRefused()
     {
-        SignInAs();
+        SignInAs(StreamDataAdmin);
 
         var result = await _controller.InsertTimeRange(TenantId, _archiveRtId.ToString(), Bind(OnePoint(", \"origin\": \"manual\"")));
 
@@ -275,6 +285,60 @@ public class StreamDataControllerInsertTimeRangeTests
             .Cast<Microsoft.AspNetCore.Authorization.AuthorizeAttribute>().Select(a => a.Policy);
 
         policies.Should().Contain(Meshmakers.Octo.Backend.AssetRepositoryServices.AssetRepositoryServiceConstants.TenantAssetApiReadWritePolicy);
+    }
+
+    // ---- AB#8590 AC 8: a manual point needs the tenant role StreamDataAdmin -----------------------------------
+
+    [Fact]
+    public async Task InsertTimeRange_AManualPointWithoutTheStreamDataAdminRole_Answers403_AndWritesNothing()
+    {
+        SignInAs(new System.Security.Claims.Claim("sub", "user-1"), new System.Security.Claims.Claim("scope", CommonConstants.OctoApiFullAccess));
+
+        var result = await _controller.InsertTimeRange(TenantId, _archiveRtId.ToString(), Bind(OnePoint(", \"origin\": \"manual\"")));
+
+        var forbidden = result.Should().BeOfType<ObjectResult>().Subject;
+        forbidden.StatusCode.Should().Be(403);
+        forbidden.Value.Should().BeOfType<ForbiddenErrorDto>().Which.Message.Should().Contain(CommonConstants.StreamDataAdminRole);
+        Fake.GetCalls(_repository).Should().NotContain(c => c.Method.Name == nameof(IStreamDataRepository.InsertTimeRangeAsync));
+    }
+
+    [Fact]
+    public async Task InsertTimeRange_AMixedBatchWithoutTheStreamDataAdminRole_IsRefusedAsAWhole()
+    {
+        SignInAs(new System.Security.Claims.Claim("sub", "user-1"), new System.Security.Claims.Claim("scope", CommonConstants.OctoApiFullAccess));
+        var body = $$"""
+            [{ "rtId": "{{_rtId}}", "ckTypeId": "{{CkTypeId}}", "from": "2026-08-31T22:00:00Z", "to": "2026-09-01T22:00:00Z" },
+             { "rtId": "{{_rtId}}", "ckTypeId": "{{CkTypeId}}", "from": "2026-09-01T22:00:00Z", "to": "2026-09-02T22:00:00Z",
+               "origin": "manual" }]
+            """;
+
+        var result = await _controller.InsertTimeRange(TenantId, _archiveRtId.ToString(), Bind(body));
+
+        result.Should().BeOfType<ObjectResult>().Which.StatusCode.Should().Be(403);
+        Fake.GetCalls(_repository).Should().NotContain(c => c.Method.Name == nameof(IStreamDataRepository.InsertTimeRangeAsync));
+    }
+
+    [Fact]
+    public async Task InsertTimeRange_AnAutomatedPointWithoutTheStreamDataAdminRole_IsWritten()
+    {
+        SignInAs(new System.Security.Claims.Claim("sub", "user-1"), new System.Security.Claims.Claim("scope", CommonConstants.OctoApiFullAccess));
+
+        var result = await _controller.InsertTimeRange(TenantId, _archiveRtId.ToString(), Bind(OnePoint(", \"origin\": \"automated\"")));
+
+        result.Should().BeOfType<OkObjectResult>();
+        CapturedInsert().Points.Single().Origin.Should().Be(ArchiveRowOrigin.Automated);
+    }
+
+    [Fact]
+    public async Task InsertTimeRange_AManualPointWithTheStreamDataAdminRole_IsWritten()
+    {
+        SignInAs(new System.Security.Claims.Claim("sub", "user-1"),
+            new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.Role, CommonConstants.StreamDataAdminRole));
+
+        var result = await _controller.InsertTimeRange(TenantId, _archiveRtId.ToString(), Bind(OnePoint(", \"origin\": \"manual\"")));
+
+        result.Should().BeOfType<OkObjectResult>();
+        CapturedInsert().Points.Single().Origin.Should().Be(ArchiveRowOrigin.Manual);
     }
 
     // ---- AB#7598: the write result ---------------------------------------------------------------------------
@@ -302,7 +366,7 @@ public class StreamDataControllerInsertTimeRangeTests
     [Fact]
     public async Task InsertTimeRange_AManualRowNotStored_Answers409WithTheResult()
     {
-        SignInAs(new System.Security.Claims.Claim("sub", "user-1"));
+        SignInAs(new System.Security.Claims.Claim("sub", "user-1"), StreamDataAdmin);
         var writeResult = new StreamDataWriteResult(0,
         [
             new StreamDataSkippedRow(_rtId, new DateTime(2026, 3, 1, 0, 0, 0, DateTimeKind.Utc), null,
@@ -324,6 +388,351 @@ public class StreamDataControllerInsertTimeRangeTests
         writeResultBody.GetProperty("skipped").GetInt32().Should().Be(1);
         writeResultBody.GetProperty("skippedByReason").GetProperty("LowerPrecedence").GetInt32().Should().Be(1);
         writeResultBody.GetProperty("skippedRows")[0].GetProperty("origin").GetString().Should().Be("manual");
+    }
+
+    // ---- AB#8590 AC 9: a manual point names every ingested column -------------------------------------------
+
+    /// <summary>
+    /// A time-range archive with two ingested columns and one computed column. A manual point protects the whole row,
+    /// so it must name both ingested columns (AB#8590 AC 9).
+    /// </summary>
+    private void GivenTimeRangeArchiveWithTwoColumns() =>
+        A.CallTo(() => _archiveStore.GetAsync(_archiveRtId)).Returns(
+            new ArchiveSnapshot(_archiveRtId, new RtCkId<CkTypeId>(CkTypeId), CkArchiveStatus.Activated, "timeRange",
+            [
+                new CkArchiveColumnSpec("Amount.Value", false, false),
+                new CkArchiveColumnSpec("Amount.Unit", false, false),
+                new CkArchiveColumnSpec(string.Empty, false, false) { Name = "Doubled", Formula = "amountvalue * 2" }
+            ]) { IsTimeRange = true });
+
+    [Fact]
+    public async Task InsertTimeRange_AManualPointMissingAColumn_Answers400NamingTheColumn_AndWritesNothing()
+    {
+        GivenTimeRangeArchiveWithTwoColumns();
+        SignInAs(new System.Security.Claims.Claim("sub", "user-1"), StreamDataAdmin);
+
+        var result = await _controller.InsertTimeRange(TenantId, _archiveRtId.ToString(), Bind(OnePoint(", \"origin\": \"manual\"")));
+
+        var message = result.Should().BeOfType<BadRequestObjectResult>().Subject.Value.Should().BeOfType<string>().Subject;
+        message.Should().Contain("Point 0").And.Contain("'Amount.Unit'").And.NotContain("'Amount.Value'");
+        message.Should().NotContain("Doubled", "a computed column is never named by the caller");
+        Fake.GetCalls(_repository).Should().NotContain(c => c.Method.Name == nameof(IStreamDataRepository.InsertTimeRangeAsync));
+    }
+
+    [Fact]
+    public async Task InsertTimeRange_AManualPointWithEveryColumn_OneExplicitlyNull_IsWrittenAsSent()
+    {
+        GivenTimeRangeArchiveWithTwoColumns();
+        SignInAs(new System.Security.Claims.Claim("sub", "user-1"), StreamDataAdmin);
+        var body = $$"""
+            [{ "rtId": "{{_rtId}}", "ckTypeId": "{{CkTypeId}}",
+               "from": "2026-08-31T22:00:00Z", "to": "2026-09-01T22:00:00Z",
+               "attributes": { "amount.value": 1.5, "Amount.Unit": null }, "origin": "manual" }]
+            """;
+
+        var result = await _controller.InsertTimeRange(TenantId, _archiveRtId.ToString(), Bind(body));
+
+        result.Should().BeOfType<OkObjectResult>();
+        var attributes = CapturedInsert().Points.Single().Attributes;
+        attributes.Should().HaveCount(2);
+        attributes["amount.value"].Should().Be(1.5);
+        attributes.Should().ContainKey("Amount.Unit").WhoseValue.Should().BeNull();
+    }
+
+    // engine-mongodb AB#8622: a ranking column of the conflict precedence cannot be null.
+
+    private void GivenRankedTimeRangeArchive() =>
+        A.CallTo(() => _archiveStore.GetAsync(_archiveRtId)).Returns(
+            new ArchiveSnapshot(_archiveRtId, new RtCkId<CkTypeId>(CkTypeId), CkArchiveStatus.Activated, "timeRange",
+            [
+                new CkArchiveColumnSpec("Amount.Value", false, false),
+                new CkArchiveColumnSpec("DataQuality", false, false),
+                new CkArchiveColumnSpec("SourceDocumentDate", false, false)
+            ])
+            {
+                IsTimeRange = true,
+                ConflictPrecedence =
+                [
+                    new ArchiveConflictKey("DataQuality", ConflictKeyOrder.LowerWins),
+                    new ArchiveConflictKey(ArchiveConflictKey.OriginKey, ConflictKeyOrder.HigherWins),
+                    new ArchiveConflictKey("SourceDocumentDate", ConflictKeyOrder.HigherWins)
+                ]
+            });
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task InsertTimeRange_AnExplicitNullOnARankingColumn_Answers400NamingPointAndField_AndWritesNothing(bool manual)
+    {
+        GivenRankedTimeRangeArchive();
+        SignInAs(new System.Security.Claims.Claim("sub", "user-1"), StreamDataAdmin);
+        var body = $$"""
+            [{ "rtId": "{{_rtId}}", "ckTypeId": "{{CkTypeId}}",
+               "from": "2026-08-31T22:00:00Z", "to": "2026-09-01T22:00:00Z",
+               "attributes": { "Amount.Value": 1.5, "DataQuality": 2, "SourceDocumentDate": null }
+               {{(manual ? ", \"origin\": \"manual\"" : "")}} }]
+            """;
+
+        var result = await _controller.InsertTimeRange(TenantId, _archiveRtId.ToString(), Bind(body));
+
+        var message = BadRequestMessage(result);
+        message.Should().Contain("Point 0").And.Contain("'SourceDocumentDate'").And.Contain("cannot be null")
+            .And.NotContain("$Origin");
+        RepositoryWasNotCalled();
+    }
+
+    [Fact]
+    public async Task InsertTimeRange_AnAutomatedPointWithoutItsRankingColumns_IsPassedOn()
+    {
+        GivenRankedTimeRangeArchive();
+
+        var result = await _controller.InsertTimeRange(TenantId, _archiveRtId.ToString(), Bind(OnePoint("")));
+
+        result.Should().BeOfType<OkObjectResult>();
+        CapturedInsert().Points.Single().Attributes.Should().ContainSingle().Which.Key.Should().Be("Amount.Value");
+    }
+
+    [Fact]
+    public async Task InsertTimeRange_AManualPointWithoutItsRankingColumns_IsAccepted()
+    {
+        GivenRankedTimeRangeArchive();
+        SignInAs(new System.Security.Claims.Claim("sub", "user-1"), StreamDataAdmin);
+
+        var result = await _controller.InsertTimeRange(TenantId, _archiveRtId.ToString(), Bind(OnePoint(", \"origin\": \"manual\"")));
+
+        result.Should().BeOfType<OkObjectResult>();
+        var point = CapturedInsert().Points.Single();
+        point.Origin.Should().Be(ArchiveRowOrigin.Manual);
+        point.Attributes.Should().ContainSingle().Which.Key.Should().Be("Amount.Value",
+            "a ranking column the point leaves out is not sent, so it keeps its stored value");
+    }
+
+    [Fact]
+    public async Task InsertTimeRange_AManualPointWithoutANormalColumn_StillAnswers400NamingIt()
+    {
+        GivenRankedTimeRangeArchive();
+        SignInAs(new System.Security.Claims.Claim("sub", "user-1"), StreamDataAdmin);
+        var body = $$"""
+            [{ "rtId": "{{_rtId}}", "ckTypeId": "{{CkTypeId}}",
+               "from": "2026-08-31T22:00:00Z", "to": "2026-09-01T22:00:00Z",
+               "attributes": { "DataQuality": 2 }, "origin": "manual" }]
+            """;
+
+        var result = await _controller.InsertTimeRange(TenantId, _archiveRtId.ToString(), Bind(body));
+
+        var message = BadRequestMessage(result);
+        message.Should().Contain("Point 0").And.Contain("Missing: 'Amount.Value'.");
+        message.Should().NotContain("'SourceDocumentDate'", "a ranking column may be left out");
+        RepositoryWasNotCalled();
+    }
+
+    [Fact]
+    public async Task InsertTimeRange_AnAutomatedPointMissingAColumn_IsPassedOnUnchanged()
+    {
+        GivenTimeRangeArchiveWithTwoColumns();
+
+        var result = await _controller.InsertTimeRange(TenantId, _archiveRtId.ToString(), Bind(OnePoint("")));
+
+        result.Should().BeOfType<OkObjectResult>();
+        CapturedInsert().Points.Single().Attributes.Should().ContainSingle().Which.Key.Should().Be("Amount.Value");
+    }
+
+    [Fact]
+    public async Task InsertTimeRange_AManualPointMissingAColumn_IsRefusedAsAWholeBatch()
+    {
+        GivenTimeRangeArchiveWithTwoColumns();
+        SignInAs(new System.Security.Claims.Claim("sub", "user-1"), StreamDataAdmin);
+        var body = $$"""
+            [{ "rtId": "{{_rtId}}", "ckTypeId": "{{CkTypeId}}",
+               "from": "2026-08-31T22:00:00Z", "to": "2026-09-01T22:00:00Z",
+               "attributes": { "Amount.Value": 1.5, "Amount.Unit": "kWh" }, "origin": "manual" },
+             { "rtId": "{{_rtId}}", "ckTypeId": "{{CkTypeId}}",
+               "from": "2026-09-01T22:00:00Z", "to": "2026-09-02T22:00:00Z",
+               "attributes": { "Amount.Unit": "kWh" }, "origin": "manual" }]
+            """;
+
+        var result = await _controller.InsertTimeRange(TenantId, _archiveRtId.ToString(), Bind(body));
+
+        result.Should().BeOfType<BadRequestObjectResult>().Subject.Value.Should().BeOfType<string>()
+            .Which.Should().Contain("Point 1").And.Contain("'Amount.Value'");
+        Fake.GetCalls(_repository).Should().NotContain(c => c.Method.Name == nameof(IStreamDataRepository.InsertTimeRangeAsync));
+    }
+
+    // ---- AB#8590 point 11: the same column and precision rules as the raw insert ---------------------------------
+
+    /// <summary>One point of the two-column archive, with every ingested column and the given extra JSON.</summary>
+    private string ParityPoint(bool manual, string extraAttributes = "", string from = "2026-08-31T22:00:00Z",
+        string to = "2026-09-01T22:00:00Z") => $$"""
+        [{ "rtId": "{{_rtId}}", "ckTypeId": "{{CkTypeId}}", "from": "{{from}}", "to": "{{to}}",
+           "attributes": { "Amount.Value": 1.5, "Amount.Unit": "kWh" {{extraAttributes}} }
+           {{(manual ? ", \"origin\": \"manual\"" : "")}} }]
+        """;
+
+    private void SignInForParity(bool manual)
+    {
+        GivenTimeRangeArchiveWithTwoColumns();
+        if (manual)
+        {
+            SignInAs(new System.Security.Claims.Claim("sub", "user-1"), StreamDataAdmin);
+        }
+        else
+        {
+            SignInAs(new System.Security.Claims.Claim("sub", "user-1"));
+        }
+    }
+
+    private void RepositoryWasNotCalled() =>
+        Fake.GetCalls(_repository).Should().NotContain(c => c.Method.Name == nameof(IStreamDataRepository.InsertTimeRangeAsync));
+
+    private static string BadRequestMessage(IActionResult result) =>
+        result.Should().BeOfType<BadRequestObjectResult>().Subject.Value.Should().BeOfType<string>().Subject;
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task InsertTimeRange_AnUnknownColumn_Answers400NamingPointAndKey_AndWritesNothing(bool manual)
+    {
+        SignInForParity(manual);
+
+        var result = await _controller.InsertTimeRange(TenantId, _archiveRtId.ToString(),
+            Bind(ParityPoint(manual, ", \"Amount.Typo\": 2")));
+
+        BadRequestMessage(result).Should().Contain("Point 0").And.Contain("'Amount.Typo'").And.Contain("is not a column");
+        RepositoryWasNotCalled();
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task InsertTimeRange_AComputedColumn_Answers400NamingPointAndColumn_AndWritesNothing(bool manual)
+    {
+        SignInForParity(manual);
+
+        var result = await _controller.InsertTimeRange(TenantId, _archiveRtId.ToString(),
+            Bind(ParityPoint(manual, ", \"doubled\": 3.0")));
+
+        BadRequestMessage(result).Should().Contain("Point 0").And.Contain("'doubled'").And.Contain("computed column 'Doubled'");
+        RepositoryWasNotCalled();
+    }
+
+    [Theory]
+    [InlineData(false, "from")]
+    [InlineData(true, "from")]
+    [InlineData(false, "to")]
+    [InlineData(true, "to")]
+    public async Task InsertTimeRange_ASubMillisecondWindowBound_Answers400NamingPointAndField_AndWritesNothing(bool manual,
+        string field)
+    {
+        SignInForParity(manual);
+        var body = field == "from"
+            ? ParityPoint(manual, from: "2026-08-31T22:00:00.0005Z")
+            : ParityPoint(manual, to: "2026-09-01T22:00:00.0000001Z");
+
+        var result = await _controller.InsertTimeRange(TenantId, _archiveRtId.ToString(), Bind(body));
+
+        BadRequestMessage(result).Should().Contain("Point 0").And.Contain($"{field} '").And.Contain("sub-millisecond");
+        RepositoryWasNotCalled();
+    }
+
+    [Fact]
+    public async Task InsertTimeRange_AMissingWindowStart_Answers400NamingTheField()
+    {
+        SignInForParity(manual: false);
+        var body = $$"""
+            [{ "rtId": "{{_rtId}}", "ckTypeId": "{{CkTypeId}}", "to": "2026-09-01T22:00:00Z",
+               "attributes": { "Amount.Value": 1.5, "Amount.Unit": "kWh" } }]
+            """;
+
+        var result = await _controller.InsertTimeRange(TenantId, _archiveRtId.ToString(), Bind(body));
+
+        BadRequestMessage(result).Should().Contain("Point 0: from is missing");
+        RepositoryWasNotCalled();
+    }
+
+    [Fact]
+    public async Task InsertTimeRange_AWindowWithAnOffset_IsHandedOnInUtc()
+    {
+        SignInForParity(manual: false);
+
+        await _controller.InsertTimeRange(TenantId, _archiveRtId.ToString(),
+            Bind(ParityPoint(false, from: "2026-09-01T00:00:00+02:00", to: "2026-09-02T00:00:00+02:00")));
+
+        var point = CapturedInsert().Points.Single();
+        point.From.Should().Be(new DateTime(2026, 8, 31, 22, 0, 0, DateTimeKind.Utc));
+        point.From.Kind.Should().Be(DateTimeKind.Utc);
+        point.To.Should().Be(new DateTime(2026, 9, 1, 22, 0, 0, DateTimeKind.Utc));
+    }
+
+    [Fact]
+    public async Task InsertTimeRange_ASecondPointWithAnUnknownColumn_RefusesTheWholeBatch()
+    {
+        SignInForParity(manual: false);
+        var body = $$"""
+            [{ "rtId": "{{_rtId}}", "ckTypeId": "{{CkTypeId}}", "from": "2026-08-31T22:00:00Z", "to": "2026-09-01T22:00:00Z",
+               "attributes": { "Amount.Value": 1.5 } },
+             { "rtId": "{{_rtId}}", "ckTypeId": "{{CkTypeId}}", "from": "2026-09-01T22:00:00Z", "to": "2026-09-02T22:00:00Z",
+               "attributes": { "Amount.Value": 1.5, "Extra": "x" } }]
+            """;
+
+        var result = await _controller.InsertTimeRange(TenantId, _archiveRtId.ToString(), Bind(body));
+
+        BadRequestMessage(result).Should().Contain("Point 1").And.Contain("'Extra'");
+        RepositoryWasNotCalled();
+    }
+
+    // ---- AB#8590: malformed request: invalid ids and null points answer 400, never 500 -------------------------
+
+    [Theory]
+    [InlineData("not-an-id")]
+    [InlineData("")]
+    public async Task InsertTimeRange_AnInvalidArchiveRtId_Answers400NamingTheField_AndReadsNothing(string archiveRtId)
+    {
+        SignInForParity(manual: false);
+
+        var result = await _controller.InsertTimeRange(TenantId, archiveRtId, Bind(ParityPoint(manual: false)));
+
+        BadRequestMessage(result).Should().Contain("archiveRtId").And.Contain("is not a valid runtime id");
+        A.CallTo(() => _archiveStore.GetAsync(A<OctoObjectId>._)).MustNotHaveHappened();
+        RepositoryWasNotCalled();
+    }
+
+    [Fact]
+    public async Task InsertTimeRange_AnInvalidPointRtId_Answers400NamingPointAndField_AndWritesNothing()
+    {
+        SignInForParity(manual: false);
+
+        var result = await _controller.InsertTimeRange(TenantId, _archiveRtId.ToString(), Bind($$"""
+            [{ "rtId": "{{_rtId}}", "ckTypeId": "{{CkTypeId}}", "from": "2026-08-31T22:00:00Z", "to": "2026-09-01T22:00:00Z" },
+             { "rtId": "no-id", "ckTypeId": "{{CkTypeId}}", "from": "2026-09-01T22:00:00Z", "to": "2026-09-02T22:00:00Z" }]
+            """));
+
+        BadRequestMessage(result).Should().Contain("Point 1").And.Contain("rtId 'no-id'").And.Contain("is not a valid runtime id");
+        RepositoryWasNotCalled();
+    }
+
+    [Fact]
+    public async Task InsertTimeRange_ANullPoint_Answers400NamingThePoint_AndWritesNothing()
+    {
+        SignInForParity(manual: false);
+
+        var result = await _controller.InsertTimeRange(TenantId, _archiveRtId.ToString(), Bind("[null]"));
+
+        BadRequestMessage(result).Should().Be("Point 0 is null.");
+        RepositoryWasNotCalled();
+    }
+
+    [Fact]
+    public async Task InsertTimeRange_ANullPointAfterAValidOne_Answers400NamingItsIndex_AndWritesNothing()
+    {
+        SignInForParity(manual: false);
+
+        var result = await _controller.InsertTimeRange(TenantId, _archiveRtId.ToString(), Bind($$"""
+            [{ "rtId": "{{_rtId}}", "ckTypeId": "{{CkTypeId}}", "from": "2026-08-31T22:00:00Z", "to": "2026-09-01T22:00:00Z" },
+             null]
+            """));
+
+        BadRequestMessage(result).Should().Be("Point 1 is null.");
+        RepositoryWasNotCalled();
     }
 
     private static IReadOnlyList<InsertTimeRangePointRestDto> Bind(string body) =>

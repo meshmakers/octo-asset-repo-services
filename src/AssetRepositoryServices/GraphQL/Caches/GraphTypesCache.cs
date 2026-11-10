@@ -386,6 +386,12 @@ internal class GraphTypesCache : IGraphTypesCache
     }
 
     /// <summary>
+    ///     The CK cache load the types were populated from (<see cref="CkCacheGeneration" />, AB#8667); <c>null</c>
+    ///     before <see cref="PopulateAsync" />.
+    /// </summary>
+    public object? CkCacheMarker { get; private set; }
+
+    /// <summary>
     ///     Returns counters for the schema-build timing log (CK v2 risk R8).
     /// </summary>
     public GraphTypesCacheStatistics GetStatistics()
@@ -405,6 +411,10 @@ internal class GraphTypesCache : IGraphTypesCache
         // The cache is normally created when a tenant repository is access first time. This will not work because
         // we need the schema now. So we have to load the cache manually.
         await tenantContext.LoadCacheForTenantAsync();
+
+        // AB#8667: remember which load of the CK cache this schema is built from. Captured right after the load, so a
+        // reload while the types are populated leaves the old marker behind and the next request builds again.
+        CkCacheMarker = CkCacheGeneration.Capture(_ckCacheService, _tenantId);
 
         // Create enum types first, because other elements depend on it.     
         foreach (var ckEnumGraph in _ckCacheService.GetCkEnums(_tenantId))

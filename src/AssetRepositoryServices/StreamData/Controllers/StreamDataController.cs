@@ -1,7 +1,9 @@
 using System.ComponentModel.DataAnnotations;
+using System.Globalization;
 using Asp.Versioning;
 using GraphQL;
 using Duende.IdentityModel;
+using Meshmakers.Octo.Communication.Contracts;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects.ApiErrors;
 using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb;
@@ -9,6 +11,7 @@ using Meshmakers.Octo.Runtime.Contracts.MongoDb.Configuration;
 using Meshmakers.Octo.Runtime.Contracts.Formulas;
 using Meshmakers.Octo.Runtime.Contracts.StreamData;
 using Meshmakers.Octo.Services.Infrastructure;
+using Meshmakers.Octo.Services.Infrastructure.Authorization;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -605,19 +608,213 @@ public class StreamDataController : ControllerBase
     }
 
     /// <summary>
+    /// Inserts or corrects data points of a raw archive (AB#8590). A raw row is identified by archive + <c>rtId</c> +
+    /// <c>timestamp</c> (UTC, millisecond precision); the CK type is fixed per archive. A write with an existing identity
+    /// replaces the stored row subject to the archive's conflict precedence: a stored manual row is protected from an
+    /// automated delivery while <c>$Origin</c> ranks first (the default); a ranking column before <c>$Origin</c> (or
+    /// <c>$Origin</c> set to Ignore) lets a better-ranked automated delivery replace it, and a losing write is skipped as
+    /// <c>LowerPrecedence</c>. Protection is per row (a manual correction of one attribute protects the whole row).
+    /// Each point may carry <c>origin</c> (<c>manual</c> | <c>automated</c>, absent = automated) and, only with
+    /// <c>manual</c>, a <c>reason</c>; the writer and the write time come from the verified caller and the platform,
+    /// never from the body. A manual point must name every ingested column of the archive (explicit null allowed) except
+    /// the ranking columns.
+    /// Absent and null differ (AB#8622): an attribute the point does not name keeps the stored value of its column, an
+    /// attribute sent as <c>null</c> clears it, and a new row stores NULL for every column the point does not name.
+    /// A ranking column (a column key of the archive's <c>ConflictPrecedence</c>) cannot be null: an explicit <c>null</c>
+    /// on one answers 400 naming the point and the field, for automated and manual points; left out, it keeps its stored
+    /// value, which the conflict guard then compares (engine-mongodb AB#8622). A manual point may therefore leave a
+    /// ranking column out, so a row whose ranking column is stored as NULL can still be corrected.
+    /// Answers 200 with the write result, 204 for an empty batch, 409 with the result when a manual row could not be
+    /// stored, 400 naming the point and the field for every client error (also an invalid archive id and a null point),
+    /// and 503 with a problem body and <c>Retry-After</c> when the archive did not store every row of one write statement,
+    /// also after a retry (AB#8679): its <c>rowsInAffectedWrite</c> and <c>rowsNotStored</c> count that statement, not the
+    /// batch, and other points of the batch may have been stored. A 409 can also follow stored points of the same
+    /// request: other points of the request may already be stored, the body lists the points that were not stored, and
+    /// the caller reloads before retrying. In the 200 and 409 bodies <c>skippedRows</c> lists at most 1,000 rows while
+    /// <c>skipped</c> counts every row not stored; when <c>skipped</c> is larger than the list, the caller reconciles the
+    /// whole batch (reloads). Nothing of a batch refused with 400 or 403 is written.
+    /// A batch with a manual point needs the tenant role <c>StreamDataAdmin</c> besides the write scope, otherwise the
+    /// whole batch answers 403 (AB#8590 AC 8); automated points need the scope only.
+    /// </summary>
+    [HttpPost("archives/{archiveRtId}/insert")]
+    [ProducesResponseType(typeof(StreamDataWriteResultRestDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(typeof(string), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ForbiddenErrorDto), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ManualWriteNotStoredRestDto), StatusCodes.Status409Conflict)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status503ServiceUnavailable)]
+    [Microsoft.AspNetCore.Authorization.Authorize(AssetRepositoryServiceConstants.TenantAssetApiReadWritePolicy)]
+    public async Task<IActionResult> Insert(
+        [Required] string tenantId,
+        [Required] string archiveRtId,
+        [FromBody] IReadOnlyList<InsertRawPointRestDto> points)
+    {
+        try
+        {
+            if (points is null || points.Count == 0)
+            {
+                return NoContent();
+            }
+
+            var requestError = CheckInsertRequest(archiveRtId, points, out var archiveId);
+            if (requestError is not null)
+            {
+                return BadRequest(requestError);
+            }
+
+            var tenantContext = await _systemContext.FindTenantContextAsync(tenantId);
+            var repository = tenantContext.GetStreamDataRepository()
+                ?? throw new StreamDataException(
+                    $"StreamData is not enabled for tenant '{tenantId}'. Call POST /streamdata/enable first.");
+
+            var snapshot = await LoadArchiveSnapshotAsync(tenantContext, archiveId);
+            if (snapshot is { UsesWindowedStorage: true })
+            {
+                return BadRequest(snapshot.IsTimeRange
+                    ? $"Archive '{archiveRtId}' is a time-range archive. Write its rows with POST archives/{archiveRtId}/insertTimeRange."
+                    : $"Archive '{archiveRtId}' is a rollup archive. Its rows are computed from the source archive and cannot be written.");
+            }
+
+            var mismatch = CkTypeMismatchMessage(archiveRtId, snapshot, points.Select(p => p.CkTypeId));
+            if (mismatch is not null)
+            {
+                return BadRequest(mismatch);
+            }
+
+            var rtIds = new OctoObjectId[points.Count];
+            var timestamps = new DateTime[points.Count];
+            var origins = new ArchiveRowOrigin[points.Count];
+            for (var i = 0; i < points.Count; i++)
+            {
+                var point = points[i];
+                if (!OctoObjectId.TryParse(point.RtId, out rtIds[i]))
+                {
+                    return BadRequest($"Point {i}: rtId '{point.RtId}' is not a valid runtime id.");
+                }
+
+                var timestampError = ArchivePointValidation.NormalizeTimestamp(i, point.Timestamp, out timestamps[i]);
+                if (timestampError is not null)
+                {
+                    return BadRequest(timestampError);
+                }
+
+                if (!TryParseOrigin(point.Origin, out origins[i]))
+                {
+                    return BadRequest(
+                        $"Point {i}: origin '{point.Origin}' is not valid. Use 'manual' or 'automated', or leave it out for automated.");
+                }
+
+                if (origins[i] != ArchiveRowOrigin.Manual && !string.IsNullOrEmpty(point.Reason))
+                {
+                    return BadRequest($"Point {i}: a reason is only recorded for a manual write; set origin 'manual' or remove the reason.");
+                }
+
+                if (snapshot is not null)
+                {
+                    var columnError = ArchivePointValidation.CheckColumns(
+                        i, point.Attributes, snapshot, origins[i] == ArchiveRowOrigin.Manual);
+                    if (columnError is not null)
+                    {
+                        return BadRequest(columnError);
+                    }
+                }
+            }
+
+            var refusal = RefuseManualWriteWithoutRole(tenantId, archiveRtId, origins);
+            if (refusal is not null)
+            {
+                return refusal;
+            }
+
+            var writer = origins.Contains(ArchiveRowOrigin.Manual) ? CallerIdentity(User) : null;
+            if (origins.Contains(ArchiveRowOrigin.Manual) && writer is null)
+            {
+                return BadRequest("A manual write records who wrote it, and the caller's token names no subject or client.");
+            }
+
+            var domainPoints = points.Select((p, i) => new StreamDataPoint
+            {
+                RtId = rtIds[i],
+                CkTypeId = new RtCkId<CkTypeId>(p.CkTypeId),
+                Timestamp = timestamps[i],
+                RtWellKnownName = p.RtWellKnownName,
+                Attributes = p.Attributes,
+                Origin = origins[i],
+                ManualWrittenBy = origins[i] == ArchiveRowOrigin.Manual ? writer : null,
+                ManualReason = origins[i] == ArchiveRowOrigin.Manual ? p.Reason : null,
+            }).ToList();
+
+            var result = await repository.InsertAsync(archiveId, domainPoints);
+            return Ok(StreamDataWriteResultRestDto.From(result));
+        }
+        catch (Meshmakers.Octo.Runtime.Engine.CrateDb.StreamDataWriteIncompleteException e)
+        {
+            return WriteIncomplete("Insert", tenantId, archiveRtId, e);
+        }
+        catch (ManualStreamDataNotAppliedException e)
+        {
+            // A manual value that could not be stored is never a success; the body says what was stored.
+            _logger.LogWarning(
+                "Insert for tenant '{TenantId}', archive '{ArchiveRtId}': {Skipped} manual row(s) not stored.",
+                tenantId, archiveRtId, e.Result.Skipped.Count(s => s.Origin == ArchiveRowOrigin.Manual));
+            return Conflict(new ManualWriteNotStoredRestDto
+            {
+                Message = e.Message,
+                Result = StreamDataWriteResultRestDto.From(e.Result)
+            });
+        }
+        catch (ConfigurationException e)
+        {
+            return BadRequest(e.Message);
+        }
+        catch (StreamDataException e)
+        {
+            _logger.LogWarning(
+                "Insert refused for tenant '{TenantId}', archive '{ArchiveRtId}': {Reason}",
+                tenantId, archiveRtId, e.Message);
+            return BadRequest(e.Message);
+        }
+        catch (ArgumentException e)
+        {
+            // The repository's value check (a value that does not fit its column type, AB#8606) and malformed ids.
+            return BadRequest(e.Message);
+        }
+    }
+
+    /// <summary>
     /// Inserts a batch of externally-aggregated time-range data points into a
     /// <c>TimeRangeArchive</c>. Each row covers a half-open <c>[from, to)</c> window;
     /// re-deliveries upsert via the natural key and set the row's <c>was_updated</c> flag to
     /// true. Time-range concept §3. The archive must be in <c>Activated</c> status; non-time-
     /// range archives reject the call with HTTP 400. Answers 200 with the write result (rows stored, rows not
     /// stored with the reason, AB#7598) — an empty batch still answers 204 — and 409 with the result when a
-    /// manual row could not be stored.
+    /// manual row could not be stored; other points of the request may already be stored, the body lists the points
+    /// that were not stored, and the caller reloads before retrying. In the 200 and 409 bodies <c>skippedRows</c> lists
+    /// at most 1,000 rows while <c>skipped</c> counts every row not stored; when <c>skipped</c> is larger than the list,
+    /// the caller reconciles the whole batch (reloads). Every point is checked like the raw <c>insert</c> before anything is written, each
+    /// a 400 naming the point and the field (AB#8590): missing or sub-millisecond <c>from</c>/<c>to</c>, invalid origin,
+    /// reason without manual, ckTypeId mismatch, and an attribute that is no ingested column or a computed column (also
+    /// for automated points). A manual point must name every ingested column of the archive (explicit null allowed) except
+    /// the ranking columns, otherwise the batch answers 400 listing the missing columns (AB#8590 AC 9).
+    /// Absent and null differ (AB#8622): an attribute the point does not name keeps the stored value of its column, an
+    /// attribute sent as <c>null</c> clears it, and a new row stores NULL for every column the point does not name.
+    /// A ranking column (a column key of the archive's <c>ConflictPrecedence</c>) cannot be null: an explicit <c>null</c>
+    /// on one answers 400 naming the point and the field, for automated and manual points; left out, it keeps its stored
+    /// value, which the conflict guard then compares (engine-mongodb AB#8622). A manual point may therefore leave a
+    /// ranking column out, so a row whose ranking column is stored as NULL can still be corrected.
+    /// A batch with a manual point needs the tenant role <c>StreamDataAdmin</c> besides the write scope, otherwise the
+    /// whole batch answers 403 (AB#8590 AC 8). An invalid archive id, an invalid point rtId and a null point answer 400;
+    /// a write statement the archive did not store completely, also after a retry, answers 503 with a problem body and
+    /// <c>Retry-After</c> (AB#8679): its <c>rowsInAffectedWrite</c> and <c>rowsNotStored</c> count that statement, not the
+    /// batch, and other points of the batch may have been stored.
     /// </summary>
     [HttpPost("archives/{archiveRtId}/insertTimeRange")]
     [ProducesResponseType(typeof(StreamDataWriteResultRestDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(typeof(string), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ForbiddenErrorDto), StatusCodes.Status403Forbidden)]
     [ProducesResponseType(typeof(ManualWriteNotStoredRestDto), StatusCodes.Status409Conflict)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status503ServiceUnavailable)]
     [Microsoft.AspNetCore.Authorization.Authorize(AssetRepositoryServiceConstants.TenantAssetApiReadWritePolicy)]
     public async Task<IActionResult> InsertTimeRange(
         [Required] string tenantId,
@@ -629,6 +826,12 @@ public class StreamDataController : ControllerBase
             if (points is null || points.Count == 0)
             {
                 return NoContent();
+            }
+
+            var requestError = CheckInsertRequest(archiveRtId, points, out var archiveId);
+            if (requestError is not null)
+            {
+                return BadRequest(requestError);
             }
 
             var tenantContext = await _systemContext.FindTenantContextAsync(tenantId);
@@ -643,20 +846,34 @@ public class StreamDataController : ControllerBase
             // usual cause is sending the VERSIONED id ('Model-1.0.0/Type-1') where an RtCkId is
             // expected ('Model/Type'): it parses, it just never matches. Refuse the batch here and
             // name both sides (AB#5157 validation finding 4).
-            var mismatched = await FindMismatchedCkTypeIdsAsync(tenantContext, archiveRtId, points);
-            if (mismatched is { Expected: { } expected, Values.Count: > 0 })
+            var snapshot = await LoadArchiveSnapshotAsync(tenantContext, archiveId);
+            var mismatch = CkTypeMismatchMessage(archiveRtId, snapshot, points.Select(p => p.CkTypeId));
+            if (mismatch is not null)
             {
-                return BadRequest(
-                    $"Archive '{archiveRtId}' captures '{expected}'. The batch carries " +
-                    $"{string.Join(", ", mismatched.Values.Select(v => $"'{v}'"))}, whose rows would all be " +
-                    "discarded. Send the ckTypeId in its unversioned form, e.g. 'Model/Type'.");
+                return BadRequest(mismatch);
             }
 
             // AB#5356 / AB#7593 / AB#7596: the caller declares the origin; the writer of a manual row is
             // the authenticated caller, never a value from the body.
+            var rtIds = new OctoObjectId[points.Count];
             var origins = new ArchiveRowOrigin[points.Count];
+            var froms = new DateTime[points.Count];
+            var tos = new DateTime[points.Count];
             for (var i = 0; i < points.Count; i++)
             {
+                if (!OctoObjectId.TryParse(points[i].RtId, out rtIds[i]))
+                {
+                    return BadRequest($"Point {i}: rtId '{points[i].RtId}' is not a valid runtime id.");
+                }
+
+                // AB#8590 point 11: the window bounds are the row key, held in milliseconds, like the raw timestamp.
+                var windowError = ArchivePointValidation.NormalizeTimestamp(i, points[i].From, out froms[i], "from")
+                                  ?? ArchivePointValidation.NormalizeTimestamp(i, points[i].To, out tos[i], "to");
+                if (windowError is not null)
+                {
+                    return BadRequest(windowError);
+                }
+
                 if (!TryParseOrigin(points[i].Origin, out origins[i]))
                 {
                     return BadRequest(
@@ -667,6 +884,25 @@ public class StreamDataController : ControllerBase
                 {
                     return BadRequest($"Point {i}: a reason is only recorded for a manual write; set origin 'manual' or remove the reason.");
                 }
+
+                // AB#8590 point 11: the same column checks as the raw insert, for every point. An unknown or computed key
+                // would be dropped by the repository without a word, so the caller would believe it was written. AC 9: a
+                // manual point protects the whole row, so it must name every ingested column except the ranking columns.
+                if (snapshot is not null)
+                {
+                    var columnError = ArchivePointValidation.CheckColumns(
+                        i, points[i].Attributes, snapshot, origins[i] == ArchiveRowOrigin.Manual);
+                    if (columnError is not null)
+                    {
+                        return BadRequest(columnError);
+                    }
+                }
+            }
+
+            var refusal = RefuseManualWriteWithoutRole(tenantId, archiveRtId, origins);
+            if (refusal is not null)
+            {
+                return refusal;
             }
 
             var writer = origins.Contains(ArchiveRowOrigin.Manual) ? CallerIdentity(User) : null;
@@ -677,10 +913,10 @@ public class StreamDataController : ControllerBase
 
             var domainPoints = points.Select((p, i) => new TimeRangeStreamDataPoint
             {
-                RtId = new OctoObjectId(p.RtId),
+                RtId = rtIds[i],
                 CkTypeId = new RtCkId<CkTypeId>(p.CkTypeId),
-                From = p.From,
-                To = p.To,
+                From = froms[i],
+                To = tos[i],
                 RtWellKnownName = p.RtWellKnownName,
                 Attributes = p.Attributes,
                 Origin = origins[i],
@@ -689,8 +925,12 @@ public class StreamDataController : ControllerBase
             }).ToList();
 
             // AB#7598: the caller learns how many rows were stored and why the others were not.
-            var result = await repository.InsertTimeRangeAsync(new OctoObjectId(archiveRtId), domainPoints);
+            var result = await repository.InsertTimeRangeAsync(archiveId, domainPoints);
             return Ok(StreamDataWriteResultRestDto.From(result));
+        }
+        catch (Meshmakers.Octo.Runtime.Engine.CrateDb.StreamDataWriteIncompleteException e)
+        {
+            return WriteIncomplete("InsertTimeRange", tenantId, archiveRtId, e);
         }
         catch (ManualStreamDataNotAppliedException e)
         {
@@ -722,6 +962,31 @@ public class StreamDataController : ControllerBase
             return BadRequest(e.Message);
         }
     }
+
+    /// <summary>
+    /// AB#8590 AC 8: a manual point corrects data by hand, so besides the write scope of the endpoint policy the verified
+    /// caller must hold the tenant role <c>StreamDataAdmin</c> (the role Studio checks for corrections). A batch with at
+    /// least one manual point from a caller without the role is refused as a whole with 403 before anything is written;
+    /// a purely automated batch is not checked here. Returns <c>null</c> when the batch may be written.
+    /// </summary>
+    private ObjectResult? RefuseManualWriteWithoutRole(string tenantId, string archiveRtId, ArchiveRowOrigin[] origins)
+    {
+        if (!origins.Contains(ArchiveRowOrigin.Manual) ||
+            TenantRoleAuthorizationHandler.HasTenantRole(User, CommonConstants.StreamDataAdminRole))
+        {
+            return null;
+        }
+
+        _logger.LogWarning(
+            "Manual stream-data write refused for tenant '{TenantId}', archive '{ArchiveRtId}': the caller lacks the role '{Role}'.",
+            tenantId, archiveRtId, CommonConstants.StreamDataAdminRole);
+        return StatusCode(StatusCodes.Status403Forbidden, new ForbiddenErrorDto(ManualWriteRoleRefusal));
+    }
+
+    /// <summary>The 403 message of a manual write without the <c>StreamDataAdmin</c> role (AB#8590 AC 8).</summary>
+    internal static readonly string ManualWriteRoleRefusal =
+        $"Access is denied: a write with origin 'manual' requires the role '{CommonConstants.StreamDataAdminRole}' in the tenant. " +
+        "The token carries no such role; ask a tenant administrator to grant it.";
 
     /// <summary>
     /// Parses the optional origin of a REST point: absent or empty is automated, otherwise <c>manual</c> or
@@ -767,21 +1032,96 @@ public class StreamDataController : ControllerBase
     }
 
     /// <summary>
-    /// The distinct <c>ckTypeId</c> values in an insert batch that are not the archive's target,
-    /// together with the target itself. <c>Expected</c> is <c>null</c> when the archive cannot be
-    /// read here — the repository then reports the real problem (unknown archive, not activated,
-    /// stream data disabled) with its own message.
+    /// The archive snapshot the insert checks run against, or <c>null</c> when the archive cannot be read here — the
+    /// repository then reports the real problem (unknown archive, not activated, stream data disabled) with its own message.
     /// </summary>
-    private static async Task<(string? Expected, IReadOnlyList<string> Values)> FindMismatchedCkTypeIdsAsync(
-        ITenantContext tenantContext, string archiveRtId, IReadOnlyList<InsertTimeRangePointRestDto> points)
+    private static async Task<ArchiveSnapshot?> LoadArchiveSnapshotAsync(ITenantContext tenantContext, OctoObjectId archiveRtId)
     {
         var store = tenantContext.GetArchiveRuntimeStore();
-        if (store is null)
+        return store is null ? null : await store.GetAsync(archiveRtId);
+    }
+
+    /// <summary>
+    /// AB#8590: the checks of an insert body that come before anything is read: the route's <c>archiveRtId</c> must be a
+    /// runtime id and no array element may be <c>null</c>. Returns the 400 message naming the field or the point, or
+    /// <c>null</c> when the request may go on (then <paramref name="archiveId" /> holds the parsed archive id). Without it
+    /// an invalid id threw <see cref="FormatException" /> and a null element a <see cref="NullReferenceException" />, both 500.
+    /// </summary>
+    internal static string? CheckInsertRequest<TPoint>(string archiveRtId, IReadOnlyList<TPoint?> points,
+        out OctoObjectId archiveId)
+        where TPoint : class
+    {
+        if (!OctoObjectId.TryParse(archiveRtId, out archiveId))
         {
-            return (null, Array.Empty<string>());
+            return $"archiveRtId '{archiveRtId}' is not a valid runtime id.";
         }
 
-        var snapshot = await store.GetAsync(new OctoObjectId(archiveRtId));
+        for (var i = 0; i < points.Count; i++)
+        {
+            if (points[i] is null)
+            {
+                return $"Point {i} is null.";
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>Seconds a caller should wait before it sends an incomplete archive write again (AB#8679).</summary>
+    internal const int WriteIncompleteRetryAfterSeconds = 30;
+
+    /// <summary>
+    /// AB#8679: CrateDB did not store every row of one write statement (a memory circuit breaker, no error from CrateDB)
+    /// and the retry did not either. The counts of <see cref="Meshmakers.Octo.Runtime.Engine.CrateDb.StreamDataWriteIncompleteException"/>
+    /// belong to that statement or its retry, not to the caller's batch: other statements of the request may have been
+    /// stored. The answer is a 503 problem body with the archive, <c>rowsInAffectedWrite</c>, <c>rowsNotStored</c> and a
+    /// <c>Retry-After</c> header, and tells the caller to reload before it sends the batch again; the CrateDB detail
+    /// (schema, table, breaker text) is logged here and never returned.
+    /// </summary>
+    private ObjectResult WriteIncomplete(string operation, string tenantId, string archiveRtId,
+        Meshmakers.Octo.Runtime.Engine.CrateDb.StreamDataWriteIncompleteException e)
+    {
+        _logger.LogError(e,
+            "{Operation} for tenant '{TenantId}', archive '{ArchiveRtId}' failed: {RowsMissing} of {RowsSent} rows not stored in {QualifiedTable}. {Reason}",
+            operation, tenantId, archiveRtId, e.RowsMissing, e.RowsSent, e.QualifiedTable, e.Message);
+
+        Response.Headers.RetryAfter = WriteIncompleteRetryAfterSeconds.ToString(CultureInfo.InvariantCulture);
+        var problem = new ProblemDetails
+        {
+            Status = StatusCodes.Status503ServiceUnavailable,
+            Title = "Archive write incomplete",
+            Detail = FormattableString.Invariant(
+                $"{e.RowsMissing} of {e.RowsSent} rows of one write statement were not stored, also after a retry; ") +
+                "other points of the request may have been stored. Reload before retrying.",
+        };
+        problem.Extensions["archiveRtId"] = archiveRtId;
+        problem.Extensions["rowsInAffectedWrite"] = e.RowsSent;
+        problem.Extensions["rowsNotStored"] = e.RowsMissing;
+        return new ObjectResult(problem) { StatusCode = StatusCodes.Status503ServiceUnavailable };
+    }
+
+    /// <summary>
+    /// The 400 message when an insert batch carries <c>ckTypeId</c> values that are not the archive's target, naming both
+    /// sides; <c>null</c> when every value matches or the archive gives nothing to judge against. Shared by the raw and
+    /// the time-range insert.
+    /// </summary>
+    private static string? CkTypeMismatchMessage(string archiveRtId, ArchiveSnapshot? snapshot, IEnumerable<string> ckTypeIds)
+    {
+        var (expected, values) = FindMismatchedCkTypeIds(snapshot, ckTypeIds);
+        return expected is null || values.Count == 0
+            ? null
+            : $"Archive '{archiveRtId}' captures '{expected}'. The batch carries " +
+              $"{string.Join(", ", values.Select(v => $"'{v}'"))}, whose rows would all be " +
+              "discarded. Send the ckTypeId in its unversioned form, e.g. 'Model/Type'.";
+    }
+
+    /// <summary>
+    /// The distinct <c>ckTypeId</c> values in an insert batch that are not the archive's target,
+    /// together with the target itself. <c>Expected</c> is <c>null</c> when there is no snapshot.
+    /// </summary>
+    private static (string? Expected, IReadOnlyList<string> Values) FindMismatchedCkTypeIds(
+        ArchiveSnapshot? snapshot, IEnumerable<string> ckTypeIds)
+    {
         if (snapshot is null)
         {
             return (null, Array.Empty<string>());
@@ -803,8 +1143,7 @@ public class StreamDataController : ControllerBase
             return (null, Array.Empty<string>());
         }
 
-        var values = points
-            .Select(p => p.CkTypeId)
+        var values = ckTypeIds
             .Where(id => !MatchesTarget(id, expected))
             .Distinct(StringComparer.Ordinal)
             .ToList();

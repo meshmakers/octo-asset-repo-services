@@ -2,6 +2,66 @@
 
 ## Unreleased
 
+- AB#8679 Fix: when the archive write stays incomplete (CrateDB did not store every row, also after one retry), `insert` and
+  `insertTimeRange` answer 503 with a short `application/problem+json` body (`archiveRtId`, `rowsInAffectedWrite`,
+  `rowsNotStored`) and `Retry-After: 30`. The counts belong to the one write statement that failed, not to the request;
+  other points of the request may have been stored, so the caller reloads before retrying. The body no longer carries the exception text with the internal `schema.table` and the CrateDB breaker
+  detail; the full detail is logged server-side.
+- AB#8590 Fix: `insert` and `insertTimeRange` answer 400 instead of 500 for an `archiveRtId` that is not a runtime id (naming
+  the field), for a point `rtId` of `insertTimeRange` that is not one (naming the point and the field, like `insert`), and for a
+  `null` array element (`Point i is null.`); nothing is read or written.
+
+- AB#8667 Fix: the GraphQL schema of a tenant follows its CK cache. The cached schema remembers the CK cache load it was
+  built from and is rebuilt when the cache was unloaded or reloaded since - also when no `PosUpdateTenant` reached this
+  process (a reload by the AB#5415 fallback or the display-rule sweeper, or an event published before the service listened
+  to the bus at start). Before, a schema built at start from a cache that predated another service's import (e.g. the
+  System.StreamData bump that adds the time-range archive types) stayed without the new types until a manual ClearCache,
+  and Studio showed "Failed to load archive content". An unchanged cache keeps the cached schema. Needs engine-mongodb
+  AB#8667 for the cache itself to drop the stale model at start.
+
+- AB#8622 Fix: a manual point of `insert` and `insertTimeRange` may leave the ranking columns out (the column keys of the
+  archive's `ConflictPrecedence`); they keep their stored value. Every other ingested column still has to be named (AB#8590).
+  Before, a correction of a row whose ranking column is stored as NULL was impossible: naming the column needs a value, and
+  `null` is refused. The null-refusal message no longer tells a manual point to send a value only.
+- AB#8622 Fix: `insert` and `insertTimeRange` refuse an explicit `null` on a ranking column (a column key of the archive's
+  `ConflictPrecedence`; `$Origin` is no column) with 400 naming the point and the key; nothing of the batch is written. Applies to
+  automated and manual points (`ArchivePointValidation.CheckColumns`, keys matched like the storage column). The engine refuses it
+  as well (engine-mongodb AB#8622). A ranking column the point leaves out keeps its stored value, and the conflict guard compares
+  the point against that merged value. **Behaviour change:** a REST caller that sent `DataQuality: null` or
+  `SourceDocumentDate: null` to a ranked archive now gets 400; a manual point leaves such a column out instead (see the
+  ranking-column exemption above).
+- AB#8622 Docs: `insert` and `insertTimeRange` name the absent-versus-null rule of the archive writes (engine-mongodb AB#8622):
+  an attribute the point does not name keeps the stored value of its column, an attribute sent as `null` clears it, and a
+  new row stores NULL for every column the point does not name. **Behaviour change for automated points** (no code change
+  here, it comes with the engine package): a partial re-delivery no longer clears the columns it did not send. The REST
+  body keeps the two apart (`RtAttributesConverter` keeps a JSON `null` as a key with a null value). Manual points must
+  still name every ingested column (AB#8590): a manual point protects the whole row.
+- AB#8590 Fix: `insertTimeRange` refuses unknown and computed columns and sub-millisecond windows, with the same rules as the raw
+  `insert` (shared `ArchivePointValidation`). A key that is no ingested column of the archive, a computed column, or a second key for
+  the same column used to be dropped by the repository while the call answered 200, so a manual correction looked stored. Such a
+  point, and a `from` or `to` that is missing or has sub-millisecond precision, now answers 400 naming the point and the field, and
+  nothing of the batch is written. Applies to automated and manual points; REST callers that send extra keys must drop them
+  (pipeline nodes write through the repository and are not affected). `from`/`to` without offset are read as UTC, with offset converted.
+- AB#8590 Fix: `insertTimeRange` refuses a manual point that leaves columns out. The time-range upsert writes every ingested
+  column of the archive and binds an unsent attribute as NULL, so a manual correction that sent only the changed column
+  silently cleared the stored values of the other columns. A point with origin `manual` must now name every ingested column
+  (explicit `null` allowed), exactly like the raw `insert`; otherwise the batch answers 400 listing the missing columns and
+  nothing is written. Same check as the raw endpoint (`ArchivePointValidation`, shared). Automated points are unchanged.
+  Callers that send manual points (Studio sends the whole row) must send every column.
+- AB#8590 New: `POST {tenantId}/v1/streamdata/archives/{archiveRtId}/insert` writes and corrects rows of a raw archive with
+  `origin` (`manual` | `automated`) and an optional `reason`, through the existing raw `IStreamDataRepository.InsertAsync` (origin,
+  writer, manual protection and write result since AB#5968). Row identity: archive + `rtId` + `timestamp` (UTC, milliseconds);
+  protection is per row. A manual point must name every ingested column (explicit null allowed). Client errors (invalid id,
+  origin, reason without manual, token without writer, ckTypeId mismatch, unknown or computed column, sub-millisecond timestamp,
+  time-range or rollup archive, value not fitting its column) answer 400 naming point and field; 200 with the write result, 204
+  for an empty batch, 409 when a manual row was not stored. The ckTypeId check of `insertTimeRange` is shared, unchanged.
+- AB#8590 New (security): a write with origin `manual` - on the new `insert` and on the existing `insertTimeRange` - needs the
+  tenant role `StreamDataAdmin` (the role Studio checks for corrections) besides the write scope; without it the whole batch
+  answers 403 `ForbiddenErrorDto` naming the role and nothing is written, also when it mixes manual and automated points.
+  Automated writes keep the scope-only check (`TenantAssetApiReadWritePolicy`), so pipelines and adapters are unaffected.
+  **Before the rollout**, grant `StreamDataAdmin` to every user or client that sends manual points over REST (pipeline nodes
+  write through the repository and are not affected).
+
 - AB#8647 New: the transient `downsampling` query takes the optional argument `groupByColumnPaths: [String!]` (supported:
   `["rtId"]`) and returns one row per series and bin instead of one total per bin. The value goes to the engine's
   `StreamDataDownsamplingQueryOptions.GroupByColumnPaths` (AB#7360); the series key is the cell `rtId` after `timestamp` and the

@@ -3,7 +3,7 @@ using Meshmakers.Octo.Runtime.Contracts.StreamData;
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.StreamData.Controllers;
 
 /// <summary>
-/// Response of <c>POST archives/{archiveRtId}/insertTimeRange</c> (AB#7598): how many rows the archive stored and
+/// Response of <c>POST archives/{archiveRtId}/insert</c> (AB#8590) and <c>POST archives/{archiveRtId}/insertTimeRange</c> (AB#7598): how many rows the archive stored and
 /// which were not, with the reason, so no caller reports success for a value that was not stored.
 /// </summary>
 public sealed class StreamDataWriteResultRestDto
@@ -18,13 +18,19 @@ public sealed class StreamDataWriteResultRestDto
     public int Skipped { get; init; }
 
     /// <summary>
-    /// Rows not stored per reason: <c>LowerPrecedence</c> (the archive's conflict precedence ranks the stored row
-    /// above), <c>ManualValueProtected</c> (a manual value is never replaced by an automated delivery),
-    /// <c>CkTypeMismatch</c> (not the archive's CK type).
+    /// Rows not stored per reason, named after the key that decided (AB#8637): <c>LowerPrecedence</c> (a ranking
+    /// column of the archive's conflict precedence ranks the stored row above, also against a stored manual value
+    /// when that column comes before <c>$Origin</c>), <c>ManualValueProtected</c> (<c>$Origin</c> decided: the stored
+    /// row is manual, the write automated and no ranking column before <c>$Origin</c> differs; a ranking column the
+    /// write does not send ties, AB#8622), <c>CkTypeMismatch</c> (not the archive's CK type).
     /// </summary>
     public IReadOnlyDictionary<string, int> SkippedByReason { get; init; } = new Dictionary<string, int>();
 
-    /// <summary>The rows not stored, at most <see cref="MaxListedRows" />.</summary>
+    /// <summary>
+    /// The rows not stored, at most <see cref="MaxListedRows" /> (1,000); <see cref="Skipped" /> is the complete count.
+    /// When <see cref="Skipped" /> is larger than this list, the caller reconciles the whole batch (reloads) instead of
+    /// relying on the list.
+    /// </summary>
     public IReadOnlyList<SkippedRowRestDto> SkippedRows { get; init; } = [];
 
     /// <summary>Maps the engine's write result.</summary>
@@ -45,7 +51,9 @@ public sealed class StreamDataWriteResultRestDto
 }
 
 /// <summary>
-/// Body of the 409 of <c>POST archives/{archiveRtId}/insertTimeRange</c> (AB#7598): a manual row could not be stored.
+/// Body of the 409 of <c>POST archives/{archiveRtId}/insert</c> and <c>POST archives/{archiveRtId}/insertTimeRange</c> (AB#7598): a manual row could not be stored.
+/// Other points of the same request may already be stored; <c>result</c> lists the points that were not stored.
+/// Reload before retrying.
 /// The SDK and the energy pipelines read <c>message</c> and <c>result</c>, so these names are the wire contract.
 /// </summary>
 public sealed class ManualWriteNotStoredRestDto
@@ -63,10 +71,10 @@ public sealed class SkippedRowRestDto
     /// <summary>Entity the row belongs to.</summary>
     public string RtId { get; init; } = string.Empty;
 
-    /// <summary>Inclusive window start (UTC).</summary>
+    /// <summary>Timestamp of a raw row, or the inclusive window start of a time-range row (UTC).</summary>
     public DateTime From { get; init; }
 
-    /// <summary>Exclusive window end (UTC).</summary>
+    /// <summary>Exclusive window end of a time-range row (UTC); <c>null</c> for a raw row.</summary>
     public DateTime? To { get; init; }
 
     /// <summary><c>manual</c> or <c>automated</c>, as the caller declared it.</summary>

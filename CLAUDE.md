@@ -393,12 +393,62 @@ Time-series data support (`StreamData/`):
     (`StreamDataController.CallerIdentity`, AB#7647: `preferred_username`, else `name`, else `ClaimTypes.Name`, else the
     subject id; `client_id` only when the token has no subject), **never** a body field;
     the platform time is set by the repository. 400 for an unknown origin (names the valid values), a reason without
-    `manual`, and a manual write whose token names no identity; nothing of the batch is written. Tests:
-    `StreamDataControllerInsertTimeRangeTests`. SDK: `IStreamDataServicesClient.InsertTimeRangeAsync` (`TimeRangePointDto`).
+    `manual`, and a manual write whose token names no identity; nothing of the batch is written. **A manual point must name
+    every ingested column of the archive (AB#8590 AC 9)**, explicit `null` allowed. Before engine-mongodb AB#8622 the upsert bound
+    an unsent column as NULL and a correction of one column cleared the others; since AB#8622 an unsent column keeps its stored
+    value, and the rule stays because the origin is stored per row: a manual point marks the whole row manual and protects it,
+    so it has to state every value it protects. Otherwise 400 listing the missing columns, nothing written. **A ranking column
+    (column key of the archive's `ConflictPrecedence`; `$Origin` is no column) cannot be null** (engine-mongodb AB#8622, decided by
+    Reimar 2026-11-09): an explicit `null` on one answers 400 naming the point and the key, on `insert` and `insertTimeRange`,
+    automated and manual (`ArchivePointValidation.CheckColumns`; the engine refuses it too, `ArchiveRankingColumnValidator`).
+    Left out, a ranking column keeps its stored value and the guard compares that value. **Ranking columns are exempt from the
+    manual full-row rule** (decided by Odin 2026-11-09): a manual point may leave them out and they keep their stored value, so a
+    correction of a row whose ranking column is stored as NULL is possible. **Same point checks
+    as the raw `insert` (AB#8590)**, for automated and manual points, each a 400 naming the point and the field, nothing of the batch
+    written: missing or sub-millisecond `from`/`to` (UTC normalization like the raw timestamp, `ArchivePointValidation.NormalizeTimestamp`),
+    and an attribute that is no ingested column, a computed column, or a second key for the same column
+    (`ArchivePointValidation.CheckColumns`, keys matched like the storage column). Before, the repository dropped unknown and computed
+    keys silently and the call answered 200. Pipeline nodes write through the repository and are not affected. Without a readable
+    archive snapshot the column checks are skipped. Tests:
+    `StreamDataControllerInsertTimeRangeTests`, `IntegrationTests/StreamData/StreamDataInsertTimeRangeRestTests`. SDK: `IStreamDataServicesClient.InsertTimeRangeAsync` (`TimeRangePointDto`).
     **Write result (AB#7598):** answers **200** with `StreamDataWriteResultRestDto` (`stored`, `skipped`,
     `skippedByReason` — `LowerPrecedence` / `ManualValueProtected` / `CkTypeMismatch` —, `skippedRows` up to 1,000);
     an empty batch stays 204. A manual row the archive did not store (`ManualStreamDataNotAppliedException`) answers
     **409** `{ message, result }` — never success. Callers that ignore the body behave as before.
+  - `POST archives/{archiveRtId}/insert` (ReadWrite) — **raw-archive writes and corrections (AB#8590)**: body
+    `InsertRawPointRestDto[]` (`rtId`, `ckTypeId`, `timestamp`, `rtWellKnownName?`, `attributes`, `origin?`, `reason?`), handed
+    to the existing `IStreamDataRepository.InsertAsync` (no engine interface change). **Row identity:** archive + `rtId` +
+    `timestamp` (UTC, millisecond precision), the CK type is fixed per archive (raw PK `(timestamp, rtid, cktypeid)`); a
+    timestamp without offset is read as UTC, one with offset converted, sub-millisecond precision answers 400. **Protection is
+    per row**: the origin is stored once per row, so a manual correction of one attribute also protects the other attributes
+    of that row against automated re-deliveries. Origin, reason and writer as `insertTimeRange` (shared `TryParseOrigin`,
+    `CallerIdentity`; writer and write time never from the body). Checks before anything is written, each a 400 naming the
+    point (index) and the field (`ArchivePointValidation`, against the archive snapshot): invalid `rtId`, missing or
+    sub-millisecond timestamp, invalid origin, reason without `manual`, manual write with a token without writer, `ckTypeId`
+    not the archive's target (shared `CkTypeMismatchMessage`), an attribute that is no ingested column or a computed column, two
+    keys for the same column (keys are matched like the storage column: segments concatenated, case-insensitive), a time-range
+    or rollup archive, and — decision D1 of AB#7657 — a **manual** point that does not name every ingested column (explicit
+    `null` allowed; the message lists the missing columns), because a manual point protects the whole row (see `insertTimeRange`). A value that does not fit its column type is refused by the repository's value check (engine-mongodb
+    AB#8606, `ArgumentException`) and answered 400 like the time-range path. Answers 200 `StreamDataWriteResultRestDto`
+    (a skipped raw row has `from` = timestamp, `to` = null), 204 for an empty batch, 409 `ManualWriteNotStoredRestDto` when a
+    manual row was not stored, 403 via the policy and for a manual point without the role `StreamDataAdmin` (see below). Without a readable archive snapshot (stream data off, unknown archive) the
+    column checks are skipped and the repository's own error answers 400. Tests: `UnitTests/StreamData/StreamDataControllerInsertRawTests`, `IntegrationTests/StreamData/StreamDataInsertRawRestTests` (real CrateDB: manual correction, automated re-delivery skipped with `ManualValueProtected`, whole row stays manual). SDK:
+    `IStreamDataServicesClient.InsertAsync` (`RawPointDto`).
+  - **Malformed requests and incomplete writes of both inserts (AB#8590, AB#8679).** An `archiveRtId` that is not a runtime id,
+    a point `rtId` that is not one and a `null` array element answer 400 (`CheckInsertRequest`, before anything is read). When
+    CrateDB does not store every row, also after one retry (`StreamDataWriteIncompleteException`), the answer is 503 with a
+    `ProblemDetails` body (`archiveRtId`, `rowsInAffectedWrite`, `rowsNotStored` - counts of the one failed write
+    statement, not of the request, whose other points may be stored - generic detail "reload before retrying") and `Retry-After`
+    (`WriteIncompleteRetryAfterSeconds`); the qualified table and the CrateDB text are logged only, never returned. Tests:
+    `StreamDataControllerWriteIncompleteTests`, the malformed-request cases of `StreamDataControllerInsertRawTests` /
+    `StreamDataControllerInsertTimeRangeTests`.
+  - **Manual writes need the role `StreamDataAdmin` (AB#8590 AC 8)** on both `insert` and `insertTimeRange`: a batch with at
+    least one point of origin `manual` is written only when the verified caller holds the tenant role `StreamDataAdmin`
+    (`CommonConstants.StreamDataAdminRole`, both role claim spellings via `TenantRoleAuthorizationHandler.HasTenantRole`;
+    `StreamDataReader`/`StreamDataWriter` are not enough). Otherwise the whole batch answers **403** `ForbiddenErrorDto` naming
+    the role, nothing written (`StreamDataController.RefuseManualWriteWithoutRole`, after the per-point 400 checks). Automated
+    points keep the scope-only check of `TenantAssetApiReadWritePolicy`. The adapter's archive-write nodes write through the
+    repository and are not gated by this check.
   - **Reading the origin (AB#7616)**: the GraphQL stream-data queries (`streamData.transientStreamDataQuery` /
     persisted queries: simple, groupingAggregation, downsampling, fieldFilter) accept `row_origin` (`manual` |
     `automated`; rows written before AB#5356 read `automated`), `manual_written_by`, `manual_written_at`,
@@ -611,7 +661,14 @@ N:M associations are exposed as query columns with `::totalCount` (INT64) and `:
   schema init); `OctoSchema` maps CLR `DateTime` to the UTC scalar for auto-mapped fields.
   `SimpleScalarType.Serialize` applies the same normalization to top-level DateTime cell values.
 - Schema caching is automatic per tenant (up to 64 cached schemas)
-- Schema invalidation happens via `SchemaContext.Invalidate(tenantId)`
+- Schema invalidation happens via `SchemaContext.Invalidate(tenantId)` (on `PosUpdateTenant` / `PreDeleteTenant`) **and**
+  whenever the tenant's CK cache was unloaded or reloaded since the schema was built (AB#8667): the cached schema carries
+  the marker of the CK cache load it was populated from (`CkCacheGeneration`, the type collection instance that is replaced
+  on every reload, the same marker as the hidden-name cache), and `GetOrCreateAsync` rebuilds when it no longer matches.
+  This covers the reloads that send no tenant event - the AB#5415 stale-type fallback, the display-rule sweeper - and a
+  `PosUpdateTenant` that was published before this process listened to the bus (service start). An unchanged cache costs
+  one dictionary lookup and a reference compare per request. Tests: `GraphQL/Schema/SchemaFollowsCkCacheTests`,
+  `UnitTests/GraphQL/CkCacheGenerationTests`.
 - The schema is **initialized eagerly** inside `SchemaContext.GetOrCreateAsync` (not lazily on the first request),
   so an invalid schema is never cached and the build time is measured completely. Every build logs at Information:
   `GraphQL schema for tenant {TenantId} built in {ElapsedMs} ms ({TypeCount} types, {InterfaceCount} CK interfaces,

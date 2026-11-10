@@ -5,8 +5,10 @@ using FluentAssertions;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Collections;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Fixtures;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.StreamData.Controllers;
+using Meshmakers.Octo.Communication.Contracts;
 using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.ConstructionKit.Models.StreamData.Generated.System.StreamData.v1;
+using Meshmakers.Octo.Runtime.Contracts.Formulas;
 using Meshmakers.Octo.Runtime.Contracts.RepositoryEntities;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb;
 using Meshmakers.Octo.Runtime.Contracts.StreamData;
@@ -266,7 +268,7 @@ public class StreamDataInsertTimeRangeRestTests(StreamDataFixture fixture, ITest
             var child = await PrepareChildAsync(childTenantId);
             var archiveRtId = await CreateAndActivateTimeRangeArchiveAsync(child);
             var rtId = OctoObjectId.GenerateNewId();
-            var controller = ControllerFor(childTenantId, ("sub", "8a4c1f00-0000-4000-8000-000000000001"));
+            var controller = ControllerFor(childTenantId, ("sub", "8a4c1f00-0000-4000-8000-000000000001"), ("role", CommonConstants.StreamDataAdminRole));
 
             foreach (var reading in new[] { 100, 200 })
             {
@@ -276,7 +278,7 @@ public class StreamDataInsertTimeRangeRestTests(StreamDataFixture fixture, ITest
                       "ckTypeId": "{{fixture.TestCkTypeId}}",
                       "from": "{{WindowStart:O}}",
                       "to": "{{WindowEnd:O}}",
-                      "attributes": { "MeterReading": {{reading}} },
+                      "attributes": {{ManualRow(reading)}},
                       "origin": "manual",
                       "reason": "corrected"
                     }]
@@ -314,7 +316,7 @@ public class StreamDataInsertTimeRangeRestTests(StreamDataFixture fixture, ITest
             var child = await PrepareChildAsync(childTenantId);
             var archiveRtId = await CreateAndActivateTimeRangeArchiveAsync(child);
             var rtId = OctoObjectId.GenerateNewId();
-            var controller = ControllerFor(childTenantId, ("sub", "8a4c1f00-0000-4000-8000-000000000002"));
+            var controller = ControllerFor(childTenantId, ("sub", "8a4c1f00-0000-4000-8000-000000000002"), ("role", CommonConstants.StreamDataAdminRole));
 
             (await WriteReadingAsync(controller, childTenantId, archiveRtId, rtId, 100, manual: false)).Stored.Should().Be(1);
             (await WriteReadingAsync(controller, childTenantId, archiveRtId, rtId, 200, manual: true)).Stored.Should().Be(1);
@@ -350,7 +352,7 @@ public class StreamDataInsertTimeRangeRestTests(StreamDataFixture fixture, ITest
             var child = await PrepareChildAsync(childTenantId);
             var archiveRtId = await CreateAndActivateTimeRangeArchiveAsync(child, ignoreOrigin: true);
             var rtId = OctoObjectId.GenerateNewId();
-            var controller = ControllerFor(childTenantId, ("sub", "8a4c1f00-0000-4000-8000-000000000003"));
+            var controller = ControllerFor(childTenantId, ("sub", "8a4c1f00-0000-4000-8000-000000000003"), ("role", CommonConstants.StreamDataAdminRole));
 
             (await WriteReadingAsync(controller, childTenantId, archiveRtId, rtId, 200, manual: true)).Stored.Should().Be(1);
             var automated = await WriteReadingAsync(controller, childTenantId, archiveRtId, rtId, 300, manual: false);
@@ -364,6 +366,147 @@ public class StreamDataInsertTimeRangeRestTests(StreamDataFixture fixture, ITest
             await DropChildIfExistingAsync(childTenantId);
         }
     }
+
+    /// <summary>
+    /// AB#8590 AC 9: a manual point protects the whole row, so it must name every column (before engine-mongodb
+    /// AB#8622 a point that left a column out also cleared its stored value). A point that leaves one out is refused with 400 naming the missing
+    /// column and the stored row stays as it was; a manual point that names every column (one explicitly null) is
+    /// stored as sent.
+    /// </summary>
+    [Fact]
+    public async Task InsertTimeRange_AManualPointMustNameEveryColumn_AndIsStoredAsSentWhenItDoes()
+    {
+        fixture.OutputHelper = output;
+        const string childTenantId = "restmanualcols";
+        await CreateChildAsync(childTenantId);
+
+        try
+        {
+            var child = await PrepareChildAsync(childTenantId);
+            var archiveRtId = await CreateAndActivateTimeRangeArchiveAsync(child);
+            var rtId = OctoObjectId.GenerateNewId();
+            var controller = ControllerFor(childTenantId, ("sub", "8a4c1f00-0000-4000-8000-000000000004"), ("role", CommonConstants.StreamDataAdminRole));
+
+            var delivered = await controller.InsertTimeRange(childTenantId, archiveRtId.ToString(), Points(rtId,
+                """{ "MeterReading": 100, "Voltage": 230.5, "MeteringPointNumber": "AT001", "IsEstimated": false, "OperatingStatus": 1 }""",
+                manual: false));
+            delivered.Should().BeOfType<OkObjectResult>();
+
+            var refused = await controller.InsertTimeRange(childTenantId, archiveRtId.ToString(), Points(rtId,
+                """{ "MeterReading": 200, "MeteringPointNumber": "AT001", "IsEstimated": false, "OperatingStatus": 1 }""",
+                manual: true));
+
+            var message = refused.Should().BeOfType<BadRequestObjectResult>().Which.Value.Should().BeOfType<string>().Subject;
+            message.Should().Contain("Point 0").And.Contain("'Voltage'");
+            var unchanged = await ReadStoredRowAsync(childTenantId, archiveRtId, rtId);
+            unchanged["meterreading"].Should().Be(100, "a refused manual point writes nothing");
+            unchanged["voltage"].Should().Be(230.5, "the column the point left out keeps its stored value");
+
+            var corrected = await controller.InsertTimeRange(childTenantId, archiveRtId.ToString(), Points(rtId,
+                """{ "MeterReading": 200, "Voltage": null, "MeteringPointNumber": "AT001", "IsEstimated": true, "OperatingStatus": 1 }""",
+                manual: true));
+
+            corrected.Should().BeOfType<OkObjectResult>().Which.Value
+                .Should().BeOfType<StreamDataWriteResultRestDto>().Which.Stored.Should().Be(1);
+            var stored = await ReadStoredRowAsync(childTenantId, archiveRtId, rtId);
+            stored["meterreading"].Should().Be(200);
+            stored["voltage"].Should().BeNull("the correction set it to null explicitly");
+            stored["meteringpointnumber"].Should().Be("AT001");
+            stored["isestimated"].Should().Be(true);
+        }
+        finally
+        {
+            await DropChildIfExistingAsync(childTenantId);
+        }
+    }
+
+    /// <summary>
+    /// AB#8590 point 11: <c>insertTimeRange</c> answered 200 for a key that is no column of the archive, for a computed
+    /// column and for a sub-millisecond window bound; the repository dropped the keys without a word, so a correction
+    /// looked stored. Each case now answers 400 naming the point and the field, for automated and manual points alike,
+    /// and nothing is written — the same rules as the raw <c>insert</c>.
+    /// </summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task InsertTimeRange_UnknownOrComputedColumnOrSubMillisecondWindow_Answers400_AndWritesNothing(bool manual)
+    {
+        fixture.OutputHelper = output;
+        var childTenantId = manual ? "restparitym" : "restparitya";
+        await CreateChildAsync(childTenantId);
+
+        try
+        {
+            var child = await PrepareChildAsync(childTenantId);
+            var archiveRtId = await CreateAndActivateTimeRangeArchiveAsync(child);
+            var lifecycle = child.GetArchiveLifecycleService()
+                ?? throw new InvalidOperationException("ArchiveLifecycleService not registered.");
+            await lifecycle.AddComputedColumnAsync(archiveRtId, "DoubledReading", "MeterReading * 2",
+                FormulaResultType.Double, indexed: false);
+            var rtId = OctoObjectId.GenerateNewId();
+            var controller = ControllerFor(childTenantId, ("sub", "8a4c1f00-0000-4000-8000-000000000005"),
+                ("role", CommonConstants.StreamDataAdminRole));
+            var everyColumn = ManualRow(100).TrimEnd('}', ' ');
+
+            var unknown = await controller.InsertTimeRange(childTenantId, archiveRtId.ToString(), Points(rtId,
+                everyColumn + """, "NoSuchColumn": 1 }""", manual));
+            BadRequestMessage(unknown).Should().Contain("Point 0").And.Contain("'NoSuchColumn'").And.Contain("is not a column");
+
+            var computed = await controller.InsertTimeRange(childTenantId, archiveRtId.ToString(), Points(rtId,
+                everyColumn + """, "DoubledReading": 1.0 }""", manual));
+            BadRequestMessage(computed).Should().Contain("Point 0").And.Contain("'DoubledReading'").And.Contain("computed column");
+
+            var subMsFrom = await controller.InsertTimeRange(childTenantId, archiveRtId.ToString(), Points(rtId,
+                ManualRow(100), manual, from: "2026-08-31T22:00:00.0001234Z"));
+            BadRequestMessage(subMsFrom).Should().Contain("Point 0").And.Contain("from").And.Contain("sub-millisecond");
+
+            var subMsTo = await controller.InsertTimeRange(childTenantId, archiveRtId.ToString(), Points(rtId,
+                ManualRow(100), manual, to: "2026-09-01T22:00:00.0000001Z"));
+            BadRequestMessage(subMsTo).Should().Contain("Point 0").And.Contain("to '").And.Contain("sub-millisecond");
+
+            (await CountRowsAsync(childTenantId, archiveRtId)).Should().Be(0, "every refused batch writes nothing");
+
+            // The same point without the offending key or precision is stored, so the refusals above came from the checks.
+            var stored = await controller.InsertTimeRange(childTenantId, archiveRtId.ToString(), Points(rtId, ManualRow(100), manual));
+            stored.Should().BeOfType<OkObjectResult>().Which.Value
+                .Should().BeOfType<StreamDataWriteResultRestDto>().Which.Stored.Should().Be(1);
+        }
+        finally
+        {
+            await DropChildIfExistingAsync(childTenantId);
+        }
+    }
+
+    private static string BadRequestMessage(IActionResult result) =>
+        result.Should().BeOfType<BadRequestObjectResult>().Which.Value.Should().BeOfType<string>().Subject;
+
+    /// <summary>One window of <paramref name="rtId" /> with the given attributes object, bound like MVC binds it.</summary>
+    private IReadOnlyList<InsertTimeRangePointRestDto> Points(OctoObjectId rtId, string attributes, bool manual,
+        string? from = null, string? to = null)
+    {
+        var origin = manual ? "\"origin\": \"manual\"," : "";
+        from ??= WindowStart.ToString("O");
+        to ??= WindowEnd.ToString("O");
+        var body = $$"""
+            [{
+              {{origin}}
+              "rtId": "{{rtId}}",
+              "ckTypeId": "{{fixture.TestCkTypeId}}",
+              "from": "{{from}}",
+              "to": "{{to}}",
+              "attributes": {{attributes}}
+            }]
+            """;
+        return JsonSerializer.Deserialize<IReadOnlyList<InsertTimeRangePointRestDto>>(body, MvcBodyOptions)
+            ?? throw new InvalidOperationException("The body deserialized to null.");
+    }
+
+    /// <summary>
+    /// The attributes of a manual point that names every ingested column of the test archive (AB#8590 AC 9): the
+    /// reading as given, the other columns explicitly null.
+    /// </summary>
+    private static string ManualRow(int reading) =>
+        $$"""{ "MeterReading": {{reading}}, "Voltage": null, "MeteringPointNumber": null, "IsEstimated": null, "OperatingStatus": null }""";
 
     // ── helpers ───────────────────────────────────────────────────────────────────────────────
 
@@ -489,6 +632,8 @@ public class StreamDataInsertTimeRangeRestTests(StreamDataFixture fixture, ITest
         OctoObjectId archiveRtId, OctoObjectId rtId, int reading, bool manual)
     {
         var origin = manual ? "\"origin\": \"manual\"," : "";
+        // AB#8590 AC 9: a manual point names every ingested column; the other columns are explicitly null here.
+        var attributes = manual ? ManualRow(reading) : $$"""{ "MeterReading": {{reading}} }""";
         var body = $$"""
             [{
               {{origin}}
@@ -496,7 +641,7 @@ public class StreamDataInsertTimeRangeRestTests(StreamDataFixture fixture, ITest
               "ckTypeId": "{{fixture.TestCkTypeId}}",
               "from": "{{WindowStart:O}}",
               "to": "{{WindowEnd:O}}",
-              "attributes": { "MeterReading": {{reading}} }
+              "attributes": {{attributes}}
             }]
             """;
         var points = JsonSerializer.Deserialize<IReadOnlyList<InsertTimeRangePointRestDto>>(body, MvcBodyOptions)

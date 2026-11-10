@@ -18,18 +18,31 @@ public sealed class InsertTimeRangePointRestDto
     /// <summary>CK type id of the entity (must match the archive's target).</summary>
     public string CkTypeId { get; set; } = string.Empty;
 
-    /// <summary>Inclusive window start (UTC).</summary>
+    /// <summary>
+    /// Inclusive window start (UTC; a value without offset is read as UTC). Missing or sub-millisecond precision is
+    /// refused with HTTP 400 (AB#8590).
+    /// </summary>
     public DateTime From { get; set; }
 
-    /// <summary>Exclusive window end (UTC). Must be strictly greater than <see cref="From"/>.</summary>
+    /// <summary>
+    /// Exclusive window end (UTC). Must be strictly greater than <see cref="From"/>. Missing or sub-millisecond precision
+    /// is refused with HTTP 400 (AB#8590).
+    /// </summary>
     public DateTime To { get; set; }
 
     /// <summary>Optional human-readable name. <c>MAX(rtwellknownname)</c> on re-deliveries.</summary>
     public string? RtWellKnownName { get; set; }
 
     /// <summary>
-    /// User-column values keyed by attribute path (e.g. <c>Amount.Value</c>). Unknown keys are
-    /// dropped server-side.
+    /// User-column values keyed by attribute path (e.g. <c>Amount.Value</c>). A key that is no ingested column of the
+    /// archive (unknown, or a computed column) is refused with HTTP 400 naming the point and the key, for automated and
+    /// manual points alike (AB#8590). A manual point must name every ingested column of the archive except the ranking
+    /// columns (an explicit <c>null</c> is allowed), otherwise the batch is refused with HTTP 400 listing the missing columns, so a
+    /// manual row states every value it protects (AB#8590 AC 9). An attribute the point does not name keeps the stored
+    /// value of its column, an attribute sent as <c>null</c> clears it; a new row stores NULL for every column the point
+    /// does not name (AB#8622). A ranking column of the archive's conflict precedence cannot be null: an explicit
+    /// <c>null</c> on one is refused with HTTP 400 naming the point and the key. A manual point may leave a ranking column
+    /// out; it then keeps its stored value (AB#8622).
     /// </summary>
     /// <remarks>
     /// AB#5185: ASP.NET Core binds this body with the System.Text.Json web defaults, which leave

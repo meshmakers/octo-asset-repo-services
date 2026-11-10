@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using GraphQL;
 using GraphQL.Types;
 using Meshmakers.Common.Shared;
@@ -39,6 +40,19 @@ internal class SchemaContext(
         _cache.Remove(key);
     }
 
+    private bool TryGetCurrent(string key, string tenantId, [NotNullWhen(true)] out ISchema? schema)
+    {
+        if (_cache.TryGetValue(key, out CachedSchema? cached) && cached != null
+            && !CkCacheGeneration.HasChanged(ckCacheService, tenantId, cached.CkCacheMarker))
+        {
+            schema = cached.Schema;
+            return true;
+        }
+
+        schema = null;
+        return false;
+    }
+
     /// <inheritdoc />
     public async Task<ISchema> GetOrCreateAsync(string tenantId)
     {
@@ -46,16 +60,33 @@ internal class SchemaContext(
 
         logger.LogDebug("Looking up GraphQL schema for {TenantId}", tenantId);
 
-        if (_cache.TryGetValue(key, out OctoSchema? schema) && schema != null)
+        if (TryGetCurrent(key, tenantId, out var current))
         {
-            return schema;
+            return current;
         }
 
         try
         {
             await _semaphore.WaitAsync();
 
-            var t = new Func<ICacheEntry, Task<ISchema?>>(async entry =>
+            // AB#8667: a schema is only as current as the CK cache it was built from. Every path that reloads the
+            // CK cache (the AB#5415 stale-type fallback, the display-rule sweeper, an import, a PosUpdateTenant that
+            // arrived) replaces the loaded model graph; a schema of an earlier load is dropped and built again here,
+            // whether or not a PosUpdateTenant reached this process.
+            if (TryGetCurrent(key, tenantId, out current))
+            {
+                return current;
+            }
+
+            if (_cache.TryGetValue(key, out CachedSchema? stale) && stale != null)
+            {
+                logger.LogInformation(
+                    "GraphQL schema of tenant {TenantId} was built from an earlier load of the CK cache; rebuilding it (AB#8667)",
+                    tenantId);
+                _cache.Remove(key);
+            }
+
+            var t = new Func<ICacheEntry, Task<CachedSchema?>>(async entry =>
             {
                 logger.LogDebug("Creating GraphQL schema for {TenantId}", tenantId);
                 entry.SetSize(1);
@@ -88,7 +119,7 @@ internal class SchemaContext(
                     tenantId, stopwatch.ElapsedMilliseconds, createdSchema.AllTypes.Count, statistics.CkInterfaceCount,
                     statistics.MethodCount, populateMs, stopwatch.ElapsedMilliseconds - populateMs);
 
-                return createdSchema;
+                return new CachedSchema(createdSchema, graphTypesCache.CkCacheMarker);
             });
 
             var returnSchema = await _cache.GetOrCreateAsync(key, t);
@@ -97,7 +128,7 @@ internal class SchemaContext(
                 throw OctoGraphQLException.SchemaCreationFailed(tenantId);
             }
 
-            return returnSchema;
+            return returnSchema.Schema;
         }
         catch (Exception e)
         {
@@ -109,3 +140,6 @@ internal class SchemaContext(
         }
     }
 }
+
+/// <summary>A cached tenant schema and the CK cache load it was built from (AB#8667).</summary>
+internal sealed record CachedSchema(ISchema Schema, object? CkCacheMarker);
