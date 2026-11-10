@@ -26,7 +26,11 @@ public sealed class StreamDataWriteResultRestDto
     /// </summary>
     public IReadOnlyDictionary<string, int> SkippedByReason { get; init; } = new Dictionary<string, int>();
 
-    /// <summary>The rows not stored, at most <see cref="MaxListedRows" />.</summary>
+    /// <summary>
+    /// The rows not stored, at most <see cref="MaxListedRows" /> (1,000); <see cref="Skipped" /> is the complete count.
+    /// When <see cref="Skipped" /> is larger than this list, the caller reconciles the whole batch (reloads) instead of
+    /// relying on the list.
+    /// </summary>
     public IReadOnlyList<SkippedRowRestDto> SkippedRows { get; init; } = [];
 
     /// <summary>Maps the engine's write result.</summary>
