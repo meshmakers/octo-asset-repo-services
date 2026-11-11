@@ -854,7 +854,19 @@ public class TenantsController : ControllerBase
     /// <summary>
     ///     Deletes a child tenant
     /// </summary>
+    /// <remarks>
+    ///     A delete whose tenant database belongs to another OctoMesh instance on the same MongoDB server (its
+    ///     ownership marker names another instance, or another instance's system database registers it) is refused
+    ///     with the uniform 409 "Database name '...' is not available." before anything is deleted; the owner is in
+    ///     the server log only (AB#8807, AB#4763).
+    /// </remarks>
     /// <param name="childTenantId">ID of the child tenant</param>
+    /// <param name="overrideForeignOwnership">
+    ///     Deliberate administrator override of that refusal for a database that only carries the marker of another
+    ///     instance (an orphaned marker: no other instance registers it): the delete drops it, and the service logs
+    ///     the override as a warning naming the owner. Another instance's system database and a database another
+    ///     instance still registers are never dropped. Default false.
+    /// </param>
     [HttpDelete]
     [Authorize(AssetRepositoryServiceConstants.TenantAdministrationPolicy)]
     [ProducesResponseType(StatusCodes.Status200OK)]
@@ -862,7 +874,8 @@ public class TenantsController : ControllerBase
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(typeof(OperationFailedErrorDto), StatusCodes.Status409Conflict)]
     [ProducesResponseType(typeof(InternalServerErrorDto), StatusCodes.Status500InternalServerError)]
-    public async Task<IActionResult> Delete([Required] string childTenantId)
+    public async Task<IActionResult> Delete([Required] string childTenantId,
+        [FromQuery] bool overrideForeignOwnership = false)
     {
         var normalizedTenantId = childTenantId.NormalizeString();
         try
@@ -951,7 +964,7 @@ public class TenantsController : ControllerBase
             // tables of its archives go with the database (AB#4255). A restore over an existing tenant
             // only swaps the database and keeps them.
             var deletion = await tenantContext.DeleteChildTenantMetadataAsync(session, childTenantId,
-                dropStreamData: true);
+                dropStreamData: true, overrideForeignOwnership: overrideForeignOwnership);
             await session.CommitTransactionAsync();
             await tenantContext.DropTenantDatabaseAsync(deletion, childTenantId);
             await RemoveScratchMarkerAsync(normalizedTenantId);
@@ -1004,6 +1017,12 @@ public class TenantsController : ControllerBase
             }
 
             return Ok();
+        }
+        catch (TenantException e) when (e.IsConflict)
+        {
+            // AB#8807: the database belongs to another OctoMesh instance. The engine refused before the record
+            // deletion, so the tenant is still fully registered and the settle sweep rolls the tombstone back.
+            return Conflict(new OperationFailedErrorDto(e.Message));
         }
         catch (TenantException e)
         {

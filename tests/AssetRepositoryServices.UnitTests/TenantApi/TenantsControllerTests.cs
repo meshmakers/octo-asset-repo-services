@@ -313,7 +313,7 @@ public class TenantsControllerTests
         result.Should().BeOfType<OkResult>();
         A.CallTo(() => _tenantContext.RemoveStaleChildTenantEntryAsync(A<IOctoAdminSession>._, staleTenantId))
             .MustHaveHappenedOnceExactly();
-        A.CallTo(() => _tenantContext.DeleteChildTenantMetadataAsync(A<IOctoAdminSession>._, A<string>._, A<bool>._))
+        A.CallTo(() => _tenantContext.DeleteChildTenantMetadataAsync(A<IOctoAdminSession>._, A<string>._, A<bool>._, A<bool>._))
             .MustNotHaveHappened();
         A.CallTo(() => _tenantContext.DropTenantDatabaseAsync(A<TenantDeletionHandle>._, A<string>._))
             .MustNotHaveHappened();
@@ -340,7 +340,7 @@ public class TenantsControllerTests
             .Returns(false);
         A.CallTo(() => _tenantLifecycleStore.GetAsync(childTenantId, A<CancellationToken>._))
             .Returns((TenantLifecycleRecord?)null);
-        A.CallTo(() => _tenantContext.DeleteChildTenantMetadataAsync(A<IOctoAdminSession>._, childTenantId, true))
+        A.CallTo(() => _tenantContext.DeleteChildTenantMetadataAsync(A<IOctoAdminSession>._, childTenantId, true, false))
             .Returns(new TenantDeletionHandle("live-child-db", Guid.NewGuid()));
 
         var result = await _controller.Delete(childTenantId);
@@ -434,7 +434,7 @@ public class TenantsControllerTests
             .Returns(true);
         A.CallTo(() => _tenantLifecycleStore.GetAsync(childTenantId, A<CancellationToken>._))
             .Returns((TenantLifecycleRecord?)null);
-        A.CallTo(() => _tenantContext.DeleteChildTenantMetadataAsync(A<IOctoAdminSession>._, childTenantId, true))
+        A.CallTo(() => _tenantContext.DeleteChildTenantMetadataAsync(A<IOctoAdminSession>._, childTenantId, true, false))
             .Returns(new TenantDeletionHandle("child-a-db", correlationId));
 
         var result = await _controller.Delete(childTenantId);
@@ -449,7 +449,7 @@ public class TenantsControllerTests
             .MustNotHaveHappened();
         // Delete is the caller that removes the tenant for good: its archives' CrateDB tables go with
         // the database (dropStreamData: true, AB#4255).
-        A.CallTo(() => _tenantContext.DeleteChildTenantMetadataAsync(A<IOctoAdminSession>._, childTenantId, true))
+        A.CallTo(() => _tenantContext.DeleteChildTenantMetadataAsync(A<IOctoAdminSession>._, childTenantId, true, false))
             .MustHaveHappenedOnceExactly();
     }
 
@@ -464,7 +464,7 @@ public class TenantsControllerTests
             .Returns(true);
         A.CallTo(() => _tenantLifecycleStore.GetAsync(childTenantId, A<CancellationToken>._))
             .Returns((TenantLifecycleRecord?)null);
-        A.CallTo(() => _tenantContext.DeleteChildTenantMetadataAsync(A<IOctoAdminSession>._, childTenantId, true))
+        A.CallTo(() => _tenantContext.DeleteChildTenantMetadataAsync(A<IOctoAdminSession>._, childTenantId, true, false))
             .Returns(new TenantDeletionHandle("child-a-db", Guid.NewGuid()));
         A.CallTo(() => _tenantLifecycleStore.EnsureDeletingAsync(A<string>._, A<string?>._, A<Guid>._,
                 A<CancellationToken>._))
@@ -488,7 +488,7 @@ public class TenantsControllerTests
             .Returns(true);
         A.CallTo(() => _tenantLifecycleStore.GetAsync(childTenantId, A<CancellationToken>._))
             .Returns((TenantLifecycleRecord?)null);
-        A.CallTo(() => _tenantContext.DeleteChildTenantMetadataAsync(A<IOctoAdminSession>._, childTenantId, true))
+        A.CallTo(() => _tenantContext.DeleteChildTenantMetadataAsync(A<IOctoAdminSession>._, childTenantId, true, false))
             .Throws(new InvalidOperationException("mongo down"));
 
         var result = await _controller.Delete(childTenantId);
@@ -496,6 +496,50 @@ public class TenantsControllerTests
         result.Should().BeOfType<ObjectResult>().Subject.StatusCode.Should().Be(500);
         A.CallTo(() => _tenantLifecycleStore.RemoveAsync(A<string>._, A<CancellationToken>._))
             .MustNotHaveHappened();
+    }
+
+    [Fact]
+    public async Task Delete_ReturnsTheUniformConflict_WhenTheDatabaseBelongsToAnotherInstance()
+    {
+        // AB#8807: the engine refuses a database another OctoMesh instance owns or registers before the record
+        // deletion, with the reason-free conflict of AB#4763. The endpoint answers 409 with that text, not 404,
+        // and drops nothing.
+        const string childTenantId = "child-a";
+        A.CallTo(() => _tenantContext.IsChildTenantExistingAsync(A<IOctoAdminSession>._, childTenantId))
+            .Returns(true);
+        A.CallTo(() => _tenantLifecycleStore.GetAsync(childTenantId, A<CancellationToken>._))
+            .Returns((TenantLifecycleRecord?)null);
+        A.CallTo(() => _tenantContext.DeleteChildTenantMetadataAsync(A<IOctoAdminSession>._, childTenantId, true, false))
+            .Throws(TenantException.DatabaseNameNotAvailable("child-a-db"));
+
+        var result = await _controller.Delete(childTenantId);
+
+        var error = result.Should().BeOfType<ConflictObjectResult>().Subject
+            .Value.Should().BeOfType<OperationFailedErrorDto>().Subject;
+        error.Message.Should().Be("Database name 'child-a-db' is not available.");
+        A.CallTo(() => _tenantContext.DropTenantDatabaseAsync(A<TenantDeletionHandle>._, A<string>._))
+            .MustNotHaveHappened();
+        A.CallTo(() => _scratchTenantMarkerStore.DeleteAsync(A<string>._)).MustNotHaveHappened();
+    }
+
+    [Fact]
+    public async Task Delete_PassesTheDeliberateOwnershipOverride_ToTheEngine()
+    {
+        const string childTenantId = "child-a";
+        A.CallTo(() => _tenantContext.IsChildTenantExistingAsync(A<IOctoAdminSession>._, childTenantId))
+            .Returns(true);
+        A.CallTo(() => _tenantLifecycleStore.GetAsync(childTenantId, A<CancellationToken>._))
+            .Returns((TenantLifecycleRecord?)null);
+        A.CallTo(() => _tenantContext.DeleteChildTenantMetadataAsync(A<IOctoAdminSession>._, childTenantId, true, true))
+            .Returns(new TenantDeletionHandle("child-a-db", Guid.NewGuid()));
+
+        var result = await _controller.Delete(childTenantId, overrideForeignOwnership: true);
+
+        result.Should().BeOfType<OkResult>();
+        A.CallTo(() => _tenantContext.DeleteChildTenantMetadataAsync(A<IOctoAdminSession>._, childTenantId, true, true))
+            .MustHaveHappenedOnceExactly();
+        A.CallTo(() => _tenantContext.DropTenantDatabaseAsync(A<TenantDeletionHandle>._, childTenantId))
+            .MustHaveHappenedOnceExactly();
     }
 
     [Fact]
@@ -554,7 +598,7 @@ public class TenantsControllerTests
             .And.NotContain("Stream Data");
         A.CallTo(() => _tenantLifecycleStore.MarkDeletingAsync(A<string>._, A<CancellationToken>._))
             .MustNotHaveHappened();
-        A.CallTo(() => _tenantContext.DeleteChildTenantMetadataAsync(A<IOctoAdminSession>._, A<string>._, A<bool>._))
+        A.CallTo(() => _tenantContext.DeleteChildTenantMetadataAsync(A<IOctoAdminSession>._, A<string>._, A<bool>._, A<bool>._))
             .MustNotHaveHappened();
         A.CallTo(() => _tenantContext.DropTenantDatabaseAsync(A<TenantDeletionHandle>._, A<string>._))
             .MustNotHaveHappened();
@@ -656,7 +700,7 @@ public class TenantsControllerTests
         result.Should().BeOfType<ObjectResult>().Subject.StatusCode.Should().Be(500);
         A.CallTo(() => _tenantLifecycleStore.MarkDeletingAsync(A<string>._, A<CancellationToken>._))
             .MustNotHaveHappened();
-        A.CallTo(() => _tenantContext.DeleteChildTenantMetadataAsync(A<IOctoAdminSession>._, A<string>._, A<bool>._))
+        A.CallTo(() => _tenantContext.DeleteChildTenantMetadataAsync(A<IOctoAdminSession>._, A<string>._, A<bool>._, A<bool>._))
             .MustNotHaveHappened();
     }
 
