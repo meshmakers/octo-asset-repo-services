@@ -10,7 +10,8 @@
   Needs octo-construction-kit-engine with AB#8778.
 - AB#8599 New: rollup control and recomputation as CK methods of System.StreamData 1.25.0, handled in-process like the AB#8598
   archive methods: `RollupArchive.Freeze-1`, `Unfreeze-1`, `RewindWatermark-1` (answer `ArchiveTransitionResult`),
-  `Recompute-1` and `BackfillFromSource-1` (answer `RecomputeJobInfo`, synchronous like the mutations). Role `StreamDataAdmin`,
+  `Recompute-1` and `BackfillFromSource-1` (answer `RecomputeJobInfo`, synchronous like the mutations; `BackfillFromSource-1`
+  answers no job - `value` is null - when the source holds no data to backfill, so there is nothing to poll). Role `StreamDataAdmin`,
   the mutation's error codes. The mutations `freezeRollupArchive`, `unfreezeRollupArchive`, `rewindRollupWatermark`,
   `recomputeArchive` and `backfillRollupFromSource` keep working and are `@deprecated` with the method id. Needs System.StreamData
   1.25.0 (octo-construction-kit-engine with AB#8599).
