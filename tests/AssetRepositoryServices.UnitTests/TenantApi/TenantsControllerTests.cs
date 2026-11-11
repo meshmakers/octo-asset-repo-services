@@ -547,6 +547,58 @@ public class TenantsControllerTests
     }
 
     [Fact]
+    public async Task Delete_RecordsTheGrantedOwnershipOverride_InTheTombstone_BeforeTheDatabaseDrop()
+    {
+        // AB#8807: a delete interrupted after its metadata commit is finished by the settle sweep from the
+        // tombstone, so the override the engine granted is recorded there before the commit and the drop.
+        const string childTenantId = "child-a";
+        var correlationId = Guid.NewGuid();
+        A.CallTo(() => _tenantContext.IsChildTenantExistingAsync(A<IOctoAdminSession>._, childTenantId))
+            .Returns(true);
+        A.CallTo(() => _tenantLifecycleStore.GetAsync(childTenantId, A<CancellationToken>._))
+            .Returns((TenantLifecycleRecord?)null);
+        A.CallTo(() => _tenantContext.DeleteChildTenantMetadataAsync(A<IOctoAdminSession>._, childTenantId, true, true))
+            .Returns(new TenantDeletionHandle("child-a-db", correlationId) { ForeignOwnershipOverridden = true });
+
+        var result = await _controller.Delete(childTenantId, overrideForeignOwnership: true);
+
+        result.Should().BeOfType<OkResult>();
+        A.CallTo(() => _tenantLifecycleStore.EnsureDeletingAsync(childTenantId, "child-a-db", correlationId, true,
+                A<CancellationToken>._)).MustHaveHappenedOnceExactly()
+            .Then(A.CallTo(() => _tenantContext.DropTenantDatabaseAsync(
+                A<TenantDeletionHandle>.That.Matches(h => h.ForeignOwnershipOverridden), childTenantId))
+                .MustHaveHappenedOnceExactly());
+    }
+
+    [Fact]
+    public async Task Delete_ReportsAPendingDelete_WhenTheDropIsRefusedAfterTheRecordDeletion()
+    {
+        // AB#8807: another instance claimed the database after the metadata commit. The record is gone, the
+        // database is left untouched and the tombstone stays - the answer says so instead of claiming that
+        // nothing was deleted. The refusal itself keeps the uniform text of AB#4763.
+        const string childTenantId = "child-a";
+        A.CallTo(() => _tenantContext.IsChildTenantExistingAsync(A<IOctoAdminSession>._, childTenantId))
+            .Returns(true);
+        A.CallTo(() => _tenantLifecycleStore.GetAsync(childTenantId, A<CancellationToken>._))
+            .Returns((TenantLifecycleRecord?)null);
+        A.CallTo(() => _tenantContext.DeleteChildTenantMetadataAsync(A<IOctoAdminSession>._, childTenantId, true, false))
+            .Returns(new TenantDeletionHandle("child-a-db", Guid.NewGuid()));
+        A.CallTo(() => _tenantContext.DropTenantDatabaseAsync(A<TenantDeletionHandle>._, childTenantId))
+            .Throws(TenantException.DatabaseDropRefused("child-a-db"));
+
+        var result = await _controller.Delete(childTenantId);
+
+        var error = result.Should().BeOfType<ConflictObjectResult>().Subject
+            .Value.Should().BeOfType<OperationFailedErrorDto>().Subject;
+        error.Message.Should().StartWith("Database name 'child-a-db' is not available.");
+        error.Message.Should().Contain("Tenant 'child-a' was deleted, but its database was not dropped");
+        error.Message.Should().Contain("The deletion stays pending");
+        error.Message.Should().NotContainAny("instance", "owner");
+        A.CallTo(() => _tenantLifecycleStore.RemoveAsync(A<string>._, A<CancellationToken>._)).MustNotHaveHappened();
+        A.CallTo(() => _scratchTenantMarkerStore.DeleteAsync(A<string>._)).MustNotHaveHappened();
+    }
+
+    [Fact]
     public async Task GetLifecycle_ReturnsNotFound_ForATenantOutsideTheOwnSubtree()
     {
         const string foreignTenantId = "somebody-elses-tenant";

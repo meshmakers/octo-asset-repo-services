@@ -988,8 +988,33 @@ public class TenantsController : ControllerBase
             // only swaps the database and keeps them.
             var deletion = await tenantContext.DeleteChildTenantMetadataAsync(session, childTenantId,
                 dropStreamData: true, overrideForeignOwnership: overrideForeignOwnership);
+
+            // AB#8807: the tombstone holds the database name and the ownership override the metadata guard granted
+            // BEFORE the metadata deletion commits. A delete interrupted between that commit and the drop is then
+            // finished by the settle sweep with the same decision (the engine re-checks its conditions at every
+            // drop). Should the commit fail, the tenant stays registered and the sweep rolls the tombstone back.
+            await _tenantLifecycleStore.EnsureDeletingAsync(normalizedTenantId, deletion.DatabaseName,
+                deletion.CorrelationId, deletion.ForeignOwnershipOverridden);
             await session.CommitTransactionAsync();
-            await tenantContext.DropTenantDatabaseAsync(deletion, childTenantId);
+            try
+            {
+                await tenantContext.DropTenantDatabaseAsync(deletion, childTenantId);
+            }
+            catch (TenantException e) when (e.IsDatabaseDropPending)
+            {
+                // AB#8807: the metadata deletion is committed, but the database belongs to another OctoMesh instance
+                // by now, so the engine refused the drop and left the database untouched. The tenant record is gone;
+                // the tombstone stays and the settle sweep retries the drop while it is pending. Uniform conflict
+                // text for the refusal itself (AB#4763); the reason is in the engine's log.
+                _logger.LogWarning(
+                    "Deleted the records of tenant '{TenantId}', but the drop of its database was refused; the delete " +
+                    "stays pending (tombstone) until the database conflict is resolved", normalizedTenantId);
+                return Conflict(new OperationFailedErrorDto(
+                    $"{e.Message} Tenant '{childTenantId}' was deleted, but its database was not dropped and is " +
+                    "left untouched. The deletion stays pending until the database conflict is resolved; until " +
+                    "then the tenant id cannot be used again."));
+            }
+
             await RemoveScratchMarkerAsync(normalizedTenantId);
 
             // Take the tenant's pending setup retries with it. Otherwise every service's retry loop
