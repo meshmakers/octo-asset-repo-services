@@ -46,7 +46,7 @@ pairs (blanks exactly those).
 
 A seed entity with `rtBlueprintLocked: false` belongs to the tenant after the first install (engine
 AB#6383): an update never rewrites one the tenant edited and never brings back one the tenant deleted;
-one the tenant never edited receives a changed seed (engine AB#8778). Four further lists
+one whose content still equals the installed seed receives a changed seed in `Merge` and `Full` mode (engine AB#8778). Four further lists
 show this, on the preview (`POST {tenantId}/v1/blueprints/updates/preview`, GraphQL
 `blueprints.previewUpdate`) and on the apply result (REST `updates/apply` `BlueprintUpdateResultDto`,
 GraphQL `applyUpdate` `BlueprintApplyResult`; always empty for an install). REST uses PascalCase
@@ -56,8 +56,8 @@ GraphQL `applyUpdate` `BlueprintApplyResult`; always empty for an install). REST
 |------|---------|
 | `tenantOwnedSkipped` | The tenant still holds the entity; the update left it untouched. `entityId` is its runtime id |
 | `tenantOwnedStaysDeleted` | The previous seed contained it, the tenant deleted it, the update does not recreate it. `entityId` is `null` |
-| `tenantOwnedRefreshed` | AB#8778: the tenant never edited the entity (its content equals what the installed version's seed wrote) and the target seed changed it; the update writes the new seed content. Counted in `entitiesUpdated`; its attribute changes appear in the preview's `changes` like those of a product-owned entity (JSON texts and blanked attributes masked) |
-| `tenantOwnedUpdateAvailable` | AB#8778: the target seed changed the entity, but the tenant edited it (or that it did not cannot be proven); the update keeps it. Also listed in `tenantOwnedSkipped` |
+| `tenantOwnedRefreshed` | AB#8778: the entity's compared content equals what the installed version's seed wrote and the target seed changed it; the update writes the new seed content (`Merge` and `Full` only - `Safe` adds only and lists such entities in `tenantOwnedSkipped`). Counted in `entitiesUpdated`; its attribute changes appear in the preview's `changes` like those of a product-owned entity (JSON texts and blanked attributes masked) |
+| `tenantOwnedUpdateAvailable` | AB#8778: the target seed changed the entity, but its content differs from the installed seed or the comparison was not possible (installed seed not readable, entity of another blueprint); the update keeps it. A report of this run, not a stored state: applying the same version again lists nothing. Also listed in `tenantOwnedSkipped` |
 
 | Field | Meaning |
 |-------|---------|

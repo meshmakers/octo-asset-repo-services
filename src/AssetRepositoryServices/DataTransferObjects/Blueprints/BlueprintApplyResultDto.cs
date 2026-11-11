@@ -58,14 +58,17 @@ public class BlueprintApplyResultDto
     public List<BlueprintTenantOwnedEntityDto> TenantOwnedStaysDeleted { get; set; } = [];
 
     /// <summary>
-    ///     Unedited tenant-owned seed entities that receive the new seed content (AB#8778): their stored content
-    ///     equals what the seed of the installed version wrote. Identity only. Counted in the updated total.
+    ///     Unedited tenant-owned seed entities that receive the new seed content (AB#8778): their compared content
+    ///     equals what the seed of the installed version wrote. Not in <c>Safe</c> mode (it only adds; there they stay in
+    ///     <c>TenantOwnedSkipped</c>). Identity only. Counted in the updated total.
     /// </summary>
     public List<BlueprintTenantOwnedEntityDto> TenantOwnedRefreshed { get; set; } = [];
 
     /// <summary>
-    ///     Tenant-owned seed entities the tenant edited while the target version brings new seed content
-    ///     (AB#8778). Kept as edited; also listed in <c>TenantOwnedSkipped</c>. Identity only.
+    ///     Tenant-owned seed entities for which the target version brings new seed content but whose unedited state
+    ///     is not proven (AB#8778): their content differs from the installed seed, or the comparison was not possible
+    ///     (installed seed not readable, entity of another blueprint). Kept; also listed in <c>TenantOwnedSkipped</c>.
+    ///     Identity only.
     /// </summary>
     public List<BlueprintTenantOwnedEntityDto> TenantOwnedUpdateAvailable { get; set; } = [];
 

@@ -62,11 +62,11 @@ internal sealed class BlueprintUpdatePreviewDtoType : ObjectGraphType<BlueprintU
             .Resolve(ctx => ctx.Source!.TenantOwnedStaysDeleted);
 
         Field<NonNullGraphType<ListGraphType<NonNullGraphType<BlueprintTenantOwnedEntityDtoType>>>>("tenantOwnedRefreshed")
-            .Description("Unedited tenant-owned seed entities that receive the new seed content (AB#8778): their content equals what the installed version's seed wrote. Identity only, no values.")
+            .Description("Unedited tenant-owned seed entities that receive the new seed content (AB#8778): their compared content equals what the installed version's seed wrote. Not in Safe mode. Identity only, no values.")
             .Resolve(ctx => ctx.Source!.TenantOwnedRefreshed);
 
         Field<NonNullGraphType<ListGraphType<NonNullGraphType<BlueprintTenantOwnedEntityDtoType>>>>("tenantOwnedUpdateAvailable")
-            .Description("Tenant-owned seed entities the tenant edited while the target version brings new seed content (AB#8778). Kept as edited; also listed in tenantOwnedSkipped. Identity only, no values.")
+            .Description("Tenant-owned seed entities for which the target version brings new seed content but whose unedited state is not proven - content differs from the installed seed, or the comparison was not possible (AB#8778). Kept; also listed in tenantOwnedSkipped. Identity only, no values.")
             .Resolve(ctx => ctx.Source!.TenantOwnedUpdateAvailable);
 
         Field<NonNullGraphType<BooleanGraphType>>("isBlocked")
