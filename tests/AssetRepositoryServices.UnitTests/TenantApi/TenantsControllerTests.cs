@@ -7,6 +7,7 @@ using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects.ApiErrors;
 using System.Security.Claims;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb;
+using Meshmakers.Octo.Runtime.Contracts.MongoDb.Configuration;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb.DisplayRules;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb.Repositories;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb.TenantLifecycle;
@@ -15,6 +16,7 @@ using Meshmakers.Octo.Services.Infrastructure.Services;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Xunit;
 
 namespace AssetRepositoryServices.UnitTests.TenantApi;
@@ -32,6 +34,7 @@ public class TenantsControllerTests
     private readonly ITenantCapabilityStateReader _capabilityStateReader;
     private readonly IDisplayRuleRecomputeService _displayRuleRecomputeService;
     private readonly IScratchTenantMarkerStore _scratchTenantMarkerStore;
+    private readonly OctoSystemConfiguration _systemConfiguration = new();
     private readonly TenantsController _controller;
 
     public TenantsControllerTests()
@@ -67,7 +70,8 @@ public class TenantsControllerTests
             A.Fake<ILogger<TenantsController>>(),
             _capabilityStateReader,
             _displayRuleRecomputeService,
-            _scratchTenantMarkerStore);
+            _scratchTenantMarkerStore,
+            Options.Create(_systemConfiguration));
 
         var httpContext = new DefaultHttpContext();
         httpContext.Request.RouteValues["tenantId"] = OwnTenantId;
@@ -1030,6 +1034,55 @@ public class TenantsControllerTests
         await _controller.Post("child-a", "child-a-db");
 
         A.CallTo(() => _scratchTenantMarkerStore.DeleteAsync(A<string>._)).MustNotHaveHappened();
+    }
+
+    [Fact]
+    public async Task Post_WithoutADatabaseName_AndWithoutAPrefix_NamesTheDatabaseAfterTheTenantId()
+    {
+        var result = await _controller.Post("Child-A");
+
+        result.Should().BeOfType<NoContentResult>();
+        A.CallTo(() => _tenantContext.CreateChildTenantAsync(A<IOctoAdminSession>._, "child-a", "Child-A"))
+            .MustHaveHappenedOnceExactly();
+    }
+
+    [Fact]
+    public async Task Post_WithoutADatabaseName_PrefixesTheDatabaseWithTheInstancePrefix()
+    {
+        _systemConfiguration.TenantDatabasePrefix = "S2_";
+
+        var result = await _controller.Post("meshtest");
+
+        result.Should().BeOfType<NoContentResult>();
+        A.CallTo(() => _tenantContext.CreateChildTenantAsync(A<IOctoAdminSession>._, "s2_meshtest", "meshtest"))
+            .MustHaveHappenedOnceExactly();
+    }
+
+    [Fact]
+    public async Task Post_WithADatabaseName_PassesItOnUnchanged_EvenWithAPrefix()
+    {
+        // The engine decides about an explicit name (refused without the prefix); the controller never rewrites it.
+        _systemConfiguration.TenantDatabasePrefix = "s2_";
+
+        await _controller.Post("meshtest", "Own-Name");
+
+        A.CallTo(() => _tenantContext.CreateChildTenantAsync(A<IOctoAdminSession>._, "Own-Name", "meshtest"))
+            .MustHaveHappenedOnceExactly();
+    }
+
+    [Fact]
+    public async Task Post_WhenTheEngineRefusesTheName_AnswersTheGenericConflict()
+    {
+        _systemConfiguration.TenantDatabasePrefix = "s2_";
+        A.CallTo(() => _tenantContext.CreateChildTenantAsync(A<IOctoAdminSession>._, "meshtest", "meshtest"))
+            .ThrowsAsync(TenantException.DatabaseNameNotAvailable("meshtest"));
+
+        var result = await _controller.Post("meshtest", "meshtest");
+
+        var error = result.Should().BeOfType<ConflictObjectResult>().Subject
+            .Value.Should().BeOfType<OperationFailedErrorDto>().Subject;
+        error.Message.Should().Be(TenantException.DatabaseNameNotAvailable("meshtest").Message);
+        error.Message.Should().NotContain("s2_");
     }
 
     [Fact]

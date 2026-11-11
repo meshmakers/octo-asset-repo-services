@@ -9,12 +9,14 @@ using Meshmakers.Octo.Communication.Contracts.DataTransferObjects.ApiErrors;
 using Meshmakers.Octo.ConstructionKit.Contracts.BlueprintCatalogs;
 using Meshmakers.Octo.Runtime.Contracts;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb;
+using Meshmakers.Octo.Runtime.Contracts.MongoDb.Configuration;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb.DisplayRules;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb.TenantLifecycle;
 using Meshmakers.Octo.Services.Contracts.DistributionEventHub.Messages;
 using Meshmakers.Octo.Services.Infrastructure.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Options;
 using MongoDB.Bson;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.TenantApi.v1.Controllers;
@@ -42,6 +44,7 @@ public class TenantsController : ControllerBase
     private readonly ITenantCapabilityStateReader _capabilityStateReader;
     private readonly IDisplayRuleRecomputeService _displayRuleRecomputeService;
     private readonly IScratchTenantMarkerStore _scratchTenantMarkerStore;
+    private readonly IOptions<OctoSystemConfiguration> _systemConfiguration;
 
     /// <summary>
     ///     Constructor
@@ -50,8 +53,10 @@ public class TenantsController : ControllerBase
         ITenantLifecycleStore tenantLifecycleStore, ITenantSetupRetryStore tenantSetupRetryStore,
         ILogger<TenantsController> logger, ITenantCapabilityStateReader capabilityStateReader,
         IDisplayRuleRecomputeService displayRuleRecomputeService,
-        IScratchTenantMarkerStore scratchTenantMarkerStore)
+        IScratchTenantMarkerStore scratchTenantMarkerStore,
+        IOptions<OctoSystemConfiguration> systemConfiguration)
     {
+        _systemConfiguration = systemConfiguration;
         _scratchTenantMarkerStore = scratchTenantMarkerStore;
         _octoService = octoService;
         _distributionEventHubService = distributionEventHubService;
@@ -412,7 +417,12 @@ public class TenantsController : ControllerBase
     ///     Creates a new child tenant, optionally with a blueprint applied
     /// </summary>
     /// <param name="childTenantId">ID of the child tenant to create</param>
-    /// <param name="databaseName">Name of the database</param>
+    /// <param name="databaseName">
+    ///     Name of the database. Optional (AB#8797): without it the database is named after the tenant id, prefixed
+    ///     with the instance's tenant-database prefix when one is configured (<c>System:TenantDatabasePrefix</c>,
+    ///     <see cref="TenantDatabaseNames.DeriveDefault" />). With a prefix configured, an explicit name that does not
+    ///     start with it is refused with the generic conflict (<c>409</c>).
+    /// </param>
     /// <param name="blueprintId">Optional blueprint ID to apply</param>
     /// <param name="scratch">
     ///     Opt-in (AB#7192): create the tenant as a scratch tenant. Only a client-credentials token of this tenant with the
@@ -430,10 +440,16 @@ public class TenantsController : ControllerBase
     [ProducesResponseType(typeof(InternalServerErrorDto), StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> Post(
         [Required] string childTenantId,
-        [Required] string databaseName,
+        string? databaseName = null,
         string? blueprintId = null,
         bool scratch = false)
     {
+        if (string.IsNullOrWhiteSpace(databaseName))
+        {
+            databaseName = TenantDatabaseNames.DeriveDefault(_systemConfiguration.Value.TenantDatabasePrefix,
+                childTenantId);
+        }
+
         // AB#7192: the marker is written BEFORE the tenant exists (identity sets a tenant up the moment it is created and
         // must find it then) and removed again when the create fails. Never touches the marker of a tenant that exists.
         var markerWritten = false;
