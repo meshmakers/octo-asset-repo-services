@@ -19,6 +19,12 @@
   parameter records of System.StreamData (`TimeRangeArchiveCreateArchiveParameters`, `RollupArchiveCreateArchiveParameters`); the
   plain look-alike classes of AB#8598 are removed. Behaviour unchanged (same validation, same source rules, same answers). Needs
   octo-common-services with AB#8707 (`CkMethodJson` binds record arrays of generated records).
+- AB#8776 Fix (security): the CK method gateway refuses a caller token of another tenant first, before the role check, the target
+  load and the parameter validation: `METHOD_FORBIDDEN` with `reason = tenant-not-allowed` for an existing and a missing target, a
+  missing role and invalid parameters alike (before: `METHOD_TARGET_NOT_FOUND` or a role refusal told the caller whether an entity
+  exists in a tenant it has no access to). Same rule as the in-process filter of AB#8711 (allow-listed service clients pass),
+  independent of the HTTP tenant gate's mode. Needs octo-common-services with AB#8776 (`CkMethodCallerTenantCheck`). Test
+  principals of the method tests now carry `tenant_id`, as every identity token does.
 - AB#8711 Refactor: the archive CK methods (AB#8598) no longer check the caller tenant themselves; `ArchiveMethodCallerTenantGuard`
   is removed. The check moved into the in-process transport of octo-common-services (`CkMethodCallerTenantFilter`), which applies
   the same rule to every in-process method of this service before any handler runs: a caller token issued for another tenant is

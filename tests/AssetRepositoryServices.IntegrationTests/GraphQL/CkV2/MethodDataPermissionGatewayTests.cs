@@ -44,22 +44,22 @@ public class MethodDataPermissionGatewayTests
     }
 
     // Callers. All hold the declared method role, so the declared authorization passes and only the data permission decides.
-    private static readonly ClaimsPrincipal Creator = User("creator", Admin, MethodDataPermissionGraphQlTestFixture.WriteAllRole,
+    private ClaimsPrincipal Creator => User("creator", Admin, MethodDataPermissionGraphQlTestFixture.WriteAllRole,
         MethodDataPermissionGraphQlTestFixture.ReadAllRole);
 
-    private static readonly ClaimsPrincipal Writer = User("writer", Admin, MethodDataPermissionGraphQlTestFixture.WriteAllRole,
+    private ClaimsPrincipal Writer => User("writer", Admin, MethodDataPermissionGraphQlTestFixture.WriteAllRole,
         MethodDataPermissionGraphQlTestFixture.ReadAllRole);
 
-    private static readonly ClaimsPrincipal ReadOnly = User("reader", Admin, MethodDataPermissionGraphQlTestFixture.ReadAllRole);
+    private ClaimsPrincipal ReadOnly => User("reader", Admin, MethodDataPermissionGraphQlTestFixture.ReadAllRole);
 
-    private static readonly ClaimsPrincipal Blind = User("blind", Admin);
+    private ClaimsPrincipal Blind => User("blind", Admin);
 
-    private static readonly ClaimsPrincipal OwnerScoped = User("owner-scoped", Admin,
+    private ClaimsPrincipal OwnerScoped => User("owner-scoped", Admin,
         MethodDataPermissionGraphQlTestFixture.ReadOwnRole, MethodDataPermissionGraphQlTestFixture.WriteOwnRole);
 
-    private static ClaimsPrincipal User(string sub, params string[] roles)
+    private ClaimsPrincipal User(string sub, params string[] roles)
     {
-        var claims = new List<Claim> { new("sub", sub), new("scope", "octo_api openid") };
+        var claims = new List<Claim> { new("sub", sub), new("scope", "octo_api openid"), new("tenant_id", _fixture.SystemTenantId) };
         claims.AddRange(roles.Select(r => new Claim("role", r)));
         return new ClaimsPrincipal(new ClaimsIdentity(claims, "test"));
     }

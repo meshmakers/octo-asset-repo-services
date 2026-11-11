@@ -125,7 +125,7 @@ public class CkMethodGatewayTests
 
     private static ClaimsPrincipal User(string sub, string[] roles, string scope = "octo_api openid")
     {
-        var claims = new List<Claim> { new("sub", sub), new("scope", scope), new("name", "Test User") };
+        var claims = new List<Claim> { new("sub", sub), new("scope", scope), new("name", "Test User"), new("tenant_id", Tenant) };
         claims.AddRange(roles.Select(r => new Claim("role", r)));
         return new ClaimsPrincipal(new ClaimsIdentity(claims, "test"));
     }
