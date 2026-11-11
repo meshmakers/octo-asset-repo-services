@@ -301,6 +301,44 @@ public class BlueprintUpdatePreviewMapperTests
     }
 
     [Fact]
+    public void ToDto_CarriesTheRefreshedAndUpdateAvailableLists_ForPreviewAndResult()
+    {
+        // AB#8778: the two outcomes of the seed-content rule reach the DTOs, identity only.
+        var refreshed = new BlueprintTenantOwnedEntity
+        {
+            Key = "knowledge-schema", CkTypeId = "System.Ai/KnowledgePage", EntityId = "67a1000000000000000a1c20",
+            WellKnownName = "knowledge-schema"
+        };
+        var edited = new BlueprintTenantOwnedEntity
+        {
+            Key = "edited-page", CkTypeId = "System.Ai/KnowledgePage", EntityId = "67a1000000000000000a1c22"
+        };
+
+        var preview = BlueprintUpdatePreviewMapper.ToDto(new BlueprintUpdatePreview
+        {
+            TenantOwnedRefreshed = [refreshed], TenantOwnedSkipped = [edited], TenantOwnedUpdateAvailable = [edited]
+        }, "Bp-2.0.0");
+        var result = BlueprintUpdatePreviewMapper.ToDto(new BlueprintUpdateResult
+        {
+            Success = true, TenantOwnedRefreshed = [refreshed], TenantOwnedSkipped = [edited],
+            TenantOwnedUpdateAvailable = [edited]
+        });
+
+        foreach (var (fresh, available, skipped) in new[]
+                 {
+                     (preview.TenantOwnedRefreshed, preview.TenantOwnedUpdateAvailable, preview.TenantOwnedSkipped),
+                     (result.TenantOwnedRefreshed, result.TenantOwnedUpdateAvailable, result.TenantOwnedSkipped)
+                 })
+        {
+            var r = Assert.Single(fresh);
+            Assert.Equal("knowledge-schema", r.Key);
+            Assert.Equal("67a1000000000000000a1c20", r.EntityId);
+            Assert.Equal("edited-page", Assert.Single(available).Key);
+            Assert.Equal("edited-page", Assert.Single(skipped).Key);
+        }
+    }
+
+    [Fact]
     public void ToDto_TenantOwnedListsDefaultToEmpty()
     {
         var preview = BlueprintUpdatePreviewMapper.ToDto(new BlueprintUpdatePreview(), "Bp-2.0.0");
@@ -312,6 +350,12 @@ public class BlueprintUpdatePreviewMapperTests
         Assert.Empty(result.TenantOwnedStaysDeleted);
         Assert.Empty(new BlueprintApplyResultDto().TenantOwnedSkipped);
         Assert.Empty(new BlueprintApplyResultDto().TenantOwnedStaysDeleted);
+        Assert.Empty(preview.TenantOwnedRefreshed);
+        Assert.Empty(preview.TenantOwnedUpdateAvailable);
+        Assert.Empty(result.TenantOwnedRefreshed);
+        Assert.Empty(result.TenantOwnedUpdateAvailable);
+        Assert.Empty(new BlueprintApplyResultDto().TenantOwnedRefreshed);
+        Assert.Empty(new BlueprintApplyResultDto().TenantOwnedUpdateAvailable);
     }
 
     [Fact]

@@ -43,6 +43,8 @@ internal static class BlueprintUpdatePreviewMapper
             BlankedAttributes = ToDtos(preview.BlankedAttributes),
             TenantOwnedSkipped = ToDtos(preview.TenantOwnedSkipped),
             TenantOwnedStaysDeleted = ToDtos(preview.TenantOwnedStaysDeleted),
+            TenantOwnedRefreshed = ToDtos(preview.TenantOwnedRefreshed),
+            TenantOwnedUpdateAvailable = ToDtos(preview.TenantOwnedUpdateAvailable),
             IsBlocked = preview.IsCkUpgradeBlocked,
             CkUpdateSet = preview.CkUpdateSet.ToList(),
             Blockers = ToDtos(preview.CkUpgradeBlockers)
@@ -68,6 +70,8 @@ internal static class BlueprintUpdatePreviewMapper
             ArchiveActivations = ToDtos(result.ArchiveActivations),
             TenantOwnedSkipped = ToDtos(result.TenantOwnedSkipped),
             TenantOwnedStaysDeleted = ToDtos(result.TenantOwnedStaysDeleted),
+            TenantOwnedRefreshed = ToDtos(result.TenantOwnedRefreshed),
+            TenantOwnedUpdateAvailable = ToDtos(result.TenantOwnedUpdateAvailable),
             IsBlocked = result.IsCkUpgradeBlocked,
             CkUpdateSet = result.CkUpdateSet.ToList(),
             Blockers = ToDtos(result.CkUpgradeBlockers)

@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- AB#8778 New: blueprint update preview and result carry two more tenant-owned lists, `TenantOwnedRefreshed` (unedited
+  tenant-owned seed entities that receive the changed seed; not in `Safe` mode) and `TenantOwnedUpdateAvailable` (entities the
+  update keeps although the seed changed, because their content differs from the installed seed or the comparison was not
+  possible; subset of `TenantOwnedSkipped`) - REST `BlueprintUpdatePreviewDto` / `BlueprintUpdateResultDto`,
+  GraphQL `previewUpdate` / `applyUpdate` (`tenantOwnedRefreshed`, `tenantOwnedUpdateAvailable`). Additive, empty by default.
+  Needs octo-construction-kit-engine with AB#8778.
 - AB#8711 Refactor: the archive CK methods (AB#8598) no longer check the caller tenant themselves; `ArchiveMethodCallerTenantGuard`
   is removed. The check moved into the in-process transport of octo-common-services (`CkMethodCallerTenantFilter`), which applies
   the same rule to every in-process method of this service before any handler runs: a caller token issued for another tenant is

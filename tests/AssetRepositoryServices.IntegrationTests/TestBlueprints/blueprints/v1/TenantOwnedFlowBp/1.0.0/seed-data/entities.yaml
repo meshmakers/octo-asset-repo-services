@@ -38,3 +38,21 @@ entities:
         value: Salzburg
       - id: AssetRepositoryIntegrationTest/Country
         value: Austria
+  - rtId: 67000099aaaa1111bbbb0013
+    ckTypeId: AssetRepositoryIntegrationTest/Customer
+    rtWellKnownName: OwnedFresh
+    attributes:
+      - id: System/RtBlueprintLocked
+        value: false
+      - id: AssetRepositoryIntegrationTest/FirstName
+        value: Owned
+      - id: AssetRepositoryIntegrationTest/LastName
+        value: OwnedFresh
+      - id: AssetRepositoryIntegrationTest/Street
+        value: Seed Street 1.0.0
+      - id: AssetRepositoryIntegrationTest/PostalCode
+        value: 5020
+      - id: AssetRepositoryIntegrationTest/City
+        value: Salzburg
+      - id: AssetRepositoryIntegrationTest/Country
+        value: Austria
