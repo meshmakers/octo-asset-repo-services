@@ -213,6 +213,8 @@ internal sealed class BlueprintsMutation : ObjectGraphType
                 ArchiveActivations = BlueprintUpdatePreviewMapper.ToDtos(result.ArchiveActivations),
                 TenantOwnedSkipped = BlueprintUpdatePreviewMapper.ToDtos(result.TenantOwnedSkipped),
                 TenantOwnedStaysDeleted = BlueprintUpdatePreviewMapper.ToDtos(result.TenantOwnedStaysDeleted),
+                TenantOwnedRefreshed = BlueprintUpdatePreviewMapper.ToDtos(result.TenantOwnedRefreshed),
+                TenantOwnedUpdateAvailable = BlueprintUpdatePreviewMapper.ToDtos(result.TenantOwnedUpdateAvailable),
                 // AB#6871: a dry run reports what a real update would be refused for.
                 IsBlocked = result.IsCkUpgradeBlocked,
                 CkUpdateSet = result.CkUpdateSet.ToList(),

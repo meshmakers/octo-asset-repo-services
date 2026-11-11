@@ -45,7 +45,8 @@ pairs (blanks exactly those).
 ## Tenant-owned seed entities the update did not write (AB#6454)
 
 A seed entity with `rtBlueprintLocked: false` belongs to the tenant after the first install (engine
-AB#6383): an update never rewrites it and never brings back one the tenant deleted. Two further lists
+AB#6383): an update never rewrites one the tenant edited and never brings back one the tenant deleted;
+one the tenant never edited receives a changed seed (engine AB#8778). Four further lists
 show this, on the preview (`POST {tenantId}/v1/blueprints/updates/preview`, GraphQL
 `blueprints.previewUpdate`) and on the apply result (REST `updates/apply` `BlueprintUpdateResultDto`,
 GraphQL `applyUpdate` `BlueprintApplyResult`; always empty for an install). REST uses PascalCase
@@ -55,6 +56,8 @@ GraphQL `applyUpdate` `BlueprintApplyResult`; always empty for an install). REST
 |------|---------|
 | `tenantOwnedSkipped` | The tenant still holds the entity; the update left it untouched. `entityId` is its runtime id |
 | `tenantOwnedStaysDeleted` | The previous seed contained it, the tenant deleted it, the update does not recreate it. `entityId` is `null` |
+| `tenantOwnedRefreshed` | AB#8778: the tenant never edited the entity (its content equals what the installed version's seed wrote) and the target seed changed it; the update writes the new seed content. Counted in `entitiesUpdated`; its attribute changes appear in the preview's `changes` like those of a product-owned entity (JSON texts and blanked attributes masked) |
+| `tenantOwnedUpdateAvailable` | AB#8778: the target seed changed the entity, but the tenant edited it (or that it did not cannot be proven); the update keeps it. Also listed in `tenantOwnedSkipped` |
 
 | Field | Meaning |
 |-------|---------|
@@ -63,10 +66,13 @@ GraphQL `applyUpdate` `BlueprintApplyResult`; always empty for an install). REST
 | `entityId` | Runtime id on the tenant, `null` for stays-deleted |
 | `wellKnownName` | Well-known name, when the entity has one |
 
-Identity only, **never attribute values** (tenant-owned entities may hold credentials). Both lists
-are counted in `entitiesSkipped`. They are not blanking: `blankedAttributes`, `allowBlanking` and the
+Identity only, **never attribute values** (tenant-owned entities may hold credentials).
+`tenantOwnedSkipped` and `tenantOwnedStaysDeleted` are counted in `entitiesSkipped`, `tenantOwnedRefreshed`
+in `entitiesUpdated`. They are not blanking: `blankedAttributes`, `allowBlanking` and the
 CLI's `--failOnBlanking` do not look at them. Additive, empty by default; a client that ignores them
 behaves as before.
+The rule that decides between refreshed and kept is described in the engine's `docs/blueprints.md`
+(section "Product-owned and tenant-owned seed entities").
 
 ## No credential text in `changes` (follow-up of AB#6316 review)
 

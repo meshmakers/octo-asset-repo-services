@@ -69,6 +69,18 @@ public class BlueprintUpdatePreviewDto
     public List<BlueprintTenantOwnedEntityDto> TenantOwnedStaysDeleted { get; set; } = [];
 
     /// <summary>
+    ///     Unedited tenant-owned seed entities that receive the new seed content (AB#8778): their stored content
+    ///     equals what the seed of the installed version wrote. Identity only. Counted in the updated total.
+    /// </summary>
+    public List<BlueprintTenantOwnedEntityDto> TenantOwnedRefreshed { get; set; } = [];
+
+    /// <summary>
+    ///     Tenant-owned seed entities the tenant edited while the target version brings new seed content
+    ///     (AB#8778). Kept as edited; also listed in <c>TenantOwnedSkipped</c>. Identity only.
+    /// </summary>
+    public List<BlueprintTenantOwnedEntityDto> TenantOwnedUpdateAvailable { get; set; } = [];
+
+    /// <summary>
     ///     True when the CK models of the update would break at least one installed model (tenant upgrade guard,
     ///     AB#6871). In a preview or a dry run it announces that a real update is refused with
     ///     <c>409 CK_UPGRADE_BLOCKED</c> unless it is forced; <see cref="Blockers" /> lists what breaks. Read-only

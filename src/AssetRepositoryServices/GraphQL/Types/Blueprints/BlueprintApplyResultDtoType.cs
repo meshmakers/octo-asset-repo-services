@@ -63,6 +63,14 @@ internal sealed class BlueprintApplyResultDtoType : ObjectGraphType<BlueprintApp
             .Description("Tenant-owned seed entities the tenant deleted and the update does not bring back (AB#6454). entityId is null. Identity only, no values.")
             .Resolve(ctx => ctx.Source!.TenantOwnedStaysDeleted);
 
+        Field<NonNullGraphType<ListGraphType<NonNullGraphType<BlueprintTenantOwnedEntityDtoType>>>>("tenantOwnedRefreshed")
+            .Description("Unedited tenant-owned seed entities that receive the new seed content (AB#8778): their content equals what the installed version's seed wrote. Identity only, no values.")
+            .Resolve(ctx => ctx.Source!.TenantOwnedRefreshed);
+
+        Field<NonNullGraphType<ListGraphType<NonNullGraphType<BlueprintTenantOwnedEntityDtoType>>>>("tenantOwnedUpdateAvailable")
+            .Description("Tenant-owned seed entities the tenant edited while the target version brings new seed content (AB#8778). Kept as edited; also listed in tenantOwnedSkipped. Identity only, no values.")
+            .Resolve(ctx => ctx.Source!.TenantOwnedUpdateAvailable);
+
         Field<NonNullGraphType<BooleanGraphType>>("isBlocked")
             .Description("AB#6871: true when the CK models of the update would break an installed model. Read-only information; a real update is refused with CK_UPGRADE_BLOCKED while true.")
             .Resolve(ctx => ctx.Source!.IsBlocked);
