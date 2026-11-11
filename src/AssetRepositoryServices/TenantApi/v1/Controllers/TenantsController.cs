@@ -989,12 +989,12 @@ public class TenantsController : ControllerBase
             var deletion = await tenantContext.DeleteChildTenantMetadataAsync(session, childTenantId,
                 dropStreamData: true, overrideForeignOwnership: overrideForeignOwnership);
 
-            // AB#8807: the tombstone holds the database name and the ownership override the metadata guard granted
-            // BEFORE the metadata deletion commits. A delete interrupted between that commit and the drop is then
-            // finished by the settle sweep with the same decision (the engine re-checks its conditions at every
-            // drop). Should the commit fail, the tenant stays registered and the sweep rolls the tombstone back.
+            // AB#8807: the tombstone holds the database name and the foreign marker the metadata guard granted the
+            // ownership override for BEFORE the metadata deletion commits. A delete interrupted between that commit
+            // and the drop is then finished by the settle sweep with the same decision - for exactly that marker: the
+            // engine re-checks at every drop and refuses a database another instance re-created under the same name. Should the commit fail, the tenant stays registered and the sweep rolls the tombstone back.
             await _tenantLifecycleStore.EnsureDeletingAsync(normalizedTenantId, deletion.DatabaseName,
-                deletion.CorrelationId, deletion.ForeignOwnershipOverridden);
+                deletion.CorrelationId, deletion.OverriddenForeignMarker);
             await session.CommitTransactionAsync();
             try
             {

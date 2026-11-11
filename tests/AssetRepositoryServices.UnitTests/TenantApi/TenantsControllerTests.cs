@@ -11,6 +11,7 @@ using Meshmakers.Octo.Runtime.Contracts.MongoDb.Configuration;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb.DisplayRules;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb.Repositories;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb.TenantLifecycle;
+using Meshmakers.Octo.Runtime.Contracts.MongoDb.TenantOwnership;
 using Meshmakers.Octo.Runtime.Contracts.Repositories.Query;
 using Meshmakers.Octo.Services.Infrastructure.Services;
 using Microsoft.AspNetCore.Http;
@@ -553,20 +554,22 @@ public class TenantsControllerTests
         // tombstone, so the override the engine granted is recorded there before the commit and the drop.
         const string childTenantId = "child-a";
         var correlationId = Guid.NewGuid();
+        var overridden = new TenantOwnershipMarkerIdentity("octosystemgone",
+            new DateTime(2026, 11, 11, 10, 15, 30, 123, DateTimeKind.Utc));
         A.CallTo(() => _tenantContext.IsChildTenantExistingAsync(A<IOctoAdminSession>._, childTenantId))
             .Returns(true);
         A.CallTo(() => _tenantLifecycleStore.GetAsync(childTenantId, A<CancellationToken>._))
             .Returns((TenantLifecycleRecord?)null);
         A.CallTo(() => _tenantContext.DeleteChildTenantMetadataAsync(A<IOctoAdminSession>._, childTenantId, true, true))
-            .Returns(new TenantDeletionHandle("child-a-db", correlationId) { ForeignOwnershipOverridden = true });
+            .Returns(new TenantDeletionHandle("child-a-db", correlationId) { OverriddenForeignMarker = overridden });
 
         var result = await _controller.Delete(childTenantId, overrideForeignOwnership: true);
 
         result.Should().BeOfType<OkResult>();
-        A.CallTo(() => _tenantLifecycleStore.EnsureDeletingAsync(childTenantId, "child-a-db", correlationId, true,
-                A<CancellationToken>._)).MustHaveHappenedOnceExactly()
+        A.CallTo(() => _tenantLifecycleStore.EnsureDeletingAsync(childTenantId, "child-a-db", correlationId,
+                overridden, A<CancellationToken>._)).MustHaveHappenedOnceExactly()
             .Then(A.CallTo(() => _tenantContext.DropTenantDatabaseAsync(
-                A<TenantDeletionHandle>.That.Matches(h => h.ForeignOwnershipOverridden), childTenantId))
+                A<TenantDeletionHandle>.That.Matches(h => h.OverriddenForeignMarker == overridden), childTenantId))
                 .MustHaveHappenedOnceExactly());
     }
 
