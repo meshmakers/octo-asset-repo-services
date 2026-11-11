@@ -182,7 +182,9 @@ internal sealed class RollupArchiveRecomputeHandler(ISystemContext systemContext
 /// <summary>
 ///     Handler of <c>System.StreamData/RollupArchive.BackfillFromSource-1</c> (AB#8599). Mutation parity:
 ///     <c>streamData.backfillRollupFromSource</c> (<see cref="IRecomputeOrchestrator.EnqueueBackfillFromSourceAsync" />): a durable
-///     backfill over the whole source history is queued and the Pending job answered at once; no result for an empty source.
+///     backfill over the whole source history is queued and its job answered at once - a new Pending job, the already active job
+///     of the rollup the backfill was folded into, or a Failed job for a missing or non-activated rollup; no result for an empty
+///     source.
 /// </summary>
 internal sealed class RollupArchiveBackfillFromSourceHandler(
     ISystemContext systemContext,
