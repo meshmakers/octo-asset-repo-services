@@ -986,8 +986,10 @@ engine's PascalCase names, like `access`.
 `CkMethodErrorDefinition` is deliberately not named `CkMethodError` (that name belongs to the invocation error of the
 method runtime, `CkMethodError` of octo-common-services). `internal` elements are listed like public ones — they are internal
 to models, not secret. Tests: `GraphQL/CkV2/CkMetaIntrospectionTests` (incl. `Schema_HasNoMethodErrorTypes`: a failed method
-call is one GraphQL error with `extensions.code` / `parameters`, so the schema has no `CkMethodError` / `CkMethodErrorDetail`
-type and a sync result type has no error member). **Schema export for frontend codegen:** run
+**invocation** is one GraphQL error with `extensions.code` / `parameters`, so the schema has no `CkMethodError` /
+`CkMethodErrorDetail` type and a sync result type has no error member). An asynchronous method that was accepted can still fail
+later; that failure is not a GraphQL error of the mutation but the `error` (code, parameters) of its operation, read through
+`runtime.operations` (see "Asynchronous methods" below). **Schema export for frontend codegen:** run
 `OCTO_SCHEMA_EXPORT_PATH=<file> dotnet test tests/AssetRepositoryServices.IntegrationTests -c DebugL --filter
 "FullyQualifiedName~SchemaExportTests"` — writes the SDL of the integration-test tenant (all CK meta types plus the
 CK v2 test model's runtime types); the Studio's own `schema.graphql` stays an introspection of a real tenant.
