@@ -170,6 +170,38 @@ public class ArchiveMethodTests
         }
     }
 
+    [Fact]
+    public void AnUndefinedCkEnumValue_DoesNotMapToTheEngine()
+    {
+        ArchiveMethodSupport.TryToEngine<CkRollupFunction>((RtCkRollupFunctionEnum)999, out _).Should().BeFalse();
+        ArchiveMethodSupport.TryToEngine<BucketAlignment>((RtBucketAlignmentEnum)999, out _).Should().BeFalse();
+        ArchiveMethodSupport.TryToEngine<CkRollupFunction>(RtCkRollupFunctionEnum.Sum, out var sum).Should().BeTrue();
+        sum.Should().Be(CkRollupFunction.Sum);
+    }
+
+    [Theory]
+    [InlineData("\"aggregations\":[{\"sourcePath\":\"Voltage\",\"function\":999}]", "archive.aggregations.function")]
+    [InlineData("\"bucketAlignment\":999,\"aggregations\":[]", "archive.bucketAlignment")]
+    public async Task RollupCreate_AnUndefinedEnumNumber_IsAValidationFailureOnTheField(string json, string field)
+    {
+        var parameters = System.Text.Json.JsonSerializer.Deserialize<RollupArchiveCreateArchiveParameters>(
+            "{\"archive\":{\"sourceArchiveRtId\":\"" + OctoObjectId.GenerateNewId() + "\",\"bucketSizeMs\":60000," +
+            "\"watermarkLagMs\":0," + json + "}}", CkMethodJson.Options)!;
+        var handler = new RollupArchiveCreateArchiveHandler(null!,
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<RollupArchiveCreateArchiveHandler>.Instance);
+
+        var outcome = await handler.HandleAsync(
+            new CkMethodContext<RollupArchiveCreateArchiveParameters>(new CkMethodRequest("t1")
+            {
+                InvocationId = Guid.NewGuid(), MethodId = SystemStreamDataCkIds.RollupArchiveCreateArchiveMethodId,
+                CkTypeId = "System.StreamData/RollupArchive", DeadlineUtc = DateTime.UtcNow.AddSeconds(30)
+            }, parameters), CancellationToken.None);
+
+        outcome.IsSuccess.Should().BeFalse();
+        outcome.Failure!.Code.Should().Be(CkMethodErrorCodes.MethodValidationFailed);
+        outcome.Failure.Parameters["field"].Should().Be(field);
+    }
+
     private static RtRollupArchiveCreateInputRecord Input(string? scalar = null,
         IEnumerable<RtCkRollupSourceReferenceRecord>? sources = null)
     {

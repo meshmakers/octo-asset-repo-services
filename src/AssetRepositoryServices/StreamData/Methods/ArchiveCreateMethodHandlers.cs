@@ -95,6 +95,25 @@ internal sealed class RollupArchiveCreateArchiveHandler(
                 "required");
         }
 
+        var functions = new List<CkRollupFunction>(aggregations.Count);
+        foreach (var aggregation in aggregations)
+        {
+            if (!TryToEngine<CkRollupFunction>(aggregation.Function, out var function))
+            {
+                return CkMethodOutcome<RollupArchiveCreateArchiveResult>.ValidationFailed("archive.aggregations.function",
+                    "invalid-value");
+            }
+
+            functions.Add(function);
+        }
+
+        var alignment = BucketAlignment.FixedSize;
+        if (input.BucketAlignment is { } requestedAlignment && !TryToEngine(requestedAlignment, out alignment))
+        {
+            return CkMethodOutcome<RollupArchiveCreateArchiveResult>.ValidationFailed("archive.bucketAlignment",
+                "invalid-value");
+        }
+
         var tenant = await FindTenantAsync(systemContext, context).ConfigureAwait(false);
         if (tenant?.GetRollupArchiveLifecycleService() is not { } lifecycle)
         {
@@ -111,9 +130,9 @@ internal sealed class RollupArchiveCreateArchiveHandler(
                 sources,
                 TimeSpan.FromMilliseconds(input.BucketSizeMs),
                 TimeSpan.FromMilliseconds(input.WatermarkLagMs),
-                aggregations.Select(a => new CkRollupAggregationSpec(a.SourcePath, ToEngine<CkRollupFunction>(a.Function),
-                    a.TargetColumnName, a.ComparisonValue)).ToList(),
-                input.BucketAlignment is { } alignment ? ToEngine<BucketAlignment>(alignment) : BucketAlignment.FixedSize,
+                aggregations.Select((a, i) => new CkRollupAggregationSpec(a.SourcePath, functions[i], a.TargetColumnName,
+                    a.ComparisonValue)).ToList(),
+                alignment,
                 input.ReferenceTimeZone,
                 input.CarryLookbackMs is { } carryMs ? TimeSpan.FromMilliseconds(carryMs) : null,
                 input.DayStartOffsetMs).ConfigureAwait(false);

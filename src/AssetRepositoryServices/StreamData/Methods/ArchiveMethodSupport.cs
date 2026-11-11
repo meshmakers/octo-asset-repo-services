@@ -91,5 +91,18 @@ internal static class ArchiveMethodSupport
     ///     members carry the same names, the numbers are not part of the contract.
     /// </summary>
     public static TEngine ToEngine<TEngine>(Enum ckValue) where TEngine : struct, Enum =>
-        Enum.Parse<TEngine>(ckValue.ToString(), ignoreCase: false);
+        TryToEngine<TEngine>(ckValue, out var value)
+            ? value
+            : throw new ArgumentOutOfRangeException(nameof(ckValue), ckValue, "not a member of the CK enum");
+
+    /// <summary>
+    ///     <see cref="ToEngine{TEngine}" /> for wire input: <c>false</c> for a value that is no member of the CK enum (a number
+    ///     such as 999 binds to an enum without being defined), so the handler answers a validation failure on the field.
+    /// </summary>
+    public static bool TryToEngine<TEngine>(Enum ckValue, out TEngine value) where TEngine : struct, Enum
+    {
+        value = default;
+        return Enum.IsDefined(ckValue.GetType(), ckValue) &&
+               Enum.TryParse(ckValue.ToString(), ignoreCase: false, out value) && Enum.IsDefined(value);
+    }
 }
