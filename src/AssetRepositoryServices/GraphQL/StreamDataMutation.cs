@@ -85,6 +85,7 @@ internal sealed class StreamDataMutation : ObjectGraphType
             .ResolveAsync(ResolveCreateRollupAsync);
 
         Field<NonNullGraphType<ArchiveTransitionResultDtoType>>("freezeRollupArchive")
+            .DeprecationReason(ArchiveMethodHost.DeprecationReasonOf("freezeRollupArchive"))
             .Description("Sets FrozenUntil on the rollup archive. Monotonic — rejected when the new value is earlier than the current FrozenUntil (use unfreezeRollupArchive instead). When set, the orchestrator stops producing buckets whose bucketEnd falls within the frozen range.")
             .Argument<NonNullGraphType<OctoObjectIdType>>(Statics.RtIdArg, "Runtime id of the CkRollupArchive to freeze.")
             .Argument<NonNullGraphType<UtcDateTimeGraphType>>("until", "Inclusive upper bound of the frozen range, ISO-8601.")
@@ -92,6 +93,7 @@ internal sealed class StreamDataMutation : ObjectGraphType
                 (svc, id) => svc.FreezeAsync(id, ctx.GetArgument<DateTime>("until"))));
 
         Field<NonNullGraphType<ArchiveTransitionResultDtoType>>("unfreezeRollupArchive")
+            .DeprecationReason(ArchiveMethodHost.DeprecationReasonOf("unfreezeRollupArchive"))
             .Description("Clears FrozenUntil on the rollup archive. Idempotent. The optional acceptGaps flag is recorded but the gap-detection guard is not yet enforced (concept §9 follow-up).")
             .Argument<NonNullGraphType<OctoObjectIdType>>(Statics.RtIdArg, "Runtime id of the CkRollupArchive to unfreeze.")
             .Argument<BooleanGraphType>("acceptGaps", "When the source data inside the previously frozen range has been truncated, acknowledge that unfreezing will produce gaps. Defaults to false.")
@@ -99,6 +101,7 @@ internal sealed class StreamDataMutation : ObjectGraphType
                 (svc, id) => svc.UnfreezeAsync(id, ctx.GetArgument<bool?>("acceptGaps") ?? false)));
 
         Field<NonNullGraphType<ArchiveTransitionResultDtoType>>("rewindRollupWatermark")
+            .DeprecationReason(ArchiveMethodHost.DeprecationReasonOf("rewindRollupWatermark"))
             .Description("Resets LastAggregatedBucketEnd to the given timestamp (truncated to the bucket boundary). Subsequent orchestrator ticks re-aggregate the rewound range. Destructive: previously committed rows in that range are temporarily out of sync until the orchestrator catches up.")
             .Argument<NonNullGraphType<OctoObjectIdType>>(Statics.RtIdArg, "Runtime id of the CkRollupArchive to rewind.")
             .Argument<NonNullGraphType<UtcDateTimeGraphType>>("toBucketEnd", "Target bucket-end (exclusive) the watermark is reset to, ISO-8601. Will be truncated down to the bucket boundary.")
@@ -106,6 +109,7 @@ internal sealed class StreamDataMutation : ObjectGraphType
                 (svc, id) => svc.RewindWatermarkAsync(id, ctx.GetArgument<DateTime>("toBucketEnd"))));
 
         Field<NonNullGraphType<RecomputeJobInfoDtoType>>("recomputeArchive")
+            .DeprecationReason(ArchiveMethodHost.DeprecationReasonOf("recomputeArchive"))
             .Description("Triggers (or coalesces) an optimistic recompute of a rollup archive over the half-open range [from, to). Returns the resulting job snapshot. While a recompute runs, readers keep seeing a consistent snapshot. Requires StreamDataAdmin. AB#4184.")
             .Argument<NonNullGraphType<OctoObjectIdType>>(Statics.RtIdArg, "Runtime id of the CkRollupArchive to recompute.")
             .Argument<NonNullGraphType<UtcDateTimeGraphType>>("from", "Inclusive range start, ISO-8601.")
@@ -114,6 +118,7 @@ internal sealed class StreamDataMutation : ObjectGraphType
             .ResolveAsync(ResolveRecomputeAsync);
 
         Field<RecomputeJobInfoDtoType>("backfillRollupFromSource")
+            .DeprecationReason(ArchiveMethodHost.DeprecationReasonOf("backfillRollupFromSource"))
             .Description("Queues a durable, background backfill that populates / resets a rollup over the ENTIRE history of its source archive without supplying a timestamp (AB#4269 / AB#4286). Resolves the source archive's earliest timestamp, enqueues a persisted pending recompute range [sourceMin, now) and a Pending RecomputeJob, and returns that job immediately. The heavy recompute runs later on the background orchestrator under the host application-lifetime token — not this request — so a client timeout can no longer cancel a long backfill and the queued work survives a restart. Poll the returned job to observe Pending → Running → Completed. Returns null when the source archive holds no data. Requires StreamDataAdmin.")
             .Argument<NonNullGraphType<OctoObjectIdType>>(Statics.RtIdArg, "Runtime id of the CkRollupArchive to backfill from its source.")
             .ResolveAsync(ResolveBackfillRollupAsync);

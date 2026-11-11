@@ -28,7 +28,7 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Strea
 ///     stay green) and carry the method id as deprecation reason.
 /// </summary>
 [Collection(ArchiveMethodCollection.Name)]
-public class ArchiveLifecycleMethodTests
+public partial class ArchiveLifecycleMethodTests
 {
     private const string Raw = "systemStreamDataRawArchives";
     private const string TimeRange = "systemStreamDataTimeRangeArchives";
@@ -73,7 +73,9 @@ public class ArchiveLifecycleMethodTests
     {
         ArchiveMethodHost.Handlers.Select(h => h.Mutation).Should().BeEquivalentTo(
             "activateArchive", "disableArchive", "enableArchive", "retryArchiveActivation", "deleteArchive",
-            "createTimeRangeArchive", "createRollupArchive");
+            "createTimeRangeArchive", "createRollupArchive",
+            // AB#8599
+            "freezeRollupArchive", "unfreezeRollupArchive", "rewindRollupWatermark", "recomputeArchive", "backfillRollupFromSource");
         ArchiveMethodHost.DeprecationReasonOf("activateArchive")
             .Should().Be("Use System.StreamData/Archive.Activate-1");
         ArchiveMethodHost.DeprecationReasonOf("createRollupArchive")
@@ -103,8 +105,7 @@ public class ArchiveLifecycleMethodTests
             fields[handler.Mutation].Value<string>("deprecationReason").Should().Be($"Use {handler.MethodId}");
         }
 
-        // the rollup-only and column mutations are not part of this story (AB#8599/AB#8600)
-        fields["freezeRollupArchive"].Value<bool>("isDeprecated").Should().BeFalse();
+        // the column mutations are not part of these stories (AB#8600)
         fields["addComputedColumn"].Value<bool>("isDeprecated").Should().BeFalse();
     }
 

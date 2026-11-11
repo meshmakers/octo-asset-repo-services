@@ -8,6 +8,12 @@
   possible; subset of `TenantOwnedSkipped`) - REST `BlueprintUpdatePreviewDto` / `BlueprintUpdateResultDto`,
   GraphQL `previewUpdate` / `applyUpdate` (`tenantOwnedRefreshed`, `tenantOwnedUpdateAvailable`). Additive, empty by default.
   Needs octo-construction-kit-engine with AB#8778.
+- AB#8599 New: rollup control and recomputation as CK methods of System.StreamData 1.25.0, handled in-process like the AB#8598
+  archive methods: `RollupArchive.Freeze-1`, `Unfreeze-1`, `RewindWatermark-1` (answer `ArchiveTransitionResult`),
+  `Recompute-1` and `BackfillFromSource-1` (answer `RecomputeJobInfo`, synchronous like the mutations). Role `StreamDataAdmin`,
+  the mutation's error codes. The mutations `freezeRollupArchive`, `unfreezeRollupArchive`, `rewindRollupWatermark`,
+  `recomputeArchive` and `backfillRollupFromSource` keep working and are `@deprecated` with the method id. Needs System.StreamData
+  1.25.0 (octo-construction-kit-engine with AB#8599).
 - AB#8711 Refactor: the archive CK methods (AB#8598) no longer check the caller tenant themselves; `ArchiveMethodCallerTenantGuard`
   is removed. The check moved into the in-process transport of octo-common-services (`CkMethodCallerTenantFilter`), which applies
   the same rule to every in-process method of this service before any handler runs: a caller token issued for another tenant is

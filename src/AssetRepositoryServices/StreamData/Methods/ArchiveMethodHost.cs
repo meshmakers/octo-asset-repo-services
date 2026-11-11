@@ -64,7 +64,18 @@ internal static class ArchiveMethodHost
         ArchiveMethodHandlerRegistration.For<TimeRangeArchiveCreateArchiveHandler>(
             SystemStreamDataCkIds.TimeRangeArchiveCreateArchiveMethodId, "createTimeRangeArchive"),
         ArchiveMethodHandlerRegistration.For<RollupArchiveCreateArchiveHandler>(
-            SystemStreamDataCkIds.RollupArchiveCreateArchiveMethodId, "createRollupArchive")
+            SystemStreamDataCkIds.RollupArchiveCreateArchiveMethodId, "createRollupArchive"),
+        // AB#8599 (System.StreamData 1.25.0): rollup control and recomputation
+        ArchiveMethodHandlerRegistration.For<RollupArchiveFreezeHandler>(SystemStreamDataCkIds.RollupArchiveFreezeMethodId,
+            "freezeRollupArchive"),
+        ArchiveMethodHandlerRegistration.For<RollupArchiveUnfreezeHandler>(SystemStreamDataCkIds.RollupArchiveUnfreezeMethodId,
+            "unfreezeRollupArchive"),
+        ArchiveMethodHandlerRegistration.For<RollupArchiveRewindWatermarkHandler>(
+            SystemStreamDataCkIds.RollupArchiveRewindWatermarkMethodId, "rewindRollupWatermark"),
+        ArchiveMethodHandlerRegistration.For<RollupArchiveRecomputeHandler>(SystemStreamDataCkIds.RollupArchiveRecomputeMethodId,
+            "recomputeArchive"),
+        ArchiveMethodHandlerRegistration.For<RollupArchiveBackfillFromSourceHandler>(
+            SystemStreamDataCkIds.RollupArchiveBackfillFromSourceMethodId, "backfillRollupFromSource")
     ];
 
     /// <summary>The deprecation reason of a replaced mutation: <c>Use &lt;method id&gt;</c> (AB#8598).</summary>
