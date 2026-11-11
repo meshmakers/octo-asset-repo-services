@@ -782,9 +782,14 @@ attribute-value-type coercion that lives in `RtPathEvaluator.SetValueByPath` mus
 
 ### CK v2 (Epic AB#5584)
 
-CK language 2 (`ckLanguage: 2`) adds attribute `access`, CK interfaces, `visibility`, `derivable` and method
-*definitions* to the construction kit. Phase 1 (F1.5) brings the meta-model to the GraphQL surface; the method
-**runtime** (method mutation fields, dispatcher, caller-token forwarding) is Phase 3 and not on main.
+CK language 2 (`ckLanguage: 2`) adds attribute `access`, CK interfaces, `visibility`, `derivable` and methods to the
+construction kit. Phase 1 (F1.5) brought the meta-model to the GraphQL surface. The method **runtime** is shipped (Phase 3):
+typed method mutations (sections "Typed method mutations" and "Method mutation resolver" below), the gateway gate and data
+permissions ("CK method gateway gate", "Method data permissions"), the dispatcher of octo-common-services with handlers over the
+bus, in-process (gateway-owned methods) and as pipelines, caller-token forwarding, idempotency keys, and asynchronous methods
+with operation handles and `runtime.operations` ("Asynchronous methods", AB#8444). The handler SDK and the dispatcher live in
+octo-common-services (`src/Methods`, `docs/method-handler-sdk.md`); user docs: octo-documentation
+`technologyGuide/constructionKits/ckLanguage2/` (`methods.md`, `graphql.md`, `methodHandlers.md`, `methodConsistency.md`).
 
 **Schema-build timing (risk R8):** `SchemaContext` logs the build time per tenant (see "When Working with GraphQL").
 Baseline for the integration test CK model (`SchemaBuildTimingTests`): ~100–250 ms cold, of which ~75–200 ms is
@@ -978,10 +983,11 @@ engine's PascalCase names, like `access`.
 | `CkMethod` (new, definitions only) | `methodId`, `qualifiedMethodId` (type methods), `declaringCkTypeId` / `declaringCkInterfaceId`, `kind` (`Instance`/`Static`), `description`, `visibility`, `parameters: [CkMethodParameter!]!` (`name`, `valueType`, `valueCkRecordId`, `valueCkEnumId`, `isOptional`, `sensitive`, `description`), `result: CkMethodResultDefinition` (`valueType`, `valueCkRecordId`, `valueCkEnumId`, `sensitive: Boolean!` - AB#7008: the compiled `result.sensitive` marker from the runtime CK cache, `false` when undeclared; additive on this v2-only meta type), `errors: [CkMethodErrorDefinition!]!`, `authorization: CkMethodAuthorization!` (`roles`, `allowSelf`, `scopes`), `execution: CkMethodExecution!` (`timeoutSeconds` effective, `idempotent`, `handler: String!` effective handler kind `service` (default when undeclared) or `pipeline`, AB#6878 / touch-point row 11 of `execution.handler`; `mode: String!` effective execution mode `sync` (default when undeclared) or `async` (the call returns an operation handle), AB#6926 / touch-point row 11 of `execution.mode`; both additive on this v2-only meta type, so existing queries and the Studio v1 queries are unaffected) |
 | `ConstructionKitQuery` | `interfaces(ckModelIds, rtCkId, rtCkIds)` connection |
 
-`CkMethodErrorDefinition` is deliberately not named `CkMethodError` (that name belongs to the invocation result of the
-Phase 3 method runtime). `internal` elements are listed like public ones — they are internal to models, not secret.
-Tests: `GraphQL/CkV2/CkMetaIntrospectionTests` (incl. `Schema_HasNoMethodRuntime`: no method mutation fields and no
-invocation types until the method runtime lands). **Schema export for frontend codegen:** run
+`CkMethodErrorDefinition` is deliberately not named `CkMethodError` (that name belongs to the invocation error of the
+method runtime, `CkMethodError` of octo-common-services). `internal` elements are listed like public ones — they are internal
+to models, not secret. Tests: `GraphQL/CkV2/CkMetaIntrospectionTests` (incl. `Schema_HasNoMethodErrorTypes`: a failed method
+call is one GraphQL error with `extensions.code` / `parameters`, so the schema has no `CkMethodError` / `CkMethodErrorDetail`
+type and a sync result type has no error member). **Schema export for frontend codegen:** run
 `OCTO_SCHEMA_EXPORT_PATH=<file> dotnet test tests/AssetRepositoryServices.IntegrationTests -c DebugL --filter
 "FullyQualifiedName~SchemaExportTests"` — writes the SDL of the integration-test tenant (all CK meta types plus the
 CK v2 test model's runtime types); the Studio's own `schema.graphql` stays an introspection of a real tenant.
@@ -1192,7 +1198,7 @@ plus the audit flag, and the error `CkMethodDataPermissionErrors`), `CkMethodTar
 - **Static methods** (no target): `EvaluateTypeAsync` on the declaring type only. A type the caller cannot read at all is `METHOD_FORBIDDEN` (there is no target to hide), not "not found".
 - **Audit-only policy**: the call passes; the engine publishes its audit event (`publishAudit: true`) and the gateway logs one Information line (method id, invocation id, tenant, action).
 - **No leaks**: refusal log lines name method id, invocation id, tenant and action, never the target id, parameters or token; error texts are fixed.
-- Handlers keep running with service rights in Phase 3 (option A); the caller-bound handler session is the later end state.
+- Handlers run with service rights (option A, the current state); the caller-bound handler session is the later end state and not built yet.
 - Tests: `CkMethodGatewayTests` (unit: hidden = missing, no write grant, data action write/read, `allowSelf`, static, audit-only, fault, logs, check never called for a role refusal) and
   `GraphQL/CkV2/MethodDataPermissionGatewayTests` (integration, fixture `MethodDataPermissionGraphQlTestFixture`: policies on `AccessTestAccount` through the `IDataPermissionResolver` seam, real
   MongoDB and engine; the generic mutation gives the same verdict). The `Read`-declared case runs against a real tenant only after engine-mongodb persists `dataAccess` (unit-tested until then).
