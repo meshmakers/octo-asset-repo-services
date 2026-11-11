@@ -15,10 +15,10 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.StreamData.Methods;
 internal sealed class TimeRangeArchiveCreateArchiveHandler(
     ISystemContext systemContext,
     ILogger<TimeRangeArchiveCreateArchiveHandler> logger)
-    : ICkMethodHandler<TimeRangeArchiveCreateParameters, TimeRangeArchiveCreateArchiveResult>
+    : ICkMethodHandler<TimeRangeArchiveCreateArchiveParameters, TimeRangeArchiveCreateArchiveResult>
 {
     public async Task<CkMethodOutcome<TimeRangeArchiveCreateArchiveResult>> HandleAsync(
-        CkMethodContext<TimeRangeArchiveCreateParameters> context, CancellationToken cancellationToken)
+        CkMethodContext<TimeRangeArchiveCreateArchiveParameters> context, CancellationToken cancellationToken)
     {
         if (context.Parameters.Archive is not { } input)
         {
@@ -30,7 +30,7 @@ internal sealed class TimeRangeArchiveCreateArchiveHandler(
             return CkMethodOutcome<TimeRangeArchiveCreateArchiveResult>.ValidationFailed("archive.targetCkTypeId", "required");
         }
 
-        var columns = input.Columns ?? [];
+        IReadOnlyList<RtArchiveColumnSpecRecord> columns = input.Columns?.ToList() ?? [];
         if (columns.Any(c => string.IsNullOrWhiteSpace(c.Path)))
         {
             return CkMethodOutcome<TimeRangeArchiveCreateArchiveResult>.ValidationFailed("archive.columns.path", "required");
@@ -72,10 +72,10 @@ internal sealed class TimeRangeArchiveCreateArchiveHandler(
 internal sealed class RollupArchiveCreateArchiveHandler(
     ISystemContext systemContext,
     ILogger<RollupArchiveCreateArchiveHandler> logger)
-    : ICkMethodHandler<RollupArchiveCreateParameters, RollupArchiveCreateArchiveResult>
+    : ICkMethodHandler<RollupArchiveCreateArchiveParameters, RollupArchiveCreateArchiveResult>
 {
     public async Task<CkMethodOutcome<RollupArchiveCreateArchiveResult>> HandleAsync(
-        CkMethodContext<RollupArchiveCreateParameters> context, CancellationToken cancellationToken)
+        CkMethodContext<RollupArchiveCreateArchiveParameters> context, CancellationToken cancellationToken)
     {
         if (context.Parameters.Archive is not { } input)
         {
@@ -88,7 +88,7 @@ internal sealed class RollupArchiveCreateArchiveHandler(
             return CkMethodOutcome<RollupArchiveCreateArchiveResult>.ValidationFailed("archive.sources", sourcesError);
         }
 
-        var aggregations = input.Aggregations ?? [];
+        IReadOnlyList<RtCkRollupAggregationRecord> aggregations = input.Aggregations?.ToList() ?? [];
         if (aggregations.Any(a => string.IsNullOrWhiteSpace(a.SourcePath)))
         {
             return CkMethodOutcome<RollupArchiveCreateArchiveResult>.ValidationFailed("archive.aggregations.sourcePath",
@@ -111,9 +111,9 @@ internal sealed class RollupArchiveCreateArchiveHandler(
                 sources,
                 TimeSpan.FromMilliseconds(input.BucketSizeMs),
                 TimeSpan.FromMilliseconds(input.WatermarkLagMs),
-                aggregations.Select(a => new CkRollupAggregationSpec(a.SourcePath!, a.Function,
+                aggregations.Select(a => new CkRollupAggregationSpec(a.SourcePath, ToEngine<CkRollupFunction>(a.Function),
                     a.TargetColumnName, a.ComparisonValue)).ToList(),
-                input.BucketAlignment ?? BucketAlignment.FixedSize,
+                input.BucketAlignment is { } alignment ? ToEngine<BucketAlignment>(alignment) : BucketAlignment.FixedSize,
                 input.ReferenceTimeZone,
                 input.CarryLookbackMs is { } carryMs ? TimeSpan.FromMilliseconds(carryMs) : null,
                 input.DayStartOffsetMs).ConfigureAwait(false);
@@ -136,7 +136,7 @@ internal sealed class RollupArchiveCreateArchiveHandler(
     ///     The source rules of the mutation (<c>StreamDataMutation.BuildRollupSources</c>, AB#5157): an explicitly empty list is
     ///     an error of its own, both forms or neither are refused, the deprecated scalar becomes one unbounded source.
     /// </summary>
-    internal static IReadOnlyList<RollupSourceReference>? BuildSources(RollupArchiveCreateInput input,
+    internal static IReadOnlyList<RollupSourceReference>? BuildSources(RtRollupArchiveCreateInputRecord input,
         out string? error)
     {
         error = null;
@@ -185,72 +185,4 @@ internal sealed class RollupArchiveCreateArchiveHandler(
 
         return sources;
     }
-}
-
-// ---- Parameter shapes -----------------------------------------------------------------------------------------------
-// The generated {Type}{Method}Parameters of System.StreamData carry the Record parameter as the generated Rt{Record}Record, an
-// attribute-bag type whose record arrays are IAttributeValueList<T> (an interface). The method JSON (System.Text.Json,
-// CkMethodJson) cannot bind an interface collection, so a call with a record array answered METHOD_HANDLER_FAILED. These plain
-// classes have the same members as the CK records (TimeRangeArchiveCreateInput, ArchiveColumnSpec, RollupArchiveCreateInput,
-// CkRollupSourceReference, CkRollupAggregation); the registration validation checks the parameter names against the model.
-
-/// <summary>Parameters of <c>TimeRangeArchive.CreateArchive-1</c> (CK record <c>TimeRangeArchiveCreateInput</c>).</summary>
-internal sealed class TimeRangeArchiveCreateParameters
-{
-    public TimeRangeArchiveCreateInput? Archive { get; set; }
-}
-
-/// <summary>CK record <c>System.StreamData/TimeRangeArchiveCreateInput</c>.</summary>
-internal sealed class TimeRangeArchiveCreateInput
-{
-    public string? RtWellKnownName { get; set; }
-    public string? TargetCkTypeId { get; set; }
-    public List<ArchiveColumnSpecInput>? Columns { get; set; }
-    public long? PeriodMs { get; set; }
-}
-
-/// <summary>CK record <c>System.StreamData/ArchiveColumnSpec</c>.</summary>
-internal sealed class ArchiveColumnSpecInput
-{
-    public string? Path { get; set; }
-    public bool Indexed { get; set; }
-    public bool Required { get; set; }
-}
-
-/// <summary>Parameters of <c>RollupArchive.CreateArchive-1</c> (CK record <c>RollupArchiveCreateInput</c>).</summary>
-internal sealed class RollupArchiveCreateParameters
-{
-    public RollupArchiveCreateInput? Archive { get; set; }
-}
-
-/// <summary>CK record <c>System.StreamData/RollupArchiveCreateInput</c>.</summary>
-internal sealed class RollupArchiveCreateInput
-{
-    public string? RtWellKnownName { get; set; }
-    public string? SourceArchiveRtId { get; set; }
-    public List<RollupSourceInput>? Sources { get; set; }
-    public long BucketSizeMs { get; set; }
-    public long WatermarkLagMs { get; set; }
-    public BucketAlignment? BucketAlignment { get; set; }
-    public string? ReferenceTimeZone { get; set; }
-    public long? CarryLookbackMs { get; set; }
-    public long? DayStartOffsetMs { get; set; }
-    public List<RollupAggregationInput>? Aggregations { get; set; }
-}
-
-/// <summary>CK record <c>System.StreamData/CkRollupSourceReference</c>.</summary>
-internal sealed class RollupSourceInput
-{
-    public string? SourceArchiveRtId { get; set; }
-    public DateTime? ValidFrom { get; set; }
-    public DateTime? ValidTo { get; set; }
-}
-
-/// <summary>CK record <c>System.StreamData/CkRollupAggregation</c>.</summary>
-internal sealed class RollupAggregationInput
-{
-    public string? SourcePath { get; set; }
-    public CkRollupFunction Function { get; set; }
-    public string? TargetColumnName { get; set; }
-    public string? ComparisonValue { get; set; }
 }

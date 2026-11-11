@@ -85,4 +85,11 @@ internal static class ArchiveMethodSupport
     /// </summary>
     public static async Task<ITenantContext?> FindTenantAsync(ISystemContext systemContext, CkMethodContext context) =>
         await systemContext.TryFindTenantContextAsync(context.TenantId).ConfigureAwait(false);
+
+    /// <summary>
+    ///     A generated CK enum of System.StreamData (<c>Rt…Enum</c>) as the engine enum of the same name (AB#8707): the
+    ///     members carry the same names, the numbers are not part of the contract.
+    /// </summary>
+    public static TEngine ToEngine<TEngine>(Enum ckValue) where TEngine : struct, Enum =>
+        Enum.Parse<TEngine>(ckValue.ToString(), ignoreCase: false);
 }
