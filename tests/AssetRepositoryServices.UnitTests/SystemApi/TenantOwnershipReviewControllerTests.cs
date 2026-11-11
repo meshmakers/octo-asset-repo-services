@@ -3,6 +3,7 @@ using FakeItEasy;
 using FluentAssertions;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.SystemApi.v1.Controllers;
 using Meshmakers.Octo.Communication.Contracts;
+using Meshmakers.Octo.Communication.Contracts.DataTransferObjects.ApiErrors;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb.Repositories;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb.TenantOwnership;
@@ -109,6 +110,8 @@ public class TenantOwnershipReviewControllerTests
 
         var status = result.Should().BeOfType<ObjectResult>().Subject;
         status.StatusCode.Should().Be(500);
-        status.Value!.ToString().Should().NotContain("secret detail");
+        var error = status.Value.Should().BeOfType<InternalServerErrorDto>().Subject;
+        error.Message.Should().NotBeNullOrWhiteSpace();
+        error.Message.Should().NotContain("secret detail");
     }
 }
