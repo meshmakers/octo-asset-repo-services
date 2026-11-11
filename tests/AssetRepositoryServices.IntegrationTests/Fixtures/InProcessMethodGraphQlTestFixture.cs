@@ -160,7 +160,10 @@ public class InProcessMethodGraphQlTestFixture : GraphQlTestFixture
             // AB#7026: every host now registers the authorization filter of the invocation pipeline (band 200), so the
             // harness that plays the resolver calls as an authorized principal, like the gateway does.
             var caller = new ClaimsPrincipal(new ClaimsIdentity(
-                [new Claim("sub", "sub-1"), new Claim("scope", "octo_api"), new Claim("role", HarnessRole)],
+                [
+                    new Claim("sub", "sub-1"), new Claim("scope", "octo_api"), new Claim("role", HarnessRole),
+                    new Claim("tenant_id", "meshtest") // the tenant of the request below (AB#8711)
+                ],
                 "test"));
             using var principalScope = CkMethodPrincipalScope.Begin(CkMethodPrincipal.FromClaimsPrincipal(caller));
             Response = await context.RequestServices!.GetRequiredService<ICkInProcessMethodTransport>()

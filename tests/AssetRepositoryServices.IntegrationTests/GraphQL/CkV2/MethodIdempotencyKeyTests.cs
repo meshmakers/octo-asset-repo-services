@@ -33,13 +33,17 @@ public class MethodIdempotencyKeyTests
         _fixture.Observation.Reset();
     }
 
-    private static ClaimsPrincipal Admin(string sub = "65f0c0ffee65f0c0ffee65f1") => new(new ClaimsIdentity(
-        [new Claim("sub", sub), new Claim("scope", "octo_api openid"), new Claim("role", "AccessTestAdmin")], "test"));
+    // every token carries the tenant it was issued for; in-process calls check it (AB#8711)
+    private ClaimsPrincipal Admin(string sub = "65f0c0ffee65f0c0ffee65f1") => new(new ClaimsIdentity(
+    [
+        new Claim("sub", sub), new Claim("scope", "octo_api openid"), new Claim("role", "AccessTestAdmin"),
+        new Claim("tenant_id", _fixture.GetSystemContext().TenantId)
+    ], "test"));
 
     /// <summary>A client-credentials token (AB#8078): <c>client_id</c> and <c>tenant_id</c>, no <c>sub</c>.</summary>
-    private static ClaimsPrincipal ServiceClient(string clientId = "pipeline-client") => new(new ClaimsIdentity(
+    private ClaimsPrincipal ServiceClient(string clientId = "pipeline-client") => new(new ClaimsIdentity(
     [
-        new Claim("client_id", clientId), new Claim("tenant_id", "meshtest"), new Claim("scope", "octo_api"),
+        new Claim("client_id", clientId), new Claim("tenant_id", _fixture.GetSystemContext().TenantId), new Claim("scope", "octo_api"),
         new Claim("role", "AccessTestAdmin")
     ], "test"));
 
@@ -199,7 +203,8 @@ public class MethodIdempotencyKeyTests
     {
         var rtId = await CreateAccountAsync();
         var stranger = new ClaimsPrincipal(new ClaimsIdentity(
-            [new Claim("sub", "65f0c0ffee65f0c0ffee65f9"), new Claim("scope", "octo_api openid")], "test"));
+            [new Claim("sub", "65f0c0ffee65f0c0ffee65f9"), new Claim("scope", "octo_api openid"), new Claim("tenant_id", _fixture.GetSystemContext().TenantId)],
+            "test"));
 
         var result = await ResetPasswordAsync(rtId, "correct-horse", UniqueKey(), stranger);
 

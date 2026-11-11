@@ -55,14 +55,15 @@ public class GatewayOwnedMethodInProcessTests
         _fixture.Observation.Reset();
     }
 
-    private static ClaimsPrincipal User(string sub, params string[] roles)
+    // every token carries the tenant it was issued for; in-process calls check it (AB#8711)
+    private ClaimsPrincipal User(string sub, params string[] roles)
     {
-        var claims = new List<Claim> { new("sub", sub), new("scope", "octo_api openid") };
+        var claims = new List<Claim> { new("sub", sub), new("scope", "octo_api openid"), new("tenant_id", _fixture.GetSystemContext().TenantId) };
         claims.AddRange(roles.Select(r => new Claim("role", r)));
         return new ClaimsPrincipal(new ClaimsIdentity(claims, "test"));
     }
 
-    private static ClaimsPrincipal Admin() => User("65f0c0ffee65f0c0ffee65f1", "AccessTestAdmin");
+    private ClaimsPrincipal Admin() => User("65f0c0ffee65f0c0ffee65f1", "AccessTestAdmin");
 
     private async Task<string> CreateAccountAsync()
     {

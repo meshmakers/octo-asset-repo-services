@@ -13,6 +13,7 @@ using Meshmakers.Octo.Runtime.Contracts.RepositoryEntities;
 using Meshmakers.Octo.Runtime.Contracts.StreamData;
 using Meshmakers.Octo.Services.Contracts.DistributionEventHub.Methods;
 using Meshmakers.Octo.Services.Methods;
+using Meshmakers.Octo.Services.Methods.Authorization;
 using Newtonsoft.Json.Linq;
 using Xunit;
 
@@ -316,7 +317,8 @@ public class ArchiveLifecycleMethodTests
     [Fact]
     public async Task ATokenOfAnotherTenant_IsMethodForbidden_EvenWithTheRole_AndChangesNothing()
     {
-        // The HTTP tenant gate may run in LogOnly; the archive methods apply the caller-token rule of the bus host themselves.
+        // The HTTP tenant gate may run in LogOnly (this fixture has no HTTP gate at all): the in-process transport refuses the
+        // caller token of another tenant centrally (CkMethodCallerTenantFilter, AB#8711) before the handler runs.
         var archive = await CreateRawArchiveAsync("OtherTenant");
         var foreignUser = UserOf("some-other-tenant", CommonConstants.StreamDataAdminRole);
         var foreignService = new ClaimsPrincipal(new ClaimsIdentity(
@@ -331,7 +333,7 @@ public class ArchiveLifecycleMethodTests
                 $$"""mutation { runtime { {{Raw}} { activate(rtId: "{{archive}}") { invocationId } } } }""", user: caller);
             var error = result.Errors.Should().ContainSingle().Subject;
             error.Code.Should().Be(CkMethodErrorCodes.MethodForbidden);
-            MethodErrorParameters(result).Value<string>("reason").Should().Be(ArchiveMethodCallerTenantGuard.Reason);
+            MethodErrorParameters(result).Value<string>("reason").Should().Be(CkMethodTokenReasons.TenantNotAllowed);
         }
 
         (await SnapshotAsync(archive))!.Status.Should().Be(CkArchiveStatus.Created);

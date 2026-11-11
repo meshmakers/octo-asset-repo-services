@@ -42,14 +42,21 @@ public class AsyncMethodOperationTests
         _fixture.Observation.Reset();
     }
 
-    private static ClaimsPrincipal Caller(string sub = OwnerSub, params string[] extraRoles) => new(new ClaimsIdentity(
-        new[] { new Claim("sub", sub), new Claim("scope", "octo_api openid"), new Claim("role", "AccessTestAdmin") }
+    // every token carries the tenant it was issued for; in-process calls check it (AB#8711)
+    private ClaimsPrincipal Caller(string sub = OwnerSub, params string[] extraRoles) => new(new ClaimsIdentity(
+        new[]
+            {
+                new Claim("sub", sub), new Claim("scope", "octo_api openid"), new Claim("role", "AccessTestAdmin"),
+                new Claim("tenant_id", _fixture.GetSystemContext().TenantId)
+            }
             .Concat(extraRoles.Select(r => new Claim("role", r))), "test"));
 
     /// <summary>A tenant administrator who did not start the operation (no method role needed to read).</summary>
-    private static ClaimsPrincipal TenantAdministrator() => new(new ClaimsIdentity(
-        [new Claim("sub", "65f0c0ffee65f0c0ffee6509"), new Claim("scope", "octo_api"), new Claim("role", "AdminPanelManagement")],
-        "test"));
+    private ClaimsPrincipal TenantAdministrator() => new(new ClaimsIdentity(
+    [
+        new Claim("sub", "65f0c0ffee65f0c0ffee6509"), new Claim("scope", "octo_api"), new Claim("role", "AdminPanelManagement"),
+        new Claim("tenant_id", _fixture.GetSystemContext().TenantId)
+    ], "test"));
 
     private async Task<JObject> ExecuteAsync(string document, ClaimsPrincipal user, bool expectErrors = false)
     {
