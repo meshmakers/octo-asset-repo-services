@@ -792,6 +792,35 @@ public class TenantsControllerTests
     }
 
     [Fact]
+    public async Task Clear_ReturnsTheUniformConflict_WhenTheDatabaseBelongsToAnotherInstance()
+    {
+        // AB#8807: clearing goes through the same ownership guard as delete; its conflict answers 409 like Delete,
+        // not the 400 of a plain persistence failure.
+        const string childTenantId = "child-a";
+        A.CallTo(() => _tenantContext.ClearChildTenantAsync(A<IOctoAdminSession>._, childTenantId))
+            .Throws(TenantException.DatabaseNameNotAvailable("child-a-db"));
+
+        var result = await _controller.Clear(childTenantId);
+
+        var error = result.Should().BeOfType<ConflictObjectResult>().Subject
+            .Value.Should().BeOfType<OperationFailedErrorDto>().Subject;
+        error.Message.Should().Be("Database name 'child-a-db' is not available.");
+    }
+
+    [Fact]
+    public async Task Clear_MapsPersistenceFailureTo400()
+    {
+        const string childTenantId = "child-a";
+        A.CallTo(() => _tenantContext.ClearChildTenantAsync(A<IOctoAdminSession>._, childTenantId))
+            .Throws(TenantException.TenantDoesNotExist(childTenantId));
+
+        var result = await _controller.Clear(childTenantId);
+
+        result.Should().BeOfType<BadRequestObjectResult>().Subject
+            .Value.Should().BeOfType<OperationFailedErrorDto>();
+    }
+
+    [Fact]
     public async Task Detach_MapsTenantNotFoundTo404_WhenTheChildVanishesMidFlight()
     {
         const string childTenantId = "child-a";

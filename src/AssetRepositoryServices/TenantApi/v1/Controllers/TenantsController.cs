@@ -755,6 +755,7 @@ public class TenantsController : ControllerBase
     [Authorize(AssetRepositoryServiceConstants.TenantAdministrationPolicy)]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(OperationFailedErrorDto), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(OperationFailedErrorDto), StatusCodes.Status409Conflict)]
     [ProducesResponseType(typeof(InternalServerErrorDto), StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> Clear([Required] string childTenantId)
     {
@@ -772,6 +773,12 @@ public class TenantsController : ControllerBase
             await tenantContext.ClearChildTenantAsync(session, childTenantId);
             await session.CommitTransactionAsync();
             return Ok();
+        }
+        catch (TenantException e) when (e.IsConflict)
+        {
+            // AB#8807: the engine refuses to clear a database another OctoMesh instance owns or registers with
+            // the uniform conflict of AB#4763 - the same 409 as Delete, Attach and Detach, not a 400.
+            return Conflict(new OperationFailedErrorDto(e.Message));
         }
         catch (TenantException e)
         {
