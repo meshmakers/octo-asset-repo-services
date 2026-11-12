@@ -16,6 +16,8 @@ using Meshmakers.Octo.Runtime.Contracts;
 using Meshmakers.Octo.Runtime.Contracts.Repositories;
 using Meshmakers.Octo.Runtime.Contracts.Repositories.Query;
 using ZstdSharp.Unsafe;
+using GraphQL.Types.Relay.DataObjects;
+using Meshmakers.Octo.Runtime.Contracts.MongoDb.Repositories;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
 
@@ -121,6 +123,28 @@ internal sealed class RtQueryDtoType : ObjectGraphType<RtQueryDto>
         }
     }
 
+    /// <summary>
+    ///     AB#8895: the rows of a simple query that only ask for <c>totalCount</c> are counted on the server by
+    ///     <see cref="ITenantRepository.CountRtEntitiesGraphByTypeAsync" /> without loading any document. Returns null
+    ///     when the item query has to run: another field is selected, or the query aggregates (its count is the
+    ///     number of result rows, not of entities).
+    /// </summary>
+    internal static async Task<Connection<RtSimpleQueryRowDto>?> TryCountRowsAsync<TSource>(
+        IResolveConnectionContext<TSource> context, ITenantRepository tenantRepository, IOctoSession session,
+        RtCkId<CkTypeId> ckTypeId, RtEntityQueryOptions queryOptions, ICollection<NavigationPair> navigationPairs,
+        bool isAggregationQuery)
+    {
+        if (isAggregationQuery || !context.IsTotalCountOnlySelected())
+        {
+            return null;
+        }
+
+        var totalCount = await tenantRepository.CountRtEntitiesGraphByTypeAsync(session, ckTypeId, queryOptions,
+            navigationPairs);
+        return ConnectionUtils.ToConnection(new List<RtSimpleQueryRowDto>(), context, 0,
+            (int)Math.Min(totalCount, int.MaxValue), strictCheck: false);
+    }
+
     private async Task<object?> ResolveRtQueryRowsAsync(IResolveConnectionContext<RtQueryDto?> context)
     {
         try
@@ -207,16 +231,12 @@ internal sealed class RtQueryDtoType : ObjectGraphType<RtQueryDto>
                 queryOptions.UseNavigationFilterMode(NavigationFilterMode.Include);
             }
 
-            // AB#8895: the rows of a simple query that only ask for totalCount are counted on the server without
-            // loading any document (aggregation queries count their result rows, not entities).
-            if (!isAggregationQuery && context.IsTotalCountOnlySelected())
+            var countOnly = await TryCountRowsAsync(context, tenantRepository, sessionAccessor.Session,
+                rtQueryDto.AssociatedCkTypeId, queryOptions, roleIdDirectionPairs, isAggregationQuery);
+            if (countOnly != null)
             {
-                var totalCount = await tenantRepository.CountRtEntitiesGraphByTypeAsync(sessionAccessor.Session,
-                    rtQueryDto.AssociatedCkTypeId, queryOptions, roleIdDirectionPairs);
-
                 _logger.LogDebug("GraphQL query handling returning the total count only");
-                return ConnectionUtils.ToConnection(new List<RtSimpleQueryRowDto>(), context, 0,
-                    (int)Math.Min(totalCount, int.MaxValue), strictCheck: false);
+                return countOnly;
             }
 
             // For aggregation queries, don't pass paging parameters to the database query
