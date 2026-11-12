@@ -9,12 +9,14 @@ using Meshmakers.Octo.Communication.Contracts.DataTransferObjects.ApiErrors;
 using Meshmakers.Octo.ConstructionKit.Contracts.BlueprintCatalogs;
 using Meshmakers.Octo.Runtime.Contracts;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb;
+using Meshmakers.Octo.Runtime.Contracts.MongoDb.Configuration;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb.DisplayRules;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb.TenantLifecycle;
 using Meshmakers.Octo.Services.Contracts.DistributionEventHub.Messages;
 using Meshmakers.Octo.Services.Infrastructure.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Options;
 using MongoDB.Bson;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.TenantApi.v1.Controllers;
@@ -42,6 +44,7 @@ public class TenantsController : ControllerBase
     private readonly ITenantCapabilityStateReader _capabilityStateReader;
     private readonly IDisplayRuleRecomputeService _displayRuleRecomputeService;
     private readonly IScratchTenantMarkerStore _scratchTenantMarkerStore;
+    private readonly IOptions<OctoSystemConfiguration> _systemConfiguration;
 
     /// <summary>
     ///     Constructor
@@ -50,8 +53,10 @@ public class TenantsController : ControllerBase
         ITenantLifecycleStore tenantLifecycleStore, ITenantSetupRetryStore tenantSetupRetryStore,
         ILogger<TenantsController> logger, ITenantCapabilityStateReader capabilityStateReader,
         IDisplayRuleRecomputeService displayRuleRecomputeService,
-        IScratchTenantMarkerStore scratchTenantMarkerStore)
+        IScratchTenantMarkerStore scratchTenantMarkerStore,
+        IOptions<OctoSystemConfiguration> systemConfiguration)
     {
+        _systemConfiguration = systemConfiguration;
         _scratchTenantMarkerStore = scratchTenantMarkerStore;
         _octoService = octoService;
         _distributionEventHubService = distributionEventHubService;
@@ -412,7 +417,12 @@ public class TenantsController : ControllerBase
     ///     Creates a new child tenant, optionally with a blueprint applied
     /// </summary>
     /// <param name="childTenantId">ID of the child tenant to create</param>
-    /// <param name="databaseName">Name of the database</param>
+    /// <param name="databaseName">
+    ///     Name of the database. Optional (AB#8797): without it the database is named after the tenant id, prefixed
+    ///     with the instance's tenant-database prefix when one is configured (<c>System:TenantDatabasePrefix</c>,
+    ///     <see cref="TenantDatabaseNames.DeriveDefault" />). With a prefix configured, an explicit name that does not
+    ///     start with it is refused with the generic conflict (<c>409</c>).
+    /// </param>
     /// <param name="blueprintId">Optional blueprint ID to apply</param>
     /// <param name="scratch">
     ///     Opt-in (AB#7192): create the tenant as a scratch tenant. Only a client-credentials token of this tenant with the
@@ -430,10 +440,16 @@ public class TenantsController : ControllerBase
     [ProducesResponseType(typeof(InternalServerErrorDto), StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> Post(
         [Required] string childTenantId,
-        [Required] string databaseName,
+        string? databaseName = null,
         string? blueprintId = null,
         bool scratch = false)
     {
+        if (string.IsNullOrWhiteSpace(databaseName))
+        {
+            databaseName = TenantDatabaseNames.DeriveDefault(_systemConfiguration.Value.TenantDatabasePrefix,
+                childTenantId);
+        }
+
         // AB#7192: the marker is written BEFORE the tenant exists (identity sets a tenant up the moment it is created and
         // must find it then) and removed again when the create fails. Never touches the marker of a tenant that exists.
         var markerWritten = false;
@@ -739,6 +755,7 @@ public class TenantsController : ControllerBase
     [Authorize(AssetRepositoryServiceConstants.TenantAdministrationPolicy)]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(OperationFailedErrorDto), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(OperationFailedErrorDto), StatusCodes.Status409Conflict)]
     [ProducesResponseType(typeof(InternalServerErrorDto), StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> Clear([Required] string childTenantId)
     {
@@ -756,6 +773,12 @@ public class TenantsController : ControllerBase
             await tenantContext.ClearChildTenantAsync(session, childTenantId);
             await session.CommitTransactionAsync();
             return Ok();
+        }
+        catch (TenantException e) when (e.IsConflict)
+        {
+            // AB#8807: the engine refuses to clear a database another OctoMesh instance owns or registers with
+            // the uniform conflict of AB#4763 - the same 409 as Delete, Attach and Detach, not a 400.
+            return Conflict(new OperationFailedErrorDto(e.Message));
         }
         catch (TenantException e)
         {
@@ -854,7 +877,19 @@ public class TenantsController : ControllerBase
     /// <summary>
     ///     Deletes a child tenant
     /// </summary>
+    /// <remarks>
+    ///     A delete whose tenant database belongs to another OctoMesh instance on the same MongoDB server (its
+    ///     ownership marker names another instance, or another instance's system database registers it) is refused
+    ///     with the uniform 409 "Database name '...' is not available." before anything is deleted; the owner is in
+    ///     the server log only (AB#8807, AB#4763).
+    /// </remarks>
     /// <param name="childTenantId">ID of the child tenant</param>
+    /// <param name="overrideForeignOwnership">
+    ///     Deliberate administrator override of that refusal for a database that only carries the marker of another
+    ///     instance (an orphaned marker: no other instance registers it): the delete drops it, and the service logs
+    ///     the override as a warning naming the owner. Another instance's system database and a database another
+    ///     instance still registers are never dropped. Default false.
+    /// </param>
     [HttpDelete]
     [Authorize(AssetRepositoryServiceConstants.TenantAdministrationPolicy)]
     [ProducesResponseType(StatusCodes.Status200OK)]
@@ -862,7 +897,8 @@ public class TenantsController : ControllerBase
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(typeof(OperationFailedErrorDto), StatusCodes.Status409Conflict)]
     [ProducesResponseType(typeof(InternalServerErrorDto), StatusCodes.Status500InternalServerError)]
-    public async Task<IActionResult> Delete([Required] string childTenantId)
+    public async Task<IActionResult> Delete([Required] string childTenantId,
+        [FromQuery] bool overrideForeignOwnership = false)
     {
         var normalizedTenantId = childTenantId.NormalizeString();
         try
@@ -951,9 +987,34 @@ public class TenantsController : ControllerBase
             // tables of its archives go with the database (AB#4255). A restore over an existing tenant
             // only swaps the database and keeps them.
             var deletion = await tenantContext.DeleteChildTenantMetadataAsync(session, childTenantId,
-                dropStreamData: true);
+                dropStreamData: true, overrideForeignOwnership: overrideForeignOwnership);
+
+            // AB#8807: the tombstone holds the database name and the foreign marker the metadata guard granted the
+            // ownership override for BEFORE the metadata deletion commits. A delete interrupted between that commit
+            // and the drop is then finished by the settle sweep with the same decision - for exactly that marker: the
+            // engine re-checks at every drop and refuses a database another instance re-created under the same name. Should the commit fail, the tenant stays registered and the sweep rolls the tombstone back.
+            await _tenantLifecycleStore.EnsureDeletingAsync(normalizedTenantId, deletion.DatabaseName,
+                deletion.CorrelationId, deletion.OverriddenForeignMarker);
             await session.CommitTransactionAsync();
-            await tenantContext.DropTenantDatabaseAsync(deletion, childTenantId);
+            try
+            {
+                await tenantContext.DropTenantDatabaseAsync(deletion, childTenantId);
+            }
+            catch (TenantException e) when (e.IsDatabaseDropPending)
+            {
+                // AB#8807: the metadata deletion is committed, but the database belongs to another OctoMesh instance
+                // by now, so the engine refused the drop and left the database untouched. The tenant record is gone;
+                // the tombstone stays and the settle sweep retries the drop while it is pending. Uniform conflict
+                // text for the refusal itself (AB#4763); the reason is in the engine's log.
+                _logger.LogWarning(
+                    "Deleted the records of tenant '{TenantId}', but the drop of its database was refused; the delete " +
+                    "stays pending (tombstone) until the database conflict is resolved", normalizedTenantId);
+                return Conflict(new OperationFailedErrorDto(
+                    $"{e.Message} Tenant '{childTenantId}' was deleted, but its database was not dropped and is " +
+                    "left untouched. The deletion stays pending until the database conflict is resolved; until " +
+                    "then the tenant id cannot be used again."));
+            }
+
             await RemoveScratchMarkerAsync(normalizedTenantId);
 
             // Take the tenant's pending setup retries with it. Otherwise every service's retry loop
@@ -1004,6 +1065,12 @@ public class TenantsController : ControllerBase
             }
 
             return Ok();
+        }
+        catch (TenantException e) when (e.IsConflict)
+        {
+            // AB#8807: the database belongs to another OctoMesh instance. The engine refused before the record
+            // deletion, so the tenant is still fully registered and the settle sweep rolls the tombstone back.
+            return Conflict(new OperationFailedErrorDto(e.Message));
         }
         catch (TenantException e)
         {

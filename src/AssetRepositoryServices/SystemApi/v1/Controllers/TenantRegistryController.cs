@@ -3,13 +3,14 @@ using Duende.IdentityModel;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.Security;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects.ApiErrors;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb;
+using Meshmakers.Octo.Runtime.Contracts.MongoDb.TenantOwnership;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.SystemApi.v1.Controllers;
 
 /// <summary>
-///     Repairs the system tenant registry (AB#6971, AB#6941).
+///     Repairs the system tenant registry (AB#6971, AB#6941) and reviews tenant-database ownership (AB#8796).
 /// </summary>
 [Authorize(AuthenticationSchemes = OidcConstants.AuthenticationSchemes.AuthorizationHeaderBearer)]
 [Route("system/v{version:apiVersion}/tenants")]
@@ -86,6 +87,129 @@ public class TenantRegistryController : ControllerBase
                 new InternalServerErrorDto("The tenant registry reconcile failed; see the service log."));
         }
     }
+
+    // POST system/v1/tenants/review-ownership?stamp=false
+    /// <summary>
+    ///     Lists this instance's tenant databases whose ownership is not unambiguous on the shared MongoDB server:
+    ///     no ownership marker, the marker of another OctoMesh instance, or a registration in another instance's
+    ///     system database as well. With <c>stamp=true</c> the marker of this instance is written only for the
+    ///     unambiguous databases (no marker, registered only here); every other database is left untouched and
+    ///     stays listed. <b>Listing is the default</b>: nothing is written. Idempotent: a second call stamps nothing.
+    /// </summary>
+    /// <remarks>
+    ///     A double registration is resolved by detaching the tenant in the instance that must not have it
+    ///     (never by deleting it: delete drops the shared database). Same access rule as the registry reconcile:
+    ///     system read-write scope, signed in to the system tenant and, with a user token, the role
+    ///     <c>AdminPanelManagement</c> (<see cref="SystemAdministratorGuard" />).
+    /// </remarks>
+    /// <param name="stamp">False (default): list only. True: stamp the unambiguous unmarked databases.</param>
+    [HttpPost("review-ownership")]
+    [Authorize(AssetRepositoryServiceConstants.SystemAssetApiReadWritePolicy)]
+    [ProducesResponseType(typeof(TenantOwnershipReviewReportDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(InternalServerErrorDto), StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> ReviewOwnership([FromQuery] bool stamp = false)
+    {
+        if (!SystemAdministratorGuard.IsSystemAdministrator(User, _systemContext))
+        {
+            return Forbid();
+        }
+
+        try
+        {
+            using var session = await _systemContext.GetAdminSessionAsync();
+            session.StartTransaction();
+            TenantOwnershipReviewResult result;
+            try
+            {
+                result = await _systemContext.ReviewTenantOwnershipAsync(session, stamp);
+            }
+            catch
+            {
+                await session.AbortTransactionAsync();
+                throw;
+            }
+
+            await session.CommitTransactionAsync();
+
+            _logger.LogInformation("Tenant ownership review: {Summary}", result.Summary);
+            return Ok(TenantOwnershipReviewReportDto.From(result));
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogError(ex, "Tenant ownership review failed");
+            return StatusCode(StatusCodes.Status500InternalServerError,
+                new InternalServerErrorDto("The tenant ownership review failed; see the service log."));
+        }
+    }
+}
+
+/// <summary>
+///     Report of <c>POST system/v1/tenants/review-ownership</c> (AB#8796).
+/// </summary>
+public class TenantOwnershipReviewReportDto
+{
+    /// <summary>The system database (identity) of the instance that ran the review.</summary>
+    public required string SystemDatabaseName { get; init; }
+
+    /// <summary>True when the review ran with stamp.</summary>
+    public bool Stamp { get; init; }
+
+    /// <summary>Tenant databases checked.</summary>
+    public int Checked { get; init; }
+
+    /// <summary>Databases owned unambiguously by this instance (not listed).</summary>
+    public int Owned { get; init; }
+
+    /// <summary>Registry rows whose database does not exist (skipped).</summary>
+    public int MissingDatabases { get; init; }
+
+    /// <summary>The listed databases.</summary>
+    public required IReadOnlyList<TenantOwnershipReviewEntryDto> Entries { get; init; }
+
+    /// <summary>One-line summary.</summary>
+    public required string Summary { get; init; }
+
+    internal static TenantOwnershipReviewReportDto From(TenantOwnershipReviewResult result) => new()
+    {
+        SystemDatabaseName = result.SystemDatabaseName,
+        Stamp = result.Stamp,
+        Checked = result.Checked,
+        Owned = result.Owned,
+        MissingDatabases = result.MissingDatabases,
+        Entries = result.Entries.Select(e => new TenantOwnershipReviewEntryDto
+        {
+            TenantId = e.TenantId,
+            DatabaseName = e.DatabaseName,
+            Issue = e.Issue.ToString(),
+            MarkerOwnerSystemDatabaseName = e.MarkerOwnerSystemDatabaseName,
+            RegisteringSystemDatabases = e.RegisteringSystemDatabases,
+            Stamped = e.Stamped
+        }).ToList(),
+        Summary = result.Summary
+    };
+}
+
+/// <summary>A tenant database listed by the ownership review.</summary>
+public class TenantOwnershipReviewEntryDto
+{
+    /// <summary>Tenant id in this instance.</summary>
+    public required string TenantId { get; init; }
+
+    /// <summary>Tenant database name.</summary>
+    public required string DatabaseName { get; init; }
+
+    /// <summary><c>Unmarked</c>, <c>MarkedByOtherInstance</c> or <c>RegisteredByOtherInstance</c>.</summary>
+    public required string Issue { get; init; }
+
+    /// <summary>The system database the ownership marker names, or null without marker.</summary>
+    public string? MarkerOwnerSystemDatabaseName { get; init; }
+
+    /// <summary>All system databases on the server that register the database.</summary>
+    public required IReadOnlyList<string> RegisteringSystemDatabases { get; init; }
+
+    /// <summary>True when this call wrote the marker of this instance.</summary>
+    public bool Stamped { get; init; }
 }
 
 /// <summary>
