@@ -2,7 +2,7 @@
 
 One query over a CK type with large attributes (for example `Basic.Energy/EdaMessage` with ~72 KB of raw XML per entity) that
 loads every matching entity can exhaust the memory of the asset repository and cause 503s for every tenant (Feature AB#8793).
-The guard finds such queries at the API boundary and, once switched to `Enforce`, refuses them before they load data.
+The guard finds such queries at the API boundary and, once switched to `Enforce`, refuses them before the entities are read.
 
 ## Scope: the API boundary only
 
@@ -30,15 +30,18 @@ Not covered:
 
 ## Classification
 
-A query is **unbounded** when it selects `items`, `edges` or `nodes` (aliases and fragments included) and
+A query is **bounded** when it selects no `items`, `edges` or `nodes` (aliases and fragments included; for example
+`totalCount` only), when it is an aggregation or grouping aggregation query (persisted or transient), when `first` is at most
+`MaxPageSize`, or when it is a key lookup (`rtId` / `rtIds`) with at most `MaxPageSize` keys - a key lookup within the limit
+is bounded whatever `first` says, also with `first` above `MaxPageSize` (no `FirstAboveLimit`, no metric).
 
-- has no `first`, or
-- has `first` above `MaxPageSize`, or
-- is a key lookup (`rtId` / `rtIds`) without a bounding `first` and carries more keys than `MaxPageSize`.
+Every other query is **unbounded** (`reason`):
 
-It is **bounded** when `first` is at most `MaxPageSize`, when it is a key lookup with at most `MaxPageSize` keys, when it
-selects no items (for example `totalCount` only), or when it is an aggregation or grouping aggregation query (persisted or
-transient). Code: `RuntimeQueryGuard.Classify`.
+- `NoFirst`: items selected, no `first`, no key lookup;
+- `FirstAboveLimit`: `first` above `MaxPageSize`, no key lookup;
+- `TooManyKeys`: a key lookup with more keys than `MaxPageSize` and no `first` within the limit.
+
+Code: `RuntimeQueryGuard.Classify` (checks in this order: no items, aggregation, `first` within the limit, key lookup).
 
 ## Configuration
 
@@ -55,7 +58,7 @@ The options are read per query (`IOptionsMonitor`).
 |---|---|
 | `Off` | runs; no check, no log, no metric |
 | `Warn` | runs as before; one warning per query and the metric |
-| `Enforce` | refused before any database call with `ASSET1007`; warning and metric as in `Warn`; never capped |
+| `Enforce` | refused with `ASSET1007` before the entities or rows are read (for `runtime.runtimeQuery` the stored query definition is loaded first); warning and metric as in `Warn`; never capped |
 
 `Warn` is the default so that a deployment without configuration shows who sends unbounded queries without breaking them.
 `Enforce` is switched on per cluster only after the caller inventory (AB#8899) is closed (Slice 2, AB#8903).
@@ -72,7 +75,8 @@ error id 3f2c… (AB#8898)
 
 Counter `octo.asset.runtime_query.unbounded` (Prometheus / Dash0 PromQL: `octo_asset_runtime_query_unbounded_total`) on the
 meter `Meshmakers.Octo.AssetRepository`, labels `tenant`, `ck_type`, `client_id` (`unknown` without a client id) and `mode`
-(`warn` / `enforce`).
+(`warn` / `enforce`). For `runtime.runtimeEntities` the `ck_type` label is the `ckId` argument only when it is a CK type of
+the tenant, otherwise `unknown`, so a caller cannot create a series per input; the log line keeps the raw value.
 
 ## Error ASSET1007
 

@@ -13,6 +13,7 @@ using Meshmakers.Octo.Backend.AssetRepositoryServices.Observability;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
 using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.ConstructionKit.Contracts.DataTransferObjects;
+using Meshmakers.Octo.ConstructionKit.Contracts.Services;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -269,6 +270,31 @@ public sealed class RuntimeQueryGuardTests : IDisposable
             RuntimeQueryEntryPoint.GenericEntities);
 
         act.Should().Throw<UnboundedRuntimeQueryException>().Which.CkTypeId.Should().Be(CkTypeId);
+    }
+
+    [Fact]
+    public void Warn_GenericEntryPointLabelsATypeOutsideTheCkCacheAsUnknown()
+    {
+        _options.Mode = RuntimeQueryGuardMode.Warn;
+
+        // No ICkCacheService reachable: the caller's ckId must not become a metric series of its own.
+        _guard.Check(Context(RuntimeQueryEntryPoint.GenericEntities, first: null), RuntimeQueryEntryPoint.GenericEntities);
+
+        _measurements.Should().ContainSingle().Which.Tags.Should()
+            .Contain(RuntimeQueryGuardMetrics.CkTypeLabel, RuntimeQueryGuardMetrics.UnknownCkType);
+        _logger.Entries.Should().ContainSingle().Which.Message.Should().Contain(CkTypeId, "the log keeps the raw value");
+    }
+
+    [Fact]
+    public void IsKnownCkType_OnlyForATypeOfTheCkCache()
+    {
+        var ckCache = A.Fake<ICkCacheService>();
+        A.CallTo(() => ckCache.GetRtCkType(TenantId, A<RtCkId<CkTypeId>>._))
+            .Throws(new KeyNotFoundException("unknown type"));
+
+        RuntimeQueryGuard.IsKnownCkType(null, TenantId, CkTypeId).Should().BeFalse();
+        RuntimeQueryGuard.IsKnownCkType(ckCache, TenantId, CkTypeId).Should().BeFalse();
+        RuntimeQueryGuard.IsKnownCkType(ckCache, TenantId, "not a ck type id").Should().BeFalse();
     }
 
     // --- Which fields the schema visitor wraps ---

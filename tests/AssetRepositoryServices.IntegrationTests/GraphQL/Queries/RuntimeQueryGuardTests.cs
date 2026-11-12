@@ -225,6 +225,20 @@ public sealed class RuntimeQueryGuardTests : IDisposable
     }
 
     [Fact]
+    public async Task Warn_GenericQueryOnATypeThatDoesNotExistIsCountedAsUnknownType()
+    {
+        _options.Mode = RuntimeQueryGuardMode.Warn;
+
+        // The caller chooses ckId: only a CK type of the tenant may become a ck_type series (bounded cardinality).
+        await _fixture.ExecuteGraphQlAsync(
+            """{ runtime { runtimeEntities(ckId: "AB8898Probe/DoesNotExist-1") { items { rtId } } } }""",
+            user: Principal());
+
+        Measurements(RuntimeQueryGuardMetrics.UnknownCkType).Should().ContainSingle();
+        Measurements("AB8898Probe/DoesNotExist").Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task Enforce_InternalEngineCallWithoutFirstIsNeitherRefusedNorCounted()
     {
         _options.Mode = RuntimeQueryGuardMode.Enforce;

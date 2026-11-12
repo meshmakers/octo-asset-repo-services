@@ -1018,7 +1018,8 @@ CK v2 test model's runtime types); the Studio's own `schema.graphql` stays an in
 resolvers of `runtime.runtimeEntities`, `runtime.<CkType>` (metadata `CkId`), `RtQuery.rows` and `RtTransientQuery.rows`;
 `RuntimeQueryGuard.Check` runs before the resolver. Unbounded = `items`/`edges`/`nodes` selected and no `first`, `first` above
 `RuntimeQueryGuard:MaxPageSize` (default 1000), or a key lookup with more keys than that (`RuntimeQueryGuard.Classify`);
-totalCount-only, aggregation queries and key lookups within the limit are bounded. `RuntimeQueryGuard:Mode` `Off` / `Warn`
+totalCount-only, aggregation queries and key lookups within the limit are bounded (a key lookup within the limit also with
+`first` above the limit). The `ck_type` label of `runtimeEntities` is the argument only for a CK type of the tenant, else `unknown`. `RuntimeQueryGuard:Mode` `Off` / `Warn`
 (default: warning + counter `octo.asset.runtime_query.unbounded`) / `Enforce` (`ASSET1007`, never capped). In-process
 `ITenantRepository` calls are never checked. Do not add a guard call inside a resolver: wrap the field in the visitor instead.
 Details: `docs/runtime-query-guard.md`.

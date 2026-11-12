@@ -20,8 +20,8 @@ public enum RuntimeQueryGuardMode
     Warn = 1,
 
     /// <summary>
-    ///     An unbounded query is refused before any database call with the GraphQL error code <c>ASSET1007</c>; logged and
-    ///     counted as in <see cref="Warn" />. The result is never capped silently.
+    ///     An unbounded query is refused with the GraphQL error code <c>ASSET1007</c> before the entities are read; logged
+    ///     and counted as in <see cref="Warn" />. The result is never capped silently.
     /// </summary>
     Enforce = 2
 }
@@ -58,8 +58,9 @@ public class RuntimeQueryGuardOptions
 
     /// <summary>
     ///     The largest page a query may request with <c>first</c>, and the largest number of keys (<c>rtId</c> /
-    ///     <c>rtIds</c>) a key lookup without <c>first</c> may carry. A query that selects items with no <c>first</c>, or
-    ///     with <c>first</c> above this value, is unbounded. Default 1000; values below 1 fall back to the default.
+    ///     <c>rtIds</c>) a bounded key lookup may carry. A query that selects items with no <c>first</c>, or with
+    ///     <c>first</c> above this value, is unbounded unless it is a key lookup within this value. Default 1000; values
+    ///     below 1 fall back to the default.
     /// </summary>
     public int MaxPageSize { get; set; } = DefaultMaxPageSize;
 

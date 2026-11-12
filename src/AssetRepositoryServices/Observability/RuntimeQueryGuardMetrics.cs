@@ -13,6 +13,8 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.Observability;
 ///     integration-test provider) has its own instruments. Labels: <c>tenant</c>, <c>ck_type</c>, <c>client_id</c> (the
 ///     OAuth client id of the caller, <c>unknown</c> without one; never a token or a user name) and <c>mode</c>. All four
 ///     are bounded by the tenants, CK types and clients of an installation.
+///     <c>ck_type</c> of <c>runtime.runtimeEntities</c> is the caller's argument only when it is a CK type of the tenant,
+///     otherwise <see cref="UnknownCkType" />.
 /// </remarks>
 internal sealed class RuntimeQueryGuardMetrics
 {
@@ -33,6 +35,12 @@ internal sealed class RuntimeQueryGuardMetrics
 
     /// <summary>Label value of <see cref="ClientIdLabel" /> when the caller carries no client id.</summary>
     public const string UnknownClientId = "unknown";
+
+    /// <summary>
+    ///     Label value of <see cref="CkTypeLabel" /> when the CK type id given to <c>runtime.runtimeEntities</c> is no CK
+    ///     type of the tenant (malformed or unknown), so a caller cannot create a series per input.
+    /// </summary>
+    public const string UnknownCkType = "unknown";
 
     private readonly Counter<long> _unbounded;
 

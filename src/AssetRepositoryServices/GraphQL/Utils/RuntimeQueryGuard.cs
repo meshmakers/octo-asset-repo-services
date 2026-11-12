@@ -5,6 +5,7 @@ using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Methods;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.Observability;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
 using Meshmakers.Octo.ConstructionKit.Contracts;
+using Meshmakers.Octo.ConstructionKit.Contracts.Services;
 using Microsoft.Extensions.Options;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Utils;
@@ -115,8 +116,9 @@ internal sealed class UnboundedRuntimeQueryException : ExecutionError
 /// <summary>
 ///     The unbounded runtime-entity query guard (AB#8898, Feature AB#8793 Slice 1): a query at the GraphQL API boundary
 ///     that selects items without <c>first</c>, or with <c>first</c> above
-///     <see cref="RuntimeQueryGuardOptions.MaxPageSize" />, is logged and counted (<c>Warn</c>) or refused before any
-///     database call (<c>Enforce</c>), staged by <see cref="RuntimeQueryGuardOptions.Mode" />.
+///     <see cref="RuntimeQueryGuardOptions.MaxPageSize" /> (and is no key lookup within that limit), is logged and counted
+///     (<c>Warn</c>) or refused before the entities are read (<c>Enforce</c>), staged by
+///     <see cref="RuntimeQueryGuardOptions.Mode" />.
 /// </summary>
 /// <remarks>
 ///     <para>
@@ -210,7 +212,7 @@ internal sealed class RuntimeQueryGuard
         var mode = options.Mode == RuntimeQueryGuardMode.Enforce ? "enforce" : "warn";
         var errorId = Guid.NewGuid().ToString("N");
 
-        _metrics.RecordUnbounded(tenantId, ckTypeId, clientId, mode);
+        _metrics.RecordUnbounded(tenantId, GetMetricCkTypeId(context, entryPoint, tenantId, ckTypeId), clientId, mode);
 
         // This line is the caller inventory the switch to Enforce is decided on (AB#8899).
         _logger.LogWarning(
@@ -290,6 +292,39 @@ internal sealed class RuntimeQueryGuard
             _ => null
         };
         return string.IsNullOrEmpty(ckTypeId) ? "unknown" : ckTypeId;
+    }
+
+    // The ck_type label must stay bounded: the generic entry point takes the CK type id from the caller, so only a type
+    // that exists in the tenant's CK cache becomes a series; anything else is "unknown" (the raw value is in the log).
+    // The other entry points take the id from the schema or the stored query.
+    private static string GetMetricCkTypeId(IResolveFieldContext context, RuntimeQueryEntryPoint entryPoint,
+        string tenantId, string ckTypeId)
+    {
+        if (entryPoint != RuntimeQueryEntryPoint.GenericEntities)
+        {
+            return ckTypeId;
+        }
+
+        return IsKnownCkType(context.RequestServices?.GetService<ICkCacheService>(), tenantId, ckTypeId)
+            ? ckTypeId
+            : RuntimeQueryGuardMetrics.UnknownCkType;
+    }
+
+    internal static bool IsKnownCkType(ICkCacheService? ckCacheService, string tenantId, string ckTypeId)
+    {
+        if (ckCacheService == null)
+        {
+            return false;
+        }
+
+        try
+        {
+            return ckCacheService.GetRtCkType(tenantId, new RtCkId<CkTypeId>(ckTypeId)) != null;
+        }
+        catch (Exception e) when (e is CkCacheException or KeyNotFoundException or ArgumentException or FormatException)
+        {
+            return false;
+        }
     }
 
     // The generic entry point takes the CK type id as a string; write it in the same form as the typed entry points

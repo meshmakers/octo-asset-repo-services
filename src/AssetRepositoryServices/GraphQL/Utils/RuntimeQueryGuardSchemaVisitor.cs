@@ -10,7 +10,7 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Utils;
 ///     points when a tenant schema is initialized: <c>runtime.runtimeEntities</c>, every generated
 ///     <c>runtime.&lt;CkType&gt;</c> connection, <c>RtQuery.rows</c> (persisted queries) and <c>RtTransientQuery.rows</c>
 ///     (transient queries). Only these fields are wrapped, so every other field resolves without overhead, and the guard
-///     runs before the resolver, i.e. before any database call for the entities.
+///     runs before the resolver, i.e. before the entities or rows are read.
 /// </summary>
 /// <remarks>
 ///     <c>runtime.byInterface</c> is bounded by its required <c>take</c> (at most 1000, AB#6932) and is not wrapped.
