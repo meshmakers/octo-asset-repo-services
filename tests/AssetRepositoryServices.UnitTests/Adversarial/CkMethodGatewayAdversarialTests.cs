@@ -1,3 +1,4 @@
+using Meshmakers.Octo.Services.Infrastructure.Configuration;
 using System.Runtime.CompilerServices;
 using System.Security.Claims;
 using System.Text;
@@ -104,7 +105,8 @@ public class CkMethodGatewayAdversarialTests
         Authorization = authorization
     };
 
-    private ICkMethodGateway Gateway(CkMethodAuthorizationDto? authorization, bool knownMethod = true)
+    private ICkMethodGateway Gateway(CkMethodAuthorizationDto? authorization, bool knownMethod = true,
+        TenantAuthorizationOptions? tenantOptions = null)
     {
         var timeout = A.Fake<ICkMethodTimeoutResolver>();
         A.CallTo(() => timeout.GetDeadlineUtc(A<string>._, A<string>._, A<string>._))
@@ -113,10 +115,11 @@ public class CkMethodGatewayAdversarialTests
         return new CkMethodGateway(
             new CkMethodAuthorizationEvaluator(Options.Create(new CkMethodAuthorizationOptions())),
             new Source(knownMethod ? Definition(authorization) : null), timeout, _dispatcher,
-            A.Fake<ICkMethodAuditRecorder>(), loggers.CreateLogger<CkMethodGateway>());
+            A.Fake<ICkMethodAuditRecorder>(), loggers.CreateLogger<CkMethodGateway>(),
+            tenantOptions: tenantOptions == null ? null : Options.Create(tenantOptions));
     }
 
-    private static ClaimsPrincipal User(string sub, string[] roles, string scope = "octo_api openid", string? tenant = null)
+    private static ClaimsPrincipal User(string sub, string[] roles, string scope = "octo_api openid", string? tenant = Tenant)
     {
         var claims = new List<Claim> { new("sub", sub), new("scope", scope) };
         if (tenant != null)
@@ -172,7 +175,7 @@ public class CkMethodGatewayAdversarialTests
         var user = new ClaimsPrincipal(new ClaimsIdentity(
         [
             new Claim("sub", Other), new Claim("scope", "octo_api"), new Claim("role", "AssetManagement"),
-            new Claim("caller", "{\"roles\":[\"AdminPanelManagement\"]}"), new Claim("roles_override", "AdminPanelManagement")
+            new Claim("tenant_id", Tenant), new Claim("caller", "{\"roles\":[\"AdminPanelManagement\"]}"), new Claim("roles_override", "AdminPanelManagement")
         ], "test"));
 
         var response = await InvokeAsync(gateway, Call(user));
@@ -184,19 +187,73 @@ public class CkMethodGatewayAdversarialTests
         Assert.Equal(["AssetManagement"], request.Caller.Roles);
     }
 
+    /// <summary>
+    ///     AB#8776 (closes limitation L-3): the gateway compares the token tenant with the call's tenant FIRST. A token of another
+    ///     tenant gets the same METHOD_FORBIDDEN / tenant-not-allowed for an existing target, a missing target, a missing role,
+    ///     invalid parameters and an unknown method, nothing is read and nothing dispatched - independent of the HTTP gate's mode.
+    /// </summary>
     [Fact]
-    public async Task C02c_Limitation_TheGatewayDoesNotCompareTheTokenTenantWithTheRouteTenant_TheHttpGateDoes()
+    public async Task C02c_AForeignTenantToken_IsTenantNotAllowed_ForEveryCall_AndLearnsNothing()
     {
         var gateway = Gateway(new CkMethodAuthorizationDto { Roles = ["AssetManagement"] });
-        var user = User(Other, ["AssetManagement"], tenant: "othertenant");
+        var withRole = User(Other, ["AssetManagement"], tenant: "othertenant");
+        var withoutRole = User(Other, ["Nobody"], tenant: "othertenant");
+        var noTenant = User(Other, ["AssetManagement"], tenant: null);
 
-        var response = await InvokeAsync(gateway, Call(user));
+        var responses = new[]
+        {
+            await InvokeAsync(gateway, Call(withRole, Owner)),
+            await InvokeAsync(gateway, Call(withRole, Missing)),
+            await InvokeAsync(gateway, Call(withoutRole, Owner)),
+            await InvokeAsync(gateway, Call(withRole, Owner, parameters: "{\"newPassword\":42}")),
+            await InvokeAsync(gateway, Call(withRole, Owner, parameters: "not json")),
+            await InvokeAsync(Gateway(new CkMethodAuthorizationDto { Roles = ["AssetManagement"] }, knownMethod: false),
+                Call(withRole, Owner)),
+            await InvokeAsync(gateway, Call(noTenant, Owner))
+        };
 
-        Record("C02c", "LIMITATION L-3: token tenant 'othertenant', call for tenant 'meshtest' at the gateway (the HTTP tenant gate in mode Enforce is the barrier, see BearerTokenAttackTests C02/C02b)", response);
-        Assert.True(response.Success);
-        var request = Assert.Single(_dispatched);
-        Assert.Equal(Tenant, request.TenantId);
-        Assert.Equal("othertenant", request.Caller!.TenantId);
+        foreach (var response in responses)
+        {
+            Record("C02c", "token of tenant 'othertenant' (or none), call for tenant 'meshtest'", response);
+            Assert.Equal(CkMethodErrorCodes.MethodForbidden, response.Error!.Code);
+            Assert.Equal(CkMethodTokenReasons.TenantNotAllowed, response.Error.Parameters[CkMethodErrorParameters.Reason]);
+        }
+
+        Assert.Single(responses.Select(r => JsonSerializer.Serialize(r.Error)).Distinct());
+        Assert.Equal(0, _target.Reads);
+        Assert.Empty(_dispatched);
+    }
+
+    [Fact]
+    public async Task C02d_OwnTenantTokens_AndAllowListedServiceClients_AreUnchanged()
+    {
+        var options = new TenantAuthorizationOptions();
+        options.CrossTenantServiceClientIds.Add("platform-service");
+        var gateway = Gateway(new CkMethodAuthorizationDto { Roles = ["AssetManagement"] }, tenantOptions: options);
+        var allowListed = new ClaimsPrincipal(new ClaimsIdentity(
+        [
+            new Claim("client_id", "platform-service"), new Claim("scope", "octo_api"), new Claim("role", "AssetManagement"),
+            new Claim("tenant_id", "othertenant")
+        ], "test"));
+        var foreignService = new ClaimsPrincipal(new ClaimsIdentity(
+        [
+            new Claim("client_id", "other-service"), new Claim("scope", "octo_api"), new Claim("role", "AssetManagement"),
+            new Claim("tenant_id", "othertenant")
+        ], "test"));
+
+        var own = await InvokeAsync(gateway, Call(User(Other, ["AssetManagement"], tenant: "MESHTEST")));
+        var service = await InvokeAsync(gateway, Call(allowListed));
+        var refused = await InvokeAsync(gateway, Call(foreignService));
+        var ownWithoutRole = await InvokeAsync(gateway, Call(User(Other, ["Nobody"])));
+
+        Assert.True(own.Success, "the token tenant is compared case-insensitively");
+        Assert.True(service.Success, "a client on TenantAuthorization:CrossTenantServiceClientIds passes");
+        Assert.Equal(CkMethodTokenReasons.TenantNotAllowed, refused.Error!.Parameters[CkMethodErrorParameters.Reason]);
+        Assert.Equal(CkMethodErrorCodes.MethodForbidden, ownWithoutRole.Error!.Code);
+        Assert.False(ownWithoutRole.Error.Parameters.ContainsKey(CkMethodErrorParameters.Reason) &&
+                     ownWithoutRole.Error.Parameters[CkMethodErrorParameters.Reason] == CkMethodTokenReasons.TenantNotAllowed,
+            "an own-tenant caller without the role gets the role refusal as before");
+        Assert.Equal(2, _dispatched.Count);
     }
 
     [Fact]

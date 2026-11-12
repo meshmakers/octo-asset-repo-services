@@ -1163,7 +1163,11 @@ an error does not null the whole `runtime` object.
 
 `GraphQL/Methods/CkMethodFieldResolver` is the resolver of every generated method field. It does no authorization or loading itself: it builds a
 `CkMethodGatewayCall` and lets `ICkMethodGateway` decide. **Order of checks (owned by the gateway):** authenticate (no authenticated principal = no
-principal, default-deny) -> authorize (roles any-of, `allowSelf` on the target id **as the client sent it**, declared scopes, `octo_api` always,
+principal, default-deny) -> **caller tenant** (AB#8776: a token issued for another tenant, or a user token without `tenant_id`, is
+`METHOD_FORBIDDEN` / `tenant-not-allowed` for every call, before anything below, so it never learns whether the method or the target
+exists; `CkMethodCallerTenantCheck` of common-services, the AB#8711 rule incl. `TenantAuthorization:CrossTenantServiceClientIds`,
+independent of the HTTP gate's mode; tests `CkMethodGatewayAdversarialTests.C02c/C02d`,
+`ArchiveLifecycleMethodTests.ATokenOfAnotherTenant_LearnsNothing...`) -> authorize (roles any-of, `allowSelf` on the target id **as the client sent it**, declared scopes, `octo_api` always,
 default-deny) -> **parameter size** (`METHOD_PARAMETERS_TOO_LARGE`, `Methods:MaxParametersBytes`, default 1 MiB, UTF-8 bytes of the parameter JSON, exactly the limit passes; `CkMethodParameterLimit` of common-services, AB#7665) -> load the target and check the data permission (`CkMethodTargetAccessCheck` callback, AB#7037) -> validate the parameters -> dispatch -> map the envelope. The mapper (`CkMethodResponseMapper`) applies the host's allow-list (AB#7665, F-3): platform catalog codes and codes the method declares pass, any other code (also an unknown `METHOD_` code) becomes `METHOD_HANDLER_FAILED` with the correlation id (invocation id) and the original code is logged, never returned.
 
 - **Same answer whether the target exists or not.** A caller who fails the authorization gets `METHOD_FORBIDDEN` (code, message, `parameters`, `errors[].extensions.code`

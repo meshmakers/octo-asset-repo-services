@@ -1,3 +1,4 @@
+using Meshmakers.Octo.Services.Infrastructure.Configuration;
 using System.Diagnostics;
 using System.Security.Claims;
 using Meshmakers.Octo.ConstructionKit.Contracts.DataTransferObjects;
@@ -40,7 +41,8 @@ public sealed record CkMethodGatewayCall(
 ///     loaded</b>, whether a caller may call a method, and then dispatches through <see cref="ICkMethodDispatcher" />.
 /// </summary>
 /// <remarks>
-///     Order: authorize with the shared <see cref="ICkMethodAuthorizationEvaluator" /> (the same instance and rules as the
+///     Order: refuse a caller token of another tenant (AB#8776, <c>CkMethodCallerTenantCheck</c>, <c>METHOD_FORBIDDEN</c> /
+///     <c>tenant-not-allowed</c> for every call, before anything below), then authorize with the shared <see cref="ICkMethodAuthorizationEvaluator" /> (the same instance and rules as the
 ///     pipeline filter at band 200: roles, <c>allowSelf</c> on the id from the request, scopes, <c>octo_api</c> always,
 ///     default-deny), then load the target with the caller's rights and check the data permission (AB#7037:
 ///     <c>Write</c>, or <c>Read</c> if the method declares <c>authorization.dataAccess: Read</c>; <c>allowSelf</c> does not
@@ -75,7 +77,8 @@ internal sealed class CkMethodGateway(
     ICkMethodDispatcher dispatcher,
     ICkMethodAuditRecorder auditRecorder,
     ILogger<CkMethodGateway> logger,
-    IOptions<CkMethodLimitsOptions>? limits = null) : ICkMethodGateway
+    IOptions<CkMethodLimitsOptions>? limits = null,
+    IOptions<TenantAuthorizationOptions>? tenantOptions = null) : ICkMethodGateway
 {
     public async Task<CkMethodResponse> InvokeAsync(CkMethodGatewayCall call, CkMethodTargetAccessCheck targetAccess,
         CancellationToken cancellationToken = default)
@@ -125,6 +128,20 @@ internal sealed class CkMethodGateway(
         Guid invocationId, long started, CkMethodPrincipal? principal, DispatchState dispatched,
         CancellationToken cancellationToken)
     {
+        // 0. the caller tenant (AB#8776): a token of another tenant is refused before anything else, so it never learns
+        // whether the method or the target exists, whether its roles fit or whether its parameters are valid. Same rule and
+        // answer as the in-process transport's filter (AB#8711), independent of the HTTP tenant gate's mode.
+        if (CkMethodCallerTenantCheck.IsRefused(principal, call.TenantId, call.MethodId,
+                tenantOptions?.Value ?? new TenantAuthorizationOptions(), out var tenantRefusal, out var tenantVerdict))
+        {
+            logger.LogWarning(
+                "CK method {MethodId} invocation {InvocationId} refused at the gateway in tenant {TenantId}: caller token of another tenant ({Verdict})",
+                call.MethodId, invocationId, call.TenantId, tenantVerdict);
+            return await RefuseAsync(call, invocationId, principal, started,
+                    CkMethodResponse.Failed(invocationId, string.Empty, tenantRefusal))
+                .ConfigureAwait(false);
+        }
+
         // 1. authorize. Nothing about the target has been read; the answer depends on the method and the caller only.
         var definition = definitionSource.Find(call.TenantId, call.CkTypeId, call.MethodId);
         var decision = definition == null

@@ -33,9 +33,9 @@ public class MethodAdversarialGraphQlTests
         _fixture.Dispatcher.Reset();
     }
 
-    private static ClaimsPrincipal User(string sub, string[] roles, string scope = "octo_api openid")
+    private ClaimsPrincipal User(string sub, string[] roles, string scope = "octo_api openid")
     {
-        var claims = new List<Claim> { new("sub", sub), new("scope", scope) };
+        var claims = new List<Claim> { new("sub", sub), new("scope", scope), new("tenant_id", _fixture.SystemTenantId) };
         claims.AddRange(roles.Select(r => new Claim("role", r)));
         return new ClaimsPrincipal(new ClaimsIdentity(claims, "test"));
     }

@@ -903,14 +903,14 @@ public class IdentityCredentialGuardGraphQlTests
         }
     ];
 
-    private static ClaimsPrincipal Principal(string sub, string[] roles)
+    private ClaimsPrincipal Principal(string sub, string[] roles)
     {
-        var claims = new List<Claim> { new("sub", sub), new("scope", "octo_api openid") };
+        var claims = new List<Claim> { new("sub", sub), new("scope", "octo_api openid"), new("tenant_id", _fixture.SystemTenantId) };
         claims.AddRange(roles.Select(r => new Claim("role", r)));
         return new ClaimsPrincipal(new ClaimsIdentity(claims, "test"));
     }
 
-    private static ClaimsPrincipal UserManager() => Principal("65f0c0ffee65f0c0ffee6501", ["UserManagement"]);
+    private ClaimsPrincipal UserManager() => Principal("65f0c0ffee65f0c0ffee6501", ["UserManagement"]);
 
     private static string SelectorQuery(string column) => $$"""
         query { runtime { transientQuery {

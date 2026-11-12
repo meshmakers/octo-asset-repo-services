@@ -341,6 +341,36 @@ public partial class ArchiveLifecycleMethodTests
     }
 
     [Fact]
+    public async Task ATokenOfAnotherTenant_LearnsNothing_MissingTarget_MissingRole_AndInvalidParameters_AllAnswerTenantNotAllowed()
+    {
+        // AB#8776: the gateway judges the caller tenant before the role check, the target load and the parameter validation
+        // (this fixture has no HTTP gate at all, the same as LogOnly). Before, a missing target answered METHOD_TARGET_NOT_FOUND.
+        var archive = await CreateRawArchiveAsync("LearnsNothing");
+        var foreignAdmin = UserOf("some-other-tenant", CommonConstants.StreamDataAdminRole);
+        var foreignNobody = UserOf("some-other-tenant", "SomeOtherRole");
+        var calls = new[]
+        {
+            ($$"""{{Raw}} { activate(rtId: "{{archive}}") { invocationId } }""", foreignAdmin),
+            ($$"""{{Raw}} { activate(rtId: "{{OctoObjectId.GenerateNewId()}}") { invocationId } }""", foreignAdmin),
+            ($$"""{{Raw}} { activate(rtId: "{{archive}}") { invocationId } }""", foreignNobody),
+            ($$"""{{Rollup}} { createArchive(input: { archive: { bucketSizeMs: 3600000, watermarkLagMs: 0, aggregations: [] } }) { invocationId } }""", foreignAdmin)
+        };
+
+        var answers = new List<string>();
+        foreach (var (call, user) in calls)
+        {
+            var result = await _fixture.ExecuteGraphQlAsync($"mutation {{ runtime {{ {call} }} }}", user: user);
+            result.Errors.Should().ContainSingle(call).Which.Code.Should().Be(CkMethodErrorCodes.MethodForbidden, call);
+            var parameters = MethodErrorParameters(result);
+            parameters.Value<string>("reason").Should().Be(CkMethodTokenReasons.TenantNotAllowed, call);
+            answers.Add(parameters.ToString());
+        }
+
+        answers.Take(3).Distinct().Should().ContainSingle("an existing and a missing target and a missing role look the same");
+        (await SnapshotAsync(archive))!.Status.Should().Be(CkArchiveStatus.Created);
+    }
+
+    [Fact]
     public async Task AServiceTokenOfTheCallsTenant_IsAllowed()
     {
         var archive = await CreateRawArchiveAsync("ServiceToken");
