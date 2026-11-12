@@ -52,6 +52,39 @@ internal static class ResolveConnectionContextExtensions
         return context.SubFields?.Values.Any(f => f.Field.Name.Value == fieldName) == true;
     }
 
+    /// <summary>
+    ///     True when a connection field selects <c>totalCount</c> and nothing that needs the entities themselves
+    ///     (AB#8895): no <c>items</c>, <c>edges</c>, <c>pageInfo</c>, <c>aggregation</c> or <c>fieldAggregations</c>;
+    ///     <c>__typename</c> is allowed. Aliases and fragments are resolved through the AST field names. Such a
+    ///     selection is answered with a server-side count that loads no document.
+    /// </summary>
+    internal static bool IsTotalCountOnlySelected(this IResolveFieldContext context)
+    {
+        var subFields = context.SubFields;
+        if (subFields == null)
+        {
+            return false;
+        }
+
+        var totalCountSelected = false;
+        foreach (var (field, _) in subFields.Values)
+        {
+            if (field.Name.Value == TotalCountFieldName)
+            {
+                totalCountSelected = true;
+            }
+            else if (field.Name.Value != TypeNameFieldName)
+            {
+                return false;
+            }
+        }
+
+        return totalCountSelected;
+    }
+
+    private const string TotalCountFieldName = "totalCount";
+    private const string TypeNameFieldName = "__typename";
+
     internal static IOctoSessionAccessor GetSessionAccessor(this IResolveFieldContext context)
     {
         var sessionAccessor = context.RequestServices?.GetRequiredService<IOctoSessionAccessor>();

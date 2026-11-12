@@ -207,6 +207,18 @@ internal sealed class RtQueryDtoType : ObjectGraphType<RtQueryDto>
                 queryOptions.UseNavigationFilterMode(NavigationFilterMode.Include);
             }
 
+            // AB#8895: the rows of a simple query that only ask for totalCount are counted on the server without
+            // loading any document (aggregation queries count their result rows, not entities).
+            if (!isAggregationQuery && context.IsTotalCountOnlySelected())
+            {
+                var totalCount = await tenantRepository.CountRtEntitiesGraphByTypeAsync(sessionAccessor.Session,
+                    rtQueryDto.AssociatedCkTypeId, queryOptions, roleIdDirectionPairs);
+
+                _logger.LogDebug("GraphQL query handling returning the total count only");
+                return ConnectionUtils.ToConnection(new List<RtSimpleQueryRowDto>(), context, 0,
+                    (int)Math.Min(totalCount, int.MaxValue), strictCheck: false);
+            }
+
             // For aggregation queries, don't pass paging parameters to the database query
             var resultSet = await tenantRepository.GetRtEntitiesGraphByTypeAsync(sessionAccessor.Session,
                 rtQueryDto.AssociatedCkTypeId, queryOptions, roleIdDirectionPairs,

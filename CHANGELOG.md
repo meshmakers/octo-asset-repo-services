@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- AB#8895 New: a runtime-entity query that selects only `totalCount` (no `items`, `edges`, `pageInfo`, `aggregation` or
+  `fieldAggregations`; aliases and `__typename` allowed) is counted on the server without loading any document - the typed
+  query (`runtime.<type>`), the generic `runtime.runtimeEntities(ckId: ...)` and the `rows` of a simple persistent query.
+  The count is the same as with items selected (data permissions, filters, search and the archived flag apply; paging
+  arguments do not change a total count). Before, such a query without `first` loaded every matching document into the
+  asset repository (ASSET1002 OUT_OF_MEMORY on large entities, AB#8793). Needs octo-construction-kit-engine-mongodb with
+  AB#8895 (`ITenantRepository.CountRtEntitiesByTypeAsync`, `CountRtEntitiesGraphByTypeAsync`).
 - AB#8778 New: blueprint update preview and result carry two more tenant-owned lists, `TenantOwnedRefreshed` (unedited
   tenant-owned seed entities that receive the changed seed; not in `Safe` mode) and `TenantOwnedUpdateAvailable` (entities the
   update keeps although the seed changed, because their content differs from the installed seed or the comparison was not

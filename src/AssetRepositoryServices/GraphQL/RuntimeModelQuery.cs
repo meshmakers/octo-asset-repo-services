@@ -13,6 +13,9 @@ using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.ConstructionKit.Contracts.DependencyGraph;
 using Meshmakers.Octo.ConstructionKit.Contracts.Services;
 using Meshmakers.Octo.ConstructionKit.Models.System.Generated.System.v2;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.RequestHandling;
+using Meshmakers.Octo.Runtime.Contracts.MongoDb.Repositories;
+using Meshmakers.Octo.Runtime.Contracts.Repositories.Query;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL;
 
@@ -396,6 +399,11 @@ internal sealed class RuntimeModelQuery : ObjectGraphType
                     resultSetIds.AggregationResult, resultSetIds.FieldAggregationResult);
             }
 
+            if (arg.IsTotalCountOnlySelected())
+            {
+                return await CountRtEntitiesAsync(arg, tenantRepository, sessionAccessor, ckTypeId, queryOptions);
+            }
+
             var resultSet = await tenantRepository.GetRtEntitiesByTypeAsync(sessionAccessor.Session,
                 ckTypeId, queryOptions, offset,
                 arg.First);
@@ -459,6 +467,12 @@ internal sealed class RuntimeModelQuery : ObjectGraphType
                     resultSetIds.AggregationResult, resultSetIds.FieldAggregationResult);
             }
 
+            if (arg.IsTotalCountOnlySelected())
+            {
+                return await CountRtEntitiesAsync(arg, tenantRepository, sessionAccessor, ckTypeId,
+                    rtEntityQueryOptions);
+            }
+
             var resultSet =
                 await tenantRepository.GetRtEntitiesByTypeAsync(sessionAccessor.Session,
                     ckTypeId, rtEntityQueryOptions, offset,
@@ -473,6 +487,22 @@ internal sealed class RuntimeModelQuery : ObjectGraphType
         {
             return arg.HandleException(e);
         }
+    }
+
+    /// <summary>
+    ///     AB#8895: a selection of <c>totalCount</c> alone is answered by a server-side count that loads no document;
+    ///     paging arguments do not change a total count. The connection carries no edges.
+    /// </summary>
+    private async Task<object?> CountRtEntitiesAsync(IResolveConnectionContext<object?> arg,
+        ITenantRepository tenantRepository, IOctoSessionAccessor sessionAccessor, RtCkId<CkTypeId> ckTypeId,
+        RtEntityQueryOptions queryOptions)
+    {
+        var totalCount = await tenantRepository.CountRtEntitiesByTypeAsync(sessionAccessor.Session, ckTypeId,
+            queryOptions);
+
+        _logger.LogDebug("GraphQL query handling returning the total count only");
+        return ConnectionUtils.ToOctoConnection(new List<RtEntityDto>(), arg, 0,
+            (int)Math.Min(totalCount, int.MaxValue), strictCheck: false);
     }
 
     private static AggregationTypesDto MapAggregationType(Enum aggregationType)
