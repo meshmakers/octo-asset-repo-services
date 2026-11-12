@@ -297,6 +297,32 @@ public sealed class RuntimeQueryGuardTests : IDisposable
         RuntimeQueryGuard.IsKnownCkType(ckCache, TenantId, "not a ck type id").Should().BeFalse();
     }
 
+    [Theory]
+    [InlineData(RuntimeQueryGuardMode.Warn)]
+    [InlineData(RuntimeQueryGuardMode.Enforce)]
+    public void GenericEntryPointWithAMalformedCkTypeIdIsStillClassified(RuntimeQueryGuardMode mode)
+    {
+        _options.Mode = mode;
+        const string malformed = "Model/Type-bad";
+        var context = Context(RuntimeQueryEntryPoint.GenericEntities, first: null);
+        context.Arguments![Statics.CkIdArg] = new ArgumentValue(malformed, ArgumentSource.Literal);
+
+        var act = () => _guard.Check(context, RuntimeQueryEntryPoint.GenericEntities);
+
+        if (mode == RuntimeQueryGuardMode.Enforce)
+        {
+            act.Should().Throw<UnboundedRuntimeQueryException>().Which.CkTypeId.Should().Be(malformed);
+        }
+        else
+        {
+            act.Should().NotThrow();
+        }
+
+        _measurements.Should().ContainSingle().Which.Tags.Should()
+            .Contain(RuntimeQueryGuardMetrics.CkTypeLabel, RuntimeQueryGuardMetrics.UnknownCkType);
+        _logger.Entries.Should().ContainSingle().Which.Message.Should().Contain(malformed);
+    }
+
     // --- Which fields the schema visitor wraps ---
 
     [Fact]

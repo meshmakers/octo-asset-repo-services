@@ -1,3 +1,4 @@
+using System.Reflection;
 using System.Security.Claims;
 using GraphQL;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.Configuration;
@@ -321,7 +322,7 @@ internal sealed class RuntimeQueryGuard
         {
             return ckCacheService.GetRtCkType(tenantId, new RtCkId<CkTypeId>(ckTypeId)) != null;
         }
-        catch (Exception e) when (e is CkCacheException or KeyNotFoundException or ArgumentException or FormatException)
+        catch (Exception e) when (e is CkCacheException or KeyNotFoundException || IsMalformedCkTypeId(e))
         {
             return false;
         }
@@ -340,9 +341,15 @@ internal sealed class RuntimeQueryGuard
         {
             return new RtCkId<CkTypeId>(ckTypeId).ToString();
         }
-        catch (Exception e) when (e is ArgumentException or FormatException)
+        catch (Exception e) when (IsMalformedCkTypeId(e))
         {
             return ckTypeId;
         }
     }
+
+    // A malformed id (e.g. "Model/Type-bad") fails in the CkTypeId constructor, which RtCkId creates by reflection:
+    // the ArgumentException arrives wrapped in a TargetInvocationException.
+    private static bool IsMalformedCkTypeId(Exception e) =>
+        e is ArgumentException or FormatException ||
+        e is TargetInvocationException { InnerException: ArgumentException or FormatException };
 }
