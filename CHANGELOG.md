@@ -15,6 +15,10 @@
   the mutation's error codes. The mutations `freezeRollupArchive`, `unfreezeRollupArchive`, `rewindRollupWatermark`,
   `recomputeArchive` and `backfillRollupFromSource` keep working and are `@deprecated` with the method id. Needs System.StreamData
   1.25.0 (octo-construction-kit-engine with AB#8599).
+- AB#8707 Fix: the archive create methods (`TimeRangeArchive.CreateArchive-1`, `RollupArchive.CreateArchive-1`) bind the generated
+  parameter records of System.StreamData (`TimeRangeArchiveCreateArchiveParameters`, `RollupArchiveCreateArchiveParameters`); the
+  plain look-alike classes of AB#8598 are removed. Behaviour unchanged (same validation, same source rules, same answers). Needs
+  octo-common-services with AB#8707 (`CkMethodJson` binds record arrays of generated records).
 - AB#8711 Refactor: the archive CK methods (AB#8598) no longer check the caller tenant themselves; `ArchiveMethodCallerTenantGuard`
   is removed. The check moved into the in-process transport of octo-common-services (`CkMethodCallerTenantFilter`), which applies
   the same rule to every in-process method of this service before any handler runs: a caller token issued for another tenant is

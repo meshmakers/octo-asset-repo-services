@@ -230,11 +230,12 @@ working unchanged; each is replaced by a method of System.StreamData 1.24.0, cal
 - **System tenant import.** The startup validation of in-process registrations looks the methods up in the system tenant's CK cache, which holds System.StreamData only
   when stream data was enabled there. `SystemTenantStreamDataModelImport` (Order 12, after the default configuration, before the validation at 15) imports the embedded model
   into the system tenant (idempotent, downgrade guard). It does not enable stream data for the system tenant.
-- **Create parameters are plain classes.** The generated `TimeRangeArchiveCreateArchiveParameters` / `RollupArchiveCreateArchiveParameters` hold the record as
-  `Rt{Record}Record`, whose record arrays are `IAttributeValueList<T>`; System.Text.Json cannot bind them (`NotSupportedException`, the call failed with
-  `METHOD_HANDLER_FAILED`). The handlers use `TimeRangeArchiveCreateParameters` / `RollupArchiveCreateParameters` with the same members; the registration
-  validation still checks the parameter names against the model.
-- Tests: `UnitTests/StreamData/Methods/ArchiveMethodTests` (code mapping, host table, switch, source rules), `IntegrationTests/StreamData/ArchiveLifecycleMethodTests`
+- **Create parameters are the generated records (AB#8707).** The handlers bind `TimeRangeArchiveCreateArchiveParameters` / `RollupArchiveCreateArchiveParameters`
+  of System.StreamData directly; the record arrays (`Columns`, `Sources`, `Aggregations`, `IAttributeValueList<T>`) are bound by `CkMethodJson.Options` of
+  octo-common-services (the plain look-alike classes of AB#8598 are removed). A missing optional `sources` is `null`, an explicit `[]` an empty list, so the
+  source rules of the mutation stay as they were. The generated CK enums (`RtCkRollupFunctionEnum`, `RtBucketAlignmentEnum`) become the engine enums by name
+  (`ArchiveMethodSupport.ToEngine`).
+- Tests: `UnitTests/StreamData/Methods/ArchiveMethodTests` (code mapping, host table, switch, source rules, binding from the wire JSON, enum mapping), `IntegrationTests/StreamData/ArchiveLifecycleMethodTests`
   (fixture `ArchiveMethodStreamDataFixture`: MongoDB + CrateDB, real schema, gateway, pipeline and the production registration; per method the same transition as the
   mutation side by side, METHOD_FORBIDDEN without the role for all seven, the invalid-transition code, target outside the tenant, deprecation reasons in the schema).
 

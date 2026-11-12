@@ -3,6 +3,7 @@ using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.StreamData.Methods;
 using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.ConstructionKit.Models.StreamData.Generated.System.StreamData.v1;
+using Meshmakers.Octo.Runtime.Contracts.RepositoryEntities;
 using Meshmakers.Octo.Runtime.Contracts.StreamData;
 using Meshmakers.Octo.Services.Contracts.DistributionEventHub.Methods;
 using Meshmakers.Octo.Services.Methods;
@@ -119,20 +120,106 @@ public class ArchiveMethodTests
     {
         var scalar = OctoObjectId.GenerateNewId().ToString();
 
-        Sources(new RollupArchiveCreateInput { SourceArchiveRtId = scalar }).Should().ContainSingle()
+        Sources(Input(scalar)).Should().ContainSingle()
             .Which.Should().Be(new RollupSourceReference(new OctoObjectId(scalar)));
-        Error(new RollupArchiveCreateInput()).Should().Be("required");
-        Error(new RollupArchiveCreateInput { Sources = [] }).Should().Be("empty");
-        Error(new RollupArchiveCreateInput { SourceArchiveRtId = scalar, Sources = [new RollupSourceInput { SourceArchiveRtId = scalar }] })
+        Error(Input()).Should().Be("required");
+        Error(Input(sources: [])).Should().Be("empty");
+        Error(Input(scalar, [Source(scalar)]))
             .Should().Be("both-sources-and-source-archive-rt-id");
-        Error(new RollupArchiveCreateInput { Sources = [new RollupSourceInput { SourceArchiveRtId = "nope" }] })
+        Error(Input(sources: [Source("nope")]))
             .Should().Be("invalid-object-id");
     }
 
-    private static IReadOnlyList<RollupSourceReference> Sources(RollupArchiveCreateInput input) =>
+    [Theory]
+    [InlineData("\"sources\":[]", "empty")]
+    [InlineData("\"sourceArchiveRtId\":null", "required")]
+    [InlineData("\"sources\":[{\"sourceArchiveRtId\":\"nope\"}]", "invalid-object-id")]
+    public void RollupSources_FromTheWireJson_KeepTheDifferenceBetweenEmptyAndMissing(string sourcesJson, string expected)
+    {
+        // AB#8707: the handler binds the generated parameter record; an explicit empty record array stays empty, a missing
+        // optional one stays null, as with the plain classes before.
+        var parameters = System.Text.Json.JsonSerializer.Deserialize<RollupArchiveCreateArchiveParameters>(
+            "{\"archive\":{" + sourcesJson + ",\"bucketSizeMs\":60000,\"watermarkLagMs\":0,\"aggregations\":[]}}",
+            CkMethodJson.Options)!;
+
+        Error(parameters.Archive).Should().Be(expected);
+    }
+
+    [Fact]
+    public void TimeRangeCreateParameters_FromTheWireJson_BindTheColumns()
+    {
+        var parameters = System.Text.Json.JsonSerializer.Deserialize<TimeRangeArchiveCreateArchiveParameters>(
+            "{\"archive\":{\"targetCkTypeId\":\"Basic/Tree\",\"periodMs\":900000," +
+            "\"columns\":[{\"path\":\"Voltage\",\"indexed\":true,\"required\":false}]}}", CkMethodJson.Options)!;
+
+        parameters.Archive.PeriodMs.Should().Be(900000);
+        parameters.Archive.Columns.Should().ContainSingle().Which.Path.Should().Be("Voltage");
+    }
+
+    [Fact]
+    public void GeneratedEnums_MapToTheEngineEnumsByName()
+    {
+        foreach (var value in Enum.GetValues<RtCkRollupFunctionEnum>())
+        {
+            ArchiveMethodSupport.ToEngine<CkRollupFunction>(value).ToString().Should().Be(value.ToString());
+        }
+
+        foreach (var value in Enum.GetValues<RtBucketAlignmentEnum>())
+        {
+            ArchiveMethodSupport.ToEngine<BucketAlignment>(value).ToString().Should().Be(value.ToString());
+        }
+    }
+
+    [Fact]
+    public void AnUndefinedCkEnumValue_DoesNotMapToTheEngine()
+    {
+        ArchiveMethodSupport.TryToEngine<CkRollupFunction>((RtCkRollupFunctionEnum)999, out _).Should().BeFalse();
+        ArchiveMethodSupport.TryToEngine<BucketAlignment>((RtBucketAlignmentEnum)999, out _).Should().BeFalse();
+        ArchiveMethodSupport.TryToEngine<CkRollupFunction>(RtCkRollupFunctionEnum.Sum, out var sum).Should().BeTrue();
+        sum.Should().Be(CkRollupFunction.Sum);
+    }
+
+    [Theory]
+    [InlineData("\"aggregations\":[{\"sourcePath\":\"Voltage\",\"function\":999}]", "archive.aggregations.function")]
+    [InlineData("\"bucketAlignment\":999,\"aggregations\":[]", "archive.bucketAlignment")]
+    public async Task RollupCreate_AnUndefinedEnumNumber_IsAValidationFailureOnTheField(string json, string field)
+    {
+        var parameters = System.Text.Json.JsonSerializer.Deserialize<RollupArchiveCreateArchiveParameters>(
+            "{\"archive\":{\"sourceArchiveRtId\":\"" + OctoObjectId.GenerateNewId() + "\",\"bucketSizeMs\":60000," +
+            "\"watermarkLagMs\":0," + json + "}}", CkMethodJson.Options)!;
+        var handler = new RollupArchiveCreateArchiveHandler(null!,
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<RollupArchiveCreateArchiveHandler>.Instance);
+
+        var outcome = await handler.HandleAsync(
+            new CkMethodContext<RollupArchiveCreateArchiveParameters>(new CkMethodRequest("t1")
+            {
+                InvocationId = Guid.NewGuid(), MethodId = SystemStreamDataCkIds.RollupArchiveCreateArchiveMethodId,
+                CkTypeId = "System.StreamData/RollupArchive", DeadlineUtc = DateTime.UtcNow.AddSeconds(30)
+            }, parameters), CancellationToken.None);
+
+        outcome.IsSuccess.Should().BeFalse();
+        outcome.Failure!.Code.Should().Be(CkMethodErrorCodes.MethodValidationFailed);
+        outcome.Failure.Parameters["field"].Should().Be(field);
+    }
+
+    private static RtRollupArchiveCreateInputRecord Input(string? scalar = null,
+        IEnumerable<RtCkRollupSourceReferenceRecord>? sources = null)
+    {
+        var input = new RtRollupArchiveCreateInputRecord { SourceArchiveRtId = scalar };
+        if (sources != null)
+        {
+            input.Sources = new AttributeRecordValueList<RtCkRollupSourceReferenceRecord>(sources.Cast<RtRecord>().ToList());
+        }
+
+        return input;
+    }
+
+    private static RtCkRollupSourceReferenceRecord Source(string id) => new() { SourceArchiveRtId = id };
+
+    private static IReadOnlyList<RollupSourceReference> Sources(RtRollupArchiveCreateInputRecord input) =>
         RollupArchiveCreateArchiveHandler.BuildSources(input, out _)!;
 
-    private static string? Error(RollupArchiveCreateInput input)
+    private static string? Error(RtRollupArchiveCreateInputRecord input)
     {
         RollupArchiveCreateArchiveHandler.BuildSources(input, out var error);
         return error;
