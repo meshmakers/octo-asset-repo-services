@@ -63,11 +63,35 @@ public class ArchiveMethodTests
             ("retryArchiveActivation", SystemStreamDataCkIds.ArchiveRetryActivationMethodId),
             ("deleteArchive", SystemStreamDataCkIds.ArchiveDeleteArchiveMethodId),
             ("createTimeRangeArchive", SystemStreamDataCkIds.TimeRangeArchiveCreateArchiveMethodId),
-            ("createRollupArchive", SystemStreamDataCkIds.RollupArchiveCreateArchiveMethodId)
+            ("createRollupArchive", SystemStreamDataCkIds.RollupArchiveCreateArchiveMethodId),
+            ("freezeRollupArchive", SystemStreamDataCkIds.RollupArchiveFreezeMethodId),
+            ("unfreezeRollupArchive", SystemStreamDataCkIds.RollupArchiveUnfreezeMethodId),
+            ("rewindRollupWatermark", SystemStreamDataCkIds.RollupArchiveRewindWatermarkMethodId),
+            ("recomputeArchive", SystemStreamDataCkIds.RollupArchiveRecomputeMethodId),
+            ("backfillRollupFromSource", SystemStreamDataCkIds.RollupArchiveBackfillFromSourceMethodId)
         });
         ArchiveMethodHost.Handlers.Should().OnlyContain(h => !h.MethodId.Contains("-1.", StringComparison.Ordinal),
             "the ids are version-less");
         ArchiveMethodHost.DeprecationReasonOf("deleteArchive").Should().Be("Use System.StreamData/Archive.DeleteArchive-1");
+    }
+
+    [Fact]
+    public void TheRecomputeJobInfo_CarriesTheJobAsTheMutationAnswersIt()
+    {
+        var job = new RecomputeJobSnapshot(OctoObjectId.GenerateNewId(), ArchiveId, RecomputeJobState.Completed,
+            RecomputeTrigger.Manual, DateTime.UtcNow.AddHours(-1), DateTime.UtcNow, null, 10, 2, DateTime.UtcNow.AddMinutes(-1),
+            DateTime.UtcNow, 1234, null, null, DateTime.UtcNow);
+
+        var record = RollupTransitions.ToRecord(job);
+
+        record.JobRtId.Should().Be(job.RtId.ToString());
+        record.State.Should().Be(RtCkRecomputeJobStateEnum.Completed);
+        (record.RowsProcessed, record.WindowsProcessed, record.DurationMs).Should().Be((10, 2, 1234));
+        record.ErrorReason.Should().BeNull();
+        foreach (var state in Enum.GetValues<RecomputeJobState>())
+        {
+            RollupTransitions.ToRecord(job with { State = state }).State.ToString().Should().Be(state.ToString());
+        }
     }
 
     [Theory]

@@ -218,6 +218,15 @@ working unchanged; each is replaced by a method of System.StreamData 1.24.0, cal
   `TenantAuthorization:CrossTenantServiceClientIds`. Otherwise `METHOD_FORBIDDEN` with `reason = tenant-not-allowed`, nothing touched. The
   archive handlers have no tenant check of their own any more (the stopgap `ArchiveMethodCallerTenantGuard` of AB#8598 is removed). The
   mutations keep their behaviour (they follow the HTTP gate).
+- **Rollup control methods (AB#8599, System.StreamData 1.25.0).** `RollupMethodHandlers.cs`: `RollupArchive.Freeze-1` /
+  `Unfreeze-1` / `RewindWatermark-1` run the `IRollupArchiveLifecycleService` call of the mutation and answer
+  `ArchiveTransitionResult` (status read back from the rollup store, `RollupTransitions.RunAsync`); `Recompute-1` calls
+  `IRecomputeOrchestrator.RecomputeArchiveAsync` (trigger Manual, the AB#4184 staging generation + pointer swap in the call; a
+  missing or non-activated rollup is a job in state `Failed`, as with the mutation; an invalid `rtIdScope` is
+  `METHOD_VALIDATION_FAILED`), `BackfillFromSource-1` calls `EnqueueBackfillFromSourceAsync` and answers its job: a new Pending
+  job, the already active job of the rollup the backfill was folded into, a `Failed` job for a missing or non-activated rollup, or
+  no result for an empty source. A target id the caller cannot see is `METHOD_TARGET_NOT_FOUND` from the gateway, before any job. Both stay synchronous; async methods are a later decision (F3.6). The five mutations are deprecated
+  with the method id.
 - **System tenant import.** The startup validation of in-process registrations looks the methods up in the system tenant's CK cache, which holds System.StreamData only
   when stream data was enabled there. `SystemTenantStreamDataModelImport` (Order 12, after the default configuration, before the validation at 15) imports the embedded model
   into the system tenant (idempotent, downgrade guard). It does not enable stream data for the system tenant.
