@@ -128,6 +128,37 @@ public class TotalCountNeededRoutingTests
         connection.Edges!.Last().Cursor.Should().Be(ConnectionUtils.OffsetToCursor(29));
     }
 
+    [Fact]
+    public async Task ItemsWithoutCount_AnEmptyPageBeyondTheEnd_YieldsNoEdgesAndNoError()
+    {
+        // includeTotalCount false and nothing left after the offset: the repository reports TotalCount 0 (an empty
+        // page has no lower bound above 0). The connection must be empty, not fail the slice check.
+        var options = RtEntityQueryOptions.Create();
+        A.CallTo(() => _repository.GetRtEntitiesByTypeAsync(_session, CkTypeId, options, 20, 10, false))
+            .Returns(ResultSet(0, 0));
+
+        var connection = (OctoConnection<RtEntityDto>)await RuntimeModelQuery.QueryRtEntitiesByTypeAsync(
+            Context("items"), _repository, _session, CkTypeId, options, 20);
+
+        connection.Edges.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task ItemsWithoutCount_AShortLastPage_KeepsTheCursorsOfItsOffsets()
+    {
+        // The last page holds fewer entities than first: lower bound = offset + 4 = the real total.
+        var options = RtEntityQueryOptions.Create();
+        A.CallTo(() => _repository.GetRtEntitiesByTypeAsync(_session, CkTypeId, options, 20, 10, false))
+            .Returns(ResultSet(4, 24));
+
+        var connection = (OctoConnection<RtEntityDto>)await RuntimeModelQuery.QueryRtEntitiesByTypeAsync(
+            Context("items"), _repository, _session, CkTypeId, options, 20);
+
+        connection.Edges.Should().HaveCount(4);
+        connection.Edges!.First().Cursor.Should().Be(ConnectionUtils.OffsetToCursor(20));
+        connection.Edges!.Last().Cursor.Should().Be(ConnectionUtils.OffsetToCursor(23));
+    }
+
     private static IResultSet<RtEntity> ResultSet(int items, long totalCount)
     {
         var entities = Enumerable.Range(0, items)
