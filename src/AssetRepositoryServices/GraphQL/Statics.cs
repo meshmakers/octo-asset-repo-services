@@ -93,6 +93,15 @@ internal static class Statics
     public const string GraphQlCkModelUpdateError = "ASSET1006";
 
     /// <summary>
+    ///     AB#8898: an unbounded runtime-entity query (items selected without <c>first</c>, with <c>first</c> above
+    ///     <c>RuntimeQueryGuard:MaxPageSize</c>, or a key lookup with more keys than that) was refused in
+    ///     <c>RuntimeQueryGuard:Mode=Enforce</c>. Extensions: <c>code</c>, <c>errorId</c> and <c>parameters</c>
+    ///     (<c>ckTypeId</c>, <c>maxPageSize</c>, <c>requestedFirst</c>, <c>keyCount</c>, <c>reason</c>). ASSET family until
+    ///     the coded error contract of AB#6244 exists.
+    /// </summary>
+    public const string GraphQlUnboundedQueryRefused = "ASSET1007";
+
+    /// <summary>
     ///     AB#5528 (concept §4.4): a Secret attribute was used for something other than an IS_NULL / IS_NOT_NULL
     ///     filter (other filter operators, sort, attribute search, aggregation, group-by, query columns).
     /// </summary>

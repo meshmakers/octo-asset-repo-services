@@ -299,6 +299,8 @@ public static class RuntimeEngineBuilderExtensions
             .AddDocumentListener<MongoStatsListener>()
             // AB#7020: one method call per mutation request, refused in the validation phase (also for cached documents).
             .AddValidationRule<OneMethodCallPerRequestRule>(useForCachedDocuments: true)
+            // AB#8898: the unbounded runtime-entity query guard in front of the entry-point resolvers (API boundary only).
+            .AddSchemaVisitor<RuntimeQueryGuardSchemaVisitor>()
             .Services.Register<IOctoSessionAccessor, OctoSessionAccessor>(GraphQL.DI.ServiceLifetime.Singleton)
         );
 
@@ -315,6 +317,14 @@ public static class RuntimeEngineBuilderExtensions
         builder.Services.AddOptions<StreamDataReadAuthorizationOptions>().Configure<IServiceProvider>((o, sp) =>
             sp.GetService<IConfiguration>()?.GetSection(StreamDataReadAuthorizationOptions.SectionName).Bind(o));
         builder.Services.TryAddSingleton<StreamDataReadRoleGate>();
+
+        // AB#8898: unbounded runtime-entity queries at the GraphQL API boundary, staged Off/Warn/Enforce (default Warn,
+        // MaxPageSize 1000). Bound from the RuntimeQueryGuard section when the host has a configuration.
+        builder.Services.AddOptions<RuntimeQueryGuardOptions>().Configure<IServiceProvider>((o, sp) =>
+            sp.GetService<IConfiguration>()?.GetSection(RuntimeQueryGuardOptions.SectionName).Bind(o));
+        builder.Services.AddMetrics();
+        builder.Services.TryAddSingleton<RuntimeQueryGuardMetrics>();
+        builder.Services.TryAddSingleton<RuntimeQueryGuard>();
 
         builder.Services.AddSingleton<IDocumentExecuter<OctoSchema>, TenantDocumentExecutor>();
 
