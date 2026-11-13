@@ -4,12 +4,13 @@
 
 - AB#8898 New: unbounded runtime-entity query guard at the GraphQL API boundary (Feature AB#8793). A query on
   `runtime.<CkType>`, `runtime.runtimeEntities`, persisted query `rows` or transient query `rows` that selects
-  `items`/`edges`/`nodes` without `first`, with `first` above `RuntimeQueryGuard:MaxPageSize` (default 1000), or as a key lookup
-  (`rtId`/`rtIds`) with more keys than that is unbounded; a key lookup within the limit is bounded whatever `first` says. `RuntimeQueryGuard:Mode` (`OCTO_RUNTIMEQUERYGUARD__MODE`): `Off` (no
+  `items`/`edges`/`nodes` is unbounded when it has no `first` or a `first` above `RuntimeQueryGuard:MaxPageSize` (default 1000),
+  unless it is a key lookup (`rtId`/`rtIds`) with at most that many keys; a `first` within the limit bounds the query whatever
+  the key count. `RuntimeQueryGuard:Mode` (`OCTO_RUNTIMEQUERYGUARD__MODE`): `Off` (no
   check), `Warn` (default: the query runs, one warning log line per query and the counter `octo.asset.runtime_query.unbounded`,
   Prometheus `octo_asset_runtime_query_unbounded_total`, labels `tenant`, `ck_type`, `client_id`, `mode`) or `Enforce` (refused
   with `ASSET1007` before the entities or rows are read, message naming CK type and limit, `extensions.errorId` and `extensions.parameters`;
-  never capped). totalCount-only selections, aggregation queries and key lookups within the limit are bounded; in-process engine
+  never capped). totalCount-only selections and aggregation queries are always bounded; in-process engine
   calls (`ITenantRepository`) are never checked or counted. The asset repository has no REST runtime-entity query endpoint (REST
   exports are background jobs), so REST needs no guard. ASSET1007 moves to the coded error contract of AB#6244 when it exists.
   See `docs/runtime-query-guard.md`.
