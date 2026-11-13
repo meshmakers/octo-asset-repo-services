@@ -13,6 +13,9 @@ using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.ConstructionKit.Contracts.DependencyGraph;
 using Meshmakers.Octo.ConstructionKit.Contracts.Services;
 using Meshmakers.Octo.ConstructionKit.Models.System.Generated.System.v2;
+using Meshmakers.Octo.Runtime.Contracts.MongoDb.Repositories;
+using Meshmakers.Octo.Runtime.Contracts.Repositories.Query;
+using Meshmakers.Octo.Runtime.Contracts;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL;
 
@@ -396,14 +399,9 @@ internal sealed class RuntimeModelQuery : ObjectGraphType
                     resultSetIds.AggregationResult, resultSetIds.FieldAggregationResult);
             }
 
-            var resultSet = await tenantRepository.GetRtEntitiesByTypeAsync(sessionAccessor.Session,
-                ckTypeId, queryOptions, offset,
-                arg.First);
-
             _logger.LogDebug("GraphQL query handling returning data");
-            return ConnectionUtils.ToOctoConnection(resultSet.Items.Select(RtEntityDtoType.CreateRtEntityDto), arg,
-                resultSet.TotalCount > 0 ? offset.GetValueOrDefault(0) : 0, (int)resultSet.TotalCount,
-                resultSet.AggregationResult, resultSet.FieldAggregationResult);
+            return await QueryRtEntitiesByTypeAsync(arg, tenantRepository, sessionAccessor.Session, ckTypeId,
+                queryOptions, offset);
         }
         catch (Exception e)
         {
@@ -459,20 +457,38 @@ internal sealed class RuntimeModelQuery : ObjectGraphType
                     resultSetIds.AggregationResult, resultSetIds.FieldAggregationResult);
             }
 
-            var resultSet =
-                await tenantRepository.GetRtEntitiesByTypeAsync(sessionAccessor.Session,
-                    ckTypeId, rtEntityQueryOptions, offset,
-                    arg.First);
-
             _logger.LogDebug("GraphQL query handling returning data");
-            return ConnectionUtils.ToOctoConnection(resultSet.Items.Select(RtEntityDtoType.CreateRtEntityDto), arg,
-                resultSet.TotalCount > 0 ? offset.GetValueOrDefault(0) : 0, (int)resultSet.TotalCount,
-                resultSet.AggregationResult, resultSet.FieldAggregationResult);
+            return await QueryRtEntitiesByTypeAsync(arg, tenantRepository, sessionAccessor.Session, ckTypeId,
+                rtEntityQueryOptions, offset);
         }
         catch (Exception e)
         {
             return arg.HandleException(e);
         }
+    }
+
+    /// <summary>
+    ///     The runtime entities of a CK type for a connection field (typed and generic query). AB#8895: a selection of
+    ///     <c>totalCount</c> alone is answered by <see cref="ITenantRepository.CountRtEntitiesByTypeAsync" />, a
+    ///     server-side count that loads no document - paging arguments do not change a total count and the
+    ///     connection carries no edges; any other selection runs the item query.
+    /// </summary>
+    internal static async Task<object> QueryRtEntitiesByTypeAsync(IResolveConnectionContext<object?> arg,
+        ITenantRepository tenantRepository, IOctoSession session, RtCkId<CkTypeId> ckTypeId,
+        RtEntityQueryOptions queryOptions, int? offset)
+    {
+        if (arg.IsTotalCountOnlySelected())
+        {
+            var totalCount = await tenantRepository.CountRtEntitiesByTypeAsync(session, ckTypeId, queryOptions);
+            return ConnectionUtils.ToOctoConnection(new List<RtEntityDto>(), arg, 0,
+                (int)Math.Min(totalCount, int.MaxValue), strictCheck: false);
+        }
+
+        var resultSet = await tenantRepository.GetRtEntitiesByTypeAsync(session, ckTypeId, queryOptions, offset,
+            arg.First);
+        return ConnectionUtils.ToOctoConnection(resultSet.Items.Select(RtEntityDtoType.CreateRtEntityDto), arg,
+            resultSet.TotalCount > 0 ? offset.GetValueOrDefault(0) : 0, (int)resultSet.TotalCount,
+            resultSet.AggregationResult, resultSet.FieldAggregationResult);
     }
 
     private static AggregationTypesDto MapAggregationType(Enum aggregationType)
