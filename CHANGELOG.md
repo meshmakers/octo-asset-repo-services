@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- AB#8722 Fix: the asset repository starts reliably on the first rollout of the System.StreamData archive methods (AB#8598), also with
+  several replicas starting at once. On a system tenant without System.StreamData the import at startup unloaded the system tenant's CK
+  cache (own import, or a cache that lacked the model another replica had just installed) and nothing loaded it again before the
+  startup validation of the in-process method registrations, which reads only a loaded cache: the pod stopped with "the CK cache of
+  tenant(s) 'octosystem' has no such method" and started after a restart (test-2, 2026-11-10). `SystemTenantStreamDataModelImport` now
+  loads the cache after the import and checks that it holds the model; a cache loaded from the state before the import is loaded again.
+  A registration for a method the model does not have still fails the start. Startup behaviour only; no CK model change.
+
 - AB#8898 New: unbounded runtime-entity query guard at the GraphQL API boundary (Feature AB#8793). A query on
   `runtime.<CkType>`, `runtime.runtimeEntities`, persisted query `rows` or transient query `rows` that selects
   `items`/`edges`/`nodes` is unbounded when it has no `first` or a `first` above `RuntimeQueryGuard:MaxPageSize` (default 1000),
