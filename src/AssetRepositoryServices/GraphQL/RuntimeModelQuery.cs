@@ -471,7 +471,8 @@ internal sealed class RuntimeModelQuery : ObjectGraphType
     ///     The runtime entities of a CK type for a connection field (typed and generic query). AB#8895: a selection of
     ///     <c>totalCount</c> alone is answered by <see cref="ITenantRepository.CountRtEntitiesByTypeAsync" />, a
     ///     server-side count that loads no document - paging arguments do not change a total count and the
-    ///     connection carries no edges; any other selection runs the item query.
+    ///     connection carries no edges; any other selection runs the item query. AB#8896: the item query counts only
+    ///     when the selection needs the total (<see cref="ResolveConnectionContextExtensions.IsTotalCountNeeded" />).
     /// </summary>
     internal static async Task<object> QueryRtEntitiesByTypeAsync(IResolveConnectionContext<object?> arg,
         ITenantRepository tenantRepository, IOctoSession session, RtCkId<CkTypeId> ckTypeId,
@@ -485,7 +486,7 @@ internal sealed class RuntimeModelQuery : ObjectGraphType
         }
 
         var resultSet = await tenantRepository.GetRtEntitiesByTypeAsync(session, ckTypeId, queryOptions, offset,
-            arg.First);
+            arg.First, arg.IsTotalCountNeeded());
         return ConnectionUtils.ToOctoConnection(resultSet.Items.Select(RtEntityDtoType.CreateRtEntityDto), arg,
             resultSet.TotalCount > 0 ? offset.GetValueOrDefault(0) : 0, (int)resultSet.TotalCount,
             resultSet.AggregationResult, resultSet.FieldAggregationResult);

@@ -51,7 +51,7 @@ public class TotalCountOnlyRoutingTests
         A.CallTo(() => _repository.CountRtEntitiesByTypeAsync(_session, CkTypeId, options))
             .MustHaveHappenedOnceExactly();
         A.CallTo(() => _repository.GetRtEntitiesByTypeAsync(A<IOctoSession>._, A<RtCkId<CkTypeId>>._,
-            A<RtEntityQueryOptions>._, A<int?>._, A<int?>._)).MustNotHaveHappened();
+            A<RtEntityQueryOptions>._, A<int?>._, A<int?>._, A<bool>._)).MustNotHaveHappened();
     }
 
     [Fact]
@@ -65,7 +65,7 @@ public class TotalCountOnlyRoutingTests
 
         ((OctoConnection<RtEntityDto>)connection).TotalCount.Should().Be(7, "paging does not change a total count");
         A.CallTo(() => _repository.GetRtEntitiesByTypeAsync(A<IOctoSession>._, A<RtCkId<CkTypeId>>._,
-            A<RtEntityQueryOptions>._, A<int?>._, A<int?>._)).MustNotHaveHappened();
+            A<RtEntityQueryOptions>._, A<int?>._, A<int?>._, A<bool>._)).MustNotHaveHappened();
     }
 
     [Theory]
@@ -76,13 +76,13 @@ public class TotalCountOnlyRoutingTests
     public async Task TypeQuery_WithAFieldThatNeedsEntities_RunsTheItemQueryAndNoCount(string field)
     {
         var options = RtEntityQueryOptions.Create();
-        A.CallTo(() => _repository.GetRtEntitiesByTypeAsync(_session, CkTypeId, options, null, null))
+        A.CallTo(() => _repository.GetRtEntitiesByTypeAsync(_session, CkTypeId, options, null, null, true))
             .Returns(A.Fake<IResultSet<RtEntity>>());
 
         await RuntimeModelQuery.QueryRtEntitiesByTypeAsync(Context<object?>("totalCount", field), _repository,
             _session, CkTypeId, options, null);
 
-        A.CallTo(() => _repository.GetRtEntitiesByTypeAsync(_session, CkTypeId, options, null, null))
+        A.CallTo(() => _repository.GetRtEntitiesByTypeAsync(_session, CkTypeId, options, null, null, true))
             .MustHaveHappenedOnceExactly();
         A.CallTo(() => _repository.CountRtEntitiesByTypeAsync(A<IOctoSession>._, A<RtCkId<CkTypeId>>._,
             A<RtEntityQueryOptions>._)).MustNotHaveHappened();

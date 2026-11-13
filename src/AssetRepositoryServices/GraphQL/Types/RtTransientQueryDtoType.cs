@@ -176,9 +176,11 @@ internal sealed class RtTransientQueryDtoType : ObjectGraphType<RtTransientQuery
                 queryUserContext.QueryOptions.UseNavigationFilterMode(NavigationFilterMode.Include);
             }
 
+            // AB#8896: the rows of a standard query are counted only when the selection needs the total.
             var resultSet = await tenantRepository.GetRtEntitiesGraphByTypeAsync(sessionAccessor.Session,
                 rtTransientQueryDto.AssociatedCkTypeId, queryUserContext.QueryOptions,
-                roleIdDirectionPairs, offset, first);
+                roleIdDirectionPairs, offset, first,
+                queryUserContext.QueryType != QueryType.Standard || context.IsTotalCountNeeded());
 
             if (queryUserContext.QueryType == QueryType.Aggregation)
             {
