@@ -235,7 +235,9 @@ working unchanged; each is replaced by a method of System.StreamData 1.24.0, cal
   installed version (another replica imported first, AB#8667). Before AB#8722 nothing loaded it again before Order 15, so on the first rollout
   with several replicas a pod stopped with "the CK cache of tenant(s) 'octosystem' has no such method". The import step now loads the cache
   after the import and checks that it holds System.StreamData (by name, embedded version or newer); a cache loaded concurrently from the
-  state before the import is unloaded and loaded again (at most `MaxCacheLoadAttempts` = 3). A model that is really not installed (import
+  state before the import is unloaded and loaded again, a load that ran out waiting for another replica's import (exception marked
+  `CkModelImportInProgress`, AB#8677) is loaded again, a cache unloaded during the check counts as not holding the model (at most
+  `MaxCacheLoadAttempts` = 3 loads; any other load failure fails the step). A model that is really not installed (import
   skipped for missing dependencies) is logged WARN and still fails the validation. Tests: `IntegrationTests/StreamData/SystemTenantStreamDataImportReplicaTests`
   (fixture `AssetRepoReplicaFixture`: several replicas with their own service provider on one fresh system tenant, started together).
 - **Create parameters are the generated records (AB#8707).** The handlers bind `TimeRangeArchiveCreateArchiveParameters` / `RollupArchiveCreateArchiveParameters`

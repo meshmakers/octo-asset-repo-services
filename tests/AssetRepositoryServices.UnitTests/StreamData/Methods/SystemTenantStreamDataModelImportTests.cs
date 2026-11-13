@@ -4,6 +4,7 @@ using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.ConstructionKit.Contracts.Services;
 using Meshmakers.Octo.ConstructionKit.Models.StreamData.Generated.System.StreamData.v1;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb;
+using Meshmakers.Octo.Runtime.Engine.MongoDb.Repositories.MongoDb;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
@@ -87,6 +88,38 @@ public class SystemTenantStreamDataModelImportTests
             .MustHaveHappened(SystemTenantStreamDataModelImport.MaxCacheLoadAttempts, Times.Exactly);
         A.CallTo(() => _ckCache.Unload(TenantId))
             .MustHaveHappened(SystemTenantStreamDataModelImport.MaxCacheLoadAttempts - 1, Times.Exactly);
+    }
+
+    [Fact]
+    public async Task ALoadThatRanOutWaitingForAnotherImport_IsRetried()
+    {
+        var marked = new InvalidOperationException("load failed");
+        marked.Data[CkModelImportInProgress.ExceptionDataKey] = "System.StreamData";
+        A.CallTo(() => _tenant.LoadCacheForTenantAsync()).Throws(marked).Once();
+        A.CallTo(() => _ckCache.GetCkModelIds(TenantId)).Returns(Models("System-2.0.0", Embedded.FullName));
+
+        await Import().InitializeAsync();
+
+        A.CallTo(() => _tenant.LoadCacheForTenantAsync()).MustHaveHappenedTwiceExactly();
+    }
+
+    [Fact]
+    public async Task ALoadThatFailsForAnotherReason_FailsTheStep()
+    {
+        A.CallTo(() => _tenant.LoadCacheForTenantAsync()).Throws(new InvalidOperationException("broken model"));
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => Import().InitializeAsync());
+    }
+
+    [Fact]
+    public async Task ACacheUnloadedWhileItIsChecked_IsLoadedAgain()
+    {
+        A.CallTo(() => _ckCache.GetCkModelIds(TenantId)).Throws(new CkCacheException("unloaded")).Once()
+            .Then.Returns(Models("System-2.0.0", Embedded.FullName));
+
+        await Import().InitializeAsync();
+
+        A.CallTo(() => _tenant.LoadCacheForTenantAsync()).MustHaveHappenedTwiceExactly();
     }
 
     [Fact]

@@ -2,6 +2,7 @@ using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.ConstructionKit.Contracts.Services;
 using Meshmakers.Octo.ConstructionKit.Models.StreamData.Generated.System.StreamData.v1;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb;
+using Meshmakers.Octo.Runtime.Engine.MongoDb.Repositories.MongoDb;
 using Meshmakers.Octo.Services.Infrastructure.Initialization;
 using Meshmakers.Octo.Services.Methods;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -156,7 +157,19 @@ internal sealed class SystemTenantStreamDataModelImport(
 
         for (var attempt = 1; attempt <= MaxCacheLoadAttempts; attempt++)
         {
-            await tenant.LoadCacheForTenantAsync().ConfigureAwait(false);
+            try
+            {
+                await tenant.LoadCacheForTenantAsync().ConfigureAwait(false);
+            }
+            catch (Exception ex) when (CkModelImportInProgress.IsMarked(ex))
+            {
+                // the load already waited for the running import (AB#8677) and ran out; one more load, bounded
+                logger.LogInformation(ex,
+                    "Loading the CK cache of the system tenant '{TenantId}' waited too long for another CK model import " +
+                    "(attempt {Attempt} of {MaxAttempts})", tenant.TenantId, attempt, MaxCacheLoadAttempts);
+                continue;
+            }
+
             if (CacheHolds(tenant.TenantId, modelId))
             {
                 logger.LogInformation(
@@ -184,9 +197,24 @@ internal sealed class SystemTenantStreamDataModelImport(
     }
 
     /// <summary>The loaded cache holds the model at the embedded version or a newer one (the guard keeps a newer one).</summary>
-    private bool CacheHolds(string tenantId, CkModelId modelId) =>
-        ckCache.IsTenantLoaded(tenantId) &&
-        ckCache.GetCkModelIds(tenantId).Any(id => id.Name == modelId.Name && id.Version.CompareTo(modelId.Version) >= 0);
+    private bool CacheHolds(string tenantId, CkModelId modelId)
+    {
+        if (!ckCache.IsTenantLoaded(tenantId))
+        {
+            return false;
+        }
+
+        try
+        {
+            return ckCache.GetCkModelIds(tenantId)
+                .Any(id => id.Name == modelId.Name && id.Version.CompareTo(modelId.Version) >= 0);
+        }
+        catch (CkCacheException)
+        {
+            // unloaded between the two calls, or created but not filled yet (as in CkCacheGeneration.Capture)
+            return false;
+        }
+    }
 }
 
 /// <summary>
