@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- AB#8896 New: a paged runtime-entity query counts the matching entities only when the selection needs the total
+  (Feature AB#8793). `runtime.<CkType>`, `runtime.runtimeEntities`, persisted query `rows` and transient query `rows`
+  (standard queries) pass `includeTotalCount` to the engine: true when `totalCount` or `pageInfo` is selected or the
+  query pages from the end (`last`/`before`); otherwise no count query runs and only the page is read. With the
+  engine-mongodb change of the same story a paged query no longer loads every matching document (no `$facet`).
+  Queries by `rtId`/`rtIds` and aggregation queries are unchanged. Needs octo-construction-kit-engine-mongodb with
+  AB#8896.
 - AB#8898 New: unbounded runtime-entity query guard at the GraphQL API boundary (Feature AB#8793). A query on
   `runtime.<CkType>`, `runtime.runtimeEntities`, persisted query `rows` or transient query `rows` that selects
   `items`/`edges`/`nodes` is unbounded when it has no `first` or a `first` above `RuntimeQueryGuard:MaxPageSize` (default 1000),
