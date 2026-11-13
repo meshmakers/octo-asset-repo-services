@@ -82,7 +82,20 @@ internal static class ResolveConnectionContextExtensions
         return totalCountSelected;
     }
 
+    /// <summary>
+    ///     True when a connection field needs the total number of matching entities (AB#8896): it selects
+    ///     <c>totalCount</c> or <c>pageInfo</c> (whose <c>hasNextPage</c> is computed from the total), or it pages from
+    ///     the end with <c>last</c>/<c>before</c> (the edge range is computed from the total). Aliases and fragments
+    ///     are resolved through the AST field names. Otherwise a paged item query runs no count.
+    /// </summary>
+    internal static bool IsTotalCountNeeded<TSource>(this IResolveConnectionContext<TSource> context)
+    {
+        return context.IsFieldSelected(TotalCountFieldName) || context.IsFieldSelected(PageInfoFieldName) ||
+               context.Last != null || context.Before != null;
+    }
+
     private const string TotalCountFieldName = "totalCount";
+    private const string PageInfoFieldName = "pageInfo";
     private const string TypeNameFieldName = "__typename";
 
     internal static IOctoSessionAccessor GetSessionAccessor(this IResolveFieldContext context)

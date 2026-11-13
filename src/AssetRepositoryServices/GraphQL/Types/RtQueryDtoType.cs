@@ -239,11 +239,13 @@ internal sealed class RtQueryDtoType : ObjectGraphType<RtQueryDto>
                 return countOnly;
             }
 
-            // For aggregation queries, don't pass paging parameters to the database query
+            // For aggregation queries, don't pass paging parameters to the database query. AB#8896: the rows of a
+            // simple query are counted only when the selection needs the total.
             var resultSet = await tenantRepository.GetRtEntitiesGraphByTypeAsync(sessionAccessor.Session,
                 rtQueryDto.AssociatedCkTypeId, queryOptions, roleIdDirectionPairs,
                 isAggregationQuery ? null : offset,
-                isAggregationQuery ? null : context.First);
+                isAggregationQuery ? null : context.First,
+                isAggregationQuery || context.IsTotalCountNeeded());
 
 
             if (queryUserContext.RtPersistentQuery is RtAggregationRtQuery aggregationRtQuery)
