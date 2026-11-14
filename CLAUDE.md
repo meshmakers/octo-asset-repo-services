@@ -230,6 +230,16 @@ working unchanged; each is replaced by a method of System.StreamData 1.24.0, cal
 - **System tenant import.** The startup validation of in-process registrations looks the methods up in the system tenant's CK cache, which holds System.StreamData only
   when stream data was enabled there. `SystemTenantStreamDataModelImport` (Order 12, after the default configuration, before the validation at 15) imports the embedded model
   into the system tenant (idempotent, downgrade guard). It does not enable stream data for the system tenant.
+  **It leaves the system tenant's CK cache loaded with the model (AB#8722).** The validation (`CkCacheMethodDefinitionSource`) reads only a
+  cache that is already loaded, while the import unloads it when the model set changed (this replica imported) or the loaded cache lacks the
+  installed version (another replica imported first, AB#8667). Before AB#8722 nothing loaded it again before Order 15, so on the first rollout
+  with several replicas a pod stopped with "the CK cache of tenant(s) 'octosystem' has no such method". The import step now loads the cache
+  after the import and checks that it holds System.StreamData (by name, embedded version or newer); a cache loaded concurrently from the
+  state before the import is unloaded and loaded again, a load that ran out waiting for another replica's import (exception marked
+  `CkModelImportInProgress`, AB#8677) is loaded again, a cache unloaded during the check counts as not holding the model (at most
+  `MaxCacheLoadAttempts` = 3 loads; any other load failure fails the step). A model that is really not installed (import
+  skipped for missing dependencies) is logged WARN and still fails the validation. Tests: `IntegrationTests/StreamData/SystemTenantStreamDataImportReplicaTests`
+  (fixture `AssetRepoReplicaFixture`: several replicas with their own service provider on one fresh system tenant, started together).
 - **Create parameters are the generated records (AB#8707).** The handlers bind `TimeRangeArchiveCreateArchiveParameters` / `RollupArchiveCreateArchiveParameters`
   of System.StreamData directly; the record arrays (`Columns`, `Sources`, `Aggregations`, `IAttributeValueList<T>`) are bound by `CkMethodJson.Options` of
   octo-common-services (the plain look-alike classes of AB#8598 are removed). A missing optional `sources` is `null`, an explicit `[]` an empty list, so the

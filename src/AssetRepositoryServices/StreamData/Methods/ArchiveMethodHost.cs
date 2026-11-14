@@ -1,5 +1,8 @@
+using Meshmakers.Octo.ConstructionKit.Contracts;
+using Meshmakers.Octo.ConstructionKit.Contracts.Services;
 using Meshmakers.Octo.ConstructionKit.Models.StreamData.Generated.System.StreamData.v1;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb;
+using Meshmakers.Octo.Runtime.Engine.MongoDb.Repositories.MongoDb;
 using Meshmakers.Octo.Services.Infrastructure.Initialization;
 using Meshmakers.Octo.Services.Methods;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -114,22 +117,103 @@ internal static class ArchiveMethodHost
 
 /// <summary>
 ///     Imports the embedded System.StreamData into the system tenant before the in-process method registrations are validated
-///     against its CK cache (AB#8598). Idempotent; the embedded-import guard keeps a newer version that is already installed.
+///     against its CK cache (AB#8598), and leaves that cache loaded with the model (AB#8722). Idempotent; the embedded-import
+///     guard keeps a newer version that is already installed.
 /// </summary>
+/// <remarks>
+///     The startup validation (Order 15) reads only a CK cache that is already loaded; it never loads one. The import unloads
+///     the cache of the system tenant whenever the model set changed (this replica imported) or the loaded cache lacks the
+///     installed version (another replica imported first, AB#8667), and nothing at startup loaded it again before the
+///     validation. On the first rollout with several replicas the validation then found no method and stopped the pod
+///     (AB#8722, test-2 2026-11-10). This step therefore loads the cache again after the import and checks that it holds
+///     System.StreamData; a cache loaded concurrently from the state before the import is replaced. A model that is really
+///     not installed (an import skipped for missing dependencies) is logged here and still fails the validation.
+/// </remarks>
 internal sealed class SystemTenantStreamDataModelImport(
     ISystemContext systemContext,
+    ICkCacheService ckCache,
     ILogger<SystemTenantStreamDataModelImport> logger) : IAsyncInitializationService
 {
+    /// <summary>Loads of the cache after the import before the step gives up and leaves the result to the validation.</summary>
+    internal const int MaxCacheLoadAttempts = 3;
+
     /// <summary>After the default configuration (10), before the method registration validation (15).</summary>
     public int Order => 12;
 
     public async Task InitializeAsync()
     {
+        var modelId = SystemStreamDataCkIds.CkModelId;
         var tenant = await systemContext.FindTenantContextAsync(systemContext.TenantId).ConfigureAwait(false);
-        await tenant.ImportCkModelWithDowngradeGuardAsync(SystemStreamDataCkIds.CkModelId).ConfigureAwait(false);
-        logger.LogInformation(
-            "System.StreamData ({CkModelId}) is present in the system tenant for the archive CK method handlers",
-            SystemStreamDataCkIds.CkModelId);
+        await tenant.ImportCkModelWithDowngradeGuardAsync(modelId).ConfigureAwait(false);
+
+        if (!await tenant.IsCkModelSatisfiedAsync(modelId).ConfigureAwait(false))
+        {
+            logger.LogWarning(
+                "System.StreamData ({CkModelId}) is not installed in the system tenant '{TenantId}' after the import (see the " +
+                "import log above); the archive CK method handlers will fail the startup validation",
+                modelId, tenant.TenantId);
+            return;
+        }
+
+        for (var attempt = 1; attempt <= MaxCacheLoadAttempts; attempt++)
+        {
+            try
+            {
+                await tenant.LoadCacheForTenantAsync().ConfigureAwait(false);
+            }
+            catch (Exception ex) when (CkModelImportInProgress.IsMarked(ex))
+            {
+                // the load already waited for the running import (AB#8677) and ran out; one more load, bounded
+                logger.LogInformation(ex,
+                    "Loading the CK cache of the system tenant '{TenantId}' waited too long for another CK model import " +
+                    "(attempt {Attempt} of {MaxAttempts})", tenant.TenantId, attempt, MaxCacheLoadAttempts);
+                continue;
+            }
+
+            if (CacheHolds(tenant.TenantId, modelId))
+            {
+                logger.LogInformation(
+                    "System.StreamData ({CkModelId}) is present in the system tenant for the archive CK method handlers",
+                    modelId);
+                return;
+            }
+
+            if (attempt == MaxCacheLoadAttempts)
+            {
+                break;
+            }
+
+            // loaded from the state before the import (a concurrent load in this process): drop it and load again
+            logger.LogInformation(
+                "The CK cache of the system tenant '{TenantId}' lacks System.StreamData after the import; reloading it " +
+                "(attempt {Attempt} of {MaxAttempts})", tenant.TenantId, attempt, MaxCacheLoadAttempts);
+            ckCache.Unload(tenant.TenantId);
+        }
+
+        logger.LogWarning(
+            "The CK cache of the system tenant '{TenantId}' still lacks System.StreamData ({CkModelId}) after " +
+            "{MaxAttempts} loads; the archive CK method handlers will fail the startup validation",
+            tenant.TenantId, modelId, MaxCacheLoadAttempts);
+    }
+
+    /// <summary>The loaded cache holds the model at the embedded version or a newer one (the guard keeps a newer one).</summary>
+    private bool CacheHolds(string tenantId, CkModelId modelId)
+    {
+        if (!ckCache.IsTenantLoaded(tenantId))
+        {
+            return false;
+        }
+
+        try
+        {
+            return ckCache.GetCkModelIds(tenantId)
+                .Any(id => id.Name == modelId.Name && id.Version.CompareTo(modelId.Version) >= 0);
+        }
+        catch (CkCacheException)
+        {
+            // unloaded between the two calls, or created but not filled yet (as in CkCacheGeneration.Capture)
+            return false;
+        }
     }
 }
 
