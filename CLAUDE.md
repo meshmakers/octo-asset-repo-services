@@ -1904,7 +1904,7 @@ client needs it granted (`AddUserToRole`, or membership in a group that carries 
 |----------|--------|
 | `POST {tenant}/v1/Models/ImportCk` (incl. `forceBreakingUpdate`) | `DataModelManagementPolicy` (was read-write until AB#8529) |
 | `POST {tenant}/v1/Models/ImportFromCatalog`, `ImportFromCatalogBatch` (octo-cli `FixAll`, incl. `forceBreakingUpdate`) | `DataModelManagementPolicy` |
-| `POST {tenant}/v1/blueprints/apply`, `POST blueprints/updates/apply`, `DELETE blueprints/{name}` | `DataModelManagementPolicy` (was read-write until AB#8529) |
+| `POST {tenant}/v1/blueprints/apply`, `POST blueprints/updates/apply`, `DELETE blueprints/{name}`, `POST blueprints/{name}/uninstall/preview` (AB#8966 dry run) | `DataModelManagementPolicy` (was read-write until AB#8529) |
 | GraphQL `blueprints { install, applyUpdate, uninstall }` | roles `AdminPanelManagement` **and** `DataModelManagement` (field level; missing `DataModelManagement` = error code `DataModelManagementRequired`) |
 | `POST system/v1/ckmodelcatalog/refresh`, `ckmodelcatalog/{name}/refresh` | `DataModelManagementPolicy` |
 | `POST system/v1/blueprints/catalogs/refresh`, `blueprints/catalogs/{name}/refresh` | `DataModelManagementPolicy` |

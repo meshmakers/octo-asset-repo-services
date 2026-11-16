@@ -49,6 +49,7 @@ internal sealed class BlueprintsMutation : ObjectGraphType
             .Description("Removes a blueprint from the tenant. With cascade=true, dependents are uninstalled first and orphan dependencies are auto-cleaned.")
             .Argument<NonNullGraphType<StringGraphType>>("blueprintName", "Blueprint name (without version).")
             .Argument<BooleanGraphType>("cascade", "Also uninstall dependents and orphan dependencies. Defaults to false.")
+            .Argument<BooleanGraphType>("dryRun", "Change nothing; report which entities the uninstall would erase and which tenant-owned seed entities it would keep. Defaults to false.")
             .ResolveAsync(ResolveUninstallAsync);
     }
 
@@ -236,6 +237,7 @@ internal sealed class BlueprintsMutation : ObjectGraphType
 
             var blueprintName = ctx.GetArgument<string>("blueprintName");
             var cascade = ctx.GetArgument<bool?>("cascade") ?? false;
+            var dryRun = ctx.GetArgument<bool?>("dryRun") ?? false;
             if (string.IsNullOrWhiteSpace(blueprintName))
             {
                 ctx.Errors.Add(new ExecutionError("blueprintName is required") { Code = "BAD_REQUEST" });
@@ -245,18 +247,11 @@ internal sealed class BlueprintsMutation : ObjectGraphType
             var gql = (GraphQlUserContext)ctx.UserContext;
             var blueprintService = ctx.RequestServices!.GetRequiredService<IBlueprintService>();
 
-            var result = await blueprintService.UninstallAsync(
-                gql.TenantId, blueprintName, cascade, ctx.CancellationToken);
+            var result = dryRun
+                ? await blueprintService.PreviewUninstallAsync(gql.TenantId, blueprintName, cascade, ctx.CancellationToken)
+                : await blueprintService.UninstallAsync(gql.TenantId, blueprintName, cascade, ctx.CancellationToken);
 
-            return new BlueprintUninstallResultDto
-            {
-                Success = result.Success,
-                UninstalledBlueprintId = result.UninstalledBlueprintId?.FullName,
-                EntitiesDeleted = result.EntitiesDeleted,
-                CascadedDependencies = result.CascadedDependencies.Select(d => d.FullName).ToList(),
-                BlockingDependents = result.BlockingDependents.Select(d => d.FullName).ToList(),
-                Warnings = result.Warnings.ToList()
-            };
+            return BlueprintUninstallResultMapper.ToDto(result);
         }
         catch (Exception e)
         {

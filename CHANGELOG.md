@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- AB#8966 New: blueprint uninstall reports what it erased and what it kept, and has a dry run. The engine now erases unedited
+  tenant-owned seed entities on uninstall and keeps edited and referenced ones (octo-construction-kit-engine, same story). The
+  uninstall result (`DELETE {tenant}/v1/blueprints/{name}`, GraphQL `blueprints { uninstall }`) gains `dryRun`,
+  `deletedEntities` (key, ckTypeId, entityId, wellKnownName, tenantOwned) and `tenantOwnedKept` (the same identity plus `reason`
+  `Edited` | `Referenced` | `NotComparable` | `EraseFailed` and `referencedBy`); identity only, never attribute values. New dry run:
+  `POST {tenant}/v1/blueprints/{name}/uninstall/preview?cascade=` (same status codes as the uninstall, `DataModelManagementPolicy`)
+  and the GraphQL argument `uninstall(dryRun: true)`. The dry run has a route of its own instead of a `DELETE` flag, so an
+  asset repository without AB#8966 answers an empty 404 instead of ignoring the flag and uninstalling; "not installed" is a 404
+  with an `OperationFailedErrorDto` message on both routes (was an empty 404 on `DELETE`). Additive; older clients keep working.
+
 - AB#8722 Fix: the asset repository starts reliably on the first rollout of the System.StreamData archive methods (AB#8598), also with
   several replicas starting at once. On a system tenant without System.StreamData the import at startup unloaded the system tenant's CK
   cache (own import, or a cache that lacked the model another replica had just installed) and nothing loaded it again before the

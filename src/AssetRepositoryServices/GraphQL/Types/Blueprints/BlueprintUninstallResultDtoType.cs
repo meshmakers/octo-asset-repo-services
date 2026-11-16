@@ -17,16 +17,28 @@ internal sealed class BlueprintUninstallResultDtoType : ObjectGraphType<Blueprin
         Description = "Result of uninstalling a blueprint from a tenant.";
 
         Field<NonNullGraphType<BooleanGraphType>>("success")
-            .Description("True when the uninstall completed.")
+            .Description("True when the uninstall (or its dry run) completed.")
             .Resolve(ctx => ctx.Source!.Success);
+
+        Field<NonNullGraphType<BooleanGraphType>>("dryRun")
+            .Description("True for a dry run: nothing was changed, the counts and lists say what the uninstall would do.")
+            .Resolve(ctx => ctx.Source!.DryRun);
 
         Field<StringGraphType>("uninstalledBlueprintId")
             .Description("Fully-qualified id of the blueprint that was uninstalled, if any.")
             .Resolve(ctx => ctx.Source!.UninstalledBlueprintId);
 
         Field<NonNullGraphType<IntGraphType>>("entitiesDeleted")
-            .Description("Number of locked entities erased from the tenant.")
+            .Description("Number of entities erased from the tenant (in a dry run: that would be erased): locked entities of the blueprint and its unedited, unreferenced tenant-owned seed entities.")
             .Resolve(ctx => ctx.Source!.EntitiesDeleted);
+
+        Field<NonNullGraphType<ListGraphType<NonNullGraphType<BlueprintUninstallDeletedEntityDtoType>>>>("deletedEntities")
+            .Description("The entities counted in entitiesDeleted, cascaded blueprints included.")
+            .Resolve(ctx => ctx.Source!.DeletedEntities);
+
+        Field<NonNullGraphType<ListGraphType<NonNullGraphType<BlueprintTenantOwnedKeptEntityDtoType>>>>("tenantOwnedKept")
+            .Description("Tenant-owned seed entities of the blueprint that stay in the tenant, each with the reason (Edited, Referenced, NotComparable, EraseFailed).")
+            .Resolve(ctx => ctx.Source!.TenantOwnedKept);
 
         Field<NonNullGraphType<ListGraphType<NonNullGraphType<StringGraphType>>>>("cascadedDependencies")
             .Description("Blueprint ids that were cascade-uninstalled alongside the target.")
