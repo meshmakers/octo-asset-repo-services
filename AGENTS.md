@@ -21,6 +21,11 @@ kit models, and time-series stream data stored in MongoDB.
 - **Octo.AssetRepServices.sln** - Main solution file
   - **src/AssetRepositoryServices/** - Main web service project
   - **src/AssetRepositoryServices.Resources/** - Localized resource strings for GraphQL descriptions
+  - **tests/AssetRepositoryServices.UnitTests/** - Unit tests, no containers
+  - **tests/AssetRepositoryServices.IntegrationTests/** - Integration tests against MongoDB and CrateDB containers
+    (its `README.md` describes fixtures, collections and the test categories)
+  - **tests/AssetRepositoryServices.MethodCanaryScan/** - Method canary scan against a running local stack, not part of
+    the CI test run (`docs/method-in-process.md`)
 
 ### Build Configurations
 - **DebugL** - **[DEFAULT]** Local development configuration (version 999.0.0, uses local NuGet packages from
@@ -50,9 +55,11 @@ kit models, and time-series stream data stored in MongoDB.
 | `**/Security/**`, `**/ConfigureJwtBearer*.cs`, `**/*Authorization*.cs`, `**/StreamDataReadRoleGate.cs`, `**/OctoApplicationBuilder*.cs` | `docs/tenant-enforcement.md` |
 <!-- <<< end generated: routing -->
 
-Background, not path-triggered; each file is linked from the routed doc of its topic: `docs/principal-kind.md`,
-`docs/runtime-query-guard.md`, `docs/method-idempotency-store.md`, `docs/gateway-owned-method-handlers.md`,
-`docs/gridfs-orphan-sweep.md`.
+Background, not path-triggered; each file is linked from the routed doc of its topic: `docs/principal-kind.md`
+(how the caller's principal kind is set and checked), `docs/runtime-query-guard.md` (operator view of the unbounded
+query guard: configuration, metric, error `ASSET1007`), `docs/method-idempotency-store.md` (records, atomic claim,
+expiry, latency), `docs/gateway-owned-method-handlers.md` (how to register an in-process method handler) and
+`docs/gridfs-orphan-sweep.md` (endpoint and runbook of the orphan sweep).
 
 ## Build & test
 
@@ -72,13 +79,17 @@ dotnet build Octo.AssetRepServices.sln -c DebugL
 # - Preferred for all local development and testing
 ```
 
+DebugL restores the upstream `999.0.0` packages (engine, common-services, SDK) from `../nuget`. On a fresh workspace, or
+when the restore reports a missing `Meshmakers.Octo.*` `999.0.0` package, build the dependency chain first with
+`Invoke-BuildAll -configuration DebugL` or `Invoke-BuildRange` (octo-tools).
+
 ### Test
 ```bash
-# Run all integration tests
-dotnet test tests/AssetRepositoryServices.IntegrationTests/ -c DebugL
+# Run all unit tests (no containers)
+dotnet test tests/AssetRepositoryServices.UnitTests/ -c DebugL
 
-# Run all tests except SystemTests
-dotnet test '**/*Tests.csproj' --exclude '**/*SystemTests.csproj' -c DebugL
+# Run all integration tests (needs Docker)
+dotnet test tests/AssetRepositoryServices.IntegrationTests/ -c DebugL
 
 # Run specific test class
 dotnet test --filter "FullyQualifiedName~RtEntityDeleteMutationTests" -c DebugL
@@ -107,6 +118,8 @@ docker build -f src/AssetRepositoryServices/Dockerfile \
   --build-arg OCTO_PRIVATE_NUGET_SERVICE=<nuget-url> \
   --build-arg OCTO_PRIVATE_NUGET_CERTIFICATE=<cert-path> \
   --build-arg OCTO_VERSION=<version> \
+  --build-arg OCTO_CORE_LIB_VERSION=<version> \
+  --build-arg OCTO_COMM_VERSION=<version> \
   -t octo-asset-repo-services .
 ```
 
@@ -114,7 +127,8 @@ docker build -f src/AssetRepositoryServices/Dockerfile \
 
 1. `dotnet build Octo.AssetRepServices.sln -c DebugL` succeeds with zero warnings
    (`TreatWarningsAsErrors=true` in `Directory.Build.props`).
-2. The test commands above report 0 failed. The integration tests start MongoDB and CrateDB containers and need Docker.
+2. The unit tests and the integration tests (the first two test commands above) report 0 failed; CI runs the same two
+   projects. The integration tests start MongoDB and CrateDB containers and need Docker.
 3. Update the doc under `docs/` that covers the code you changed (the routing table above names it), in the same commit.
    Behaviour that API clients or operators see also goes into `CHANGELOG.md` under `## Unreleased`, as the existing
    entries do.
