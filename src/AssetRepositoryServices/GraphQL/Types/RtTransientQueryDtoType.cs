@@ -226,11 +226,14 @@ internal sealed class RtTransientQueryDtoType : ObjectGraphType<RtTransientQuery
             }
 
             _logger.LogDebug("GraphQL query handling returning data");
+            var items = resultSet.Items.ToList();
+            var total = ConnectionUtils.TotalCoveringThePage(resultSet.TotalCount, offset.GetValueOrDefault(0),
+                items.Count);
             return ConnectionUtils.ToOctoConnection(
-                resultSet.Items.Select((entity, _) =>
+                items.Select((entity, _) =>
                     RtSimpleQueryRowDtoType.CreateRtQueryRowDto(tenantRepository.TenantId, entity,
                         queryUserContext.CkTypeQueryColumns)), context,
-                resultSet.TotalCount > 0 ? offset.GetValueOrDefault(0) : 0, (int)resultSet.TotalCount,
+                total > 0 ? offset.GetValueOrDefault(0) : 0, total,
                 resultSet.AggregationResult, resultSet.FieldAggregationResult);
         }
         catch (Exception e)

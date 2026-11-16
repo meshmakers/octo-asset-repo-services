@@ -159,6 +159,37 @@ public class TotalCountNeededRoutingTests
         connection.Edges!.Last().Cursor.Should().Be(ConnectionUtils.OffsetToCursor(23));
     }
 
+    [Fact]
+    public async Task CountBelowThePage_EntitiesDeletedBetweenPageAndCount_TheTotalStillCoversThePage()
+    {
+        // The engine counts in a read of its own after the page: deletes in between can report fewer entities
+        // (here 15) than the page already holds (offset 20 + 10). The connection keeps every returned entity and
+        // reports the page end as the total instead of failing the slice check.
+        var options = RtEntityQueryOptions.Create();
+        A.CallTo(() => _repository.GetRtEntitiesByTypeAsync(_session, CkTypeId, options, 20, 10, true))
+            .Returns(ResultSet(10, 15));
+
+        var connection = (OctoConnection<RtEntityDto>)await RuntimeModelQuery.QueryRtEntitiesByTypeAsync(
+            Context("items", "totalCount"), _repository, _session, CkTypeId, options, 20);
+
+        connection.TotalCount.Should().Be(30);
+        connection.Edges.Should().HaveCount(10);
+        connection.Edges!.First().Cursor.Should().Be(ConnectionUtils.OffsetToCursor(20));
+        connection.Edges!.Last().Cursor.Should().Be(ConnectionUtils.OffsetToCursor(29));
+    }
+
+    [Theory]
+    [InlineData(100L, 20, 10, 100)] // a real total above the page end is kept
+    [InlineData(30L, 20, 10, 30)] // the lower bound of a query without count is unchanged
+    [InlineData(15L, 20, 10, 30)] // a count below the page end is raised to the page end
+    [InlineData(0L, 20, 0, 0)] // an empty page beyond the end stays empty
+    [InlineData(25L, 20, 0, 25)] // an empty page keeps the reported total
+    [InlineData(5_000_000_000L, 0, 10, int.MaxValue)] // capped to the connection's int range
+    public void TotalCoveringThePage_IsNeverBelowThePageEnd(long reported, int offset, int items, int expected)
+    {
+        ConnectionUtils.TotalCoveringThePage(reported, offset, items).Should().Be(expected);
+    }
+
     private static IResultSet<RtEntity> ResultSet(int items, long totalCount)
     {
         var entities = Enumerable.Range(0, items)

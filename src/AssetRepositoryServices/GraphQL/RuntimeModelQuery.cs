@@ -487,8 +487,11 @@ internal sealed class RuntimeModelQuery : ObjectGraphType
 
         var resultSet = await tenantRepository.GetRtEntitiesByTypeAsync(session, ckTypeId, queryOptions, offset,
             arg.First, arg.IsTotalCountNeeded());
-        return ConnectionUtils.ToOctoConnection(resultSet.Items.Select(RtEntityDtoType.CreateRtEntityDto), arg,
-            resultSet.TotalCount > 0 ? offset.GetValueOrDefault(0) : 0, (int)resultSet.TotalCount,
+        var items = resultSet.Items.ToList();
+        var total = ConnectionUtils.TotalCoveringThePage(resultSet.TotalCount, offset.GetValueOrDefault(0),
+            items.Count);
+        return ConnectionUtils.ToOctoConnection(items.Select(RtEntityDtoType.CreateRtEntityDto), arg,
+            total > 0 ? offset.GetValueOrDefault(0) : 0, total,
             resultSet.AggregationResult, resultSet.FieldAggregationResult);
     }
 
