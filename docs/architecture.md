@@ -116,10 +116,20 @@ N:M associations are exposed as query columns with `::totalCount` (INT64) and `:
   `PosUpdateTenant` that was published before this process listened to the bus (service start). An unchanged cache costs
   one dictionary lookup and a reference compare per request. Tests: `GraphQL/Schema/SchemaFollowsCkCacheTests`,
   `UnitTests/GraphQL/CkCacheGenerationTests`.
+- **Schema build vs. CK cache unload (AB#8998):** a `PreUpdateTenant` (CK import, revalidation) or the stale-type fallback can
+  unload the tenant's CK cache while `GetOrCreateAsync` builds the schema - after `PopulateAsync` loaded it and before
+  `Initialize`. The build then fails with a `CkCacheException` ("CkCache for tenant 'x' not found"). When such an exception is
+  in the chain **and** the CK cache is no longer the load the build started from (`CkCacheGeneration.HasChanged`), the build
+  is repeated once from a fresh load, with a WARN `GraphQL schema build for tenant {TenantId} failed because the CK cache was
+  unloaded or reloaded during the build; building once more from a fresh load (AB#8998)`. A second failure becomes the usual
+  `SchemaCreationFailed` error; a CK error on a stable cache (a genuinely missing type) is not retried. The build log line
+  carries `attempt {Attempt}`. Seen on prod-2 (tenant sbeg, 2026-11-15: two HTTP 500 within 1.5 s of the unload). Tests:
+  `GraphQL/Schema/SchemaBuildSurvivesCkCacheUnloadTests` (test seam `SchemaContext.AfterPopulateForTesting` unloads the cache
+  between populate and initialize).
 - The schema is **initialized eagerly** inside `SchemaContext.GetOrCreateAsync` (not lazily on the first request),
   so an invalid schema is never cached and the build time is measured completely. Every build logs at Information:
   `GraphQL schema for tenant {TenantId} built in {ElapsedMs} ms ({TypeCount} types, {InterfaceCount} CK interfaces,
-  {MethodCount} CK methods; populate {PopulateMs} ms, initialize {InitializeMs} ms)`
+  {MethodCount} CK methods; populate {PopulateMs} ms, initialize {InitializeMs} ms, attempt {Attempt})`
 - **Exception details in GraphQL errors** (`extensions.details`: exception text, inner exceptions, stack trace) are
   exposed only in the `Development` environment or with the explicit opt-in `GraphQl:ExposeExceptionDetails`
   (`OCTO_GraphQl__ExposeExceptionDetails`; an explicit value wins over the environment) — `GraphQlErrorExposure`.

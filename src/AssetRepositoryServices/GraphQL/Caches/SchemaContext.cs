@@ -5,6 +5,7 @@ using GraphQL.Types;
 using Meshmakers.Common.Shared;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.Configuration.DependencyInjection.Options;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.Services;
+using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.ConstructionKit.Contracts.Services;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Options;
@@ -92,34 +93,22 @@ internal class SchemaContext(
                 entry.SetSize(1);
                 entry.SlidingExpiration = TimeSpan.FromDays(1);
 
-                // Schema-build timing (CK v2 risk R8): the CK v2 types (interfaces, inheritance, association
-                // members) must not make the per-tenant schema build noticeably slower.
-                var stopwatch = Stopwatch.StartNew();
-
-                var graphTypesCache = new GraphTypesCache(ckCacheService, octoService, options, tenantId,
-                    loggerFactory.CreateLogger<GraphTypesCache>());
-                await graphTypesCache.PopulateAsync();
-                var populateMs = stopwatch.ElapsedMilliseconds;
-
-                var query = new OctoQuery(loggerFactory, graphTypesCache);
-                var mutation = new OctoMutation(loggerFactory, graphTypesCache);
-                var subscriptions = new OctoSubscriptions(graphTypesCache);
-
-                var createdSchema = new OctoSchema(serviceProvider, query, mutation, subscriptions);
-                createdSchema.RegisterTypes(graphTypesCache.GetKnownGraphTypes());
-
-                // Initialize eagerly so the measured time is the real build cost (GraphQL.NET would otherwise
-                // initialize lazily on the first request) and an invalid schema is never cached.
-                createdSchema.Initialize();
-                stopwatch.Stop();
-
-                var statistics = graphTypesCache.GetStatistics();
-                logger.LogInformation(
-                    "GraphQL schema for tenant {TenantId} built in {ElapsedMs} ms ({TypeCount} types, {InterfaceCount} CK interfaces, {MethodCount} CK methods; populate {PopulateMs} ms, initialize {InitializeMs} ms)",
-                    tenantId, stopwatch.ElapsedMilliseconds, createdSchema.AllTypes.Count, statistics.CkInterfaceCount,
-                    statistics.MethodCount, populateMs, stopwatch.ElapsedMilliseconds - populateMs);
-
-                return new CachedSchema(createdSchema, graphTypesCache.CkCacheMarker);
+                // AB#8998: a PreUpdateTenant (CK import, revalidation) or the AB#5415 stale-type fallback may unload the
+                // tenant's CK cache while the schema is built - between the load in PopulateAsync and Initialize. The
+                // build then fails with a CkCacheException ("CkCache for tenant 'x' not found"). Build once more from a
+                // fresh load; a second failure is reported. Bounded: one retry, no loop.
+                var firstAttempt = CreateGraphTypesCache(tenantId);
+                try
+                {
+                    return await BuildSchemaAsync(firstAttempt, tenantId, attempt: 1);
+                }
+                catch (Exception e) when (IsCkCacheChangedDuringBuild(e, tenantId, firstAttempt.CkCacheMarker))
+                {
+                    logger.LogWarning(e,
+                        "GraphQL schema build for tenant {TenantId} failed because the CK cache was unloaded or reloaded during the build; building once more from a fresh load (AB#8998)",
+                        tenantId);
+                    return await BuildSchemaAsync(CreateGraphTypesCache(tenantId), tenantId, attempt: 2);
+                }
             });
 
             var returnSchema = await _cache.GetOrCreateAsync(key, t);
@@ -138,6 +127,71 @@ internal class SchemaContext(
         {
             _semaphore.Release();
         }
+    }
+
+    /// <summary>
+    ///     Test seam (AB#8998): called after the graph types were populated from the CK cache and before the schema is
+    ///     initialized, with the tenant id and the attempt number (1 or 2). <c>null</c> in production.
+    /// </summary>
+    internal Func<string, int, Task>? AfterPopulateForTesting { get; set; }
+
+    private GraphTypesCache CreateGraphTypesCache(string tenantId)
+    {
+        return new GraphTypesCache(ckCacheService, octoService, options, tenantId,
+            loggerFactory.CreateLogger<GraphTypesCache>());
+    }
+
+    private async Task<CachedSchema> BuildSchemaAsync(GraphTypesCache graphTypesCache, string tenantId, int attempt)
+    {
+        // Schema-build timing (CK v2 risk R8): the CK v2 types (interfaces, inheritance, association
+        // members) must not make the per-tenant schema build noticeably slower.
+        var stopwatch = Stopwatch.StartNew();
+
+        await graphTypesCache.PopulateAsync();
+        var populateMs = stopwatch.ElapsedMilliseconds;
+
+        if (AfterPopulateForTesting != null)
+        {
+            await AfterPopulateForTesting(tenantId, attempt);
+        }
+
+        var query = new OctoQuery(loggerFactory, graphTypesCache);
+        var mutation = new OctoMutation(loggerFactory, graphTypesCache);
+        var subscriptions = new OctoSubscriptions(graphTypesCache);
+
+        var createdSchema = new OctoSchema(serviceProvider, query, mutation, subscriptions);
+        createdSchema.RegisterTypes(graphTypesCache.GetKnownGraphTypes());
+
+        // Initialize eagerly so the measured time is the real build cost (GraphQL.NET would otherwise
+        // initialize lazily on the first request) and an invalid schema is never cached.
+        createdSchema.Initialize();
+        stopwatch.Stop();
+
+        var statistics = graphTypesCache.GetStatistics();
+        logger.LogInformation(
+            "GraphQL schema for tenant {TenantId} built in {ElapsedMs} ms ({TypeCount} types, {InterfaceCount} CK interfaces, {MethodCount} CK methods; populate {PopulateMs} ms, initialize {InitializeMs} ms, attempt {Attempt})",
+            tenantId, stopwatch.ElapsedMilliseconds, createdSchema.AllTypes.Count, statistics.CkInterfaceCount,
+            statistics.MethodCount, populateMs, stopwatch.ElapsedMilliseconds - populateMs, attempt);
+
+        return new CachedSchema(createdSchema, graphTypesCache.CkCacheMarker);
+    }
+
+    /// <summary>
+    ///     True when the build failed on the tenant's CK cache (a <see cref="CkCacheException" /> anywhere in the chain)
+    ///     and the cache is no longer the load the build started from (<paramref name="builtFrom" />): it was unloaded or
+    ///     reloaded meanwhile (AB#8998). A CK error on a stable cache (a genuinely missing type) is not retried.
+    /// </summary>
+    private bool IsCkCacheChangedDuringBuild(Exception e, string tenantId, object? builtFrom)
+    {
+        for (Exception? inner = e; inner != null; inner = inner.InnerException)
+        {
+            if (inner is CkCacheException)
+            {
+                return CkCacheGeneration.HasChanged(ckCacheService, tenantId, builtFrom);
+            }
+        }
+
+        return false;
     }
 }
 
