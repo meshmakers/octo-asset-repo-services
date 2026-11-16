@@ -75,7 +75,10 @@ public partial class ArchiveLifecycleMethodTests
             "activateArchive", "disableArchive", "enableArchive", "retryArchiveActivation", "deleteArchive",
             "createTimeRangeArchive", "createRollupArchive",
             // AB#8599
-            "freezeRollupArchive", "unfreezeRollupArchive", "rewindRollupWatermark", "recomputeArchive", "backfillRollupFromSource");
+            "freezeRollupArchive", "unfreezeRollupArchive", "rewindRollupWatermark", "recomputeArchive", "backfillRollupFromSource",
+            // AB#8600
+            "addComputedColumn", "addArchiveColumn", "removeComputedColumn", "updateComputedColumnFormula",
+            "retryComputedColumnBackfill", "repairComputedColumn");
         ArchiveMethodHost.DeprecationReasonOf("activateArchive")
             .Should().Be("Use System.StreamData/Archive.Activate-1");
         ArchiveMethodHost.DeprecationReasonOf("createRollupArchive")
@@ -105,8 +108,10 @@ public partial class ArchiveLifecycleMethodTests
             fields[handler.Mutation!].Value<string>("deprecationReason").Should().Be($"Use {handler.MethodId}");
         }
 
-        // the column mutations are not part of these stories (AB#8600)
-        fields["addComputedColumn"].Value<bool>("isDeprecated").Should().BeFalse();
+        // AB#8600: with the column methods every streamData mutation is deprecated
+        fields.Keys.Should().BeEquivalentTo(ArchiveMethodHost.Handlers.Where(h => h.Mutation != null).Select(h => h.Mutation));
+        fields.Values.Should().OnlyContain(f => f.Value<bool>("isDeprecated"));
+        ArchiveMethodHost.DeprecationReasonOf("addArchiveColumn").Should().Be("Use System.StreamData/Archive.AddColumn-1");
     }
 
     // ── parity: same transition as the mutation ─────────────────────────────────────────────────

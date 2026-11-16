@@ -55,7 +55,10 @@ internal static class RollupTransitions
         }
     }
 
-    /// <summary>The job as the mutations answer it (<c>RecomputeJobInfoDto.From</c>), as the CK record.</summary>
+    /// <summary>
+    ///     The job as the mutations answer it (<c>RecomputeJobInfoDto.From</c>), as the CK record; also the answer of the computed
+    ///     column methods (AB#8600).
+    /// </summary>
     public static RtRecomputeJobInfoRecord ToRecord(RecomputeJobSnapshot job) => new()
     {
         JobRtId = job.RtId.ToString(),
@@ -66,7 +69,9 @@ internal static class RollupTransitions
         FinishedAt = job.FinishedAt,
         DurationMs = job.DurationMs,
         ErrorReason = job.ErrorReason,
-        LastProgressAt = job.LastProgressAt
+        LastProgressAt = job.LastProgressAt,
+        // System.StreamData 1.28.0 (AB#8600): set for the backfill and repair jobs of a computed column
+        ComputedColumnName = job.ComputedColumnName
     };
 }
 

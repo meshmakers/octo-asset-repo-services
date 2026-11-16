@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- AB#8600 New: archive columns and computed columns as CK methods of System.StreamData 1.28.0, handled in-process like the
+  other archive methods: `Archive.AddComputedColumn-1`, `AddColumn-1`, `RemoveComputedColumn-1`, `UpdateComputedColumnFormula-1`
+  (answer `ArchiveTransitionResult`), `RetryComputedColumnBackfill-1` and `RepairComputedColumn-1` (answer the queued job as
+  `RecomputeJobInfo` with `computedColumnName`). Role `StreamDataAdmin`, the mutations' error codes; a path that reaches a Hidden
+  attribute is refused as with `addArchiveColumn`. Differences: `STREAMDATA_NOT_ENABLED` without stream data, and
+  `STREAMDATA_ERROR` (engine message) for an unknown computed column in update, retry and repair, where the mutations answer
+  their generic error (removing an unknown column changes nothing, as with the mutation). The mutations `addComputedColumn`, `addArchiveColumn`, `removeComputedColumn`,
+  `updateComputedColumnFormula`, `retryComputedColumnBackfill` and `repairComputedColumn` keep working and are `@deprecated` with
+  the method id, so every `streamData` mutation is deprecated now; a unit test fails for a new one without a method. The rollup
+  methods' `RecomputeJobInfo` also carries `computedColumnName` (null for a rollup job). Needs System.StreamData 1.28.0
+  (octo-construction-kit-engine with AB#8600).
 - AB#6247 New: `System.StreamData/Archive.RedactHiddenColumns-1` (System.StreamData 1.27.0), the documented way out of an
   archive the engine set to `Failed` because a CK model change made one of its columns Hidden. **Destructive:** drops these
   columns and their stored values from the table and the definition, audited, and activates the archive again; requires

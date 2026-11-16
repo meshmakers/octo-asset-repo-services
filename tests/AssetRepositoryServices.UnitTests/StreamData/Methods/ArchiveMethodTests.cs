@@ -43,6 +43,47 @@ public class ArchiveMethodTests
         failure.Parameters[ArchiveMethodErrors.MessageParameter].Should().Be(exception.Message);
     }
 
+    /// <summary>
+    ///     AB#8600 / AB#6247: addArchiveColumn refuses a path that reaches a Hidden attribute with STREAMDATA_ERROR and the
+    ///     engine message; Archive.AddColumn-1 answers the same.
+    /// </summary>
+    [Fact]
+    public void AHiddenAttribute_IsRefusedWithTheCodeOfTheMutation()
+    {
+        var exception = new HiddenAttributeInArchiveException(ArchiveId, new RtCkId<CkTypeId>("Basic/Tree"), "Secret",
+            "Secret");
+
+        var failure = ArchiveMethodErrors.FailureOf(exception);
+
+        failure.Code.Should().Be(Statics.GraphQlErrorStreamData);
+        failure.Parameters[ArchiveMethodErrors.MessageParameter].Should().Contain("Hidden attribute 'Secret'");
+    }
+
+    /// <summary>
+    ///     AB#8600: every field of StreamDataMutations is deprecated with the id of the CK method that replaces it, and every
+    ///     method of the host that replaces a mutation names an existing field. A new hand-written streamData mutation without a
+    ///     method fails here.
+    /// </summary>
+    [Fact]
+    public void EveryStreamDataMutation_IsDeprecated_WithTheMethodThatReplacesIt()
+    {
+        var mutation = new StreamDataMutation(
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<StreamDataMutation>.Instance);
+        var methodIds = ArchiveMethodHost.Handlers.Where(h => h.Mutation != null)
+            .ToDictionary(h => h.Mutation!, h => h.MethodId, StringComparer.Ordinal);
+
+        mutation.Fields.Should().NotBeEmpty();
+        foreach (var field in mutation.Fields)
+        {
+            methodIds.Should().ContainKey(field.Name, $"streamData.{field.Name} needs a CK method (F4.3)");
+            field.DeprecationReason.Should().Be($"Use {methodIds[field.Name]}", field.Name);
+            field.DeprecationReason.Should().StartWith("Use System.StreamData/", field.Name);
+        }
+
+        mutation.Fields.Select(f => f.Name).Should().BeEquivalentTo(methodIds.Keys,
+            "every method that replaces a mutation names a field of StreamDataMutations");
+    }
+
     [Fact]
     public void AnInvalidTransition_CarriesTheStatusAndTheTransition_AsTheMutationExtensionsDo()
     {
@@ -71,7 +112,14 @@ public class ArchiveMethodTests
             ("recomputeArchive", SystemStreamDataCkIds.RollupArchiveRecomputeMethodId),
             ("backfillRollupFromSource", SystemStreamDataCkIds.RollupArchiveBackfillFromSourceMethodId),
             // the redaction of Hidden columns replaces no mutation
-            ((string?)null, SystemStreamDataCkIds.ArchiveRedactHiddenColumnsMethodId)
+            ((string?)null, SystemStreamDataCkIds.ArchiveRedactHiddenColumnsMethodId),
+            // AB#8600 (System.StreamData 1.28.0): columns and computed columns
+            ("addComputedColumn", SystemStreamDataCkIds.ArchiveAddComputedColumnMethodId),
+            ("addArchiveColumn", SystemStreamDataCkIds.ArchiveAddColumnMethodId),
+            ("removeComputedColumn", SystemStreamDataCkIds.ArchiveRemoveComputedColumnMethodId),
+            ("updateComputedColumnFormula", SystemStreamDataCkIds.ArchiveUpdateComputedColumnFormulaMethodId),
+            ("retryComputedColumnBackfill", SystemStreamDataCkIds.ArchiveRetryComputedColumnBackfillMethodId),
+            ("repairComputedColumn", SystemStreamDataCkIds.ArchiveRepairComputedColumnMethodId)
         });
         ArchiveMethodHost.Handlers.Should().OnlyContain(h => !h.MethodId.Contains("-1.", StringComparison.Ordinal),
             "the ids are version-less");
@@ -91,6 +139,10 @@ public class ArchiveMethodTests
         record.State.Should().Be(RtCkRecomputeJobStateEnum.Completed);
         (record.RowsProcessed, record.WindowsProcessed, record.DurationMs).Should().Be((10, 2, 1234));
         record.ErrorReason.Should().BeNull();
+        record.ComputedColumnName.Should().BeNull("a rollup recompute writes no computed column");
+        RollupTransitions.ToRecord(job with { StagingTableName = RecomputeJobSnapshot.ComputedColumnMarkerPrefix + "ratio" })
+            .ComputedColumnName.Should().Be("ratio",
+            "AB#8600: the job of a computed column method names the column, as computedColumnName of the mutation");
         foreach (var state in Enum.GetValues<RecomputeJobState>())
         {
             RollupTransitions.ToRecord(job with { State = state }).State.ToString().Should().Be(state.ToString());
@@ -179,6 +231,35 @@ public class ArchiveMethodTests
         ArchiveMethodSupport.TryToEngine<BucketAlignment>((RtBucketAlignmentEnum)999, out _).Should().BeFalse();
         ArchiveMethodSupport.TryToEngine<CkRollupFunction>(RtCkRollupFunctionEnum.Sum, out var sum).Should().BeTrue();
         sum.Should().Be(CkRollupFunction.Sum);
+    }
+
+    /// <summary>AB#8600: an undefined result type number is a validation failure on <c>resultType</c>; nothing is called.</summary>
+    [Fact]
+    public async Task AddComputedColumn_AnUndefinedResultType_IsAValidationFailureOnTheField()
+    {
+        var handler = new ArchiveAddComputedColumnHandler(null!,
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<ArchiveAddComputedColumnHandler>.Instance);
+        var parameters = new ArchiveAddComputedColumnParameters
+        {
+            Name = "x", Formula = "Voltage", ResultType = (RtCkComputedColumnResultTypeEnum)999
+        };
+
+        var outcome = await handler.HandleAsync(
+            new CkMethodContext<ArchiveAddComputedColumnParameters>(new CkMethodRequest("t1")
+            {
+                InvocationId = Guid.NewGuid(), MethodId = SystemStreamDataCkIds.ArchiveAddComputedColumnMethodId,
+                CkTypeId = "System.StreamData/RawArchive", TargetRtId = OctoObjectId.GenerateNewId().ToString(),
+                DeadlineUtc = DateTime.UtcNow.AddSeconds(30)
+            }, parameters), CancellationToken.None);
+
+        outcome.IsSuccess.Should().BeFalse();
+        outcome.Failure!.Code.Should().Be(CkMethodErrorCodes.MethodValidationFailed);
+        outcome.Failure.Parameters["field"].Should().Be("resultType");
+        foreach (var value in Enum.GetValues<RtCkComputedColumnResultTypeEnum>())
+        {
+            ArchiveMethodSupport.ToEngine<Meshmakers.Octo.Runtime.Contracts.Formulas.FormulaResultType>(value).ToString()
+                .Should().Be(value.ToString());
+        }
     }
 
     [Theory]

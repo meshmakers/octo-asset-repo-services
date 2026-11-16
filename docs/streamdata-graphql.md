@@ -111,6 +111,18 @@ working unchanged; each is replaced by a method of System.StreamData 1.24.0, cal
 | `deleteArchive` | `System.StreamData/Archive.DeleteArchive-1` | `ArchiveDeleteArchiveHandler` |
 | `createTimeRangeArchive` | `System.StreamData/TimeRangeArchive.CreateArchive-1` | `TimeRangeArchiveCreateArchiveHandler` |
 | `createRollupArchive` | `System.StreamData/RollupArchive.CreateArchive-1` | `RollupArchiveCreateArchiveHandler` |
+| `freezeRollupArchive` / `unfreezeRollupArchive` / `rewindRollupWatermark` | `System.StreamData/RollupArchive.Freeze-1` / `Unfreeze-1` / `RewindWatermark-1` (1.25.0) | `RollupMethodHandlers.cs` |
+| `recomputeArchive` / `backfillRollupFromSource` | `System.StreamData/RollupArchive.Recompute-1` / `BackfillFromSource-1` (1.25.0) | `RollupMethodHandlers.cs` |
+| `addComputedColumn` | `System.StreamData/Archive.AddComputedColumn-1` (1.28.0) | `ArchiveAddComputedColumnHandler` |
+| `addArchiveColumn` | `System.StreamData/Archive.AddColumn-1` (1.28.0) | `ArchiveAddColumnHandler` |
+| `removeComputedColumn` | `System.StreamData/Archive.RemoveComputedColumn-1` (1.28.0) | `ArchiveRemoveComputedColumnHandler` |
+| `updateComputedColumnFormula` | `System.StreamData/Archive.UpdateComputedColumnFormula-1` (1.28.0) | `ArchiveUpdateComputedColumnFormulaHandler` |
+| `retryComputedColumnBackfill` | `System.StreamData/Archive.RetryComputedColumnBackfill-1` (1.28.0) | `ArchiveRetryComputedColumnBackfillHandler` |
+| `repairComputedColumn` | `System.StreamData/Archive.RepairComputedColumn-1` (1.28.0) | `ArchiveRepairComputedColumnHandler` |
+
+Since System.StreamData 1.28.0 (AB#8600) **every** field of `StreamDataMutations` is deprecated with its method id. The unit test
+`ArchiveMethodTests.EveryStreamDataMutation_IsDeprecated_WithTheMethodThatReplacesIt` fails for a new streamData mutation without a
+method row in `ArchiveMethodHost`.
 
 - Code: `StreamData/Methods/` (`ArchiveMethodHost`: the table above, `AddArchiveCkMethodHandlers`, deprecation reasons; `ArchiveLifecycleMethodHandlers`,
   `ArchiveCreateMethodHandlers`, `ArchiveMethodSupport`). Registered in `Program.cs` (not in `GatewayOwnedMethodHandlers`, so test hosts without stream data
@@ -139,6 +151,21 @@ working unchanged; each is replaced by a method of System.StreamData 1.24.0, cal
   job, the already active job of the rollup the backfill was folded into, a `Failed` job for a missing or non-activated rollup, or
   no result for an empty source. A target id the caller cannot see is `METHOD_TARGET_NOT_FOUND` from the gateway, before any job. Both stay synchronous; async methods are a later decision. The five mutations are deprecated
   with the method id.
+- **Column methods (System.StreamData 1.28.0, AB#8600).** `ColumnMethodHandlers.cs`: the six instance methods of `Archive` call the
+  `IArchiveLifecycleService` member of the mutation they replace and answer its shape. `AddComputedColumn-1`, `AddColumn-1`,
+  `RemoveComputedColumn-1` and `UpdateComputedColumnFormula-1` answer `ArchiveTransitionResult` (transition names as the mutations:
+  `AddComputedColumn`, `AddArchiveColumn`, `RemoveComputedColumn`, `UpdateComputedColumnFormula`; `ArchiveTransitions.RunAsync`);
+  `RetryComputedColumnBackfill-1` and `RepairComputedColumn-1` answer the queued job as `RecomputeJobInfo` with `computedColumnName`
+  (an already queued job of the column as is; no result when no job store is wired). The backfills and repairs stay background
+  jobs (AB#8002): the queuing writes run under the host's stopping token, not the call's, exactly as `StreamDataMutation.HostToken`,
+  so a caller that gives up cannot leave a half-queued column. `resultType` is the CK enum `CkComputedColumnResultType`
+  (`DOUBLE`, ...), mapped to the engine enum by name; an undefined number is `METHOD_VALIDATION_FAILED` on `resultType`. A
+  path that reaches a Hidden attribute (AB#6247) is refused by the engine like the mutation: `STREAMDATA_ERROR` with the engine
+  message; a rollup refuses the column changes (`STREAMDATA_PATH_INVALID` for `AddColumn-1`, as the mutation). An unknown
+  computed column in update, retry or repair, which the engine refuses with a plain `InvalidOperationException` (the
+  mutations answer their generic error), is `STREAMDATA_ERROR` with the engine message (`ArchiveColumnChanges.RefusingUnknownColumnsAsync`), not the
+  undeclared `METHOD_HANDLER_FAILED`. The shared helpers log the invocation id and the error code, never the target id or the
+  engine message.
 - **Hidden columns: reason, readable history, redaction (System.StreamData 1.27.0).** When a CK model change makes an
   archive column reach an attribute with `access: Hidden`, the engine sets the archive to `Failed` and stores why
   (`Archive.StatusReason`) and which columns (`Archive.HiddenColumns`); both are runtime state and appear in the runtime
@@ -173,7 +200,9 @@ working unchanged; each is replaced by a method of System.StreamData 1.24.0, cal
   (`ArchiveMethodSupport.ToEngine`).
 - Tests: `UnitTests/StreamData/Methods/ArchiveMethodTests` (code mapping, host table, switch, source rules, binding from the wire JSON, enum mapping), `IntegrationTests/StreamData/ArchiveLifecycleMethodTests`
   (fixture `ArchiveMethodStreamDataFixture`: MongoDB + CrateDB, real schema, gateway, pipeline and the production registration; per method the same transition as the
-  mutation side by side, METHOD_FORBIDDEN without the role for all seven, the invalid-transition code, target outside the tenant, deprecation reasons in the schema).
+  mutation side by side, METHOD_FORBIDDEN without the role for all seven, the invalid-transition code, target outside the tenant, deprecation reasons in the schema;
+  `ArchiveLifecycleMethodTests.Columns` (AB#8600): each column method side by side with its mutation, the Hidden-attribute refusal, the rollup refusal,
+  METHOD_FORBIDDEN for all six and a token of another tenant).
 
 All custom mutations use `ResolveConnectionContextExtensions.HandleException` to surface
 domain exceptions (`InvalidArchiveStateTransitionException`, `ArchiveNotFoundException`,
