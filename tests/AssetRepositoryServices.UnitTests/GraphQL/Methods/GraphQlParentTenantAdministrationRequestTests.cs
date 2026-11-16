@@ -128,6 +128,45 @@ public class GraphQlParentTenantAdministrationRequestTests
         Assert.False(result);
     }
 
+    [Theory]
+    // the same member twice, in both orders, or in another spelling: this check and the server could read different values
+    [InlineData("{\"query\":ADMIN,\"query\":EVIL}")]
+    [InlineData("{\"query\":EVIL,\"query\":ADMIN}")]
+    [InlineData("{\"Query\":ADMIN}")]
+    [InlineData("{\"query\":ADMIN,\"Query\":EVIL}")]
+    public async Task DuplicateOrCaseVariantMembers_AreRefused(string template)
+    {
+        var body = template
+            .Replace("ADMIN", System.Text.Json.JsonSerializer.Serialize(DumpMutation))
+            .Replace("EVIL", System.Text.Json.JsonSerializer.Serialize("query { runtime { runtimeEntities { totalCount } } }"));
+
+        var (result, _) = await ClassifyAsync(body);
+
+        Assert.False(result);
+    }
+
+    [Theory]
+    [InlineData("application/graphql")]
+    [InlineData("application/graphql-response+json")]
+    [InlineData("text/plain")]
+    public async Task OtherBodyTypes_AreRefused(string contentType)
+    {
+        var (result, _) = await ClassifyAsync(Json(DumpMutation), contentType: contentType);
+
+        Assert.False(result);
+    }
+
+    [Fact]
+    public async Task ABodyThatIsNotUtf8Json_IsRefused()
+    {
+        var context = new DefaultHttpContext();
+        context.Request.Method = "POST";
+        context.Request.ContentType = "application/json; charset=utf-16";
+        context.Request.Body = new MemoryStream(Encoding.Unicode.GetBytes(Json(DumpMutation)));
+
+        Assert.False(await new GraphQlParentTenantAdministrationRequest().IsParentTenantAdministrationRequestAsync(context));
+    }
+
     [Fact]
     public async Task AnEmptyExtensionsObject_IsAccepted()
     {

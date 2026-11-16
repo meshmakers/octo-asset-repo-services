@@ -155,7 +155,18 @@ internal sealed class CkMethodOperationReader(
             Skip = filter.Skip,
             Take = filter.Take
         };
-        return await store.ListAsync(query, cancellationToken).ConfigureAwait(false);
+        var page = await store.ListAsync(query, cancellationToken).ConfigureAwait(false);
+        if (path != CallerPath.Parent || page.Items.All(i => CkParentTenantAdministrationMethods.Contains(i.MethodId)))
+        {
+            return page;
+        }
+
+        // defence in depth: a store that ignores MethodIds must never hand the parent another method's record
+        logger?.LogWarning(
+            "The operation store ignored the method filter for the operations of tenant {TenantId}; records outside the parent-tenant administration list were dropped",
+            tenantId);
+        var items = page.Items.Where(i => CkParentTenantAdministrationMethods.Contains(i.MethodId)).ToList();
+        return new CkMethodOperationPage(items, items.Count);
     }
 
     /// <summary>
@@ -196,7 +207,9 @@ internal sealed class CkMethodOperationReader(
             return CallerPath.Refused;
         }
 
-        logger?.LogInformation(
+        // Debug, not Information: clients poll runtime.operations until an operation ends; the method call itself is logged
+        // at Information by the gateway
+        logger?.LogDebug(
             "User token of subject '{Subject}' was issued for tenant '{TokenTenantId}' and reads ({Action}) the operations of the closed method list on its child tenant '{TenantId}'; allowed by the parent-tenant administration rule",
             principal.SubjectId, principal.TokenTenantId, action, tenantId);
         return CallerPath.Parent;

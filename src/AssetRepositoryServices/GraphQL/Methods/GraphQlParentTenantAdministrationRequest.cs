@@ -18,10 +18,10 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Methods;
 /// <remarks>
 ///     Fail-closed by construction — <c>false</c> for anything it does not fully classify:
 ///     <list type="bullet">
-///         <item>only <c>POST</c> with a JSON body of at most <see cref="MaxBodyBytes" /> bytes and no query string (the server
+///         <item>only <c>POST</c> with an <c>application/json</c> body of at most <see cref="MaxBodyBytes" /> bytes and no query string (the server
 ///             reads <c>query</c> from the query string on POST too); a batch (JSON array), a form or multipart body is refused;</item>
 ///         <item>the body holds only <c>query</c> (required), <c>variables</c>, <c>operationName</c> and an empty
-///             <c>extensions</c> (no persisted documents);</item>
+///             <c>extensions</c> (no persisted documents), each at most once and in this exact spelling;</item>
 ///         <item>every definition of the document is a query or mutation operation (no fragment definitions, no
 ///             subscription), so a request that mixes an allowed and a forbidden field in any operation is refused as a whole;</item>
 ///         <item>down to the method field, every selection is a field (no fragment spread, no inline fragment) whose <b>name</b>
@@ -167,9 +167,9 @@ internal sealed class GraphQlParentTenantAdministrationRequest : IAllowParentTen
             return false;
         }
 
+        // only the plain JSON request body; every other body type (application/graphql, forms, multipart) is refused
         var mediaType = contentType.Split(';', 2)[0].Trim();
-        return string.Equals(mediaType, "application/json", StringComparison.OrdinalIgnoreCase) ||
-               string.Equals(mediaType, "application/graphql-response+json", StringComparison.OrdinalIgnoreCase);
+        return string.Equals(mediaType, "application/json", StringComparison.OrdinalIgnoreCase);
     }
 
     private static async Task<byte[]?> ReadBodyAsync(HttpRequest request, CancellationToken cancellationToken)
@@ -205,9 +205,11 @@ internal sealed class GraphQlParentTenantAdministrationRequest : IAllowParentTen
                 return false; // a batch (array) or anything else
             }
 
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (var property in json.RootElement.EnumerateObject())
             {
-                if (!AllowedBodyProperties.Contains(property.Name))
+                // a duplicate (or case-variant) member would let this check and the server read different values
+                if (!AllowedBodyProperties.Contains(property.Name) || !seen.Add(property.Name))
                 {
                     return false;
                 }

@@ -1206,7 +1206,8 @@ pieces:
   with the same rule (`ValidateForMethodAsync`) including the tenant generation of P.
 - **`runtime.operations`** (`CkMethodOperationReader`): a user token issued for another tenant than the route reads only on the
   parent path: role `TenantManagement` **and** a registered child; then only records of the closed list
-  (`CkMethodOperationQuery.MethodIds`), with the owner/administrator rule (`allOwners` needs an administrator role of P). Otherwise a
+  (`CkMethodOperationQuery.MethodIds`, and the page is filtered again in the reader in case a store ignores the set), with the
+  owner/administrator rule (`allOwners` needs an administrator role of P); a parent read is logged at Debug (clients poll). Otherwise a
   read by id is `OPERATION_NOT_FOUND` and a list is empty. **Narrower than before:** until AB#8986 the reader did not look at the token
   tenant at all (it relied on the HTTP gate, which is `LogOnly` in this service), so a foreign user token read its own records in
   another tenant; now it reads nothing there unless it is a parent administrator. Service tokens and own-tenant tokens are unchanged.
@@ -1217,8 +1218,8 @@ pieces:
   octo-common-services, **never** the endpoint-wide `IAllowParentTenantAdministration` (pinned by `ProgramTenantGatePinTests`).
   `TenantAuthorizationMiddleware` asks it only for a user token of another tenant and grants the request only when it answers `true`
   and C is a registered child of P; in `LogOnly` such a grant is not logged as "would be denied". It answers `true` only for a single
-  `POST` JSON body (no batch array, no query string, no form/multipart, only `query`/`variables`/`operationName`/empty `extensions`,
-  at most 64 KiB) whose every operation is either `mutation { runtime { systemBotTenantRepositorys { dump|restore|exportArchiveData|importArchiveData } } }`
+  `POST` with `application/json` (no batch array, no query string, no other body type, only `query`/`variables`/`operationName`/empty
+  `extensions`, each once and in exactly this spelling, at most 64 KiB) whose every operation is either `mutation { runtime { systemBotTenantRepositorys { dump|restore|exportArchiveData|importArchiveData } } }`
   or `query { runtime { operations } }`, judged by field **name** (an alias cannot disguise a field), with no fragment spread, inline
   fragment, fragment definition, introspection or subscription down to that level. A request that mixes an allowed and a forbidden
   field anywhere (also in a second operation of the document) is refused as a whole. The field names come from the same naming

@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using FakeItEasy;
 using FluentAssertions;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Methods;
 using Meshmakers.Octo.Services.Infrastructure.Services;
@@ -140,6 +141,47 @@ public class CkMethodOperationReaderParentTenantTests
             .Should().BeEmpty(because);
         (await reader.ListAsync(routeTenant, user, All(allOwners: false), TestContext.Current.CancellationToken)).Items
             .Should().BeEmpty(because);
+    }
+
+    [Fact]
+    public async Task ParentAdministrator_FilteringForAMethodOutsideTheList_SeesNothing()
+    {
+        await CreateAsync(Child, OtherMethod, ChildUserSub);
+
+        var page = await Reader(new Hierarchy()).ListAsync(Child, ParentAdmin(), All(methodId: OtherMethod),
+            TestContext.Current.CancellationToken);
+
+        page.Items.Should().BeEmpty();
+        page.TotalCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task AUserTokenWithoutTenantId_StaysOnTheOwnTenantRule()
+    {
+        var id = await CreateAsync(Child, OtherMethod, ParentAdminSub);
+        var noTenant = new ClaimsPrincipal(new ClaimsIdentity(
+            [new Claim("sub", ParentAdminSub), new Claim("scope", "octo_api")], "test"));
+
+        (await Reader(new Hierarchy()).GetAsync(Child, noTenant, id, TestContext.Current.CancellationToken))
+            .OperationId.Should().Be(id);
+    }
+
+    [Fact]
+    public async Task AStoreThatIgnoresTheMethodSet_NeverHandsTheParentAnotherMethod()
+    {
+        await CreateAsync(Child, Dump, ChildUserSub);
+        await CreateAsync(Child, OtherMethod, ChildUserSub);
+        // a store (or decorator) that drops CkMethodOperationQuery.MethodIds
+        var store = A.Fake<ICkMethodOperationStore>();
+        A.CallTo(() => store.ListAsync(A<CkMethodOperationQuery>._, A<CancellationToken>._))
+            .ReturnsLazily((CkMethodOperationQuery q, CancellationToken ct) => _store.ListAsync(q with { MethodIds = null }, ct));
+        var reader = new CkMethodOperationReader(store, Options.Create(new CkMethodAuthorizationOptions()),
+            NullLogger<CkMethodOperationReader>.Instance, new Hierarchy());
+
+        var page = await reader.ListAsync(Child, ParentAdmin(), All(), TestContext.Current.CancellationToken);
+
+        page.Items.Should().ContainSingle().Which.MethodId.Should().Be(Dump);
+        page.TotalCount.Should().Be(1);
     }
 
     [Fact]
