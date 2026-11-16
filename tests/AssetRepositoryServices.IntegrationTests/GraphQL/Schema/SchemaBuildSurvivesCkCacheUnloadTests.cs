@@ -3,6 +3,7 @@ using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Caches;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Collections;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Fixtures;
+using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.ConstructionKit.Contracts.Services;
 using Xunit;
 
@@ -101,6 +102,33 @@ public class SchemaBuildSurvivesCkCacheUnloadTests
         {
             (await schemaContext.GetOrCreateAsync(tenantId)).Initialized.Should().BeTrue();
             attempts.Should().Equal([1]);
+        }
+        finally
+        {
+            schemaContext.AfterPopulateForTesting = null;
+        }
+    }
+
+    [Fact]
+    public async Task CkCacheErrorOnAStableCache_IsNotRetried()
+    {
+        var (schemaContext, ckCache, tenantId) = Arrange();
+        var attempts = new List<int>();
+        schemaContext.AfterPopulateForTesting = (_, attempt) =>
+        {
+            attempts.Add(attempt);
+
+            // A genuine CK error (e.g. a missing type) while the cache stays loaded: retrying would fail the same way.
+            throw new CkCacheException("simulated CK error on a stable cache");
+        };
+
+        try
+        {
+            var act = () => schemaContext.GetOrCreateAsync(tenantId);
+
+            await act.Should().ThrowAsync<OctoGraphQLException>();
+            attempts.Should().Equal([1], "only a CK cache that changed during the build is retried");
+            ckCache.IsTenantLoaded(tenantId).Should().BeTrue();
         }
         finally
         {

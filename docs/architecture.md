@@ -122,8 +122,10 @@ N:M associations are exposed as query columns with `::totalCount` (INT64) and `:
   in the chain **and** the CK cache is no longer the load the build started from (`CkCacheGeneration.HasChanged`), the build
   is repeated once from a fresh load, with a WARN `GraphQL schema build for tenant {TenantId} failed because the CK cache was
   unloaded or reloaded during the build; building once more from a fresh load (AB#8998)`. A second failure becomes the usual
-  `SchemaCreationFailed` error; a CK error on a stable cache (a genuinely missing type) is not retried. The build log line
-  carries `attempt {Attempt}`. Seen on prod-2 (tenant sbeg, 2026-11-15: two HTTP 500 within 1.5 s of the unload). Tests:
+  `SchemaCreationFailed` error. A CK error on a cache that stayed loaded (a genuinely missing type) is not retried; a failure
+  of the load itself (no marker captured yet) counts as changed and gets the one retry too. The build log line carries
+  `attempt {Attempt}`. Builds of all tenants share one semaphore, so a retried build also delays other tenants' builds by
+  one more build time. Seen on prod-2 (tenant sbeg, 2026-11-15: two HTTP 500 within 1.5 s of the unload). Tests:
   `GraphQL/Schema/SchemaBuildSurvivesCkCacheUnloadTests` (test seam `SchemaContext.AfterPopulateForTesting` unloads the cache
   between populate and initialize).
 - The schema is **initialized eagerly** inside `SchemaContext.GetOrCreateAsync` (not lazily on the first request),

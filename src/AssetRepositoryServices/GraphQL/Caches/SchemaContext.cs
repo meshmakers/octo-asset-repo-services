@@ -179,15 +179,26 @@ internal class SchemaContext(
     /// <summary>
     ///     True when the build failed on the tenant's CK cache (a <see cref="CkCacheException" /> anywhere in the chain)
     ///     and the cache is no longer the load the build started from (<paramref name="builtFrom" />): it was unloaded or
-    ///     reloaded meanwhile (AB#8998). A CK error on a stable cache (a genuinely missing type) is not retried.
+    ///     reloaded meanwhile (AB#8998). A CK error on a stable cache (a genuinely missing type) is not retried. When the
+    ///     load itself failed, no marker was captured and the build counts as changed: one retry, still bounded.
     /// </summary>
     private bool IsCkCacheChangedDuringBuild(Exception e, string tenantId, object? builtFrom)
     {
-        for (Exception? inner = e; inner != null; inner = inner.InnerException)
+        return ContainsCkCacheException(e) && CkCacheGeneration.HasChanged(ckCacheService, tenantId, builtFrom);
+    }
+
+    private static bool ContainsCkCacheException(Exception? exception)
+    {
+        for (var current = exception; current != null; current = current.InnerException)
         {
-            if (inner is CkCacheException)
+            if (current is CkCacheException)
             {
-                return CkCacheGeneration.HasChanged(ckCacheService, tenantId, builtFrom);
+                return true;
+            }
+
+            if (current is AggregateException aggregate && aggregate.InnerExceptions.Any(ContainsCkCacheException))
+            {
+                return true;
             }
         }
 
