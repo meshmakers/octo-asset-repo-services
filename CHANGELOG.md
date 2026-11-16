@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+- AB#8986 New (security): an administrator of a parent tenant calls `System.Bot/TenantRepository.Dump-1`, `Restore-1`,
+  `ExportArchiveData-1` and `ImportArchiveData-1` on a registered child tenant with the parent's user token and reads those
+  operations through `runtime.operations`, mirroring the REST jobs rule (octo-common-services `CkParentTenantAdministrationMethods`).
+  The GraphQL endpoint carries the per-request predicate `GraphQlParentTenantAdministrationRequest` (only a single
+  `application/json` POST made exclusively of those calls or operation reads). **Stricter:** `runtime.operations` no longer
+  answers a user token of another tenant that is not a parent administrator of the route tenant (before, on hosts where the HTTP
+  gate only logs, such a token read its own records there). Needs the octo-common-services package with AB#8986.
+- AB#9099 Fix: the stream-data recompute integration tests follow the late-data rules of AB#9016 (engine: scoped, debounced
+  recompute; engine-mongodb: in-place refresh of the affected series). Six tests of `RollupMultiSourceRecomputeTests` and
+  `RollupLateDeliveryLastBucketTests` called the drain right after a late write, while the default
+  `StreamData:Recompute:LateDataDebounce` of 5 min held the window back, so no recompute ran yet (main CI 70436). No recompute was
+  lost: with the debounce at zero the late values land in the right buckets, the last hourly bucket before a pause included.
+  `ImmediateSweepStreamDataFixture` now sets the debounce to zero, and the tests that check a late delivery also assert that the run
+  refreshed only its series. The new `DefaultDebounceStreamDataFixture` keeps the production debounce:
+  `RollupLateDeliveryDebounceTests` checks that the first drain holds a late delivery back, and `RollupManualWriteTests` moved
+  there, so a manual write is still shown to run on the first drain. Tests only; production configuration and behaviour unchanged.
+
 - AB#8966 New: blueprint uninstall reports what it erased and what it kept, and has a dry run. The engine now erases unedited
   tenant-owned seed entities on uninstall and keeps edited and referenced ones (octo-construction-kit-engine, same story). The
   uninstall result (`DELETE {tenant}/v1/blueprints/{name}`, GraphQL `blueprints { uninstall }`) gains `dryRun`,
