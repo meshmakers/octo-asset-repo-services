@@ -19,9 +19,9 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL;
 /// error codes by <see cref="ResolveConnectionContextExtensions.HandleException"/>.
 /// </summary>
 /// <remarks>
-/// AB#8598 (F4.3): activateArchive, disableArchive, enableArchive, retryArchiveActivation, deleteArchive,
-/// createTimeRangeArchive and createRollupArchive are deprecated with the CK method that replaces each of them as
-/// reason (<see cref="ArchiveMethodHost"/>). They keep working unchanged; removal is a later decision.
+/// AB#8598, AB#8599, AB#8600 (F4.3): every field is deprecated with the CK method that replaces it as reason
+/// (<see cref="ArchiveMethodHost"/>, <c>Use System.StreamData/&lt;method id&gt;</c>); a test guards that a new field gets a
+/// method too. They keep working unchanged; removal is a later decision.
 /// </remarks>
 [DoNotRegister]
 internal sealed class StreamDataMutation : ObjectGraphType
@@ -32,7 +32,7 @@ internal sealed class StreamDataMutation : ObjectGraphType
     {
         _logger = logger;
         Name = "StreamDataMutations";
-        Description = "Archive lifecycle mutations: activate, disable, enable, retry activation, delete.";
+        Description = "Archive lifecycle, rollup control and column mutations. Deprecated: every field names the System.StreamData CK method that replaces it.";
 
         Field<NonNullGraphType<ArchiveTransitionResultDtoType>>("activateArchive")
             .DeprecationReason(ArchiveMethodHost.DeprecationReasonOf("activateArchive"))
@@ -126,6 +126,7 @@ internal sealed class StreamDataMutation : ObjectGraphType
         // ---- Computed columns (AB#4189 Phase 7) ----
 
         Field<NonNullGraphType<ArchiveTransitionResultDtoType>>("addComputedColumn")
+            .DeprecationReason(ArchiveMethodHost.DeprecationReasonOf("addComputedColumn"))
             .Description("Adds a computed column to an Activated raw or time-range archive and queues its backfill as a background job (AB#8002): returns at once with the column in Backfilling. The job writes the existing rows outside the request — a client timeout cannot cancel it — and ends the column Active (visible atomically) or Failed with the reason on the job; follow it with recomputeJobsFor(archive). A Failed column is retried with retryComputedColumnBackfill. Requires StreamDataAdmin. AB#4189.")
             .Argument<NonNullGraphType<OctoObjectIdType>>(Statics.RtIdArg, "Runtime id of the archive to add the computed column to.")
             .Argument<NonNullGraphType<StringGraphType>>("name", "Output column name — the identifier formulas reference and the column appears under.")
@@ -135,6 +136,7 @@ internal sealed class StreamDataMutation : ObjectGraphType
             .ResolveAsync(ResolveAddComputedColumnAsync);
 
         Field<NonNullGraphType<ArchiveTransitionResultDtoType>>("addArchiveColumn")
+            .DeprecationReason(ArchiveMethodHost.DeprecationReasonOf("addArchiveColumn"))
             .Description("Adds an ingested column for an existing attribute of the target CK type to an Activated raw or time-range archive without recreating it (AB#7997). The table gains a nullable column first - existing rows keep their data and read null for it - then the archive definition names it, and the next ingested rows fill it. Idempotent: a path the archive already captures changes nothing. Refused on a rollup (its columns are derived) and for a path that does not resolve. Requires StreamDataAdmin.")
             .Argument<NonNullGraphType<OctoObjectIdType>>(Statics.RtIdArg, "Runtime id of the archive to add the column to.")
             .Argument<NonNullGraphType<StringGraphType>>("path", "Attribute path on the archive's target CK type (e.g. 'DischargingPower' or 'Amount.Value').")
@@ -142,12 +144,14 @@ internal sealed class StreamDataMutation : ObjectGraphType
             .ResolveAsync(ResolveAddArchiveColumnAsync);
 
         Field<NonNullGraphType<ArchiveTransitionResultDtoType>>("removeComputedColumn")
+            .DeprecationReason(ArchiveMethodHost.DeprecationReasonOf("removeComputedColumn"))
             .Description("Removes a computed column from an archive. Rejected when another computed column still references it. The physical CrateDB column is left as a harmless orphan the read path no longer projects. Requires StreamDataAdmin. AB#4189.")
             .Argument<NonNullGraphType<OctoObjectIdType>>(Statics.RtIdArg, "Runtime id of the archive to remove the computed column from.")
             .Argument<NonNullGraphType<StringGraphType>>("name", "Name of the computed column to remove.")
             .ResolveAsync(ResolveRemoveComputedColumnAsync);
 
         Field<NonNullGraphType<ArchiveTransitionResultDtoType>>("updateComputedColumnFormula")
+            .DeprecationReason(ArchiveMethodHost.DeprecationReasonOf("updateComputedColumnFormula"))
             .Description("Changes the formula of an existing computed column on an active archive with optimistic / atomic semantics: readers keep seeing the previous formula's values while the new one is backfilled by a background job (AB#8002), then switch atomically; a failed job reverts to the previous formula. Returns once the job is queued. Rejected when another computed column references this one (it would orphan the reference) — re-point or remove the dependent first — or while a backfill of the column is still queued or running. The result type is unchanged. Requires StreamDataAdmin. AB#4189.")
             .Argument<NonNullGraphType<OctoObjectIdType>>(Statics.RtIdArg, "Runtime id of the archive carrying the computed column.")
             .Argument<NonNullGraphType<StringGraphType>>("name", "Name of the computed column to re-formulate.")
@@ -155,12 +159,14 @@ internal sealed class StreamDataMutation : ObjectGraphType
             .ResolveAsync(ResolveUpdateComputedColumnFormulaAsync);
 
         Field<RecomputeJobInfoDtoType>("retryComputedColumnBackfill")
+            .DeprecationReason(ArchiveMethodHost.DeprecationReasonOf("retryComputedColumnBackfill"))
             .Description("Queues the backfill of a computed column again (AB#8002) — for a column that ended Failed, or that is stuck in Pending / Backfilling without a running job — without removing and re-adding it. Returns the queued job (computedColumnName set); poll it with recomputeJobsFor(archive). Rejected when the column is Active. Requires StreamDataAdmin.")
             .Argument<NonNullGraphType<OctoObjectIdType>>(Statics.RtIdArg, "Runtime id of the archive carrying the computed column.")
             .Argument<NonNullGraphType<StringGraphType>>("name", "Name of the computed column whose backfill is retried.")
             .ResolveAsync(ResolveRetryComputedColumnBackfillAsync);
 
         Field<RecomputeJobInfoDtoType>("repairComputedColumn")
+            .DeprecationReason(ArchiveMethodHost.DeprecationReasonOf("repairComputedColumn"))
             .Description("Queues a repair of an Active computed column as a background job (AB#8331): re-evaluates the rows in [from, to) whose cell is NULL although an operand the formula references is not NULL (e.g. rows an aborted evaluation left NULL) and writes the results; the column stays Active and readable. Formulas that legitimately yield NULL stay NULL. Returns the queued job (computedColumnName set, an already queued repair of the column is returned as is); poll it with recomputeJobsFor(archive). Rejected when the column is not Active. Requires StreamDataAdmin.")
             .Argument<NonNullGraphType<OctoObjectIdType>>(Statics.RtIdArg, "Runtime id of the archive carrying the computed column.")
             .Argument<NonNullGraphType<StringGraphType>>("name", "Name of the computed column to repair.")

@@ -35,8 +35,9 @@ internal static class ArchiveTransitions
             return CkMethodOutcome<RtArchiveTransitionResultRecord>.Fail(ArchiveMethodErrors.StreamDataNotEnabled);
         }
 
-        logger.LogDebug("Archive {Transition} requested for {ArchiveRtId} (CK method, invocation {InvocationId})",
-            transitionName, archiveRtId, context.InvocationId);
+        // no target id or engine message in the log (AGENTS.md: never log a method call's target id or parameters)
+        logger.LogDebug("Archive {Transition} requested (CK method, invocation {InvocationId})", transitionName,
+            context.InvocationId);
         try
         {
             await transition(lifecycle, archiveRtId).ConfigureAwait(false);
@@ -51,8 +52,8 @@ internal static class ArchiveTransitions
         }
         catch (StreamDataException e)
         {
-            logger.LogInformation("Archive {Transition} of {ArchiveRtId} refused (CK method): {Reason}", transitionName,
-                archiveRtId, e.Message);
+            logger.LogInformation("Archive {Transition} refused (CK method, invocation {InvocationId}): {Code}", transitionName,
+                context.InvocationId, ArchiveMethodErrors.CodeOf(e));
             return CkMethodOutcome<RtArchiveTransitionResultRecord>.Fail(ArchiveMethodErrors.FailureOf(e));
         }
     }

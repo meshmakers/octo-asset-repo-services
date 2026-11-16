@@ -54,7 +54,7 @@ internal sealed record ArchiveMethodHandlerRegistration(
 /// </remarks>
 internal static class ArchiveMethodHost
 {
-    /// <summary>All handlers, with the mutation each one replaces (AB#8598).</summary>
+    /// <summary>All handlers, with the mutation each one replaces (AB#8598, AB#8599, AB#8600).</summary>
     public static IReadOnlyList<ArchiveMethodHandlerRegistration> Handlers { get; } =
     [
         ArchiveMethodHandlerRegistration.For<ArchiveActivateHandler>(SystemStreamDataCkIds.ArchiveActivateMethodId,
@@ -84,7 +84,21 @@ internal static class ArchiveMethodHost
             SystemStreamDataCkIds.RollupArchiveBackfillFromSourceMethodId, "backfillRollupFromSource"),
         // System.StreamData 1.27.0: the destructive way out of a Hidden-column failure; no mutation exists for it
         ArchiveMethodHandlerRegistration.For<ArchiveRedactHiddenColumnsHandler>(
-            SystemStreamDataCkIds.ArchiveRedactHiddenColumnsMethodId, mutation: null)
+            SystemStreamDataCkIds.ArchiveRedactHiddenColumnsMethodId, mutation: null),
+        // AB#8600 (System.StreamData 1.28.0): archive columns and computed columns; with these every streamData mutation has a
+        // method
+        ArchiveMethodHandlerRegistration.For<ArchiveAddComputedColumnHandler>(
+            SystemStreamDataCkIds.ArchiveAddComputedColumnMethodId, "addComputedColumn"),
+        ArchiveMethodHandlerRegistration.For<ArchiveAddColumnHandler>(SystemStreamDataCkIds.ArchiveAddColumnMethodId,
+            "addArchiveColumn"),
+        ArchiveMethodHandlerRegistration.For<ArchiveRemoveComputedColumnHandler>(
+            SystemStreamDataCkIds.ArchiveRemoveComputedColumnMethodId, "removeComputedColumn"),
+        ArchiveMethodHandlerRegistration.For<ArchiveUpdateComputedColumnFormulaHandler>(
+            SystemStreamDataCkIds.ArchiveUpdateComputedColumnFormulaMethodId, "updateComputedColumnFormula"),
+        ArchiveMethodHandlerRegistration.For<ArchiveRetryComputedColumnBackfillHandler>(
+            SystemStreamDataCkIds.ArchiveRetryComputedColumnBackfillMethodId, "retryComputedColumnBackfill"),
+        ArchiveMethodHandlerRegistration.For<ArchiveRepairComputedColumnHandler>(
+            SystemStreamDataCkIds.ArchiveRepairComputedColumnMethodId, "repairComputedColumn")
     ];
 
     /// <summary>The deprecation reason of a replaced mutation: <c>Use &lt;method id&gt;</c> (AB#8598).</summary>
