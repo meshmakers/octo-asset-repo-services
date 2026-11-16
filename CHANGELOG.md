@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- AB#9099 Fix: the stream-data recompute integration tests follow the late-data rules of AB#9016 (engine: scoped, debounced
+  recompute; engine-mongodb: in-place refresh of the affected series). Six tests of `RollupMultiSourceRecomputeTests` and
+  `RollupLateDeliveryLastBucketTests` called the drain right after a late write, while the default
+  `StreamData:Recompute:LateDataDebounce` of 5 min held the window back, so no recompute ran yet (main CI 70436). No recompute was
+  lost: with the debounce at zero the late values land in the right buckets, the last hourly bucket before a pause included.
+  `ImmediateSweepStreamDataFixture` now sets the debounce to zero, and the tests that check a late delivery also assert that the run
+  refreshed only its series. The new `DefaultDebounceStreamDataFixture` keeps the production debounce:
+  `RollupLateDeliveryDebounceTests` checks that the first drain holds a late delivery back, and `RollupManualWriteTests` moved
+  there, so a manual write is still shown to run on the first drain. Tests only; production configuration and behaviour unchanged.
+
 - AB#8966 New: blueprint uninstall reports what it erased and what it kept, and has a dry run. The engine now erases unedited
   tenant-owned seed entities on uninstall and keeps edited and referenced ones (octo-construction-kit-engine, same story). The
   uninstall result (`DELETE {tenant}/v1/blueprints/{name}`, GraphQL `blueprints { uninstall }`) gains `dryRun`,

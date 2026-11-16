@@ -69,6 +69,8 @@ public class RollupLateDeliveryLastBucketTests(ImmediateSweepStreamDataFixture f
             .Where(j => j.State == RecomputeJobState.Completed).Should().ContainSingle().Subject;
         job.RangeStart.Should().Be(hours[0]);
         job.RangeEnd.Should().Be(hours[^1] + OneHour, "the range ends after the bucket of the latest delivered hour");
+        job.RtIdSet.Should().NotBeNull("a late delivery refreshes only its own series in place (AB#9016)")
+            .And.Equal([series]);
     }
 
     private async Task<IReadOnlyList<DateTime>> RowStartsAsync(OctoObjectId rollupRtId, OctoObjectId seriesRtId) =>

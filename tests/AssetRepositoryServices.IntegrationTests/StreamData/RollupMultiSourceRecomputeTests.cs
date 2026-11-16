@@ -82,8 +82,11 @@ public class RollupMultiSourceRecomputeTests(ImmediateSweepStreamDataFixture fix
         buckets[ladder.Cutover].Should().BeApproximately(NativeValue, Tolerance,
             "the native side of the cutover is untouched");
 
-        // The automatic path recomputes the whole range, not one entity (it enqueues with no rtId
-        // scope), so a second series in the same bucket is re-derived — identically.
+        // AB#9016: the automatic path refreshes only the series of the late values (the dirty window
+        // carries their rtIds), in place. The RtIdSet of the job shows that SeriesY was not part of the
+        // refresh; its bucket keeps the value it had.
+        jobs[0].RtIdSet.Should().NotBeNull("a late delivery refreshes only the series it touched")
+            .And.Equal([ladder.SeriesX]);
         (await BucketsAsync(ladder.Rollup, ladder.SeriesY))[correctedBucket]
             .Should().BeApproximately(LegacyValue, Tolerance,
                 "only the series the late values belong to changes value");
@@ -105,6 +108,7 @@ public class RollupMultiSourceRecomputeTests(ImmediateSweepStreamDataFixture fix
 
         var jobs = await CompletedJobsAsync(ladder.Rollup);
         jobs.Should().ContainSingle();
+        jobs[0].RtIdSet.Should().NotBeNull().And.Equal([ladder.SeriesX]);
         jobs[0].RangeStart.Should().Be(correctedBucket);
         jobs[0].RangeStart.Should().BeOnOrAfter(ladder.Cutover,
             "a change in the native source cannot make a legacy bucket stale");
@@ -162,6 +166,8 @@ public class RollupMultiSourceRecomputeTests(ImmediateSweepStreamDataFixture fix
         var jobs = await CompletedJobsAsync(ladder.Rollup);
         jobs.Should().ContainSingle();
         jobs[0].RangeStart.Should().Be(ladder.Cutover);
+        jobs[0].RtIdSet.Should().NotBeNull().And.Equal([ladder.SeriesZ],
+            "only the native source's correction is a late delivery, and it belongs to SeriesZ");
 
         var newSeries = await BucketsAsync(ladder.Rollup, ladder.SeriesZ);
         newSeries.Should().ContainKey(ladder.Cutover,
@@ -194,6 +200,8 @@ public class RollupMultiSourceRecomputeTests(ImmediateSweepStreamDataFixture fix
         jobs[0].RangeStart.Should().Be(lastLegacyBucket);
         jobs[0].RangeEnd.Should().Be(firstNativeBucket.AddHours(1));
         jobs[0].WindowsProcessed.Should().Be(2, "one bucket per side of the cutover");
+        jobs[0].RtIdSet.Should().NotBeNull().And.Equal([ladder.SeriesX],
+            "both corrections belong to the same series, so the merged run refreshes only that series");
 
         var buckets = await BucketsAsync(ladder.Rollup, ladder.SeriesX);
         buckets[lastLegacyBucket].Should().BeApproximately(LegacyValue + CorrectionTotal, Tolerance);

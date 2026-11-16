@@ -14,14 +14,18 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Strea
 /// dirty window, the production drain recomputes exactly the bucket that contains it, the bucket then
 /// holds the manual value in place of the replaced one (no double counting) and the rollup validator
 /// finds nothing.
+/// <para>
+/// The tests run with the production late-data debounce (AB#9016): a manual write is neither scoped nor debounced, so the
+/// first drain after it already recomputes the bucket (AB#9099).
+/// </para>
 /// </summary>
 /// <remarks>
 /// The archive is anchored a few hours before <c>UtcNow</c> for the same reason as in
 /// <see cref="RollupMultiSourceRecomputeTests" />: the forward orchestrator commits closed buckets only,
 /// so only a window in the recent past is behind the consumed watermark.
 /// </remarks>
-[Collection(StreamDataImmediateSweepCollection.Name)]
-public class RollupManualWriteTests(ImmediateSweepStreamDataFixture fixture, ITestOutputHelper output)
+[Collection(StreamDataDefaultDebounceCollection.Name)]
+public class RollupManualWriteTests(DefaultDebounceStreamDataFixture fixture, ITestOutputHelper output)
 {
     private readonly MultiSourceArchiveBuilder _builder = new(fixture);
 
