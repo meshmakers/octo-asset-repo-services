@@ -12,11 +12,12 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Fixtu
 ///     <para>
 ///     The late-data debounce (<c>StreamData:Recompute:LateDataDebounce</c>, AB#9016, default 5 min) is zero here as well: the
 ///     recompute tests of this collection write a late value and drive the production drain
-///     (<see cref="Meshmakers.Octo.Runtime.Contracts.StreamData.IRecomputeOrchestrator.TickAsync"/>) at once, and with the default
+///     (<see cref="IRecomputeOrchestrator.TickAsync"/>) at once, and with the default
 ///     the drain holds the late window back for five minutes and runs nothing (AB#9099). Zero runs the scoped, in-place refresh on
-///     the same tick, so the tests still check where the late values end up. The hold itself, the coalescing of the late
-///     deliveries of one interval into one job and the restart behaviour are covered with a fake clock by
-///     <c>RecomputeLateDeliveryTests</c> in octo-construction-kit-engine.
+///     the same tick, so the tests still check where the late values end up. What the production default does on the first
+///     drain (late delivery held, manual write not) is tested on <see cref="DefaultDebounceStreamDataFixture" />; the
+///     coalescing of the late deliveries of one interval into one job and the restart behaviour are covered with a fake clock
+///     by <c>RecomputeLateDeliveryTests</c> in octo-construction-kit-engine.
 ///     </para>
 /// </summary>
 public class ImmediateSweepStreamDataFixture : StreamDataFixture

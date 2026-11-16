@@ -367,7 +367,10 @@ dotnet test tests/AssetRepositoryServices.IntegrationTests/ -c DebugL --filter "
   (`RowBoundStreamDataFixture`, `StatementBudgetStreamDataFixture`). Every other test uses the default of 2 h; production configuration is untouched.
   The same fixture sets the late-data debounce `StreamData:Recompute:LateDataDebounce` (AB#9016, default 5 min) to zero, so a test that
   writes a late value and calls the drain (`IRecomputeOrchestrator.TickAsync`) at once sees the scoped refresh on that tick (AB#9099).
-  The hold and the coalescing of the debounce are tested with a fake clock in octo-construction-kit-engine (`RecomputeLateDeliveryTests`).
+  `DefaultDebounceStreamDataFixture` (collection `StreamDataDefaultDebounce`) has the same immediate sweep but keeps the production
+  debounce: `RollupLateDeliveryDebounceTests` checks that the first drain holds a late delivery back (stored hold, series of the
+  delivery) and `RollupManualWriteTests` that a manual write is recomputed on the first drain. The coalescing per interval and the
+  restart behaviour are tested with a fake clock in octo-construction-kit-engine (`RecomputeLateDeliveryTests`).
 
 ## CrateDB version matrix (AB#5490)
 
