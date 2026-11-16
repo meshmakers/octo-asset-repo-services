@@ -1,3 +1,4 @@
+using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL;
 using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.ConstructionKit.Models.StreamData.Generated.System.StreamData.v1;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb;
@@ -178,6 +179,14 @@ internal sealed class ArchiveRedactHiddenColumnsHandler(
     ILogger<ArchiveRedactHiddenColumnsHandler> logger)
     : ICkMethodHandler<ArchiveRedactHiddenColumnsParameters, ArchiveRedactHiddenColumnsResult>
 {
+    /// <summary>The error codes <c>Archive.RedactHiddenColumns-1</c> declares in the model.</summary>
+    internal static readonly IReadOnlySet<string> RedactDeclaredCodes = new HashSet<string>(StringComparer.Ordinal)
+    {
+        Statics.GraphQlErrorStreamDataArchiveNotFound, ArchiveMethodErrors.ConfirmationRequired,
+        ArchiveMethodErrors.RedactionBlocked, Statics.GraphQlErrorStreamDataActivationFailed, Statics.GraphQlErrorStreamData,
+        ArchiveMethodErrors.StreamDataNotEnabled
+    };
+
     public async Task<CkMethodOutcome<ArchiveRedactHiddenColumnsResult>> HandleAsync(
         CkMethodContext<ArchiveRedactHiddenColumnsParameters> context, CancellationToken cancellationToken)
     {
@@ -186,7 +195,7 @@ internal sealed class ArchiveRedactHiddenColumnsHandler(
             return CkMethodOutcome<ArchiveRedactHiddenColumnsResult>.TargetNotFound();
         }
 
-        if (context.Parameters.ConfirmDataLoss != true)
+        if (!context.Parameters.ConfirmDataLoss)
         {
             return CkMethodOutcome<ArchiveRedactHiddenColumnsResult>.Fail(new CkMethodFailure(
                 ArchiveMethodErrors.ConfirmationRequired,
@@ -207,8 +216,8 @@ internal sealed class ArchiveRedactHiddenColumnsHandler(
         try
         {
             var result = await lifecycle.RedactHiddenColumnsAsync(archiveRtId).ConfigureAwait(false);
-            // The engine logs the dropped columns with the archive and records them in the audit trail; the method call
-            // itself logs no target id (method gateway rule).
+            // The method call logs no target id (method gateway rule); the engine's lifecycle log and audit trail record
+            // the archive and the dropped columns, as for every archive operation.
             logger.LogWarning("RedactHiddenColumns dropped {Count} column(s) (CK method, invocation {InvocationId}), status {Status}",
                 result.RemovedColumns.Count, context.InvocationId, result.Status);
             var removed = new AttributeStringValueList(result.RemovedColumns.ToList());
@@ -224,9 +233,15 @@ internal sealed class ArchiveRedactHiddenColumnsHandler(
         }
         catch (StreamDataException e)
         {
+            var failure = ArchiveMethodErrors.FailureOf(e);
             logger.LogInformation("RedactHiddenColumns refused (CK method, invocation {InvocationId}): {Code}",
-                context.InvocationId, ArchiveMethodErrors.CodeOf(e));
-            return CkMethodOutcome<ArchiveRedactHiddenColumnsResult>.Fail(ArchiveMethodErrors.FailureOf(e));
+                context.InvocationId, failure.Code);
+            // The method declares fewer codes than the mutations answer (no mutation exists for it); an undeclared code
+            // would be replaced by METHOD_HANDLER_FAILED and lose the reason, so it becomes the declared STREAMDATA_ERROR.
+            return CkMethodOutcome<ArchiveRedactHiddenColumnsResult>.Fail(
+                RedactDeclaredCodes.Contains(failure.Code)
+                    ? failure
+                    : new CkMethodFailure(Statics.GraphQlErrorStreamData, failure.Parameters));
         }
     }
 }

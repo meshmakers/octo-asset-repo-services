@@ -54,6 +54,18 @@ public class ArchiveRedactHiddenColumnsHandlerTests
     }
 
     [Fact]
+    public async Task ACodeTheMethodDoesNotDeclare_BecomesStreamDataError_WithTheMessage()
+    {
+        A.CallTo(() => _lifecycle.RedactHiddenColumnsAsync(ArchiveId))
+            .Throws(new InvalidArchiveStateTransitionException(ArchiveId, CkArchiveStatus.Activated, "redact"));
+
+        var outcome = await Sut().HandleAsync(Call(confirm: true), CancellationToken.None);
+
+        outcome.Failure!.Code.Should().Be(Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Statics.GraphQlErrorStreamData);
+        outcome.Failure.Parameters[ArchiveMethodErrors.MessageParameter].Should().Contain("redact");
+    }
+
+    [Fact]
     public async Task Confirmed_AnswersTheDroppedColumnsAndTheStatus()
     {
         A.CallTo(() => _lifecycle.RedactHiddenColumnsAsync(ArchiveId))
@@ -88,6 +100,7 @@ public class ArchiveRedactHiddenColumnsHandlerTests
         var outcome = await Sut().HandleAsync(Call(confirm: true, target: "nope"), CancellationToken.None);
 
         outcome.IsSuccess.Should().BeFalse();
+        outcome.Failure!.Code.Should().Be(CkMethodErrorCodes.MethodTargetNotFound);
         A.CallTo(() => _lifecycle.RedactHiddenColumnsAsync(A<OctoObjectId>._)).MustNotHaveHappened();
     }
 
