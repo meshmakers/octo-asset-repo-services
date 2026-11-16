@@ -5,7 +5,7 @@ applies_to: **/RtEntityByInterfaceTypes.cs, **/Utils/RuntimeQueryGuard*.cs, **/R
 
 # Runtime query guard and query by interface
 
-## Unbounded runtime-entity query guard (AB#8898, Feature AB#8793)
+## Unbounded runtime-entity query guard
 
 `RuntimeQueryGuardSchemaVisitor` (registered with `AddSchemaVisitor` in `RuntimeEngineBuilderExtensions`) wraps only the
 resolvers of `runtime.runtimeEntities`, `runtime.<CkType>` (metadata `CkId`), `RtQuery.rows` and `RtTransientQuery.rows`;
@@ -17,11 +17,11 @@ totalCount-only, aggregation queries and key lookups within the limit are bounde
 `ITenantRepository` calls are never checked. Do not add a guard call inside a resolver: wrap the field in the visitor instead.
 Details: `docs/runtime-query-guard.md`.
 
-## Query by interface: `runtime.byInterface` (AB#6932, F4.1)
+## Query by interface: `runtime.byInterface`
 
-A thin GraphQL layer over the ONE engine method `ITenantRepository.GetRtEntitiesByInterfaceAsync` (AB#7019,
-octo-construction-kit-engine-mongodb, `docs/interface-query.md`): **no fan-out, merge or security logic here**. Decision of
-the spike AB#6930 (Gerald, option A); budget, v1 scope and the refusal cases belong to AB#7019.
+A thin GraphQL layer over the ONE engine method `ITenantRepository.GetRtEntitiesByInterfaceAsync` (see
+`octo-construction-kit-engine-mongodb/docs/interface-query.md`): **no fan-out, merge or security logic here**. Decision of
+the design spike (Gerald, option A); budget, v1 scope and the refusal cases are described in that document.
 
 - **Schema** (`RuntimeModelQuery.AddByInterfaceField`, `Types/RtEntityByInterfaceTypes.cs`): field
   `runtime.byInterface(ckInterfaceId: String!, take: Int!, skip: Int = 0, fieldFilter, sortOrder, options, searchFilter,
@@ -51,7 +51,7 @@ the spike AB#6930 (Gerald, option A); budget, v1 scope and the refusal cases bel
 - **Transactions**: queries run in a session without transaction in the GraphQL pipeline (`OctoSessionListener` only
   starts one for mutations). Inside a transaction session (pipeline nodes, in-process callers) the engine queries the
   collections sequentially; the result is identical (test `QueryInATransactionSession_ReturnsTheSameResultAsWithout`).
-- **Cost** (documented in octo-documentation `graphql.md`): index the sort field in the implementing type, no default
+- **Cost** (documented in octo-documentation `graphql`): index the sort field in the implementing type, no default
   index on `name` (Gerald 2026-10-19); a page costs about `(skip + take) x number of implementer collections`,
   `skip + take <= 1000`, so filter and keep pages small instead of paging deep.
 - **Tests**: unit `ByInterfaceSchemaTests`; integration `GraphQL/ByInterface/ByInterfaceQueryTests` (fixture

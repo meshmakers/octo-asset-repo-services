@@ -3,10 +3,10 @@ description: Unbounded runtime-entity query guard: scope, classification, config
 background: true
 ---
 
-# Unbounded runtime-entity query guard (AB#8898)
+# Unbounded runtime-entity query guard
 
 One query over a CK type with large attributes (for example `Basic.Energy/EdaMessage` with ~72 KB of raw XML per entity) that
-loads every matching entity can exhaust the memory of the asset repository and cause 503s for every tenant (Feature AB#8793).
+loads every matching entity can exhaust the memory of the asset repository and cause 503s for every tenant.
 The guard finds such queries at the API boundary and, once switched to `Enforce`, refuses them before the entities are read.
 
 ## Scope: the API boundary only
@@ -27,11 +27,11 @@ resolves without overhead.
 Not covered:
 
 - **In-process engine calls** (`ITenantRepository` inside a service: communication controller, background jobs, blueprint
-  install, CK migrations) are never checked, refused, logged or counted (decision 2026-11-12, AB#8793).
+  install, CK migrations) are never checked, refused, logged or counted (decision 2026-11-12).
 - **REST**: the asset repository has no REST endpoint that queries runtime entities. `Models/ExportRtByQuery` and
   `Models/ExportRtByDeepGraph` enqueue background export jobs (bot services), which are internal callers.
-- `runtime.byInterface` is bounded by its required `take` (at most 1000, AB#6932).
-- Navigation (association) connections inside an entity are not covered by AB#8898.
+- `runtime.byInterface` is bounded by its required `take` (at most 1000).
+- Navigation (association) connections inside an entity are not covered by the guard.
 
 ## Classification
 
@@ -66,7 +66,7 @@ The options are read per query (`IOptionsMonitor`).
 | `Enforce` | refused with `ASSET1007` before the entities or rows are read (for `runtime.runtimeQuery` the stored query definition is loaded first); warning and metric as in `Warn`; never capped |
 
 `Warn` is the default so that a deployment without configuration shows who sends unbounded queries without breaking them.
-`Enforce` is switched on per cluster only after the caller inventory (AB#8899) is closed (Slice 2, AB#8903).
+`Enforce` is switched on per cluster only after the caller inventory is closed.
 
 ## Log and metric
 
@@ -75,7 +75,7 @@ Warning (one per unbounded query, ids only, never a token or a user name):
 ```
 Unbounded runtime-entity query (NoFirst) on CK type Basic.Energy/EdaMessage-1 in tenant sbeg: requested first (null),
 keys (null), limit 1000, entry point TypedEntities, operation ListMessages, client octo-mcp, subject …, mode warn,
-error id 3f2c… (AB#8898)
+error id 3f2c…
 ```
 
 Counter `octo.asset.runtime_query.unbounded` (Prometheus / Dash0 PromQL: `octo_asset_runtime_query_unbounded_total`) on the
@@ -103,7 +103,7 @@ the tenant, otherwise `unknown`, so a caller cannot create a series per input; t
 ```
 
 `reason` is `NoFirst`, `FirstAboveLimit` or `TooManyKeys`. The error id is also in the warning log line. ASSET1007 belongs to
-the ASSET error family until the coded error contract of AB#6244 exists; it moves there then.
+the ASSET error family until a coded error contract exists; it moves there then.
 
 ## How to page and count
 

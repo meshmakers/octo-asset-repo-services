@@ -3,7 +3,7 @@ description: Secret attributes: reads return state only, writes, query rules, ke
 applies_to: **/Secrets/**, **/GraphQL/SecretsQuery.cs, **/Utils/Secret*.cs
 ---
 
-# Secret attributes in the asset repository (AB#5528 / AB#5535)
+# Secret attributes in the asset repository
 
 CK attributes of value type `Secret` (concept: `octo-construction-kit-engine/docs/concept-secret-attribute-type.md`)
 are never returned by this service - neither the plaintext, legacy clear text nor the stored envelope.
@@ -51,7 +51,7 @@ are never returned by this service - neither the plaintext, legacy clear text no
   `SecretEncryptionNotConfiguredException` maps to `SecretEncryptionNotConfigured`.
 - `availableArchivePaths` omits secrets; archives cannot contain secret columns.
 
-## Secrets overview (AB#5544, handover §7)
+## Secrets overview
 
 `query { secrets { inventory summary usages } }` on the tenant endpoint (`SecretsQuery`).
 

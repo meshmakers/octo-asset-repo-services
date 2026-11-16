@@ -20,7 +20,7 @@ The service dynamically generates GraphQL schemas per tenant:
 ### 2. Multi-Tenant Request Pipeline
 - **TenantIdRouteConstraint** (octo-common-services, `Infrastructure/Routing/`) - Routes include
   tenant ID; registered with `builder.Services.AddOctoTenantIdRouteConstraint()`. The local copy
-  was removed in AB#5060 — it also wrote an untyped `HttpContext.Items["d"]` that nothing read.
+  was removed — it also wrote an untyped `HttpContext.Items["d"]` that nothing read.
 - **TenantUserContextBuilder** (`GraphQL/RequestHandling/TenantUserContextBuilder.cs`) - Builds tenant context from HTTP request
 - **GraphQLUserContext** (`GraphQL/Utils/GraphQLUserContext.cs`) - Per-request context containing tenant info
 - **TenantDocumentExecutor** (`GraphQL/RequestHandling/TenantDocumentExecutor.cs`) - Executes GraphQL queries in tenant context
@@ -34,12 +34,12 @@ The service dynamically generates GraphQL schemas per tenant:
   - `AssetRepository` - Asset repository specific settings
 
 **Tenant setup failure handling.** `DefaultConfigurationCreatorService` wires two durable stores from the
-engine: `ITenantLifecycleStore` (AB#4348 — asset-repo is its single writer, recording each tenant's
-Creating/Active/Failed state and driving the reconcile pass) and `ITenantSetupRetryStore` (AB#4690 — a
+engine: `ITenantLifecycleStore` (asset-repo is its single writer, recording each tenant's
+Creating/Active/Failed state and driving the reconcile pass) and `ITenantSetupRetryStore` (a
 setup run that throws is recorded and re-run in the background instead of being lost with the process
 that observed it). Both are drained from `RetryFailedTenantsAsync` on the 30 s
-`FailedTenantRetryBackgroundService` timer. Note that a tenant reaching lifecycle state `Active` means
-the Identity service confirmed **and** seeded its default configuration — since AB#4690 the identity
+`FailedTenantRetryLoop` timer (octo-common-services, `octo-common-services/docs/tenant-setup.md`). Note that a tenant reaching lifecycle state `Active` means
+the Identity service confirmed **and** seeded its default configuration — the identity
 consumer reports `SuccessIdentityDataSeedPending` while the tenant still has no roles, which keeps the
 tenant in `Creating` instead of marking it provisioned.
 
@@ -76,7 +76,7 @@ External Octo services referenced via `$(OctoVersion)`:
 Version resolution (from `Directory.Build.props`):
 - DebugL configuration: uses version 999.0.0 and local NuGet at `$(OctoRepoRootPath)../nuget`
 - With private server: uses version 0.1.*
-- Otherwise: no fallback — versions come only from the pipeline (AB#6297); a non-DebugL build without `-p:OctoVersion=X.Y.Z` fails fast with `OCTO0001`
+- Otherwise: no fallback — versions come only from the pipeline; a non-DebugL build without `-p:OctoVersion=X.Y.Z` fails fast with `OCTO0001`
 
 ## N:M Association Query Columns
 N:M associations are exposed as query columns with `::totalCount` (INT64) and `::exists` (BOOLEAN).
@@ -94,7 +94,7 @@ N:M associations are exposed as query columns with `::totalCount` (INT64) and `:
 
 ## When Working with GraphQL
 - **DateTime scalar is `UtcDateTimeGraphType`** (`GraphQL/Types/Scalars/`), not the stock
-  GraphQL.NET `DateTimeGraphType` (AB#4821). It keeps the wire name `DateTime` but normalizes
+  GraphQL.NET `DateTimeGraphType`. It keeps the wire name `DateTime` but normalizes
   every instant to `DateTimeKind.Utc` before serialization (Unspecified is *labelled* UTC —
   the platform convention — never shifted), so responses always carry the ISO-8601 `Z`
   designator. The stock scalar formats kind-dependently inside `Serialize` and would emit
@@ -104,10 +104,10 @@ N:M associations are exposed as query columns with `::totalCount` (INT64) and `:
   `SimpleScalarType.Serialize` applies the same normalization to top-level DateTime cell values.
 - Schema caching is automatic per tenant (up to 64 cached schemas)
 - Schema invalidation happens via `SchemaContext.Invalidate(tenantId)` (on `PosUpdateTenant` / `PreDeleteTenant`) **and**
-  whenever the tenant's CK cache was unloaded or reloaded since the schema was built (AB#8667): the cached schema carries
+  whenever the tenant's CK cache was unloaded or reloaded since the schema was built: the cached schema carries
   the marker of the CK cache load it was populated from (`CkCacheGeneration`, the type collection instance that is replaced
   on every reload, the same marker as the hidden-name cache), and `GetOrCreateAsync` rebuilds when it no longer matches.
-  This covers the reloads that send no tenant event - the AB#5415 stale-type fallback, the display-rule sweeper - and a
+  This covers the reloads that send no tenant event - the stale-type fallback, the display-rule sweeper - and a
   `PosUpdateTenant` that was published before this process listened to the bus (service start). An unchanged cache costs
   one dictionary lookup and a reference compare per request. Tests: `GraphQL/Schema/SchemaFollowsCkCacheTests`,
   `UnitTests/GraphQL/CkCacheGenerationTests`.
@@ -117,19 +117,19 @@ N:M associations are exposed as query columns with `::totalCount` (INT64) and `:
   {MethodCount} CK methods; populate {PopulateMs} ms, initialize {InitializeMs} ms)` (CK v2 risk R8)
 - **Exception details in GraphQL errors** (`extensions.details`: exception text, inner exceptions, stack trace) are
   exposed only in the `Development` environment or with the explicit opt-in `GraphQl:ExposeExceptionDetails`
-  (`OCTO_GraphQl__ExposeExceptionDetails`; an explicit value wins over the environment) — `GraphQlErrorExposure`,
-  AB#6189. Messages, `extensions.code`/`codes` and custom extensions (`OctoDetails`, `attributePath`, `operation`)
+  (`OCTO_GraphQl__ExposeExceptionDetails`; an explicit value wins over the environment) — `GraphQlErrorExposure`.
+  Messages, `extensions.code`/`codes` and custom extensions (`OctoDetails`, `attributePath`, `operation`)
   are unchanged. Containers run as `Production` (the Helm charts and the test-2 values do not set
   `ASPNETCORE_ENVIRONMENT`). CK v2 access errors (`ATTRIBUTE_NOT_WRITABLE` / `ATTRIBUTE_NOT_QUERYABLE`) carry code,
   attribute path and operation but never a value in any environment: entity-selector values in the path are redacted
-  (`[passwordHash=…]`, F1.5-S4 AB#5923). Tests: `GraphQlErrorExposureTests` (unit),
+  (`[passwordHash=…]`). Tests: `GraphQlErrorExposureTests` (unit),
   `GraphQL/Errors/GraphQlErrorDetailsTests` (integration, Production and Development host fixtures).
-  `HiddenAttributeAccessException.RedactSelectorValues` (AB#8052, Security) replaces everything from the first `=` inside a
+  `HiddenAttributeAccessException.RedactSelectorValues` replaces everything from the first `=` inside a
   selector to the **last** `]` of the path (the mesh adapter's `RtAttributeAccessGuard.WithoutSelectorValues` rule), but only
   when the rest after that `]` is a valid path suffix of the engine grammar (`->name`, `.name`, `::meta` or nothing; review
   finding on #134); otherwise (an unterminated selector, `[passwordHash='AQ]AA-secret`, or no `]` at all) to the end of the
   path. The path is also redacted to its end when a quoted value is still open at that `]` (an odd number of `'` or `"`
-  between the `=` and the `]`, `[passwordHash='AQ]->AAsecret`; AB#8081, the quote check of mesh-adapter AB#8077, or a quote
+  between the `=` and the `]`, `[passwordHash='AQ]->AAsecret`; the quote check of the mesh adapter, or a quote
   still open when the quotes are read in order, `[x='a"b' "secret].c`, review of #136), even if the rest looks like a valid suffix. A value containing `]` used to leave its rest in the message, because the old regex ended at the first `]`. Segments between the first selector value and the last `]` are not shown either
   (`a.t[x=1].b.u[y=2]->c` → `a.t[x=…]->c`). A value with `[` is no valid engine path (`RtPathEvaluator.TokenizePath` refuses it),
   so the selector-key regex of `AccessQueryGuard` needs no change. Tests: `CkAttributeAccessSchemaTests`
@@ -149,7 +149,7 @@ N:M associations are exposed as query columns with `::totalCount` (INT64) and `:
 - Handle exceptions via `arg.HandleException(e)` in GraphQL resolvers. `HandleException` maps known
   exception types to stable GraphQL error codes with their real message; `OctoGraphQLException` and
   `CkEnumValueNotFoundException` are surfaced with their message (code `GraphQlModelValidationErrors`)
-  instead of the generic `"An error occurred"` (AB#4391). Any other exception type is still masked —
+  instead of the generic `"An error occurred"`. Any other exception type is still masked —
   add a branch if a resolver needs to surface a client-facing message.
 
 ## Generic Runtime Mutation Attribute Handling (`RtMutationBase`)
@@ -161,7 +161,7 @@ The generic `runtime.runtimeEntities.create/update` path (`RtEntityMutationGener
 attribute-value-type coercion that lives in `RtPathEvaluator.SetValueByPath` must be mirrored in
 `TryHandleAttributeAsync`'s `switch`, or the generic path stores raw client values verbatim.
 
-- **Enum** (`AttributeValueTypesDto.Enum`, AB#4391): `TryHandleAttributeAsync` resolves the value to
+- **Enum** (`AttributeValueTypesDto.Enum`): `TryHandleAttributeAsync` resolves the value to
   the integer enum key via `ResolveEnumKey` (name → key case-insensitively, or a whole-number key),
   validating against the CK enum and throwing `OctoGraphQLException.EnumValueNotFound` /
   `InvalidEnumValueType` on bad input. Before the fix, a name string (e.g. `"NEW"`) was stored

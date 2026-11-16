@@ -3,10 +3,10 @@ description: Principal kind of the caller: where it is set, the rule, compatibil
 background: true
 ---
 
-# Principal kind of the caller (AB#8705)
+# Principal kind of the caller
 
 The asset repository tells the CK engine whether a write comes from a **person** or a **service client**. CK types
-with a `writeAccess` block (engine, AB#8574, `docs/ck-type-write-access.md` in `octo-construction-kit-engine`) admit
+with a `writeAccess` block (engine, `octo-construction-kit-engine/docs/ck-type-write-access.md`) admit
 or refuse writes by this kind; types without the block ignore it. Source: `Security/CallerPrincipalKind.cs`.
 
 ## Where it is set
@@ -35,7 +35,7 @@ working. Claim names are read in the JWT short form and in the form the default 
 
 The rules are applied in this order, so a delegated token is `Client` although it carries the user's `sub`.
 
-**Delegated tokens count as `Client`** (decision Odin, 2026-11-10, on AB#8705; the story text first said
+**Delegated tokens count as `Client`** (decision of 2026-11-10; the first draft said
 Interactive). A restriction to interactive writers exists to keep human-only operations human, for example setting a
 knowledge page to Verified; an agent or pipeline acting on a person's behalf is an automated actor. The subject of the
 session stays the user (`RtCreatedBy`, data permissions), only the kind says that an automated actor writes.
@@ -47,13 +47,13 @@ the distinguishing claims to unrestricted types keep working.
 
 - Older bot services ignore `InitiatedByPrincipalKind`; an older asset repository sends none. Both read as
   `Unknown`: restricted types refuse the import, all other types are unaffected.
-- Hangfire jobs enqueued before AB#8705 run through the overloads without the kind (`Unknown`).
+- Hangfire jobs enqueued before this change run through the overloads without the kind (`Unknown`).
 
 ## Limits
 
 - A client that forwards a person's own access token (pass-through, no token exchange with an actor) is seen as that
   person (`Interactive`): the asset repository cannot tell it apart from the person. Service-side protections (e.g.
-  the MCP knowledge tools, AB#8568) and the write channels of AB#8574 cover those paths.
+  the MCP knowledge tools) and the write channels of the engine cover those paths.
 
 ## Tests
 

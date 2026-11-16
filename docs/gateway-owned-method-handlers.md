@@ -3,7 +3,7 @@ description: Gateway-owned CK methods as in-process handlers: platform guarantee
 background: true
 ---
 
-# Gateway-owned CK methods as in-process handlers (AB#6893, F3.7)
+# Gateway-owned CK methods as in-process handlers
 
 A CK method that the asset repository implements itself (`execution.handler: service` on a model the gateway hosts, for
 example the planned `Tenant.*` and `Archive.*` methods) is registered as an **in-process handler**: it runs in the
@@ -24,7 +24,7 @@ yet; the seam is in place and covered by a test-only sample.
   (`CkMethodPrincipalScope`). `AddCkMethodCallerTokenValidation` is **not** needed in the asset repository: it validates the
   token a remote handler host receives over the bus, and the asset repository hosts no remote handler.
 - **Outside the request session.** The handler runs in a new DI scope, detached from the request's execution context:
-  `IOctoSessionAccessor.HasSession` is `false` inside it (AB#7023). The handler resolves its tenant from `context.TenantId`.
+  `IOctoSessionAccessor.HasSession` is `false` inside it. The handler resolves its tenant from `context.TenantId`.
 
 ## Registering a gateway-owned method
 

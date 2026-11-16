@@ -5,13 +5,13 @@ code it covers.
 
 ## What this repo is
 
-This is the **Octo Asset Repository Services** - a multi-tenant ASP.NET Core 9.0 backend service that provides GraphQL
+This is the **Octo Asset Repository Services** - a multi-tenant ASP.NET Core 10.0 backend service that provides GraphQL
 and REST API access to data products in the Octo Mesh ecosystem. The service manages runtime entities, construction
 kit models, and time-series stream data stored in MongoDB.
 
 **Key Technologies:**
-- .NET 9.0 (ASP.NET Core Web API)
-- GraphQL (GraphQL.NET v8.6.0) with dynamic schema generation per tenant
+- .NET 10.0 (ASP.NET Core Web API)
+- GraphQL (GraphQL.NET v8.8.5) with dynamic schema generation per tenant
 - MongoDB via Octo Runtime Engine
 - Multi-tenancy with tenant-specific schemas and databases
 - Docker containerization
@@ -85,7 +85,7 @@ dotnet test --filter "FullyQualifiedName~RtEntityDeleteMutationTests" -c DebugL
 ```
 
 The CrateDB containers of the integration tests run `crate:6.4.6`. `OCTO_TEST_CRATEDB_IMAGE=crate:5.10.10` runs the
-same suite on another supported CrateDB line (AB#7149); every supported line must stay green.
+same suite on another supported CrateDB line; every supported line must stay green.
 The dump and restore between the lines is the version matrix (`Category=CrateVersionMatrix`, see the README of the
 test project).
 

@@ -11,7 +11,7 @@ Three execution shapes, all archive-driven (per CK Archive snapshot, which carri
 
 | Entry point | Use case |
 |---|---|
-| `streamData.streamDataQuery(rtId)` | Execute a persisted `RtStreamDataQuery`. Loaded entity holds `ArchiveRtId`, columns, filters, sort, time range. The resolver dispatches to the correct repo method based on the loaded subtype (`RtSimpleSdQuery` / `RtAggregationSdQuery` / `RtGroupingAggregationSdQuery` / `RtDownsamplingSdQuery`). The query is loaded through `GraphQL/Utils/PersistedQueryLookup` (AB#8273): a deleted (archived) query answers not found like a missing one; the lookup by id alone returns archived entities. Since AB#8355 the helper delegates to the engine's `RuntimeRepositoryExtensions.GetActiveRtEntityByRtIdAsync` (Runtime.Contracts), which the mesh adapter (`GetQueryById@1`) and the MCP persisted-query tools use too. Same for `runtime.runtimeQuery(rtId)` and the query-row mutations. No query-definition cache: every call reads the stored entity. |
+| `streamData.streamDataQuery(rtId)` | Execute a persisted `RtStreamDataQuery`. Loaded entity holds `ArchiveRtId`, columns, filters, sort, time range. The resolver dispatches to the correct repo method based on the loaded subtype (`RtSimpleSdQuery` / `RtAggregationSdQuery` / `RtGroupingAggregationSdQuery` / `RtDownsamplingSdQuery`). The query is loaded through `GraphQL/Utils/PersistedQueryLookup`: a deleted (archived) query answers not found like a missing one; the lookup by id alone returns archived entities. The helper delegates to the engine's `RuntimeRepositoryExtensions.GetActiveRtEntityByRtIdAsync` (Runtime.Contracts), which the mesh adapter (`GetQueryById@1`) and the MCP persisted-query tools use too. Same for `runtime.runtimeQuery(rtId)` and the query-row mutations. No query-definition cache: every call reads the stored entity. |
 | `streamData.transientStreamDataQuery` | Ad-hoc execution without persistence. Four sub-connections: `simple`, `aggregation`, `groupingAggregation`, `downsampling`. The server derives `ckTypeId` from the archive snapshot (no client argument). All four resolvers collect CK query columns with `IgnoreNavigationProperties = true` — archive tables only carry physical columns, and unbounded navigation expansion over a densely connected CK model explodes combinatorially (observed as a >60 GB runaway allocation that killed the service; the engine additionally enforces `CkTypeQueryColumnOptions.MaxColumns` as a fail-fast cap). |
 
 For the same reason, the CK metadata connection `constructionKit.types.availableQueryColumns`
@@ -29,7 +29,7 @@ Both surfaces accept runtime overrides on the `rows` / sub-connection level:
 
 The persisted query's `aggregations` sub-connection takes a `ResultAggregationInput` (count/min/max/avg/sum × attribute paths) and runs a second engine call over the same data set as `rows` — useful for "give me the avg/max alongside the rows" without persisting an aggregation-typed query.
 
-**Column types (`columns { attributeValueType }`, AB#8030).** Persisted and transient queries build their column metadata in
+**Column types (`columns { attributeValueType }`).** Persisted and transient queries build their column metadata in
 `GraphQL/StreamDataColumnBuilder`. The path is matched against the CK type's query columns **case-insensitively** (exact match first),
 the same rule as the query execution (`StreamDataFieldResolver`, `OrdinalIgnoreCase`): a stored PascalCase path (`ActivePower`, EnergyIQ seed)
 gets the CK value type (`DOUBLE`) — before, the exact match failed and the column was `STRING`, so MeshBoard numeric pickers stayed empty.
@@ -39,7 +39,7 @@ every aggregation function — via the `UnknownStreamDataColumn` marker that `Rt
 nullable, so the schema is unchanged and no enum value was added. The persisted resolver loads the archive snapshot for this (field resolver).
 Tests: `UnitTests/GraphQL/StreamDataColumnBuilderTests`, `IntegrationTests/StreamData/StreamDataColumnTypeTests`.
 
-**Anchor columns (AB#7812).** A column `anchor.<attributePath>` in the column list of a **simple** stream-data query (persisted `SimpleSdQuery`,
+**Anchor columns.** A column `anchor.<attributePath>` in the column list of a **simple** stream-data query (persisted `SimpleSdQuery`,
 transient `simple`; raw, time-range and rollup archives) shows an attribute of the row's anchor entity (the entity its `rtId` points at, e.g. the
 OBIS code and the unit of an energy measurement). Code: `GraphQL/StreamDataAnchorColumns` (`Plan` splits the columns before the repository is
 called, so the engine validator and the SQL are untouched, and asks the engine for `rtid` when it is not listed; `Validate` checks the path against
@@ -58,24 +58,24 @@ Tests: `UnitTests/GraphQL/StreamDataAnchorColumnsTests` (split, order, refusal, 
 `IntegrationTests/StreamData/StreamDataAnchorColumnsTests` (fixture `AnchorColumnsStreamDataFixture`: rollup, raw, time-range, persisted and transient,
 enum names, data policy on a derived anchor type, unknown path, display-only matrix).
 
-**Integral (AB#7919, engine AB#7918).** `aggregationType: INTEGRAL` (transient `aggregation` / `groupingAggregation`) and the CK
+**Integral.** `aggregationType: INTEGRAL` (transient `aggregation` / `groupingAggregation`) and the CK
 value `System/AggregationTypes.Integral` (key 7, System 2.8.0) on persisted `AggregationSdQuery` / `GroupingAggregationSdQuery` give the step
 integral over `[from, to)` in value unit x hours, result cell `<attr>_integral`, column `aggregationType: INTEGRAL`, value type `DOUBLE`
 (mappings: `StreamDataGraphQlMapper`, `StreamDataTransientQuery`, `StreamDataQuery`, wire suffix in `StreamDataFieldResolverExtensions`). The
 persisted column mapping now also reports `TIME_WEIGHTED_AVERAGE` / `STATE_DURATION` (they reported `NONE` before). `StreamDataIntegralValidation`
 refuses, with `ASSET1004` and the column named, an integral on a non-numeric column (CK value type other than Integer/Integer64/Double, or a
 built-in or platform field; computed columns pass when their result type is numeric) and any integral in a downsampling query; a missing From/To is the engine's structured
-`StreamDataException`. Raw archives only (rollups: AB#7920). Tests: `StreamData/StreamDataIntegralQueryTests`.
+`StreamDataException`. Raw archives only (rollups: not supported). Tests: `StreamData/StreamDataIntegralQueryTests`.
 
-**Gas days / local-day bins (AB#7361, engine AB#7358/AB#7360).** `createRollupArchive.dayStartOffsetMs` (validated by the engine
+**Gas days / local-day bins.** `createRollupArchive.dayStartOffsetMs` (validated by the engine
 at create time) and `rollupsFor.dayStartOffsetMs` (REST `archives/{id}/rollups` carries `referenceTimeZone`/`dayStartOffsetMs` from the same
-rollup snapshot, AB#8275); transient `downsampling(timeZone, binInterval, binOrigin)` builds local-day bins
+rollup snapshot); transient `downsampling(timeZone, binInterval, binOrigin)` builds local-day bins
 (`GraphQL/StreamDataLocalDayBins`: parses `binOrigin` `HH:mm`, checks `binInterval >= 1`, runs `DownsamplingBinAxis.Resolve` before the
-repository call; `limit` is required only without these arguments; `groupByColumnPaths: ["rtId"]` (AB#8647,
-`GraphQL/StreamDataDownsamplingGroupColumns`) gives one row per series and bin with the cell `rtId` after `timestamp` (per-series empty bins only with local-day bins, engine cap
+repository call; `limit` is required only without these arguments; `groupByColumnPaths: ["rtId"]`
+(`GraphQL/StreamDataDownsamplingGroupColumns`) gives one row per series and bin with the cell `rtId` after `timestamp` (per-series empty bins only with local-day bins, engine cap
 100,000 bins x series rows; fixed-width empty bins stay one row with a null `rtId`), other paths
 are refused because the engine's downsampling row carries only the rtId; `StreamDataTransientUserContext.GroupColumnsInRows` keeps
-the AB#4233 simple-downsampling cells unchanged); `resolveSeriesQuery(dayStartOffsetMs | binOrigin)` sets
+the simple-downsampling cells unchanged); `resolveSeriesQuery(dayStartOffsetMs | binOrigin)` sets
 `SeriesResolutionRequest.QueryDayStartOffsetMs` in `StreamDataQuery.BuildSeriesResolutionRequest` — without it a gas-day rollup is never
 chosen under PerQuery. Persisted downsampling queries and `GetQueryByIdNode` (mesh adapter) carry no day start (midnight). Tests:
 `UnitTests/GraphQL/StreamDataLocalDayBinsTests`, `ResolveSeriesQueryDayStartTests`, `GasDaySchemaTypesTests`,
@@ -97,7 +97,7 @@ be used directly — see `createRollupArchive` below for why.
 | `createRollupArchive(input)` | `OctoObjectId` | **Server-side rollup creation.** Input carries only the rollup-specific fields (`sourceArchiveRtId`, `bucketSizeMs`, `watermarkLagMs`, `aggregations[]` + optional name); `TargetCkTypeId` is inherited from the source archive and `Columns` is derived from the aggregations via `RollupColumnGenerator` server-side. Single source of truth for the column-derivation rule — clients no longer mirror it. Requires `StreamDataAdmin`. |
 | `freezeRollupArchive(rtId, until)` / `unfreezeRollupArchive(rtId, acceptGaps)` / `rewindRollupWatermark(rtId, toBucketEnd)` | `ArchiveTransitionResult` | Rollup-only lifecycle. All require `StreamDataAdmin`. |
 
-**Archive lifecycle as CK methods (AB#8598, F4.3).** `activateArchive`, `disableArchive`, `enableArchive`, `retryArchiveActivation`,
+**Archive lifecycle as CK methods.** `activateArchive`, `disableArchive`, `enableArchive`, `retryArchiveActivation`,
 `deleteArchive`, `createTimeRangeArchive` and `createRollupArchive` are **deprecated** (`@deprecated(reason: "Use <method id>")`) and keep
 working unchanged; each is replaced by a method of System.StreamData 1.24.0, called through the typed method mutations
 (`runtime { systemStreamDataRawArchives { activate(rtId) { result { archiveRtId status transition } } } }`, `systemStreamDataRollupArchives { createArchive(input: { archive: {...} }) { result } }`):
@@ -123,17 +123,17 @@ working unchanged; each is replaced by a method of System.StreamData 1.24.0, cal
   `actualStatus`, `path`) plus `message`. A tenant without stream data answers `STREAMDATA_NOT_ENABLED` (the mutation: generic `ASSET1002`). Input errors that the mutation
   answers with its own validation message (`createRollupArchive` source rules, unknown time zone) are `METHOD_VALIDATION_FAILED` naming the field (`archive.sources`,
   `archive.referenceTimeZone`). A target that is no archive of the call's tenant is `METHOD_TARGET_NOT_FOUND` (gateway).
-- **Caller tenant (central, AB#8711).** An in-process call is not re-validated by a bus host, and the HTTP tenant gate may run in LogOnly
+- **Caller tenant (central).** An in-process call is not re-validated by a bus host, and the HTTP tenant gate may run in LogOnly
   (locally a token of `octosystem` could disable an archive of a child tenant). The in-process transport of octo-common-services refuses such a
   call for **every** in-process method before any handler runs (`CkMethodCallerTenantFilter`, band 150, rule `CkMethodCallerTenantRule` of the
   bus host): a user token (`sub`) must carry the call's tenant in `tenant_id`; a service token (no `sub`) must carry it too or be on
   `TenantAuthorization:CrossTenantServiceClientIds`. Otherwise `METHOD_FORBIDDEN` with `reason = tenant-not-allowed`, nothing touched. The
-  archive handlers have no tenant check of their own any more (the stopgap `ArchiveMethodCallerTenantGuard` of AB#8598 is removed). The
+  archive handlers have no tenant check of their own any more (the stopgap `ArchiveMethodCallerTenantGuard` is removed). The
   mutations keep their behaviour (they follow the HTTP gate).
-- **Rollup control methods (AB#8599, System.StreamData 1.25.0).** `RollupMethodHandlers.cs`: `RollupArchive.Freeze-1` /
+- **Rollup control methods (System.StreamData 1.25.0).** `RollupMethodHandlers.cs`: `RollupArchive.Freeze-1` /
   `Unfreeze-1` / `RewindWatermark-1` run the `IRollupArchiveLifecycleService` call of the mutation and answer
   `ArchiveTransitionResult` (status read back from the rollup store, `RollupTransitions.RunAsync`); `Recompute-1` calls
-  `IRecomputeOrchestrator.RecomputeArchiveAsync` (trigger Manual, the AB#4184 staging generation + pointer swap in the call; a
+  `IRecomputeOrchestrator.RecomputeArchiveAsync` (trigger Manual, the staging generation + pointer swap in the call; a
   missing or non-activated rollup is a job in state `Failed`, as with the mutation; an invalid `rtIdScope` is
   `METHOD_VALIDATION_FAILED`), `BackfillFromSource-1` calls `EnqueueBackfillFromSourceAsync` and answers its job: a new Pending
   job, the already active job of the rollup the backfill was folded into, a `Failed` job for a missing or non-activated rollup, or
@@ -142,19 +142,19 @@ working unchanged; each is replaced by a method of System.StreamData 1.24.0, cal
 - **System tenant import.** The startup validation of in-process registrations looks the methods up in the system tenant's CK cache, which holds System.StreamData only
   when stream data was enabled there. `SystemTenantStreamDataModelImport` (Order 12, after the default configuration, before the validation at 15) imports the embedded model
   into the system tenant (idempotent, downgrade guard). It does not enable stream data for the system tenant.
-  **It leaves the system tenant's CK cache loaded with the model (AB#8722).** The validation (`CkCacheMethodDefinitionSource`) reads only a
+  **It leaves the system tenant's CK cache loaded with the model.** The validation (`CkCacheMethodDefinitionSource`) reads only a
   cache that is already loaded, while the import unloads it when the model set changed (this replica imported) or the loaded cache lacks the
-  installed version (another replica imported first, AB#8667). Before AB#8722 nothing loaded it again before Order 15, so on the first rollout
+  installed version (another replica imported first). Before this fix nothing loaded it again before Order 15, so on the first rollout
   with several replicas a pod stopped with "the CK cache of tenant(s) 'octosystem' has no such method". The import step now loads the cache
   after the import and checks that it holds System.StreamData (by name, embedded version or newer); a cache loaded concurrently from the
   state before the import is unloaded and loaded again, a load that ran out waiting for another replica's import (exception marked
-  `CkModelImportInProgress`, AB#8677) is loaded again, a cache unloaded during the check counts as not holding the model (at most
+  `CkModelImportInProgress`) is loaded again, a cache unloaded during the check counts as not holding the model (at most
   `MaxCacheLoadAttempts` = 3 loads; any other load failure fails the step). A model that is really not installed (import
   skipped for missing dependencies) is logged WARN and still fails the validation. Tests: `IntegrationTests/StreamData/SystemTenantStreamDataImportReplicaTests`
   (fixture `AssetRepoReplicaFixture`: several replicas with their own service provider on one fresh system tenant, started together).
-- **Create parameters are the generated records (AB#8707).** The handlers bind `TimeRangeArchiveCreateArchiveParameters` / `RollupArchiveCreateArchiveParameters`
+- **Create parameters are the generated records.** The handlers bind `TimeRangeArchiveCreateArchiveParameters` / `RollupArchiveCreateArchiveParameters`
   of System.StreamData directly; the record arrays (`Columns`, `Sources`, `Aggregations`, `IAttributeValueList<T>`) are bound by `CkMethodJson.Options` of
-  octo-common-services (the plain look-alike classes of AB#8598 are removed). A missing optional `sources` is `null`, an explicit `[]` an empty list, so the
+  octo-common-services (the plain look-alike classes are removed). A missing optional `sources` is `null`, an explicit `[]` an empty list, so the
   source rules of the mutation stay as they were. The generated CK enums (`RtCkRollupFunctionEnum`, `RtBucketAlignmentEnum`) become the engine enums by name
   (`ArchiveMethodSupport.ToEngine`).
 - Tests: `UnitTests/StreamData/Methods/ArchiveMethodTests` (code mapping, host table, switch, source rules, binding from the wire JSON, enum mapping), `IntegrationTests/StreamData/ArchiveLifecycleMethodTests`

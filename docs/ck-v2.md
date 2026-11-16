@@ -5,22 +5,22 @@ applies_to: **/GraphQL/Types/Meta/**, **/GraphQL/Mapping/**, **/GraphQL/OctoBuil
 
 # CK language 2 on the GraphQL surface
 
-## CK v2 (Epic AB#5584)
+## CK v2
 
 CK language 2 (`ckLanguage: 2`) adds attribute `access`, CK interfaces, `visibility`, `derivable` and methods to the
 construction kit. Phase 1 (F1.5) brought the meta-model to the GraphQL surface. The method **runtime** is shipped (Phase 3):
-typed method mutations (sections "Typed method mutations" and "Method mutation resolver" below), the gateway gate and data
-permissions ("CK method gateway gate", "Method data permissions"), the dispatcher of octo-common-services with handlers over the
+typed method mutations (`docs/method-gateway.md`), the gateway gate (`docs/method-gateway.md`) and data
+permissions (`docs/method-in-process.md`), the dispatcher of octo-common-services with handlers over the
 bus, in-process (gateway-owned methods) and as pipelines, caller-token forwarding, idempotency keys, and asynchronous methods
-with operation handles and `runtime.operations` ("Asynchronous methods", AB#8444). The handler SDK and the dispatcher live in
-octo-common-services (`src/Methods`, `docs/method-handler-sdk.md`); user docs: octo-documentation
-`technologyGuide/constructionKits/ckLanguage2/` (`methods.md`, `graphql.md`, `methodHandlers.md`, `methodConsistency.md`).
+with operation handles and `runtime.operations` (`docs/method-gateway.md`). The handler SDK and the dispatcher live in
+octo-common-services (`src/Methods`, `octo-common-services/docs/method-handler-sdk.md`); user docs: octo-documentation
+`technologyGuide/constructionKits/ckLanguage2/` (`methods`, `graphql`, `methodHandlers`, `methodConsistency`).
 
-**Schema-build timing (risk R8):** `SchemaContext` logs the build time per tenant (see "When Working with GraphQL").
+**Schema-build timing (risk R8):** `SchemaContext` logs the build time per tenant (see `docs/architecture.md`).
 Baseline for the integration test CK model (`SchemaBuildTimingTests`): ~100–250 ms cold, of which ~75–200 ms is
 schema initialization.
 
-**Attribute `access` (AB#5668 / F1.5-S1 AB#5920):**
+**Attribute `access`:**
 - `OctoBuilder.Attribute` is the single chokepoint: `Hidden` attributes get no field on entity, abstract-type
   interface, CK interface, input, `…InputUpdate` and record types; `MethodOnly` attributes are readable but not
   part of the input types. `ReadOnly` attributes stay in the input types (the typed create and update share one input
@@ -31,10 +31,10 @@ schema initialization.
   name that is Hidden anywhere in the tenant is dropped there (fail closed, review L11).
 - Writes: `RtMutationBase.TryHandleAttributeAsync` applies the engine rule `AttributeAccess.IsGenericallyWritable(access,
   isCreate)` to the typed and generic create/update paths (also to record members, which follow the create/update of the
-  entity): `Hidden` / `MethodOnly` are never writable, `ReadOnly` only on create (AB#8047) - refused with `ATTRIBUTE_NOT_WRITABLE`
+  entity): `Hidden` / `MethodOnly` are never writable, `ReadOnly` only on create - refused with `ATTRIBUTE_NOT_WRITABLE`
   ("Attribute '…' of '…' is not writable via generic mutations (access: …)."), nothing written; query-row creates/updates
-  (`QueryMapper` → `AccessQueryGuard.EnsureWritablePath(…, isCreate)`) apply the same rule to their cells (review M7, AB#8047).
-  `ImportRt` and blueprint seeds keep ReadOnly importable by design (engine `IsWritableOutsideMethod`, AB#7767).
+  (`QueryMapper` → `AccessQueryGuard.EnsureWritablePath(…, isCreate)`) apply the same rule to their cells.
+  `ImportRt` and blueprint seeds keep ReadOnly importable by design (engine `IsWritableOutsideMethod`).
 - Queries: the engine's query column collector and the repository do not know `access`, so the asset-repo guards
   every entry point (`AccessQueryGuard`):
   - `WithoutHiddenColumns` filters `availableQueryColumns` and `QueryColumnPathResolver.GetColumnsForPaths` (all
@@ -56,7 +56,7 @@ schema initialization.
     navigation filters, and `RtMutationBase.GetRtQueryRowResultSet`): hidden paths and hidden selector keys →
     `ATTRIBUTE_NOT_QUERYABLE`, Secret selector keys → `SecretAttributeNotQueryable`. Navigation lookups in
     query-row writes (`QueryMapperEngine.EvaluateNavigationFilters`) reject hidden keys as well.
-  - **Stored queries are checked when they are saved (AB#8049)**: `RtMutationBase.ApplyChangesAsync` (typed and generic
+  - **Stored queries are checked when they are saved**: `RtMutationBase.ApplyChangesAsync` (typed and generic
     create/update/replace) calls `StoredQueryWriteGuard.EnsureStoredQueriesAllowedAsync` for every entity of a type derived from
     `System/PersistentQuery`. Field filters, sort orders, columns (strings or aggregation records), group-by columns and
     attribute-search paths are checked with `AccessQueryGuard.EnsureStoredQueryPathsAllowed` against the query type and every
@@ -76,23 +76,22 @@ schema initialization.
 - Both codes come from `HiddenAttributeAccessException`, mapped by `HandleException` and the GraphQL
   `UnhandledExceptionDelegate` (`TryCreateAttributeAccessError`).
 - CK meta: `CkTypeAttribute.access: String!` (`ReadWrite` / `ReadOnly` / `MethodOnly` / `Hidden`).
-- **Export / import** (review H2/H3/H4, closed by the engine in AB#7767): RT export skips Hidden values, RT import and
+- **Export / import** (review H2/H3/H4, closed by the engine): RT export skips Hidden values, RT import and
   blueprint seed refuse Hidden / MethodOnly values (engine message 139). Pinned for the real System.Identity user by the
   credential guard tests (below).
-- **Credential guard regression tests (AB#7781)**: `tests/AssetRepositoryServices.IntegrationTests/Security/IdentityCredentialGuard*Tests`
+- **Credential guard regression tests**: `tests/AssetRepositoryServices.IntegrationTests/Security/IdentityCredentialGuard*Tests`
   run every GraphQL, export, import and blueprint-seed path against the **real** System.Identity model (compiler output in
   `testData/ck-models/`, loaded by `Fixtures/SystemIdentitySnapshotCkModel`; refresh procedure in the README there) with a user whose
   `PasswordHash`, `SecurityStamp` and `UserTokens` hold fixed dummy values; no response, export file or captured log line may contain
   them. Path table: the README of the integration test project. Open gaps are skipped tests with the bug in the skip reason; none is left (the former
-  `Gap_GenericCreate_OfAUser_IsReplacedByCreateUser` passes since System.Identity 3.0.0, AB#8053: CK meta `replacesGenericCreate` is `true`). AB#8048 is fixed: `TheIdentityStoreWrite_LeavesNoCredentialInTheMongoCommandLog` checks the captured Debug command
+  `Gap_GenericCreate_OfAUser_IsReplacedByCreateUser` passes since System.Identity 3.0.0: CK meta `replacesGenericCreate` is `true`). The identity store write is checked: `TheIdentityStoreWrite_LeavesNoCredentialInTheMongoCommandLog` checks the captured Debug command
   log of the identity store write, non-vacuous (the rendered insert must be in the capture). A new user is refused on every create path
-  (`GENERIC_CREATE_REPLACED_BY_METHOD` naming `User.CreateUser-1`, AB#7777, next section), so the create tests of these suites assert that refusal. A stored query whose filter or selector reaches a credential is refused when it is saved (AB#8049,
-  `StoredQuery_WithACredentialFilter_IsRefusedWhenSaved`, `EntitySelector_InAStoredQuery_IsRefused`).
-- **Identity-owned User fields and identity associations (AB#8042, AB#8053)**: the identity-owned User attributes `NormalizedUserName`,
+  (`GENERIC_CREATE_REPLACED_BY_METHOD` naming `User.CreateUser-1`, `docs/method-in-process.md`), so the create tests of these suites assert that refusal. A stored query whose filter or selector reaches a credential is refused when it is saved (`StoredQuery_WithACredentialFilter_IsRefusedWhenSaved`, `EntitySelector_InAStoredQuery_IsRefused`).
+- **Identity-owned User fields and identity associations**: the identity-owned User attributes `NormalizedUserName`,
   `NormalizedEmail`, `EmailConfirmed`, `PhoneNumberConfirmed`, `TwoFactorEnabled`, `LockoutEnabled`, `ResetPasswordOnLogin`, `Claims`, `UserLogins`,
   `PreferredChannelBindingId`, `LockoutEnd`, `AccessFailedCount` are `access: MethodOnly` in System.Identity 3.0.0 and refused by the **generic access
   guard** (`ATTRIBUTE_NOT_WRITABLE` with the access detail; typed inputs do not offer them; query rows: `AccessQueryGuard.EnsureWritablePath`). Nothing
-  of the attribute list lives here any more (AB#8053 removed `IdentityOwnedWriteGuard.EnsureAttributeWritable` / `EnsureWritablePath`; the 2.x guard
+  of the attribute list lives here any more (the former `IdentityOwnedWriteGuard.EnsureAttributeWritable` / `EnsureWritablePath` are removed; the 2.x guard
   answered with the extra extension `reason = identity-owned`). `GraphQL/Utils/IdentityOwnedWriteGuard` still refuses, for every caller, the association
   roles listed in the engine's `IdentityOwnedWrites.AssociationRoleIds` (ConstructionKit.Contracts): `AssignedRole`, `GroupMember`, `ChildGroup`, `MayActAs`,
   `GrantsPermission` (insert and delete, from either end). **Why the associations stay in a list:** the CK access model has no association-level write
@@ -101,7 +100,7 @@ schema initialization.
   (`HiddenAttributeAccessException.IdentityOwned`) with the extra extension `reason = identity-owned`; nothing is written. Only the identity service writes
   these values (its REST API and the identity methods, which carry the role-change guard and the audit); it uses its own repository, which never passes here.
   The engine refuses the same associations on the caller path of `ImportRt` (message 140) and the attributes through rule 139. Not covered here:
-  `PolicyPermission`, `IdentifiesUser` (open), the mesh-adapter load nodes. Tests: `UnitTests/GraphQL/IdentityOwnedWriteGuardTests`, the AB#8042/AB#8053 tests in
+  `PolicyPermission`, `IdentifiesUser` (open), the mesh-adapter load nodes. Tests: `UnitTests/GraphQL/IdentityOwnedWriteGuardTests`, the tests in
   `IntegrationTests/Security/IdentityCredentialGuard{GraphQl,Exchange}Tests`. A tenant still on System.Identity 2.x (until the identity service has imported 3.0.0)
   has no MethodOnly on these attributes and no list here: roll the identity service out together with this one.
 - **Stream data** (review M12 / G3 E-M2): no archive column may reach a Hidden attribute. The engine refuses to
@@ -115,7 +114,7 @@ schema initialization.
   `groupingAggregation` / `downsampling` queries, persisted `streamDataQuery` rows and both `aggregations`
   sub-connections. The check runs inside `StreamDataFieldValidation.ValidateStreamDataFields` (required parameter) and
   explicitly in the aggregation and runtime-override resolvers. Tests: `StreamData/StreamDataHiddenAttributeTests`.
-- **Whole-record updates keep the members the caller may not write** (AB#8055, closes G3 review A-M2): a typed or generic
+- **Whole-record updates keep the members the caller may not write** (closes G3 review A-M2): a typed or generic
   update that writes a record (or record array) attribute rebuilds the record from its input fields; an explicit value for a
   `Hidden` / `MethodOnly` / `ReadOnly` member is refused, so without help an omitted one would be cleared.
   `GraphQL/RecordMemberPreservation` (called from `RtMutationBase.PreserveProtectedRecordMembersAsync` in both update resolvers, after
@@ -125,20 +124,20 @@ schema initialization.
   records recursively. A record array whose record has no usable key (none, or the key itself is not writable on update) cannot be
   matched: the update is refused with `ATTRIBUTE_NOT_WRITABLE` when a stored element holds a value in a protected member, and allowed
   when none does. Secret members are left to the engine (record key). `null` for the whole record attribute still removes it. Same idea
-  as identity-owned attributes on `ImportRt` (AB#8059, preserved on omission). `clearSecretAttributes` is a write too: clearing a Secret
+  as identity-owned attributes on `ImportRt` (preserved on omission). `clearSecretAttributes` is a write too: clearing a Secret
   that is Hidden / MethodOnly / ReadOnly is refused with `ATTRIBUTE_NOT_WRITABLE` (`MapClearSecretAttributes`). Tests: `UnitTests/GraphQL/RecordMemberPreservationTests`,
   `IntegrationTests/GraphQL/CkV2/RecordMemberPreservationTests` (test type `RecordAccessThing`, records `AccessTestDetail`,
   `AccessTestInner`, `AccessTestKeyedEntry`).
-- **Query-row updates of record paths change exactly their path** (AB#8322): `RtQueryMutation.ResolveUpdate` builds the update
+- **Query-row updates of record paths change exactly their path**: `RtQueryMutation.ResolveUpdate` builds the update
   document from the cells (`QueryMapper`, path-wise `RtPathEvaluator.SetValue`), and the repository `$set`s every top-level attribute
   of that document as a whole. A cell `detail.label` alone would therefore replace the stored record with `{ label }` and drop every
   other member (protected or not). Before the cells are applied, `CopyStoredRecordsAsync` reads the stored entity (request session =
   caller's data permissions, inside the request transaction; only when a cell writes a record member) and
   `GraphQL/Mapping/QueryRowRecordMerge` copies the stored value of each record / record array attribute whose member a cell writes
-  into the document, **without Secret members** (the engine carries them over, AB#5533). The cells then change only their path: a
+  into the document, **without Secret members** (the engine carries them over). The cells then change only their path: a
   single record and nested records keep all other members; a record array element is addressed by position (`entries[0].label`,
   the form `availableQueryColumns` offers) and changed in place, so it keeps its members with or without a record key - no element
-  matching is needed, so the keyless refusal of AB#8055 / message 141 of AB#8141 does not apply here; other elements stay as stored.
+  matching is needed, so the keyless refusal (message 141) does not apply here; other elements stay as stored.
   A cell that names the record attribute itself is not merged; an explicit value for a protected member is refused before anything
   is written (`AccessQueryGuard.EnsureWritablePath`). Tests: `UnitTests/GraphQL/QueryRowRecordMergeTests`,
   `IntegrationTests/GraphQL/CkV2/QueryRowRecordMemberPreservationTests` (record `AccessTestKeyedDetail`: record key plus Hidden,
@@ -148,7 +147,7 @@ schema initialization.
   make schema initialization throw, and the whole tenant schema is unavailable. `SchemaContext` builds every tenant
   under one process-wide semaphore and does not cache failures, so a broken tenant serialises all cache-miss builds.
   Compiler rule I-5 only compares exact type/interface names.
-- **`ReadOnly`** (AB#8047): set on create, never changed by a generic update, typed update or query-row update
+- **`ReadOnly`**: set on create, never changed by a generic update, typed update or query-row update
   (`ATTRIBUTE_NOT_WRITABLE`); e.g. the `LockoutEnd` / `AccessFailedCount` of a user change only through the identity service.
   Tests: `GraphQL/CkV2/ReadOnlyAttributeTests` (test attribute `AccessTestAccount.ExternalReference`) and
   `Security/IdentityCredentialGuardGraphQlTests.GenericUpdate_OfAReadOnlyLockoutAttribute_IsRefused`.
@@ -157,7 +156,7 @@ schema initialization.
   `AccessTestGroup`; the test model is `ckLanguage: 2`).
 
 
-**CK interfaces (AB#5667 / F1.5-S2 AB#5921):**
+**CK interfaces:**
 - Each CK interface of the tenant (`ICkCacheService.GetRtCkInterfaces`) becomes a GraphQL interface
   `CkInterfaceGraphType` named without suffix (`System.Identity/Named-1` → `SystemIdentityNamed`; abstract-type
   interfaces keep `<Type>Interface`). **Naming rule** (`Statics.GetGraphQlPascalCaseName`, all CK element kinds):
@@ -184,15 +183,15 @@ schema initialization.
 - When the field alignment in `RtEntityDtoType` still fails, `ReportInterfaceNotImplemented` logs a **Warning** for CK
   interfaces (Debug for abstract-type interfaces, where it is expected for overridden associations) instead of
   skipping silently.
-- `runtime.byInterface` returns entities by CK interface (AB#6932, see "Query by interface" below);
-  `GetRtEntitiesByType ckInterfaceId` (pipeline node) is AB#6933.
+- `runtime.byInterface` returns entities by CK interface (see `docs/runtime-queries.md`);
+  `GetRtEntitiesByType ckInterfaceId` (pipeline node) is separate work.
 - Tests: `CkInterfaceSchemaTests` (unit), `GraphQL/CkV2/CkInterfaceIntrospectionTests` (integration, test interfaces
   `AssetRepositoryIntegrationTest/Labeled-1` implemented by `AccessTestAccount` and `AccessTestGroup`, and `Member-1`
   extending `Labeled-1` with the `AccessTestMembership` association member, implemented by `AccessTestAccount`;
   `AccessTestGroup.LinksToLabeled` is narrowed to `Labeled-1`).
 
 
-**CK meta introspection (F1.5-S3, AB#5922):** the `constructionKit` API describes the CK v2 meta model. The SDK
+**CK meta introspection:** the `constructionKit` API describes the CK v2 meta model. The SDK
 meta DTOs carry no CK v2 members, so the new fields read the tenant's CK cache graph (`Types/Meta/CkMetaGraphLookup`)
 or the persisted `CkModel`; elements missing from the cache report the v1 defaults. Enumerations are strings with the
 engine's PascalCase names, like `access`.
@@ -205,7 +204,7 @@ engine's PascalCase names, like `access`.
 | `CkEnum`, `CkAttribute`, `CkAssociationRole` | `visibility` |
 | `CkModel` | `ckLanguage: Int!` (1 when not declared), `minEngineVersion`, `dependencyRanges: [CkModelDependencyRange!]` (`range`, `floor`; null for classic exact-pinned models) |
 | `CkInterface` (new) | `ckInterfaceId`, `rtCkInterfaceId`, `description`, `visibility`, `deprecated`, `extends`, `allExtends`, `attributes: [CkInterfaceAttribute!]!` (`ckAttributeId`, `attributeName`, `attributeValueType`, `isOptional`; incl. extended members), `associations: [CkInterfaceAssociation!]!` (`ckAssociationRoleId`, `targetCkTypeId`, `targetCkInterfaceId`, `multiplicity`, `isOptional`, `declaringCkInterfaceId`), `methods`, `implementingTypes` |
-| `CkMethod` (new, definitions only) | `methodId`, `qualifiedMethodId` (type methods), `declaringCkTypeId` / `declaringCkInterfaceId`, `kind` (`Instance`/`Static`), `description`, `visibility`, `parameters: [CkMethodParameter!]!` (`name`, `valueType`, `valueCkRecordId`, `valueCkEnumId`, `isOptional`, `sensitive`, `description`), `result: CkMethodResultDefinition` (`valueType`, `valueCkRecordId`, `valueCkEnumId`, `sensitive: Boolean!` - AB#7008: the compiled `result.sensitive` marker from the runtime CK cache, `false` when undeclared; additive on this v2-only meta type), `errors: [CkMethodErrorDefinition!]!`, `authorization: CkMethodAuthorization!` (`roles`, `allowSelf`, `scopes`), `execution: CkMethodExecution!` (`timeoutSeconds` effective, `idempotent`, `handler: String!` effective handler kind `service` (default when undeclared) or `pipeline`, AB#6878 / touch-point row 11 of `execution.handler`; `mode: String!` effective execution mode `sync` (default when undeclared) or `async` (the call returns an operation handle), AB#6926 / touch-point row 11 of `execution.mode`; both additive on this v2-only meta type, so existing queries and the Studio v1 queries are unaffected) |
+| `CkMethod` (new, definitions only) | `methodId`, `qualifiedMethodId` (type methods), `declaringCkTypeId` / `declaringCkInterfaceId`, `kind` (`Instance`/`Static`), `description`, `visibility`, `parameters: [CkMethodParameter!]!` (`name`, `valueType`, `valueCkRecordId`, `valueCkEnumId`, `isOptional`, `sensitive`, `description`), `result: CkMethodResultDefinition` (`valueType`, `valueCkRecordId`, `valueCkEnumId`, `sensitive: Boolean!` - the compiled `result.sensitive` marker from the runtime CK cache, `false` when undeclared; additive on this v2-only meta type), `errors: [CkMethodErrorDefinition!]!`, `authorization: CkMethodAuthorization!` (`roles`, `allowSelf`, `scopes`), `execution: CkMethodExecution!` (`timeoutSeconds` effective, `idempotent`, `handler: String!` effective handler kind `service` (default when undeclared) or `pipeline`; `mode: String!` effective execution mode `sync` (default when undeclared) or `async` (the call returns an operation handle); both additive on this v2-only meta type, so existing queries and the Studio v1 queries are unaffected) |
 | `ConstructionKitQuery` | `interfaces(ckModelIds, rtCkId, rtCkIds)` connection |
 
 `CkMethodErrorDefinition` is deliberately not named `CkMethodError` (that name belongs to the invocation error of the
@@ -214,7 +213,7 @@ to models, not secret. Tests: `GraphQL/CkV2/CkMetaIntrospectionTests` (incl. `Sc
 **invocation** is one GraphQL error with `extensions.code` / `parameters`, so the schema has no `CkMethodError` /
 `CkMethodErrorDetail` type and a sync result type has no error member). An asynchronous method that was accepted can still fail
 later; that failure is not a GraphQL error of the mutation but the `error` (code, parameters) of its operation, read through
-`runtime.operations` (see "Asynchronous methods" below). **Schema export for frontend codegen:** run
+`runtime.operations` (see `docs/method-gateway.md`). **Schema export for frontend codegen:** run
 `OCTO_SCHEMA_EXPORT_PATH=<file> dotnet test tests/AssetRepositoryServices.IntegrationTests -c DebugL --filter
 "FullyQualifiedName~SchemaExportTests"` — writes the SDL of the integration-test tenant (all CK meta types plus the
 CK v2 test model's runtime types); the Studio's own `schema.graphql` stays an introspection of a real tenant.

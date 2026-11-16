@@ -3,11 +3,11 @@ description: Blueprint update preview and apply: seed values that would blank te
 applies_to: **/Controllers/BlueprintsController.cs, **/DataTransferObjects/Blueprints/**, **/BlueprintUpdateBlankingFlowTests.cs
 ---
 
-# Blueprint update: values a seed would blank (AB#6315)
+# Blueprint update: values a seed would blank
 
 An Upsert import replaces an entity as a whole, so a seed that carries an empty value (or omits an
-attribute) used to clear what a tenant had entered (incident AB#6310, EDA adapter configuration).
-The engine now keeps such tenant values (AB#6313). The API shows them **before** the update and
+attribute) used to clear what a tenant had entered (seen once with an EDA adapter configuration).
+The engine now keeps such tenant values. The API shows them **before** the update and
 lets the operator confirm each blanking explicitly. All fields below are additive; a client that
 sends and reads none of them keeps working and is safe by default.
 
@@ -21,7 +21,7 @@ value the seed would blank:
 |-------|---------|
 | `rtId`, `ckTypeId` | The entity |
 | `attributeName` | Attribute as stored |
-| `reason` | `SeedEmpty` (empty value, or JSON text emptying a string the tenant filled), `SeedOmitted` (attribute not declared by the seed) or `ResetToDefault` (the current value differs from the CK default and the incoming value is the default, AB#6395) |
+| `reason` | `SeedEmpty` (empty value, or JSON text emptying a string the tenant filled), `SeedOmitted` (attribute not declared by the seed) or `ResetToDefault` (the current value differs from the CK default and the incoming value is the default) |
 | `currentSummary`, `incomingSummary` | Kind and size only, e.g. `string (223 chars)`, `empty string`, `omitted`. **Never the value** (it may be a credential) |
 | `appliedOnUpdate` | Always `false` in a preview: without confirmation the update keeps the tenant value |
 
@@ -47,11 +47,10 @@ attributes with `appliedOnUpdate`: `false` = tenant value kept, `true` = blanked
 Typical flow: preview, read `blankedAttributes`, apply without flags (keeps) or with the confirmed
 pairs (blanks exactly those).
 
-## Tenant-owned seed entities the update did not write (AB#6454)
+## Tenant-owned seed entities the update did not write
 
-A seed entity with `rtBlueprintLocked: false` belongs to the tenant after the first install (engine
-AB#6383): an update never rewrites one the tenant edited and never brings back one the tenant deleted;
-one whose content still equals the installed seed receives a changed seed in `Merge` and `Full` mode (engine AB#8778). Four further lists
+A seed entity with `rtBlueprintLocked: false` belongs to the tenant after the first install (engine): an update never rewrites one the tenant edited and never brings back one the tenant deleted;
+one whose content still equals the installed seed receives a changed seed in `Merge` and `Full` mode (engine). Four further lists
 show this, on the preview (`POST {tenantId}/v1/blueprints/updates/preview`, GraphQL
 `blueprints.previewUpdate`) and on the apply result (REST `updates/apply` `BlueprintUpdateResultDto`,
 GraphQL `applyUpdate` `BlueprintApplyResult`; always empty for an install). REST uses PascalCase
@@ -61,8 +60,8 @@ GraphQL `applyUpdate` `BlueprintApplyResult`; always empty for an install). REST
 |------|---------|
 | `tenantOwnedSkipped` | The tenant still holds the entity; the update left it untouched. `entityId` is its runtime id |
 | `tenantOwnedStaysDeleted` | The previous seed contained it, the tenant deleted it, the update does not recreate it. `entityId` is `null` |
-| `tenantOwnedRefreshed` | AB#8778: the entity's compared content equals what the installed version's seed wrote and the target seed changed it; the update writes the new seed content (`Merge` and `Full` only - `Safe` adds only and lists such entities in `tenantOwnedSkipped`). Counted in `entitiesUpdated`; its attribute changes appear in the preview's `changes` like those of a product-owned entity (JSON texts and blanked attributes masked) |
-| `tenantOwnedUpdateAvailable` | AB#8778: the target seed changed the entity, but its content differs from the installed seed or the comparison was not possible (installed seed not readable, entity of another blueprint); the update keeps it. A report of this run, not a stored state: applying the same version again lists nothing. Also listed in `tenantOwnedSkipped` |
+| `tenantOwnedRefreshed` | the entity's compared content equals what the installed version's seed wrote and the target seed changed it; the update writes the new seed content (`Merge` and `Full` only - `Safe` adds only and lists such entities in `tenantOwnedSkipped`). Counted in `entitiesUpdated`; its attribute changes appear in the preview's `changes` like those of a product-owned entity (JSON texts and blanked attributes masked) |
+| `tenantOwnedUpdateAvailable` | the target seed changed the entity, but its content differs from the installed seed or the comparison was not possible (installed seed not readable, entity of another blueprint); the update keeps it. A report of this run, not a stored state: applying the same version again lists nothing. Also listed in `tenantOwnedSkipped` |
 
 | Field | Meaning |
 |-------|---------|
@@ -76,10 +75,10 @@ Identity only, **never attribute values** (tenant-owned entities may hold creden
 in `entitiesUpdated`. They are not blanking: `blankedAttributes`, `allowBlanking` and the
 CLI's `--failOnBlanking` do not look at them. Additive, empty by default; a client that ignores them
 behaves as before.
-The rule that decides between refreshed and kept is described in the engine's `docs/blueprints.md`
+The rule that decides between refreshed and kept is described in `octo-construction-kit-engine/docs/blueprints.md`
 (section "Product-owned and tenant-owned seed entities").
 
-## No credential text in `changes` (follow-up of AB#6316 review)
+## No credential text in `changes`
 
 The preview's per-entity `changes[].attributes[].oldValue` / `newValue` used to carry the raw text
 of every attribute the update would change, which includes the blanked configuration of

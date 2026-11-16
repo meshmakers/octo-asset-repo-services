@@ -3,10 +3,10 @@ description: GridFS orphan sweep: endpoint, what counts as an orphan, runbook an
 background: true
 ---
 
-# GridFS orphan sweep (AB#6541)
+# GridFS orphan sweep
 
-Linked binaries are committed **before** the old bytes are deleted (after-commit design, AB#6248; see
-`docs/linked-binaries-after-commit.md` in the engine-mongodb repository). A crash or a failing delete in between,
+Linked binaries are committed **before** the old bytes are deleted (after-commit design; see
+`octo-construction-kit-engine-mongodb/docs/linked-binaries-after-commit.md`). A crash or a failing delete in between,
 a crash before the commit, a stale `BinaryId` or a failed rollback callback leave GridFS files that no entity
 references: **orphans**. They are harmless (no entity points to them), but they take space. The engine's
 `GridFsOrphanSweeper` (octo-construction-kit-engine-mongodb, release 3.5.14+) finds and removes them; this service
@@ -71,7 +71,7 @@ it for a very large tenant in a quiet window.
 | Part | File |
 |------|------|
 | Endpoint | `SystemApi/v1/Controllers/FilesOrphanSweepController.cs` |
-| Caller check shared with `reconcile-registry` | `SystemApi/v1/Controllers/SystemAdministratorGuard.cs` |
+| Caller check shared with `reconcile-registry` | `Security/SystemAdministratorGuard.cs` |
 | Service, report DTO, per-tenant run gate | `Services/Files/OrphanSweep/GridFsOrphanSweepService.cs` |
 
 The engine keeps its repository access internal, so the service creates one lazily built admin client from

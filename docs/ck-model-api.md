@@ -5,9 +5,9 @@ applies_to: **/BlueprintLock/**, **/Services/CkModelValidation/**, **/CkModelCat
 
 # CK model and blueprint APIs
 
-## Blueprint-locked entities: stable error contract (AB#6385)
+## Blueprint-locked entities: stable error contract
 
-The engine write guard (`DataPermissionWriteGuard`, AB#6384; opt-in by `DataPolicy.ProtectBlueprintLocked`) refuses a
+The engine write guard (`DataPermissionWriteGuard`; opt-in by `DataPolicy.ProtectBlueprintLocked`) refuses a
 change set that updates/deletes an entity with `RtBlueprintLocked = true` (or sets/changes the three blueprint
 attributes) of an opted-in type with an error `OperationMessage` of number **6384**
 (`RtBlueprintLockProtectionNames.ForbiddenMessageNumber`), location `{ckTypeId}@{rtId}`. This service maps it (`BlueprintLock/`):
@@ -23,15 +23,15 @@ attributes) of an opted-in type with an error `OperationMessage` of number **638
   `RuntimeRepositoryException` / `BlueprintLockedException` that reaches the filter) into `403` `application/problem+json`
   with `code = BLUEPRINT_LOCKED`. There is no REST endpoint that writes runtime entities directly; the filter is the
   contract for any action that lets the refusal escape. `Models/ImportRt` starts a job and catches everything itself, so
-  an import rejection (6384, AB#6392) shows up in the job result, not as a 403.
+  an import rejection shows up in the job result, not as a 403.
 - Callers: only `IsSystem` sessions bypass the guard. A pipeline node with `Identity: ServiceAccount` runs as a user
   (guarded); `Identity: System` and the blueprint services are exempt.
 - Tests: `tests/.../GraphQL/BlueprintLock/BlueprintLockErrorGraphQlTests.cs` (real engine guard behind the real mutations;
   the policy table is supplied through the `IDataPermissionResolver` seam by `BlueprintLockGraphQlTestFixture` because the
   System.Identity CK model is not part of the test tenant) and `tests/.../UnitTests/BlueprintLock/`.
-- User documentation: octo-documentation, `dataAccess/runtime/errorHandling.md` (#blueprint-locked-entities).
+- User documentation: octo-documentation, `dataAccess/runtime/errorHandling` (#blueprint-locked-entities).
 
-## Validate a CK model draft without importing it: `Models/ValidateCk` (AB#8492)
+## Validate a CK model draft without importing it: `Models/ValidateCk`
 
 `POST {tenantId}/v1/Models/ValidateCk` (multipart member `file`, policy `TenantAssetApiReadOnlyPolicy`, request limit 20 MB) answers
 **200** with `CkModelValidationResponseDto` for every draft, valid or not (`isValid`, `modelId`, `sourceKind` `Source|Compiled`,
@@ -43,7 +43,7 @@ Code: `Services/CkModelValidation/CkModelDraftValidator` (registered transient i
   to a temp folder and compiled with the engine's `ICompilerService.CompileInMemoryAsync` (dependencies from the configured catalogs),
   every other upload is read by `CkModelFileReader`, the reader `ImportCk` uses too (moved out of the controller, same behaviour). The
   compiled model then goes through the engine's `ITenantContext.ValidateCkModelAsync` (octo-construction-kit-engine-mongodb: the import's
-  pre-write checks, read-only) and, without errors, `EvaluateFileImportBlockersAsync` (the guard of `ImportCk`, AB#6966).
+  pre-write checks, read-only) and, without errors, `EvaluateFileImportBlockersAsync` (the guard of `ImportCk`).
 - **Nothing is written**: no cache stream, no import command, no tenant write; the temp folder is deleted.
 - **A bad draft is a finding, not a failed call**: compiler errors, YAML syntax errors, an unreadable file, a missing dependency are
   errors in the list. Numbers: the engine's message catalog; 8492 with `parameters.reason` `unreadable-draft` (asset repository),
@@ -60,7 +60,7 @@ Code: `Services/CkModelValidation/CkModelDraftValidator` (registered transient i
   attribute with file and element, missing dependency of a compiled model and of a source draft, broken YAML, unreadable file, zip slip;
   every case asserts that the serialized response contains no temp folder name or temp path).
 
-## Export entry points run as the caller (AB#6734)
+## Export entry points run as the caller
 
 `POST {tenantId}/v1/Models/ExportRtByQuery` and `ExportRtByDeepGraph` (`ModelsController`, policy
 `TenantAssetApiReadOnlyPolicy`) hand the export to a bus command that the job service (octo-bot-services) runs as a Hangfire job.
@@ -83,11 +83,11 @@ the identity's role claims and the `role` claim) plus the `client_id` claim, and
 - Tests: `ModelsControllerExportCallerTests` (subject/roles/client in the command, client-credentials subject, 401 without identity,
   nothing enqueued).
 
-## Former files migration: System.Reporting → System.Files (AB#6175, removed in AB#7033)
+## Former files migration: System.Reporting → System.Files
 
 The one-time move of System.Reporting 2.x file data to System.Files (sweep at tenant start, straggler timer, status
 endpoint for the pre-check, own configuration section and Helm switch) ran on test-2,
-staging-1, prod-1 and prod-2 (Epic AB#6171) and was **removed in AB#7033**. The last release that contains it is
+staging-1, prod-1 and prod-2 and was **removed**. The last release that contains it is
 **r3.5.32**; recovery path for an environment that still holds legacy Reporting file data (old dump, restore): run
 that release, or take the code from the git history at that tag. The data the migration left in tenant databases is
 **kept and read by nothing**: collections `FilesMigrationConflicts` (parked legacy documents, evidence),
@@ -126,7 +126,7 @@ System-scoped REST endpoints for browsing and refreshing blueprint catalogs. Imp
 | `GET` | `system/v1/blueprints/catalogs` | ReadOnly | List available catalog sources |
 | `HEAD` | `system/v1/blueprints/{blueprintId}` | ReadOnly | Check if blueprint exists |
 | `GET` | `system/v1/blueprints/{blueprintId}` | ReadOnly | Get blueprint details |
-| `POST` | `system/v1/blueprints/catalogs/refresh` | DataModelManagement | Refresh all blueprint catalog caches (AB#4309) |
+| `POST` | `system/v1/blueprints/catalogs/refresh` | DataModelManagement | Refresh all blueprint catalog caches |
 | `POST` | `system/v1/blueprints/catalogs/{catalogName}/refresh` | DataModelManagement | Refresh a specific blueprint catalog cache (case-insensitive name) |
 
 The refresh endpoints always perform a **forced** refresh (bypassing the engine's 60s cache-file TTL

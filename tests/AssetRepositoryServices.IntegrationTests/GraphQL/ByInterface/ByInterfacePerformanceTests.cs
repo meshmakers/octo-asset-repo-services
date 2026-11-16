@@ -21,7 +21,7 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Graph
 ///         <b>Size.</b> Default 100 000 entities over 30 collection roots; the 1M run is opt-in with
 ///         <c>OCTO_TEST_INTERFACE_QUERY_ENTITIES=1000000</c>. Exclude from a quick loop with
 ///         <c>--filter "Category!=Performance"</c>. The measured numbers go to the test output and into the asset-repo
-///         <c>CLAUDE.md</c>.
+///         <c>docs/runtime-queries.md</c>.
 ///     </para>
 /// </summary>
 [Collection(ByInterfaceWideCollection.Name)]
