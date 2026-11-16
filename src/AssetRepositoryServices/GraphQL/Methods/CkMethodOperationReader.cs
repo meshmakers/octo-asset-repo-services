@@ -1,6 +1,8 @@
 using System.Security.Claims;
+using Meshmakers.Octo.Services.Infrastructure.Services;
 using Meshmakers.Octo.Services.Methods.Authorization;
 using Meshmakers.Octo.Services.Methods.Operations;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Methods;
@@ -27,6 +29,14 @@ internal sealed record CkMethodOperationListFilter(
 ///     administrators (<c>Methods:Authorization:AdministratorRoles</c>, default <c>AdminPanelManagement</c>, the same
 ///     setting the method authorization uses). An unknown, expired, foreign (another caller's, another tenant's) or
 ///     malformed id is the same <see cref="CkMethodOperationQueryException.NotFound" />: there is no existence oracle.
+///     <para>
+///         <b>Parent-tenant administration (AB#8986).</b> A user token issued for another tenant P than the route tenant C reads
+///         only on the parent path: P must hold the role <see cref="CkParentTenantAdministrationMethods.RequiredRole" /> (the role
+///         of the REST jobs actions) and C must be a registered child of P (<see cref="ITenantHierarchyReader" />, fail-closed);
+///         then it sees only the records of the closed method list <see cref="CkParentTenantAdministrationMethods" />, with the
+///         owner and administrator rule above. Otherwise a read by id is <c>OPERATION_NOT_FOUND</c> and a list is empty. Service
+///         tokens and tokens of the route tenant are not affected.
+///     </para>
 /// </summary>
 internal interface ICkMethodOperationReader
 {
@@ -47,7 +57,9 @@ internal interface ICkMethodOperationReader
 /// <inheritdoc />
 internal sealed class CkMethodOperationReader(
     ICkMethodOperationStore store,
-    IOptions<CkMethodAuthorizationOptions> authorizationOptions) : ICkMethodOperationReader
+    IOptions<CkMethodAuthorizationOptions> authorizationOptions,
+    ILogger<CkMethodOperationReader>? logger = null,
+    ITenantHierarchyReader? hierarchyReader = null) : ICkMethodOperationReader
 {
     /// <summary>Longest operation id that is looked up; a longer one cannot exist and is not found.</summary>
     internal const int MaxOperationIdLength = 128;
@@ -71,9 +83,16 @@ internal sealed class CkMethodOperationReader(
             throw CkMethodOperationQueryException.NotFound();
         }
 
+        var path = await ParentPathAsync(tenantId, caller.Value.Principal, "read").ConfigureAwait(false);
+        if (path == CallerPath.Refused)
+        {
+            throw CkMethodOperationQueryException.NotFound();
+        }
+
         var record = await store.GetAsync(CkMethodOperationTenant.Normalize(tenantId), id, cancellationToken)
             .ConfigureAwait(false);
-        if (record == null || !(IsAdministrator(caller.Value.Principal) || IsOwner(record, caller.Value.Owner)))
+        if (record == null || !(IsAdministrator(caller.Value.Principal) || IsOwner(record, caller.Value.Owner)) ||
+            (path == CallerPath.Parent && !CkParentTenantAdministrationMethods.Contains(record.MethodId)))
         {
             throw CkMethodOperationQueryException.NotFound();
         }
@@ -102,6 +121,15 @@ internal sealed class CkMethodOperationReader(
         }
 
         var caller = Caller(user);
+        var path = caller == null
+            ? CallerPath.Own
+            : await ParentPathAsync(tenantId, caller.Value.Principal, "list").ConfigureAwait(false);
+        if (path == CallerPath.Refused)
+        {
+            // a foreign tenant's token that is not its parent administrator lists nothing (no oracle, no error)
+            return new CkMethodOperationPage([], 0);
+        }
+
         if (filter.AllOwners)
         {
             if (caller == null || !IsAdministrator(caller.Value.Principal))
@@ -121,12 +149,64 @@ internal sealed class CkMethodOperationReader(
             TenantId = CkMethodOperationTenant.Normalize(tenantId),
             Owner = filter.AllOwners ? null : caller!.Value.Owner,
             MethodId = string.IsNullOrWhiteSpace(filter.MethodId) ? null : filter.MethodId.Trim(),
+            MethodIds = path == CallerPath.Parent ? CkParentTenantAdministrationMethods.MethodIds : null,
             State = filter.State,
             SinceUtc = filter.SinceUtc,
             Skip = filter.Skip,
             Take = filter.Take
         };
         return await store.ListAsync(query, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    ///     Which rule applies to the caller (AB#8986): <see cref="CallerPath.Own" /> for a token of the route tenant, a service
+    ///     token or a principal without a token tenant (unchanged); for a user token of another tenant
+    ///     <see cref="CallerPath.Parent" /> when it holds the role of the closed method list and the route tenant is its registered
+    ///     child, otherwise <see cref="CallerPath.Refused" />.
+    /// </summary>
+    private async ValueTask<CallerPath> ParentPathAsync(string tenantId, CkMethodPrincipal principal, string action)
+    {
+        if (principal.SubjectId is null || string.IsNullOrEmpty(principal.TokenTenantId) ||
+            string.Equals(principal.TokenTenantId, tenantId, StringComparison.OrdinalIgnoreCase))
+        {
+            return CallerPath.Own;
+        }
+
+        if (hierarchyReader is null ||
+            !principal.Roles.Contains(CkParentTenantAdministrationMethods.RequiredRole, StringComparer.OrdinalIgnoreCase))
+        {
+            return CallerPath.Refused;
+        }
+
+        bool isChild;
+        try
+        {
+            isChild = await hierarchyReader.IsChildTenantAsync(principal.TokenTenantId, tenantId).ConfigureAwait(false);
+        }
+        catch (Exception e) when (e is not OperationCanceledException)
+        {
+            logger?.LogWarning(
+                "The tenant hierarchy could not be read for the operations of tenant {TenantId} ({ExceptionType}); the parent-tenant administration rule refuses",
+                tenantId, e.GetType().Name);
+            return CallerPath.Refused;
+        }
+
+        if (!isChild)
+        {
+            return CallerPath.Refused;
+        }
+
+        logger?.LogInformation(
+            "User token of subject '{Subject}' was issued for tenant '{TokenTenantId}' and reads ({Action}) the operations of the closed method list on its child tenant '{TenantId}'; allowed by the parent-tenant administration rule",
+            principal.SubjectId, principal.TokenTenantId, action, tenantId);
+        return CallerPath.Parent;
+    }
+
+    private enum CallerPath
+    {
+        Own,
+        Parent,
+        Refused
     }
 
     private static (CkMethodPrincipal Principal, CkMethodOperationOwner Owner)? Caller(ClaimsPrincipal user)

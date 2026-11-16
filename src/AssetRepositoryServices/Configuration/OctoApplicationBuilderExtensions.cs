@@ -1,6 +1,7 @@
 using GraphQL.Server.Ui.Altair;
 using Meshmakers.Octo.Backend.AssetRepositoryServices;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Methods;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Middleware;
 using Meshmakers.Octo.Services.Infrastructure.Configuration;
 using Meshmakers.Octo.Services.Swagger.Configuration;
@@ -86,6 +87,11 @@ public static class OctoApplicationBuilderExtensions
         app.MapGraphQL<OctoSchema>("tenants/{tenantId:tenantId}/graphQl", c =>
         {
             c.ReadFormOnPost = true;
-        }).RequireAuthorization(AssetRepositoryServiceConstants.AuthenticatedUserPolicyGraphApi);
+        }).RequireAuthorization(AssetRepositoryServiceConstants.AuthenticatedUserPolicyGraphApi)
+            // AB#8986: per-request predicate of the HTTP tenant gate. A user token of a parent tenant passes to a registered
+            // child tenant only for a request made exclusively of the closed parent-administration method calls and
+            // runtime.operations reads; every other request keeps the exact tenant_id match. Never the endpoint-wide
+            // IAllowParentTenantAdministration marker.
+            .WithMetadata(new GraphQlParentTenantAdministrationRequest());
     }
 }
