@@ -2,6 +2,7 @@ using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Text.RegularExpressions;
 using FluentAssertions;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Methods;
 using Meshmakers.Octo.Services.Infrastructure.Authorization;
 using Meshmakers.Octo.Services.Infrastructure.Configuration;
 using Microsoft.AspNetCore.Mvc;
@@ -171,11 +172,38 @@ public class ProgramTenantGatePinTests
             .EnumerateFiles(Path.Combine(RepositoryRoot(), "src", "AssetRepositoryServices"), "*.cs",
                 SearchOption.AllDirectories)
             .Where(f => !f.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}"))
-            .Where(f => Regex.IsMatch(StripComments(File.ReadAllText(f)), @"AllowParentTenantAdministration"))
+            .Where(f => Regex.IsMatch(StripComments(File.ReadAllText(f)), @"AllowParentTenantAdministration(?!Request\b)"))
             .Select(Path.GetFileName)
             .ToList();
 
         offenders.Should().BeEmpty("the parent-tenant marker must not appear in code of this service");
+    }
+
+    /// <summary>
+    ///     AB#8986: the GraphQL endpoint carries the per-request predicate <see cref="IAllowParentTenantAdministrationRequest" />
+    ///     (never the endpoint-wide marker), implemented by exactly one type that does not implement the marker, and no other
+    ///     file of the service references the predicate interface.
+    /// </summary>
+    [Fact]
+    public void ThePerRequestPredicate_IsOnlyOnTheGraphQlMapping_AndIsNoEndpointMarker()
+    {
+        var assembly = typeof(Program).Assembly;
+        var implementations = assembly.GetTypes()
+            .Where(t => typeof(IAllowParentTenantAdministrationRequest).IsAssignableFrom(t) && !t.IsInterface)
+            .ToList();
+        implementations.Select(t => t.Name).Should().Equal(nameof(GraphQlParentTenantAdministrationRequest));
+        typeof(IAllowParentTenantAdministration).IsAssignableFrom(implementations[0]).Should().BeFalse();
+
+        var referencing = Directory
+            .EnumerateFiles(Path.Combine(RepositoryRoot(), "src", "AssetRepositoryServices"), "*.cs",
+                SearchOption.AllDirectories)
+            .Where(f => !f.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}"))
+            .Where(f => Regex.IsMatch(StripComments(File.ReadAllText(f)),
+                @"AllowParentTenantAdministrationRequest|GraphQlParentTenantAdministrationRequest\b"))
+            .Select(Path.GetFileName)
+            .Order(StringComparer.Ordinal)
+            .ToList();
+        referencing.Should().Equal("GraphQlParentTenantAdministrationRequest.cs", "OctoApplicationBuilderExtensions.cs");
     }
 
     // ---- helpers ---------------------------------------------------------------------------------

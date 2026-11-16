@@ -1,4 +1,5 @@
 using Meshmakers.Octo.Services.Infrastructure.Configuration;
+using Meshmakers.Octo.Services.Infrastructure.Services;
 using System.Diagnostics;
 using System.Security.Claims;
 using Meshmakers.Octo.ConstructionKit.Contracts.DataTransferObjects;
@@ -78,7 +79,8 @@ internal sealed class CkMethodGateway(
     ICkMethodAuditRecorder auditRecorder,
     ILogger<CkMethodGateway> logger,
     IOptions<CkMethodLimitsOptions>? limits = null,
-    IOptions<TenantAuthorizationOptions>? tenantOptions = null) : ICkMethodGateway
+    IOptions<TenantAuthorizationOptions>? tenantOptions = null,
+    ITenantHierarchyReader? hierarchyReader = null) : ICkMethodGateway
 {
     public async Task<CkMethodResponse> InvokeAsync(CkMethodGatewayCall call, CkMethodTargetAccessCheck targetAccess,
         CancellationToken cancellationToken = default)
@@ -130,15 +132,19 @@ internal sealed class CkMethodGateway(
     {
         // 0. the caller tenant (AB#8776): a token of another tenant is refused before anything else, so it never learns
         // whether the method or the target exists, whether its roles fit or whether its parameters are valid. Same rule and
-        // answer as the in-process transport's filter (AB#8711), independent of the HTTP tenant gate's mode.
-        if (CkMethodCallerTenantCheck.IsRefused(principal, call.TenantId, call.MethodId,
-                tenantOptions?.Value ?? new TenantAuthorizationOptions(), out var tenantRefusal, out var tenantVerdict))
+        // answer as the in-process transport's filter (AB#8711), independent of the HTTP tenant gate's mode. AB#8986: a user
+        // token of a parent tenant passes for the closed method list (CkParentTenantAdministrationMethods) on a registered
+        // child tenant; the roles and every later step are judged as for any caller.
+        var tenantCheck = await CkMethodCallerTenantCheck.CheckAsync(principal, call.TenantId, call.MethodId,
+            tenantOptions?.Value ?? new TenantAuthorizationOptions(), hierarchyReader, logger, "gateway")
+            .ConfigureAwait(false);
+        if (tenantCheck.IsRefused)
         {
             logger.LogWarning(
                 "CK method {MethodId} invocation {InvocationId} refused at the gateway in tenant {TenantId}: caller token of another tenant ({Verdict})",
-                call.MethodId, invocationId, call.TenantId, tenantVerdict);
+                call.MethodId, invocationId, call.TenantId, tenantCheck.Verdict);
             return await RefuseAsync(call, invocationId, principal, started,
-                    CkMethodResponse.Failed(invocationId, string.Empty, tenantRefusal))
+                    CkMethodResponse.Failed(invocationId, string.Empty, tenantCheck.Error))
                 .ConfigureAwait(false);
         }
 
