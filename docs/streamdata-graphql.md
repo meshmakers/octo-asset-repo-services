@@ -139,6 +139,20 @@ working unchanged; each is replaced by a method of System.StreamData 1.24.0, cal
   job, the already active job of the rollup the backfill was folded into, a `Failed` job for a missing or non-activated rollup, or
   no result for an empty source. A target id the caller cannot see is `METHOD_TARGET_NOT_FOUND` from the gateway, before any job. Both stay synchronous; async methods are a later decision. The five mutations are deprecated
   with the method id.
+- **Hidden columns: reason, readable history, redaction (System.StreamData 1.27.0).** When a CK model change makes an
+  archive column reach an attribute with `access: Hidden`, the engine sets the archive to `Failed` and stores why
+  (`Archive.StatusReason`) and which columns (`Archive.HiddenColumns`); both are runtime state and appear in the runtime
+  GraphQL query of the archive types. Such an archive refuses writes, but the stream-data queries still answer its history
+  without the Hidden columns (a Hidden column named in a query is refused as before). `Archive.RedactHiddenColumns-1`
+  (`ArchiveRedactHiddenColumnsHandler`, no mutation) is the way back and is **destructive**: it drops these columns and
+  their stored values from the CrateDB table and the archive definition, records it in the audit trail and activates an
+  archive that was Failed on them again. It needs `StreamDataAdmin` and `input: { confirmDataLoss: true }`; otherwise
+  `STREAMDATA_CONFIRMATION_REQUIRED` and nothing changes. A rollup that aggregates one of the columns blocks it with
+  `STREAMDATA_REDACTION_BLOCKED` (parameters `columns`, `rollupRtIds`). Without a Hidden column it drops nothing
+  (`removedColumns: []`). The handler logs no target id. A model import in a service without stream data reaches the archives
+  through the tenant-update event: this service re-checks them after its tenant setup (octo-common-services). Rules and
+  background: the octo-construction-kit-engine page "Archives and Hidden attributes" (archive-hidden-columns). Tests: `UnitTests/StreamData/Methods/ArchiveRedactHiddenColumnsHandlerTests`,
+  `IntegrationTests/StreamData/ArchiveLifecycleMethodTests.Redaction`.
 - **System tenant import.** The startup validation of in-process registrations looks the methods up in the system tenant's CK cache, which holds System.StreamData only
   when stream data was enabled there. `SystemTenantStreamDataModelImport` (Order 12, after the default configuration, before the validation at 15) imports the embedded model
   into the system tenant (idempotent, downgrade guard). It does not enable stream data for the system tenant.

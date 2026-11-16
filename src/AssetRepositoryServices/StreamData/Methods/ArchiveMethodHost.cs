@@ -12,16 +12,19 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.StreamData.Methods;
 /// <summary>One CK method of System.StreamData that the asset repository handles in-process (<c>handler: service</c>).</summary>
 /// <param name="MethodId">Qualified method id, always the generated constant of <c>SystemStreamDataCkIds</c>.</param>
 /// <param name="HandlerType">The handler class.</param>
-/// <param name="Mutation">The streamData GraphQL mutation the method replaces (deprecated, still working).</param>
+/// <param name="Mutation">
+///     The streamData GraphQL mutation the method replaces (deprecated, still working); <c>null</c> for a method that has no
+///     mutation (<c>Archive.RedactHiddenColumns-1</c>).
+/// </param>
 /// <param name="Register">Registers the handler with the in-process host of octo-common-services.</param>
 internal sealed record ArchiveMethodHandlerRegistration(
     string MethodId,
     Type HandlerType,
-    string Mutation,
+    string? Mutation,
     Action<ICkMethodHandlerRegistrationBuilder> Register)
 {
     /// <summary>One row of <see cref="ArchiveMethodHost.Handlers" />.</summary>
-    public static ArchiveMethodHandlerRegistration For<THandler>(string methodId, string mutation)
+    public static ArchiveMethodHandlerRegistration For<THandler>(string methodId, string? mutation)
         where THandler : class, ICkMethodHandler =>
         new(methodId, typeof(THandler), mutation, b => b.Handle<THandler>(methodId));
 }
@@ -78,7 +81,10 @@ internal static class ArchiveMethodHost
         ArchiveMethodHandlerRegistration.For<RollupArchiveRecomputeHandler>(SystemStreamDataCkIds.RollupArchiveRecomputeMethodId,
             "recomputeArchive"),
         ArchiveMethodHandlerRegistration.For<RollupArchiveBackfillFromSourceHandler>(
-            SystemStreamDataCkIds.RollupArchiveBackfillFromSourceMethodId, "backfillRollupFromSource")
+            SystemStreamDataCkIds.RollupArchiveBackfillFromSourceMethodId, "backfillRollupFromSource"),
+        // System.StreamData 1.27.0: the destructive way out of a Hidden-column failure; no mutation exists for it
+        ArchiveMethodHandlerRegistration.For<ArchiveRedactHiddenColumnsHandler>(
+            SystemStreamDataCkIds.ArchiveRedactHiddenColumnsMethodId, mutation: null)
     ];
 
     /// <summary>The deprecation reason of a replaced mutation: <c>Use &lt;method id&gt;</c> (AB#8598).</summary>

@@ -69,7 +69,9 @@ public class ArchiveMethodTests
             ("unfreezeRollupArchive", SystemStreamDataCkIds.RollupArchiveUnfreezeMethodId),
             ("rewindRollupWatermark", SystemStreamDataCkIds.RollupArchiveRewindWatermarkMethodId),
             ("recomputeArchive", SystemStreamDataCkIds.RollupArchiveRecomputeMethodId),
-            ("backfillRollupFromSource", SystemStreamDataCkIds.RollupArchiveBackfillFromSourceMethodId)
+            ("backfillRollupFromSource", SystemStreamDataCkIds.RollupArchiveBackfillFromSourceMethodId),
+            // the redaction of Hidden columns replaces no mutation
+            ((string?)null, SystemStreamDataCkIds.ArchiveRedactHiddenColumnsMethodId)
         });
         ArchiveMethodHost.Handlers.Should().OnlyContain(h => !h.MethodId.Contains("-1.", StringComparison.Ordinal),
             "the ids are version-less");

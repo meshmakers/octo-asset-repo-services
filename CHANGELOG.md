@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- AB#6247 New: `System.StreamData/Archive.RedactHiddenColumns-1` (System.StreamData 1.27.0), the documented way out of an
+  archive the engine set to `Failed` because a CK model change made one of its columns Hidden. **Destructive:** drops these
+  columns and their stored values from the table and the definition, audited, and activates the archive again; requires
+  `StreamDataAdmin` and `confirmDataLoss: true` (`STREAMDATA_CONFIRMATION_REQUIRED`), refused while a rollup aggregates a
+  column (`STREAMDATA_REDACTION_BLOCKED`). Such a Failed archive now keeps answering stream-data queries for its history
+  without the Hidden columns, and `Archive.StatusReason` / `Archive.HiddenColumns` say why. A CK model import in another
+  service (identity, communication controller, platform services) now triggers the same re-check here through the
+  tenant-update event. Needs octo-construction-kit-engine, octo-construction-kit-engine-mongodb and octo-common-services
+  with AB#6247.
 - AB#8998 Fix: the GraphQL schema build survives a CK cache unload during the build. When a `PreUpdateTenant` (CK import,
   revalidation) or the stale-type fallback unloaded the tenant's CK cache between the load and `Initialize`, the request
   failed with HTTP 500 "Schema creation failed" (inner "CkCache for tenant 'x' not found"; prod-2, tenant sbeg,
