@@ -8,7 +8,7 @@ applies_to: **/Types/Meta/**, **/Types/Rt*.cs, **/Mapping/**, **/OctoBuilder.cs,
 ## CK v2
 
 CK language 2 (`ckLanguage: 2`) adds attribute `access`, CK interfaces, `visibility`, `derivable` and methods to the
-construction kit. Phase 1 (F1.5) brought the meta-model to the GraphQL surface. The method **runtime** is shipped (Phase 3):
+construction kit. Phase 1 brought the meta-model to the GraphQL surface. The method **runtime** is shipped (Phase 3):
 typed method mutations (`docs/method-gateway.md`), the gateway gate (`docs/method-gateway.md`) and data
 permissions (`docs/method-in-process.md`), the dispatcher of octo-common-services with handlers over the
 bus, in-process (gateway-owned methods) and as pipelines, caller-token forwarding, idempotency keys, and asynchronous methods
@@ -16,7 +16,7 @@ with operation handles and `runtime.operations` (`docs/method-gateway.md`). The 
 octo-common-services (`src/Methods`, `octo-common-services/docs/method-handler-sdk.md`); user docs: octo-documentation
 `technologyGuide/constructionKits/ckLanguage2/` (`methods`, `graphql`, `methodHandlers`, `methodConsistency`).
 
-**Schema-build timing (risk R8):** `SchemaContext` logs the build time per tenant (see `docs/architecture.md`).
+**Schema-build timing:** `SchemaContext` logs the build time per tenant (see `docs/architecture.md`).
 Baseline for the integration test CK model (`SchemaBuildTimingTests`): ~100–250 ms cold, of which ~75–200 ms is
 schema initialization.
 
@@ -169,7 +169,7 @@ schema initialization.
   (own and inherited). An **optional member the type does not assign** is added to the object type as a nullable
   field that always resolves to `null` — GraphQL requires every interface field on the implementing object, and
   rules I-1..I-4 only cover required members (e.g. `Named-1.Description` on `Role`).
-- **Interface inheritance (`extends`, F1.5-S2):** a CK interface's fields are its `AllAttributes` (own plus every
+- **Interface inheritance (`extends`):** a CK interface's fields are its `AllAttributes` (own plus every
   extended interface's members), and the GraphQL interface implements all its (transitive) parent interfaces
   (`LinkExtendedInterfaces`, GraphQL interface inheritance). Implementing object types list the full closure — the
   engine's `CkTypeGraph.AllImplementedInterfaces` already contains the extended interfaces.

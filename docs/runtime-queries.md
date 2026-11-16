@@ -21,7 +21,7 @@ Details: `docs/runtime-query-guard.md`.
 
 A thin GraphQL layer over the ONE engine method `ITenantRepository.GetRtEntitiesByInterfaceAsync` (see
 `octo-construction-kit-engine-mongodb/docs/interface-query.md`): **no fan-out, merge or security logic here**. Decision of
-the design spike (Gerald, option A); budget, v1 scope and the refusal cases are described in that document.
+the design spike (option A); budget, v1 scope and the refusal cases are described in that document.
 
 - **Schema** (`RuntimeModelQuery.AddByInterfaceField`, `Types/RtEntityByInterfaceTypes.cs`): field
   `runtime.byInterface(ckInterfaceId: String!, take: Int!, skip: Int = 0, fieldFilter, sortOrder, options, searchFilter,
@@ -52,7 +52,7 @@ the design spike (Gerald, option A); budget, v1 scope and the refusal cases are 
   starts one for mutations). Inside a transaction session (pipeline nodes, in-process callers) the engine queries the
   collections sequentially; the result is identical (test `QueryInATransactionSession_ReturnsTheSameResultAsWithout`).
 - **Cost** (documented in octo-documentation `graphql`): index the sort field in the implementing type, no default
-  index on `name` (Gerald 2026-10-19); a page costs about `(skip + take) x number of implementer collections`,
+  index on `name` (decided 2026-10-19); a page costs about `(skip + take) x number of implementer collections`,
   `skip + take <= 1000`, so filter and keep pages small instead of paging deep.
 - **Tests**: unit `ByInterfaceSchemaTests`; integration `GraphQL/ByInterface/ByInterfaceQueryTests` (fixture
   `ByInterfaceGraphQlTestFixture`: types `InterfaceQueryA`, `InterfaceQueryB`, `InterfaceQueryBChild` (shares the collection of

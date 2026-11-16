@@ -150,7 +150,7 @@ closes this for every version and every guard surface (it runs inside `EvaluateC
 
 `POST {tenantId}/v1/models/ImportCk` (a CK model file; octo-cli `ImportCk -f`) used to be unguarded ("explicit operator decision"): a System
 file that removed an attribute used by `System.Identity` was accepted, left every model `Available` and made the tenant unloadable (no API
-path back, `Delete` fails too). Decided 2026-10-18 (Gerald): the file import is guarded like every other F2.5 surface.
+path back, `Delete` fails too). Decided 2026-10-18: the file import is guarded like every other upgrade guard surface.
 
 - **Flow** (`ModelsController.ImportCk`): policy check of a requested force -> read the upload exactly as the import job does (`json`/`yaml`
   via `ICkSerializer`; a `zip` is opened for its `.json`, else its `.yaml`; unreadable -> `400`) -> `ICkModelLibraryStatusService.

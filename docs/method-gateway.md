@@ -55,7 +55,7 @@ Every concrete CK type with methods gets one mutation field per method **next to
   happened. Pinned end to end (real in-process host + this mapper, String/Int/Boolean/Record) by `UnitTests/GraphQL/Methods/CkMethodResultEndToEndTests`; it needs the
   octo-common-services package whose handler host answers with the bare value.
 - **Resolver**: `CkMethodFieldResolver` goes through the gateway (next section).
-- **Schema build time (risk R8)**: the log line carries the CK method count; see the numbers in the PR that added the typed mutations (`SchemaBuildTimingTests`, 11 runs, median, with the 50-method type
+- **Schema build time**: the log line carries the CK method count; see the numbers in the PR that added the typed mutations (`SchemaBuildTimingTests`, 11 runs, median, with the 50-method type
   `MethodLoadThing` in the test model).
 - Tests: `CkMethodMutationFieldsTests`, `CkMethodResponseMapperTests` (unit); `GraphQL/CkV2/TypedMethodMutationTests` (integration: introspection of instance/static/versioned/inherited
   methods, input and result types, marker, 50 methods, snapshot `GraphQL/Methods/MethodLessTypes.golden.graphql` of the mutation and input types of method-less types taken before this

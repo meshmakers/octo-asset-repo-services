@@ -23,7 +23,7 @@ expiry, fail closed, stored document, benchmark). Details and latency: `docs/met
 
 Every typed method mutation field takes the optional argument `idempotencyKey: String` (`CkMethodMutationFields`, `Statics.IdempotencyKeyArg`; instance and
 static methods alike). `CkMethodFieldResolver` puts it into `CkMethodGatewayCall.IdempotencyKey`, the gateway copies it unchanged into
-`CkMethodRequest.IdempotencyKey`, and the band-300 `CkMethodIdempotencyFilter` of octo-common-services applies the OD-4 rules; the gateway and the resolver
+`CkMethodRequest.IdempotencyKey`, and the band-300 `CkMethodIdempotencyFilter` of octo-common-services applies the idempotency rules; the gateway and the resolver
 validate nothing about the key themselves (the filter does, after authorization, the data-permission check and the parameter validation of the gateway). Rules as seen by
 a client: scope = tenant + method + caller + key (caller = user `sub`, or `client:<client_id>` for a client-credentials token without `sub`: the gateway maps `client_id` through `CkMethodPrincipal.FromClaimsPrincipal`; tests `MethodIdempotencyKeyTests`, `CkMethodGatewayTests`; max 128 characters, longer = `METHOD_VALIDATION_FAILED` with `field = idempotencyKey`, `reason = key-too-long`);
 same key with other parameters = `METHOD_VALIDATION_FAILED` / `parameters-changed`; first call still running = `METHOD_REQUEST_IN_PROGRESS`; unknown outcome =
@@ -84,7 +84,7 @@ without a behaviour change; also used by the orphan sweep and the registry recon
 a user token also needs `AdminPanelManagement`; a client-credentials token of the system tenant passes without the role. Everyone else (tenant admin of a
 customer tenant, system-tenant user without the role, unauthenticated) gets `methodHandlers: null` with the error code `MethodHandlersForbidden`
 (`Statics.GraphQlMethodHandlersForbidden`); the registry, the snapshot store and the CK cache are not read. No reduced view for tenant admins (platform topology
-across all tenants; widening it needs a decision by Gerald).
+across all tenants; widening it needs a maintainer decision).
 
 * Source of the data: `ICkMethodHandlerRegistryDiagnostics` (octo-common-services: entries with `Source` Announcement/Snapshot and `State`, snapshot health,
   in-process method ids), ONE `ICkMethodHandlerSnapshotStore.LoadAsync` per request (shared collection `ck_method_handler_snapshot`, gives `persistedLastSeenUtc` by

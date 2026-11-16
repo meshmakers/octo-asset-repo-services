@@ -114,7 +114,7 @@ N:M associations are exposed as query columns with `::totalCount` (INT64) and `:
 - The schema is **initialized eagerly** inside `SchemaContext.GetOrCreateAsync` (not lazily on the first request),
   so an invalid schema is never cached and the build time is measured completely. Every build logs at Information:
   `GraphQL schema for tenant {TenantId} built in {ElapsedMs} ms ({TypeCount} types, {InterfaceCount} CK interfaces,
-  {MethodCount} CK methods; populate {PopulateMs} ms, initialize {InitializeMs} ms)` (CK v2 risk R8)
+  {MethodCount} CK methods; populate {PopulateMs} ms, initialize {InitializeMs} ms)`
 - **Exception details in GraphQL errors** (`extensions.details`: exception text, inner exceptions, stack trace) are
   exposed only in the `Development` environment or with the explicit opt-in `GraphQl:ExposeExceptionDetails`
   (`OCTO_GraphQl__ExposeExceptionDetails`; an explicit value wins over the environment) — `GraphQlErrorExposure`.

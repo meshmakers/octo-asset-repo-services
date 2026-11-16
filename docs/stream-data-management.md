@@ -81,8 +81,8 @@ Time-series data support (`StreamData/`):
     an unsent column as NULL and a correction of one column cleared the others; since then an unsent column keeps its stored
     value, and the rule stays because the origin is stored per row: a manual point marks the whole row manual and protects it,
     so it has to state every value it protects. Otherwise 400 listing the missing columns, nothing written. **A ranking column
-    (column key of the archive's `ConflictPrecedence`; `$Origin` is no column) cannot be null** (engine-mongodb, decided by
-    Reimar 2026-11-09): an explicit `null` on one answers 400 naming the point and the key, on `insert` and `insertTimeRange`,
+    (column key of the archive's `ConflictPrecedence`; `$Origin` is no column) cannot be null** (engine-mongodb, decided
+    2026-11-09): an explicit `null` on one answers 400 naming the point and the key, on `insert` and `insertTimeRange`,
     automated and manual (`ArchivePointValidation.CheckColumns`; the engine refuses it too, `ArchiveRankingColumnValidator`).
     Left out, a ranking column keeps its stored value and the guard compares that value. **Ranking columns are exempt from the
     manual full-row rule** (decided 2026-11-09): a manual point may leave them out and they keep their stored value, so a
@@ -110,7 +110,7 @@ Time-series data support (`StreamData/`):
     sub-millisecond timestamp, invalid origin, reason without `manual`, manual write with a token without writer, `ckTypeId`
     not the archive's target (shared `CkTypeMismatchMessage`), an attribute that is no ingested column or a computed column, two
     keys for the same column (keys are matched like the storage column: segments concatenated, case-insensitive), a time-range
-    or rollup archive, and — decision D1 — a **manual** point that does not name every ingested column (explicit
+    or rollup archive, and a **manual** point that does not name every ingested column (explicit
     `null` allowed; the message lists the missing columns), because a manual point protects the whole row (see `insertTimeRange`). A value that does not fit its column type is refused by the repository's value check (engine-mongodb,
     `ArgumentException`) and answered 400 like the time-range path. Answers 200 `StreamDataWriteResultRestDto`
     (a skipped raw row has `from` = timestamp, `to` = null), 204 for an empty batch, 409 `ManualWriteNotStoredRestDto` when a

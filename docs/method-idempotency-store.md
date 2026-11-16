@@ -32,7 +32,7 @@ method mutation (see `docs/method-idempotency-audit.md`).
 | `claimedAt`, `leaseUntil`, `expiresAt` | Claim time, end of the in-flight window, end of the lifetime (UTC) |
 | `response` | The response envelope (JSON) of a completed call, else `null` |
 
-Methods whose result is `resultSensitive` (or unknown) refuse a key in the filter before the store is reached (OD-4 G2 = A),
+Methods whose result is `resultSensitive` (or unknown) refuse a key in the filter before the store is reached,
 so no sensitive result is ever written.
 
 ## Atomic claim
