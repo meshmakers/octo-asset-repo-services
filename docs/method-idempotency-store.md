@@ -1,11 +1,16 @@
-# Method idempotency store (AB#7824, F3.5)
+---
+description: Method idempotency store: where records live, atomic claim, expiry, fail-closed behaviour, registration and latency of a keyed call.
+background: true
+---
 
-A CK method call that carries an idempotency key runs at most once per tenant, method, caller (the `sub` of a user, `client:<client_id>` of a client-credentials token, AB#8078) and key, whichever
+# Method idempotency store
+
+A CK method call that carries an idempotency key runs at most once per tenant, method, caller (the `sub` of a user, `client:<client_id>` of a client-credentials token) and key, whichever
 asset repository replica the retry reaches. The rules (scope, parameter fingerprint, in-progress, stored results, lifetime,
-store location) are OD-4 (AB#6922); the filter that applies them is `CkMethodIdempotencyFilter` (octo-common-services,
-band 300, AB#7820). This document describes the store behind it: `Services/Methods/MongoMethodIdempotencyStore.cs`
-(`ICkMethodIdempotencyStore`, contract AB#7817). The GraphQL argument `idempotencyKey` that feeds it is K6 (AB#7825): the optional `idempotencyKey: String` argument on every typed
-method mutation (see the section "Method idempotency key argument" in `CLAUDE.md`).
+store location) are fixed by the design decision for method idempotency; the filter that applies them is `CkMethodIdempotencyFilter` (octo-common-services,
+band 300). This document describes the store behind it: `Services/Methods/MongoMethodIdempotencyStore.cs`
+(`ICkMethodIdempotencyStore`). The GraphQL argument `idempotencyKey` that feeds it is the optional `idempotencyKey: String` argument on every typed
+method mutation (see `docs/method-idempotency-audit.md`).
 
 ## Where the records live
 
@@ -27,7 +32,7 @@ method mutation (see the section "Method idempotency key argument" in `CLAUDE.md
 | `claimedAt`, `leaseUntil`, `expiresAt` | Claim time, end of the in-flight window, end of the lifetime (UTC) |
 | `response` | The response envelope (JSON) of a completed call, else `null` |
 
-Methods whose result is `resultSensitive` (or unknown) refuse a key in the filter before the store is reached (OD-4 G2 = A),
+Methods whose result is `resultSensitive` (or unknown) refuse a key in the filter before the store is reached,
 so no sensitive result is ever written.
 
 ## Atomic claim
@@ -78,5 +83,5 @@ calls, sequential, single-node replica set in a Testcontainer on the developer m
 | **claim + complete** | **7.5 ms** | **12.0 ms** | 16.2 ms |
 
 The figures are the cost of the store on a local network; a replica set across nodes adds the majority acknowledgement round trip.
-Re-measure on test-2 at the Phase 3 gate (AB#7829). The overhead budget of the method path is in
+Re-measure on test-2 at the Phase 3 gate. The overhead budget of the method path is in
 `octo-common-services/docs/method-performance.md`.
