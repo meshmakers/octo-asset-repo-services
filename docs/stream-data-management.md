@@ -1,6 +1,6 @@
 ---
 description: Stream data REST API: writes, archives, rollups, coverage and recompute jobs, row origin, validation and authorization of the stream data controller.
-applies_to: **/StreamData/Controllers/**, **/ConfigureStreamDataConfiguration.cs, tests/*IntegrationTests/StreamData/**
+applies_to: **/StreamData/Controllers/**, **/ConfigureStreamDataConfiguration.cs, tests/**/StreamData/**
 ---
 
 # Stream data management over REST

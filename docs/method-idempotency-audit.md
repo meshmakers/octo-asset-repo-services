@@ -1,6 +1,6 @@
 ---
 description: Method idempotency store and key argument, audit of gateway refusals and faults, and the methodHandlers diagnostics query.
-applies_to: **/Services/Methods/**, **/GraphQL/MethodHandlers/**, **/GraphQL/MethodHandlersQuery.cs, **/CkV2/MethodIdempotencyKeyTests.cs
+applies_to: **/Services/Methods/**, **/GraphQL/MethodHandlers/**, **/MethodHandlersQuery*.cs, **/*MethodIdempotency*Tests.cs
 ---
 
 # CK methods: idempotency, audit and diagnostics

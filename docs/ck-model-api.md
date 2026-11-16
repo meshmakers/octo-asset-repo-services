@@ -1,6 +1,6 @@
 ---
 description: Blueprint-locked entity errors, ValidateCk, export entry points, the removed files migration, and the CK model and blueprint catalog REST APIs.
-applies_to: **/BlueprintLock/**, **/Services/CkModelValidation/**, **/CkModelCatalogController.cs, **/Controllers/BlueprintsController.cs, **/ModelsController.cs
+applies_to: **/BlueprintLock/**, **/CkModelValidation/**, **/CkModelCatalog/**, **/CkModelCatalogController.cs, **/BlueprintsController.cs, **/ModelsController.cs
 ---
 
 # CK model and blueprint APIs

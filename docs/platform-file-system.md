@@ -1,6 +1,6 @@
 ---
 description: System.Files model, file and folder REST and GraphQL API, name uniqueness, permission baseline, large binaries and the file system guards.
-applies_to: **/Services/Files/**, **/DataTransferObjects/Files/**, **/Controllers/File*.cs, **/Controllers/LargeBinaries*.cs, tests/*IntegrationTests/Files/**
+applies_to: **/Files/**, **/Controllers/File*.cs, **/Controllers/LargeBinaries*.cs, **/FilesAccessMetrics.cs
 ---
 
 # Platform file system

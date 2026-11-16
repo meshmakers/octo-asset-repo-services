@@ -1,6 +1,6 @@
 ---
 description: Gateway gate, typed method mutations, asynchronous methods with operation handles and the method mutation resolver.
-applies_to: **/GraphQL/Methods/CkMethod*.cs, **/OneMethodCallPerRequestRule.cs, **/CkV2/*MethodMutation*Tests.cs
+applies_to: **/GraphQL/Methods/CkMethod*.cs, **/OneMethodCallPerRequestRule.cs, **/CkV2/*MethodMutation*Tests.cs, **/CkV2/AsyncMethod*Tests.cs
 ---
 
 # CK method gateway

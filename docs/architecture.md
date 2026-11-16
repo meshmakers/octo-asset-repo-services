@@ -1,6 +1,6 @@
 ---
 description: Multi-tenant GraphQL engine, request pipeline, DI and configuration, naming, dependencies, and the rules for GraphQL resolvers and mutations.
-applies_to: **/Program.cs, **/Configuration/**, **/GraphQL/Caches/**, **/GraphQL/RequestHandling/**, **/GraphQL/RtMutationBase.cs, Directory.Build.props
+applies_to: **/Program.cs, **/Configuration/**, src/**/GraphQL/**, Directory.Build.props
 ---
 
 # Architecture and GraphQL development notes

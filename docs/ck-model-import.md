@@ -1,6 +1,6 @@
 ---
 description: ImportFromCatalog, LibraryStatus and CheckUpgrade, the tenant upgrade guard and its enforcement, dependents' ranges, file import and blueprints.
-applies_to: **/UpgradeGuard/**, **/Services/*Ck*Guard.cs, **/Services/Ck*Resolver.cs, **/Services/CkModelLibraryStatusService.cs, **/CkUpgradeBlockedGraphQlError.cs
+applies_to: **/UpgradeGuard/**, **/*CkUpgrade*.cs, **/Services/Ck*.cs, **/CkModelLibraryStatus*.cs, **/CkModelCatalogController.cs, **/BlueprintsMutation.cs
 ---
 
 # CK model import from the catalog and the upgrade guards

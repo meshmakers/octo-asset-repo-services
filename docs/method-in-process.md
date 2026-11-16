@@ -1,6 +1,6 @@
 ---
 description: Method data permissions, in-process handlers and the session tripwire, gateway-owned methods, adversarial suite, canary scan and replaced generic create.
-applies_to: **/GatewayOwnedMethodHandlers.cs, **/GenericCreateReplacedBy*.cs, **/OctoSessionAmbientStateProbe.cs, tests/*MethodCanaryScan/**
+applies_to: **/GatewayOwnedMethod*.cs, **/GenericCreate*.cs, **/OctoSessionAmbient*.cs, **/CkMethodTargetAccess*.cs, tests/*MethodCanaryScan/**, **/Adversarial/**
 ---
 
 # CK methods: data permissions, in-process handlers and adversarial checks

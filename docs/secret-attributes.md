@@ -1,6 +1,6 @@
 ---
 description: Secret attributes: reads return state only, writes, query rules, key ring and the guards that keep plaintext out of every response.
-applies_to: **/Secrets/**, **/GraphQL/SecretsQuery.cs, **/Utils/Secret*.cs
+applies_to: **/Secrets/**, **/GraphQL/SecretsQuery.cs, **/OctoSecretStateDtoType.cs, **/Utils/Secret*.cs
 ---
 
 # Secret attributes in the asset repository

@@ -1,6 +1,6 @@
 ---
 description: Attribute access, CK interfaces, visibility, record member preservation, identity-owned write guards and the CK v2 introspection.
-applies_to: **/GraphQL/Types/Meta/**, **/GraphQL/Mapping/**, **/GraphQL/OctoBuilder.cs, **/GraphQL/RecordMemberPreservation.cs, **/Utils/*WriteGuard.cs, **/AccessQueryGuard.cs
+applies_to: **/Types/Meta/**, **/Types/Rt*.cs, **/Mapping/**, **/OctoBuilder.cs, **/RecordMember*.cs, **/HiddenAttribute*.cs, **/*WriteGuard*.cs, **/AccessQuery*.cs
 ---
 
 # CK language 2 on the GraphQL surface

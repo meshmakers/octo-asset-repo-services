@@ -1,6 +1,6 @@
 ---
 description: Caller principal kind, JWT bearer wiring, tenant enforcement for user and service tokens, data model management and stream-data read authorization.
-applies_to: **/Security/**, **/ConfigureJwtBearerOptions.cs, **/*AuthorizationPolicies.cs, **/StreamDataReadRoleGate.cs, **/OctoApplicationBuilderExtensions.cs
+applies_to: **/Security/**, **/ConfigureJwtBearer*.cs, **/*Authorization*.cs, **/StreamDataReadRoleGate.cs, **/OctoApplicationBuilder*.cs
 ---
 
 # Authentication and authorization

@@ -33,21 +33,21 @@ kit models, and time-series stream data stored in MongoDB.
 <!-- >>> generated: routing -->
 | When you change | Read first |
 |---|---|
-| `**/SystemApi/**`, `**/TenantApi/**`, `**/Consumers/**`, `**/Services/DefaultConfigurationCreatorService.cs` | `docs/api-controllers.md` |
-| `**/Program.cs`, `**/Configuration/**`, `**/GraphQL/Caches/**`, `**/GraphQL/RequestHandling/**`, `**/GraphQL/RtMutationBase.cs`, `Directory.Build.props` | `docs/architecture.md` |
+| `**/SystemApi/**`, `**/TenantApi/**`, `**/Consumers/**`, `**/Diagnostics/**`, `**/DefaultConfigurationCreatorService.cs`, `**/ScratchTenantMarkerStore.cs` | `docs/api-controllers.md` |
+| `**/Program.cs`, `**/Configuration/**`, `src/**/GraphQL/**`, `Directory.Build.props` | `docs/architecture.md` |
 | `**/Controllers/BlueprintsController.cs`, `**/DataTransferObjects/Blueprints/**`, `**/BlueprintUpdateBlankingFlowTests.cs` | `docs/blueprint-update-blanking.md` |
-| `**/BlueprintLock/**`, `**/Services/CkModelValidation/**`, `**/CkModelCatalogController.cs`, `**/Controllers/BlueprintsController.cs`, `**/ModelsController.cs` | `docs/ck-model-api.md` |
-| `**/UpgradeGuard/**`, `**/Services/*Ck*Guard.cs`, `**/Services/Ck*Resolver.cs`, `**/Services/CkModelLibraryStatusService.cs`, `**/CkUpgradeBlockedGraphQlError.cs` | `docs/ck-model-import.md` |
-| `**/GraphQL/Types/Meta/**`, `**/GraphQL/Mapping/**`, `**/GraphQL/OctoBuilder.cs`, `**/GraphQL/RecordMemberPreservation.cs`, `**/Utils/*WriteGuard.cs`, `**/AccessQueryGuard.cs` | `docs/ck-v2.md` |
-| `**/GraphQL/Methods/CkMethod*.cs`, `**/OneMethodCallPerRequestRule.cs`, `**/CkV2/*MethodMutation*Tests.cs` | `docs/method-gateway.md` |
-| `**/Services/Methods/**`, `**/GraphQL/MethodHandlers/**`, `**/GraphQL/MethodHandlersQuery.cs`, `**/CkV2/MethodIdempotencyKeyTests.cs` | `docs/method-idempotency-audit.md` |
-| `**/GatewayOwnedMethodHandlers.cs`, `**/GenericCreateReplacedBy*.cs`, `**/OctoSessionAmbientStateProbe.cs`, `tests/*MethodCanaryScan/**` | `docs/method-in-process.md` |
-| `**/Services/Files/**`, `**/DataTransferObjects/Files/**`, `**/Controllers/File*.cs`, `**/Controllers/LargeBinaries*.cs`, `tests/*IntegrationTests/Files/**` | `docs/platform-file-system.md` |
-| `**/RtEntityByInterfaceTypes.cs`, `**/Utils/RuntimeQueryGuard*.cs`, `**/RuntimeQueryGuardOptions.cs`, `tests/*IntegrationTests/GraphQL/ByInterface/**` | `docs/runtime-queries.md` |
-| `**/Secrets/**`, `**/GraphQL/SecretsQuery.cs`, `**/Utils/Secret*.cs` | `docs/secret-attributes.md` |
-| `**/StreamData/Controllers/**`, `**/ConfigureStreamDataConfiguration.cs`, `tests/*IntegrationTests/StreamData/**` | `docs/stream-data-management.md` |
-| `**/GraphQL/StreamData*.cs`, `**/StreamData/Methods/**` | `docs/streamdata-graphql.md` |
-| `**/Security/**`, `**/ConfigureJwtBearerOptions.cs`, `**/*AuthorizationPolicies.cs`, `**/StreamDataReadRoleGate.cs`, `**/OctoApplicationBuilderExtensions.cs` | `docs/tenant-enforcement.md` |
+| `**/BlueprintLock/**`, `**/CkModelValidation/**`, `**/CkModelCatalog/**`, `**/CkModelCatalogController.cs`, `**/BlueprintsController.cs`, `**/ModelsController.cs` | `docs/ck-model-api.md` |
+| `**/UpgradeGuard/**`, `**/*CkUpgrade*.cs`, `**/Services/Ck*.cs`, `**/CkModelLibraryStatus*.cs`, `**/CkModelCatalogController.cs`, `**/BlueprintsMutation.cs` | `docs/ck-model-import.md` |
+| `**/Types/Meta/**`, `**/Types/Rt*.cs`, `**/Mapping/**`, `**/OctoBuilder.cs`, `**/RecordMember*.cs`, `**/HiddenAttribute*.cs`, `**/*WriteGuard*.cs`, `**/AccessQuery*.cs` | `docs/ck-v2.md` |
+| `**/GraphQL/Methods/CkMethod*.cs`, `**/OneMethodCallPerRequestRule.cs`, `**/CkV2/*MethodMutation*Tests.cs`, `**/CkV2/AsyncMethod*Tests.cs` | `docs/method-gateway.md` |
+| `**/Services/Methods/**`, `**/GraphQL/MethodHandlers/**`, `**/MethodHandlersQuery*.cs`, `**/*MethodIdempotency*Tests.cs` | `docs/method-idempotency-audit.md` |
+| `**/GatewayOwnedMethod*.cs`, `**/GenericCreate*.cs`, `**/OctoSessionAmbient*.cs`, `**/CkMethodTargetAccess*.cs`, `tests/*MethodCanaryScan/**`, `**/Adversarial/**` | `docs/method-in-process.md` |
+| `**/Files/**`, `**/Controllers/File*.cs`, `**/Controllers/LargeBinaries*.cs`, `**/FilesAccessMetrics.cs` | `docs/platform-file-system.md` |
+| `**/RtEntityByInterfaceTypes.cs`, `**/RuntimeQueryGuard*.cs`, `**/RuntimeModelQuery.cs`, `**/RtTransientQuery.cs`, `**/InterfaceQuery*.cs`, `tests/**/ByInterface*.cs` | `docs/runtime-queries.md` |
+| `**/Secrets/**`, `**/GraphQL/SecretsQuery.cs`, `**/OctoSecretStateDtoType.cs`, `**/Utils/Secret*.cs` | `docs/secret-attributes.md` |
+| `**/StreamData/Controllers/**`, `**/ConfigureStreamDataConfiguration.cs`, `tests/**/StreamData/**` | `docs/stream-data-management.md` |
+| `**/GraphQL/StreamData*.cs`, `**/Types/StreamData*.cs`, `**/StreamData/Methods/**`, `**/PersistedQueryLookup.cs`, `**/DataPermissionStreamGuard.cs` | `docs/streamdata-graphql.md` |
+| `**/Security/**`, `**/ConfigureJwtBearer*.cs`, `**/*Authorization*.cs`, `**/StreamDataReadRoleGate.cs`, `**/OctoApplicationBuilder*.cs` | `docs/tenant-enforcement.md` |
 <!-- <<< end generated: routing -->
 
 Background, not path-triggered; each file is linked from the routed doc of its topic: `docs/principal-kind.md`,

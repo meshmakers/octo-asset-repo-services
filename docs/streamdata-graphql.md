@@ -1,6 +1,6 @@
 ---
 description: StreamData query surface, mutations and setup: persisted and transient queries, columns, anchors, gas-day bins, archive and rollup methods.
-applies_to: **/GraphQL/StreamData*.cs, **/StreamData/Methods/**
+applies_to: **/GraphQL/StreamData*.cs, **/Types/StreamData*.cs, **/StreamData/Methods/**, **/PersistedQueryLookup.cs, **/DataPermissionStreamGuard.cs
 ---
 
 # Stream data in GraphQL

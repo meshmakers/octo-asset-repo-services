@@ -1,6 +1,6 @@
 ---
 description: REST controllers of the system and tenant APIs: tenants, features, models, blueprints, files, diagnostics, tenant delete and scratch tenants.
-applies_to: **/SystemApi/**, **/TenantApi/**, **/Consumers/**, **/Services/DefaultConfigurationCreatorService.cs
+applies_to: **/SystemApi/**, **/TenantApi/**, **/Consumers/**, **/Diagnostics/**, **/DefaultConfigurationCreatorService.cs, **/ScratchTenantMarkerStore.cs
 ---
 
 # API controllers and tenant management

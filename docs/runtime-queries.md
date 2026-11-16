@@ -1,6 +1,6 @@
 ---
 description: Unbounded runtime-entity query guard and the runtime.byInterface query: where each is wired, limits, error codes and tests.
-applies_to: **/RtEntityByInterfaceTypes.cs, **/Utils/RuntimeQueryGuard*.cs, **/RuntimeQueryGuardOptions.cs, tests/*IntegrationTests/GraphQL/ByInterface/**
+applies_to: **/RtEntityByInterfaceTypes.cs, **/RuntimeQueryGuard*.cs, **/RuntimeModelQuery.cs, **/RtTransientQuery.cs, **/InterfaceQuery*.cs, tests/**/ByInterface*.cs
 ---
 
 # Runtime query guard and query by interface
