@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- AB#8998 Fix: the GraphQL schema build survives a CK cache unload during the build. When a `PreUpdateTenant` (CK import,
+  revalidation) or the stale-type fallback unloaded the tenant's CK cache between the load and `Initialize`, the request
+  failed with HTTP 500 "Schema creation failed" (inner "CkCache for tenant 'x' not found"; prod-2, tenant sbeg,
+  2026-11-15). `SchemaContext` now builds once more from a fresh load when a `CkCacheException` meets a CK cache that was
+  unloaded or reloaded during the build (WARN with AB#8998); one retry, no loop. A CK error on a cache that stayed
+  loaded is not retried. AB#8667 covered only a reload. The schema build log line gains `attempt {Attempt}`.
+
 - AB#8896 New: a paged runtime-entity query counts the matching entities only when the selection needs the total
   (Feature AB#8793). `runtime.<CkType>`, `runtime.runtimeEntities`, persisted query `rows` and transient query `rows`
   (standard queries) pass `includeTotalCount` to the engine: true when `totalCount` or `pageInfo` is selected or the
