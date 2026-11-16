@@ -9,6 +9,7 @@ using Meshmakers.Octo.ConstructionKit.Contracts.BlueprintCatalogs;
 using Meshmakers.Octo.ConstructionKit.Contracts.Messages;
 using Meshmakers.Octo.Runtime.Contracts;
 using Meshmakers.Octo.Runtime.Contracts.Blueprints;
+using Meshmakers.Octo.Runtime.Engine.MongoDb.RuntimeQueries;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
@@ -109,6 +110,8 @@ public class BlueprintsController : ControllerBase
                 return Forbid();
             }
 
+            // A blueprint run reads and writes whole types: no runtime query time limit (batch path).
+            using var noQueryTimeLimit = RuntimeQueryTimeLimit.Disable();
             var result = await _blueprintService.ApplyBlueprintAsync(
                 tenantId,
                 blueprintId,
@@ -472,6 +475,8 @@ public class BlueprintsController : ControllerBase
                 }
             }
 
+            // A blueprint run reads and writes whole types: no runtime query time limit (batch path).
+            using var noQueryTimeLimit = RuntimeQueryTimeLimit.Disable();
             var result = await _blueprintService.ApplyUpdateAsync(
                 tenantId,
                 targetBlueprintId,
@@ -677,6 +682,8 @@ public class BlueprintsController : ControllerBase
                 return BadRequest(new OperationFailedErrorDto("BlueprintName is required"));
             }
 
+            // A blueprint run reads and writes whole types: no runtime query time limit (batch path).
+            using var noQueryTimeLimit = RuntimeQueryTimeLimit.Disable();
             var result = await run(tenantId, blueprintName);
             var response = BlueprintUninstallResultMapper.ToDto(result);
 

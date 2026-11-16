@@ -130,7 +130,13 @@ internal static class ResolveConnectionContextExtensions
         // process) evicts the tenant's stale pooled clients so the next request recovers without a restart.
         _ = GraphQlTenantPoolEviction.EvictInBackground(context, exception);
 
-        if (exception is StreamDataReadRoleRequiredException streamDataReadRoleRequired)
+        if (RuntimeQueryTimeoutError.TryFind(exception, out var runtimeQueryTimeout))
+        {
+            // A runtime query MongoDB stopped at its time limit: the coded error ASSET1008, logged once as a warning.
+            context.Errors.Add(RuntimeQueryTimeoutError.CreateGraphQlError(runtimeQueryTimeout,
+                context.RequestServices?.GetService<ILoggerFactory>()?.CreateLogger(RuntimeQueryTimeoutError.LogCategory)));
+        }
+        else if (exception is StreamDataReadRoleRequiredException streamDataReadRoleRequired)
         {
             // AB#8559: the stable code of the stream-data read role requirement (Enforce mode).
             context.Errors.Add(new ExecutionError(streamDataReadRoleRequired.Message, streamDataReadRoleRequired)

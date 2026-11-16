@@ -8,6 +8,7 @@ using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.ConstructionKit.Contracts.BlueprintCatalogs;
 using Meshmakers.Octo.ConstructionKit.Contracts.Messages;
 using Meshmakers.Octo.Runtime.Contracts.Blueprints;
+using Meshmakers.Octo.Runtime.Engine.MongoDb.RuntimeQueries;
 using Meshmakers.Octo.Services.Infrastructure.Authorization;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL;
@@ -80,6 +81,8 @@ internal sealed class BlueprintsMutation : ObjectGraphType
 
             // AB#6871: the tenant upgrade guard applies to every surface; GraphQL has no force option (an override is
             // an API / octo-cli operation for data model managers).
+            // A blueprint run reads and writes whole types: no runtime query time limit (batch path).
+            using var noQueryTimeLimit = RuntimeQueryTimeLimit.Disable();
             var result = await blueprintService.ApplyBlueprintAsync(
                 gql.TenantId, blueprintId,
                 new BlueprintApplyOptions { Force = force, CkUpgradeGuard = BlueprintCkUpgradeGuardMode.Enforce },
@@ -176,6 +179,8 @@ internal sealed class BlueprintsMutation : ObjectGraphType
                     r => Enum.Parse<ConflictResolution>(r.Resolution, ignoreCase: true));
             }
 
+            // A blueprint run reads and writes whole types: no runtime query time limit (batch path).
+            using var noQueryTimeLimit = RuntimeQueryTimeLimit.Disable();
             var result = await blueprintService.ApplyUpdateAsync(
                 gql.TenantId, targetBlueprintId, input.UpdateMode, options, ctx.CancellationToken);
 
@@ -247,6 +252,8 @@ internal sealed class BlueprintsMutation : ObjectGraphType
             var gql = (GraphQlUserContext)ctx.UserContext;
             var blueprintService = ctx.RequestServices!.GetRequiredService<IBlueprintService>();
 
+            // A blueprint run reads and writes whole types: no runtime query time limit (batch path).
+            using var noQueryTimeLimit = RuntimeQueryTimeLimit.Disable();
             var result = dryRun
                 ? await blueprintService.PreviewUninstallAsync(gql.TenantId, blueprintName, cascade, ctx.CancellationToken)
                 : await blueprintService.UninstallAsync(gql.TenantId, blueprintName, cascade, ctx.CancellationToken);
