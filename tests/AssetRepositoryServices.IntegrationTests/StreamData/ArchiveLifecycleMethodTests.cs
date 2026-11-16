@@ -71,7 +71,7 @@ public partial class ArchiveLifecycleMethodTests
     [Fact]
     public void EveryReplacedMutation_HasExactlyOneMethod_AndItsDeprecationReasonNamesIt()
     {
-        ArchiveMethodHost.Handlers.Select(h => h.Mutation).Should().BeEquivalentTo(
+        ArchiveMethodHost.Handlers.Where(h => h.Mutation != null).Select(h => h.Mutation).Should().BeEquivalentTo(
             "activateArchive", "disableArchive", "enableArchive", "retryArchiveActivation", "deleteArchive",
             "createTimeRangeArchive", "createRollupArchive",
             // AB#8599
@@ -98,11 +98,11 @@ public partial class ArchiveLifecycleMethodTests
         var fields = JObject.Parse(_fixture.SerializeGraphQl(result)).SelectToken("data.__type.fields")!
             .ToDictionary(f => f.Value<string>("name")!, f => f);
 
-        foreach (var handler in ArchiveMethodHost.Handlers)
+        foreach (var handler in ArchiveMethodHost.Handlers.Where(h => h.Mutation != null))
         {
-            fields.Should().ContainKey(handler.Mutation);
-            fields[handler.Mutation].Value<bool>("isDeprecated").Should().BeTrue(handler.Mutation);
-            fields[handler.Mutation].Value<string>("deprecationReason").Should().Be($"Use {handler.MethodId}");
+            fields.Should().ContainKey(handler.Mutation!);
+            fields[handler.Mutation!].Value<bool>("isDeprecated").Should().BeTrue(handler.Mutation);
+            fields[handler.Mutation!].Value<string>("deprecationReason").Should().Be($"Use {handler.MethodId}");
         }
 
         // the column mutations are not part of these stories (AB#8600)

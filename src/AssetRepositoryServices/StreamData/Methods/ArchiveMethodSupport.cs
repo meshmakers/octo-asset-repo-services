@@ -16,6 +16,12 @@ internal static class ArchiveMethodErrors
     /// <summary>Stream data is not enabled for the tenant (the mutation answers this with the generic code ASSET1002).</summary>
     public const string StreamDataNotEnabled = "STREAMDATA_NOT_ENABLED";
 
+    /// <summary><c>Archive.RedactHiddenColumns</c> was called without <c>confirmDataLoss = true</c>.</summary>
+    public const string ConfirmationRequired = "STREAMDATA_CONFIRMATION_REQUIRED";
+
+    /// <summary>A rollup aggregates a column <c>Archive.RedactHiddenColumns</c> would drop.</summary>
+    public const string RedactionBlocked = "STREAMDATA_REDACTION_BLOCKED";
+
     /// <summary>Error parameter with the engine's message, as the GraphQL error of the mutation carries it.</summary>
     public const string MessageParameter = "message";
 
@@ -31,6 +37,7 @@ internal static class ArchiveMethodErrors
         ArchiveSchemaImmutableException or RollupSchemaImmutableException => Statics.GraphQlErrorStreamDataSchemaImmutable,
         ArchivePathInvalidException => Statics.GraphQlErrorStreamDataPathInvalid,
         ArchiveActivationFailedException => Statics.GraphQlErrorStreamDataActivationFailed,
+        HiddenColumnRedactionBlockedException => RedactionBlocked,
         _ => Statics.GraphQlErrorStreamData
     };
 
@@ -61,6 +68,10 @@ internal static class ArchiveMethodErrors
                 break;
             case ArchivePathInvalidException pathInvalid:
                 parameters["path"] = pathInvalid.Path;
+                break;
+            case HiddenColumnRedactionBlockedException blocked:
+                parameters["columns"] = string.Join(",", blocked.ColumnPaths);
+                parameters["rollupRtIds"] = string.Join(",", blocked.DependentRollupRtIds);
                 break;
         }
 
