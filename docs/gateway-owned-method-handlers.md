@@ -1,3 +1,8 @@
+---
+description: Gateway-owned CK methods as in-process handlers: platform guarantees, how to register one, and the test-only sample.
+background: true
+---
+
 # Gateway-owned CK methods as in-process handlers (AB#6893, F3.7)
 
 A CK method that the asset repository implements itself (`execution.handler: service` on a model the gateway hosts, for

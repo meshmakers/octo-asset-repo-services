@@ -1,3 +1,8 @@
+---
+description: Method idempotency store: where records live, atomic claim, expiry, fail-closed behaviour, registration and latency of a keyed call.
+background: true
+---
+
 # Method idempotency store (AB#7824, F3.5)
 
 A CK method call that carries an idempotency key runs at most once per tenant, method, caller (the `sub` of a user, `client:<client_id>` of a client-credentials token, AB#8078) and key, whichever

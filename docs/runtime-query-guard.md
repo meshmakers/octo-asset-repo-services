@@ -1,3 +1,8 @@
+---
+description: Unbounded runtime-entity query guard: scope, classification, configuration, log and metric, error ASSET1007 and how to page.
+background: true
+---
+
 # Unbounded runtime-entity query guard (AB#8898)
 
 One query over a CK type with large attributes (for example `Basic.Energy/EdaMessage` with ~72 KB of raw XML per entity) that

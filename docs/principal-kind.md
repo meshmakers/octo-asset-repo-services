@@ -1,3 +1,8 @@
+---
+description: Principal kind of the caller: where it is set, the rule, compatibility, limits and tests.
+background: true
+---
+
 # Principal kind of the caller (AB#8705)
 
 The asset repository tells the CK engine whether a write comes from a **person** or a **service client**. CK types

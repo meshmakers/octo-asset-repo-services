@@ -1,3 +1,8 @@
+---
+description: Blueprint update preview and apply: seed values that would blank tenant values, and the explicit confirmation of each blanking.
+applies_to: **/Controllers/BlueprintsController.cs, **/DataTransferObjects/Blueprints/**, **/BlueprintUpdateBlankingFlowTests.cs
+---
+
 # Blueprint update: values a seed would blank (AB#6315)
 
 An Upsert import replaces an entity as a whole, so a seed that carries an empty value (or omits an

@@ -1,3 +1,8 @@
+---
+description: GridFS orphan sweep: endpoint, what counts as an orphan, runbook and implementation.
+background: true
+---
+
 # GridFS orphan sweep (AB#6541)
 
 Linked binaries are committed **before** the old bytes are deleted (after-commit design, AB#6248; see

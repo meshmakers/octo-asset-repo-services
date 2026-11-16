@@ -1,3 +1,8 @@
+---
+description: Secret attributes: reads return state only, writes, query rules, key ring and the guards that keep plaintext out of every response.
+applies_to: **/Secrets/**, **/GraphQL/SecretsQuery.cs, **/Utils/Secret*.cs
+---
+
 # Secret attributes in the asset repository (AB#5528 / AB#5535)
 
 CK attributes of value type `Secret` (concept: `octo-construction-kit-engine/docs/concept-secret-attribute-type.md`)
