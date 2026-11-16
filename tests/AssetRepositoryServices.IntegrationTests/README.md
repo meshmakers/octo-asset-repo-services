@@ -365,6 +365,9 @@ dotnet test tests/AssetRepositoryServices.IntegrationTests/ -c DebugL --filter "
 - **Recompute tests** that assert the state right after a recompute (only the generation the pointer selects is left) run with a sweep grace
   period of zero: `ImmediateSweepStreamDataFixture` (collection `StreamDataImmediateSweep`) or the grace setting in their own fixture
   (`RowBoundStreamDataFixture`, `StatementBudgetStreamDataFixture`). Every other test uses the default of 2 h; production configuration is untouched.
+  The same fixture sets the late-data debounce `StreamData:Recompute:LateDataDebounce` (AB#9016, default 5 min) to zero, so a test that
+  writes a late value and calls the drain (`IRecomputeOrchestrator.TickAsync`) at once sees the scoped refresh on that tick (AB#9099).
+  The hold and the coalescing of the debounce are tested with a fake clock in octo-construction-kit-engine (`RecomputeLateDeliveryTests`).
 
 ## CrateDB version matrix (AB#5490)
 
