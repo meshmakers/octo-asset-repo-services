@@ -24,7 +24,7 @@ namespace AssetRepositoryServices.UnitTests.GraphQL;
 public class RuntimeQueryTimeoutErrorTests
 {
     private const string TenantId = "tenant-a";
-    private const string CkTypeId = "Basic.Energy/EdaMessage-1";
+    private const string CkTypeId = "Test/Machine-1";
 
     private static RuntimeQueryTimeoutException Timeout() =>
         new(TenantId, CkTypeId, TimeSpan.FromSeconds(120), TimeSpan.FromMilliseconds(120_015), null);

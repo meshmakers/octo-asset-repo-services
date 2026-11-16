@@ -27,7 +27,9 @@ type, by id, by type with navigation and by CK interface to MongoDB with `maxTim
 |---|---|---|
 | `MaxTimeMs` | milliseconds; `0` switches the limit off | `120000` |
 
-- Read per query (`IOptionsMonitor`), for GraphQL, REST and in-process `ITenantRepository` calls of this host alike.
+- Applies per MongoDB operation (page and count of a paged query each get the full limit), for GraphQL, REST and
+  in-process `ITenantRepository` calls of this host alike. Read from the options per query; the environment variable is
+  read at start-up, so a changed helm value needs a rollout.
 - A query that exceeds the limit is stopped on the database and ends with `RuntimeQueryTimeoutException`.
   `RuntimeQueryTimeoutError` maps it: GraphQL `ASSET1008` (`HandleException` and the `UnhandledExceptionDelegate`) with
   `extensions.errorId` and `parameters` (`ckTypeId`, `maxTimeMs`, `elapsedMs`); REST `504` problem details with the same code

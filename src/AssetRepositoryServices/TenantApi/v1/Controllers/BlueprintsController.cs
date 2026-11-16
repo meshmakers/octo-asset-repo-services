@@ -325,6 +325,8 @@ public class BlueprintsController : ControllerBase
                 return BadRequest(new OperationFailedErrorDto("TenantId is required"));
             }
 
+            // A blueprint preview reads whole types like the run it previews: no runtime query time limit (batch path).
+            using var noQueryTimeLimit = RuntimeQueryTimeLimit.Disable();
             var updateInfo = await _blueprintService.GetUpdateInfoAsync(
                 tenantId, NormalizeBlueprintName(blueprintName), cancellationToken);
 
@@ -381,6 +383,8 @@ public class BlueprintsController : ControllerBase
             var targetBlueprintId = new BlueprintId(request.TargetVersion);
             var updateMode = Enum.Parse<BlueprintUpdateMode>(request.UpdateMode, ignoreCase: true);
 
+            // A blueprint preview reads whole types like the run it previews: no runtime query time limit (batch path).
+            using var noQueryTimeLimit = RuntimeQueryTimeLimit.Disable();
             var preview = await _blueprintService.PreviewUpdateAsync(
                 tenantId,
                 targetBlueprintId,

@@ -5,7 +5,8 @@
 - AB#8897 New: runtime-entity queries have a server-side time limit. Every query and count by type, by id, by type with
   navigation and by CK interface is sent to MongoDB with `maxTimeMS` from `RuntimeQuery:MaxTimeMs`
   (`OCTO_RUNTIMEQUERY__MAXTIMEMS`, default 120000 ms, 0 = off; helm value `assetRepository.runtimeQuery.maxTimeMs` of the
-  `octo-mesh` chart). A query above the limit is stopped on the database and answered with the coded error `ASSET1008`
+  `octo-mesh` chart). The limit applies to each MongoDB operation (page and count of a paged query each get
+  the full limit). A query above the limit is stopped on the database and answered with the coded error `ASSET1008`
   (GraphQL: `extensions.code`, `errorId`, `parameters.ckTypeId` / `maxTimeMs` / `elapsedMs`; REST: `504` problem
   details with the same code) instead of the generic `ASSET1002` or a hung request, and logged once as a warning with
   tenant, CK type, duration, limit and error id. A query that completes after more than 80 % of its limit is logged as a

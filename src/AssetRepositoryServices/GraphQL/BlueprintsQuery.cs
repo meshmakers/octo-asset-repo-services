@@ -8,6 +8,7 @@ using Meshmakers.Octo.ConstructionKit.Contracts.BlueprintCatalogs;
 using Meshmakers.Octo.ConstructionKit.Engine.BlueprintCatalogs;
 using Meshmakers.Octo.Runtime.Contracts;
 using Meshmakers.Octo.Runtime.Contracts.Blueprints;
+using Meshmakers.Octo.Runtime.Engine.MongoDb.RuntimeQueries;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL;
 
@@ -214,6 +215,8 @@ internal sealed class BlueprintsQuery : ObjectGraphType
             var blueprintService = ctx.RequestServices!.GetRequiredService<IBlueprintService>();
             var blueprintName = NormalizeBlueprintName(ctx.GetArgument<string?>("blueprintName"));
 
+            // A blueprint preview reads whole types like the run it previews: no runtime query time limit (batch path).
+            using var noQueryTimeLimit = RuntimeQueryTimeLimit.Disable();
             var info = await blueprintService.GetUpdateInfoAsync(
                 gql.TenantId, blueprintName, ctx.CancellationToken);
             return new BlueprintUpdateInfoDto
@@ -247,6 +250,8 @@ internal sealed class BlueprintsQuery : ObjectGraphType
             var blueprintService = ctx.RequestServices!.GetRequiredService<IBlueprintService>();
 
             var targetBlueprintId = new BlueprintId(input.TargetVersion);
+            // A blueprint preview reads whole types like the run it previews: no runtime query time limit (batch path).
+            using var noQueryTimeLimit = RuntimeQueryTimeLimit.Disable();
             var preview = await blueprintService.PreviewUpdateAsync(
                 gql.TenantId, targetBlueprintId, input.UpdateMode, ctx.CancellationToken);
 
