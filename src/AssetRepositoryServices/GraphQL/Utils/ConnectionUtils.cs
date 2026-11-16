@@ -157,4 +157,17 @@ internal static class ConnectionUtils
             return defaultOffset;
         }
     }
+
+    /// <summary>
+    ///     AB#8896: the total of a page result that always covers the returned page. The engine counts the matching
+    ///     entities in a read of its own after the page (no <c>$facet</c> snapshot any more), so entities deleted in
+    ///     between can report a total below <paramref name="offset" /> + <paramref name="pageItemCount" />; the
+    ///     connection would then drop edges or fail its slice check. Without a count the engine reports exactly that
+    ///     lower bound, so the value is unchanged there.
+    /// </summary>
+    public static int TotalCoveringThePage(long reportedTotal, int offset, int pageItemCount)
+    {
+        var pageEnd = pageItemCount == 0 ? 0 : (long)offset + pageItemCount;
+        return (int)Math.Min(Math.Max(reportedTotal, pageEnd), int.MaxValue);
+    }
 }

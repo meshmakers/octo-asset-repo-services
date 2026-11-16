@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- AB#8896 New: a paged runtime-entity query counts the matching entities only when the selection needs the total
+  (Feature AB#8793). `runtime.<CkType>`, `runtime.runtimeEntities`, persisted query `rows` and transient query `rows`
+  (standard queries) pass `includeTotalCount` to the engine: true when `totalCount` or `pageInfo` is selected or the
+  query pages from the end (`last`/`before`); otherwise no count query runs and only the page is read. With the
+  engine-mongodb change of the same story a paged query no longer loads every matching document (no `$facet`).
+  Queries by `rtId`/`rtIds` and aggregation queries are unchanged. The engine now counts in a read of its own after
+  the page, so entities deleted in between can report a total below the page end; the connection then reports the
+  page end as the total (`ConnectionUtils.TotalCoveringThePage`) instead of dropping edges or failing the slice check.
+  Needs octo-construction-kit-engine-mongodb with AB#8896.
 - AB#8986 New (security): an administrator of a parent tenant calls `System.Bot/TenantRepository.Dump-1`, `Restore-1`,
   `ExportArchiveData-1` and `ImportArchiveData-1` on a registered child tenant with the parent's user token and reads those
   operations through `runtime.operations`, mirroring the REST jobs rule (octo-common-services `CkParentTenantAdministrationMethods`).
