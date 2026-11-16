@@ -66,17 +66,22 @@ Delete operations support multiple strategies via `DeleteOptions`:
 - Types like `CkId` have been renamed to `RtCkId` in runtime model contexts
 
 ## Dependencies
-External Octo services referenced via `$(OctoVersion)`:
+Octo packages of `AssetRepositoryServices.csproj`, all pinned with `$(OctoCoreLibVersion)`:
 - `Meshmakers.Octo.Services.Infrastructure` - Core infrastructure
 - `Meshmakers.Octo.Services.Observability` - Telemetry and observability
-- `Meshmakers.Octo.Services.StreamData` - Stream data support
 - `Meshmakers.Octo.Services.Swagger` - OpenAPI/Swagger configuration
-- `Meshmakers.Octo.Runtime.Engine.MongoDb` - MongoDB runtime engine
+- `Meshmakers.Octo.Services.Methods`, `Meshmakers.Octo.Services.Methods.MongoDb` - CK method dispatch and its MongoDB stores
+- `Meshmakers.Octo.Services.Notifications` - Notifications
+- `Meshmakers.Octo.Communication.Contracts` - Communication contracts
+- `Meshmakers.Octo.Runtime.Engine`, `Meshmakers.Octo.Runtime.Engine.MongoDb` - Runtime engine on MongoDB
+- `Meshmakers.Octo.Runtime.Engine.CrateDb` - Stream data on CrateDB
+- `Meshmakers.Octo.ConstructionKit.Models.System.Files` - `System.Files` CK model
 
 Version resolution (from `Directory.Build.props`):
 - DebugL configuration: uses version 999.0.0 and local NuGet at `$(OctoRepoRootPath)../nuget`
 - With private server: uses version 0.1.*
 - Otherwise: no fallback — versions come only from the pipeline; a non-DebugL build without `-p:OctoVersion=X.Y.Z` fails fast with `OCTO0001`
+- `OctoCoreLibVersion` and `OctoCommVersion` are set by the pipeline and fall back to `OctoVersion` when unset
 
 ## N:M Association Query Columns
 N:M associations are exposed as query columns with `::totalCount` (INT64) and `::exists` (BOOLEAN).
