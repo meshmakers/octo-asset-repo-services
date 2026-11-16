@@ -40,16 +40,16 @@ kit models, and time-series stream data stored in MongoDB.
 |---|---|
 | `**/SystemApi/**`, `**/TenantApi/**`, `**/Consumers/**`, `**/Diagnostics/**`, `**/DefaultConfigurationCreatorService.cs`, `**/ScratchTenantMarkerStore.cs` | `docs/api-controllers.md` |
 | `**/Program.cs`, `**/Configuration/**`, `src/**/GraphQL/**`, `Directory.Build.props` | `docs/architecture.md` |
-| `**/Controllers/BlueprintsController.cs`, `**/DataTransferObjects/Blueprints/**`, `**/BlueprintUpdateBlankingFlowTests.cs` | `docs/blueprint-update-blanking.md` |
+| `**/Controllers/BlueprintsController.cs`, `**/DataTransferObjects/Blueprints/**`, `**/BlueprintUpdateBlankingFlowTests.cs`, `**/BlueprintsMutation.cs` | `docs/blueprint-update-blanking.md` |
 | `**/BlueprintLock/**`, `**/CkModelValidation/**`, `**/CkModelCatalog/**`, `**/CkModelCatalogController.cs`, `**/BlueprintsController.cs`, `**/ModelsController.cs` | `docs/ck-model-api.md` |
 | `**/UpgradeGuard/**`, `**/*CkUpgrade*.cs`, `**/Services/Ck*.cs`, `**/CkModelLibraryStatus*.cs`, `**/CkModelCatalogController.cs`, `**/BlueprintsMutation.cs` | `docs/ck-model-import.md` |
 | `**/Types/Meta/**`, `**/Types/Rt*.cs`, `**/Mapping/**`, `**/OctoBuilder.cs`, `**/RecordMember*.cs`, `**/HiddenAttribute*.cs`, `**/*WriteGuard*.cs`, `**/AccessQuery*.cs` | `docs/ck-v2.md` |
-| `**/GraphQL/Methods/CkMethod*.cs`, `**/OneMethodCallPerRequestRule.cs`, `**/CkV2/*MethodMutation*Tests.cs`, `**/CkV2/AsyncMethod*Tests.cs` | `docs/method-gateway.md` |
+| `**/GraphQL/Methods/**`, `**/*ParentTenant*.cs`, `**/OneMethodCallPerRequestRule.cs`, `**/CkV2/*MethodMutation*Tests.cs`, `**/CkV2/AsyncMethod*Tests.cs` | `docs/method-gateway.md` |
 | `**/Services/Methods/**`, `**/GraphQL/MethodHandlers/**`, `**/MethodHandlersQuery*.cs`, `**/*MethodIdempotency*Tests.cs` | `docs/method-idempotency-audit.md` |
 | `**/GatewayOwnedMethod*.cs`, `**/GenericCreate*.cs`, `**/OctoSessionAmbient*.cs`, `**/CkMethodTargetAccess*.cs`, `tests/*MethodCanaryScan/**`, `**/Adversarial/**` | `docs/method-in-process.md` |
 | `**/Files/**`, `**/Controllers/File*.cs`, `**/Controllers/LargeBinaries*.cs`, `**/FilesAccessMetrics.cs` | `docs/platform-file-system.md` |
 | `**/RtEntityByInterfaceTypes.cs`, `**/RuntimeQueryGuard*.cs`, `**/RuntimeModelQuery.cs`, `**/RtTransientQuery.cs`, `**/InterfaceQuery*.cs`, `tests/**/ByInterface*.cs` | `docs/runtime-queries.md` |
-| `**/Secrets/**`, `**/GraphQL/SecretsQuery.cs`, `**/OctoSecretStateDtoType.cs`, `**/Utils/Secret*.cs` | `docs/secret-attributes.md` |
+| `**/Secrets/**`, `**/GraphQL/SecretsQuery.cs`, `**/GraphQL/RtMutationBase.cs`, `**/OctoSecretStateDtoType.cs`, `**/Utils/Secret*.cs` | `docs/secret-attributes.md` |
 | `**/StreamData/Controllers/**`, `**/ConfigureStreamDataConfiguration.cs`, `tests/**/StreamData/**` | `docs/stream-data-management.md` |
 | `**/GraphQL/StreamData*.cs`, `**/Types/StreamData*.cs`, `**/StreamData/Methods/**`, `**/PersistedQueryLookup.cs`, `**/DataPermissionStreamGuard.cs` | `docs/streamdata-graphql.md` |
 | `**/Security/**`, `**/ConfigureJwtBearer*.cs`, `**/*Authorization*.cs`, `**/StreamDataReadRoleGate.cs`, `**/OctoApplicationBuilder*.cs` | `docs/tenant-enforcement.md` |
@@ -81,7 +81,8 @@ dotnet build Octo.AssetRepServices.sln -c DebugL
 
 DebugL restores the upstream `999.0.0` packages (engine, common-services, SDK) from `../nuget`. On a fresh workspace, or
 when the restore reports a missing `Meshmakers.Octo.*` `999.0.0` package, build the dependency chain first with
-`Invoke-BuildAll -configuration DebugL` or `Invoke-BuildRange` (octo-tools).
+`Invoke-BuildAll -configuration DebugL` or `Invoke-BuildRange` (octo-tools). Their exit code does not show a failed
+upstream build: continue only when the summary reports `Percentage of successful builds: 100%`.
 
 ### Test
 ```bash
@@ -143,7 +144,8 @@ docker build -f src/AssetRepositoryServices/Dockerfile \
   `DataModelManagementAuthorizationTests.ModelChangingEndpoints` (`docs/tenant-enforcement.md`).
 - **A new stream-data read resolver calls `EnsureStreamReadAllowedAsync`** (`docs/tenant-enforcement.md`).
 - **One configurator owns the JWT bearer scheme; call `AddJwtBearer()` without an argument.** No endpoint of this
-  service carries `IAllowParentTenantAdministration` (`docs/tenant-enforcement.md`).
+  service carries `IAllowParentTenantAdministration`; the GraphQL endpoint carries only the request-scoped
+  `IAllowParentTenantAdministrationRequest` (`docs/tenant-enforcement.md`, `docs/method-gateway.md`).
 - **Build a caller's security context only through `GetSecurityContext`**, never `RtSecurityContext.ForUser` without the
   principal kind (`docs/tenant-enforcement.md`, `docs/principal-kind.md`).
 - **Do not add a guard call inside a runtime-query resolver;** wrap the field in `RuntimeQueryGuardSchemaVisitor`

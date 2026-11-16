@@ -1,6 +1,6 @@
 ---
-description: Gateway gate, typed method mutations, asynchronous methods with operation handles and the method mutation resolver.
-applies_to: **/GraphQL/Methods/CkMethod*.cs, **/OneMethodCallPerRequestRule.cs, **/CkV2/*MethodMutation*Tests.cs, **/CkV2/AsyncMethod*Tests.cs
+description: Gateway gate, typed method mutations, asynchronous methods with operation handles, parent-tenant administration and the method mutation resolver.
+applies_to: **/GraphQL/Methods/**, **/*ParentTenant*.cs, **/OneMethodCallPerRequestRule.cs, **/CkV2/*MethodMutation*Tests.cs, **/CkV2/AsyncMethod*Tests.cs
 ---
 
 # CK method gateway
@@ -13,7 +13,7 @@ is the one place that decides, **before the target entity is loaded**, whether a
 `allowSelf` on the parsed id from the request, declared scopes, `octo_api` always, default-deny; **one enforcement code path**, the pipeline filter at
 band 200 stays as second line) -> load the target and check the data permission through the `CkMethodTargetAccessCheck` delegate the caller passes in (see `docs/method-in-process.md`) -> dispatch via
 `ICkMethodDispatcher` with `CkMethodPrincipalScope` open. A refusal is `METHOD_FORBIDDEN` with `methodId` and the fixed reason `not-authorized`: it
-depends on the method and the caller only, so it is identical for an existing and a missing target, and the target is never read before the check
+depends on the method, the caller and the requested target id (for `allowSelf`), never on whether the target exists, so it is identical for an existing and a missing target, and the target is never read before the check
 (`Refusal_IsByteIdentical_ForAnExistingAndAMissingTarget_AndReadsNothing` uses a counting check). `METHOD_TARGET_NOT_FOUND` is returned only to a caller
 who passed the declared check. The refusal log line (Information) names method id, tenant and the rule, never the target id, parameters or token.
 `octo_api` is required for every method call independent of `GraphQl:EnforceMutationScope` (the gate never reads the flag; the generic
@@ -95,12 +95,12 @@ an error does not null the whole `runtime` object.
   (`AsyncOperationThing.Export-1`, static, async, String result).
 - **Studio codegen**: the new types and the `operations` field change `schema.graphql`; a refresh is needed only to use them.
 
-## Parent-tenant administration of CK methods (AB#8986)
+## Parent-tenant administration of CK methods
 
-The method counterpart of the REST jobs endpoint's `[AllowParentTenantAdministration]` (bot-services, AB#5060): an administrator of a
+The method counterpart of the REST jobs endpoint's `[AllowParentTenantAdministration]` (bot-services): an administrator of a
 parent tenant P backs up, restores and exports/imports the archive data of a child tenant C through the CK methods and follows the
 operations through `runtime.operations`. **Mirror of the REST rule, no wider access.** The rule itself lives in octo-common-services
-(`CkParentTenantAdministrationMethods`, `CkMethodCallerTenantRule.EvaluateAsync`, `docs/method-pipeline.md`); this service has three
+(`CkParentTenantAdministrationMethods`, `CkMethodCallerTenantRule.EvaluateAsync`, `octo-common-services/docs/method-pipeline.md`); this service has three
 pieces:
 
 - **Gateway** (`CkMethodGateway`, step 0): `CkMethodCallerTenantCheck.CheckAsync` with the registered `ITenantHierarchyReader`. A **user**
@@ -114,7 +114,7 @@ pieces:
   parent path: role `TenantManagement` **and** a registered child; then only records of the closed list
   (`CkMethodOperationQuery.MethodIds`, and the page is filtered again in the reader in case a store ignores the set), with the
   owner/administrator rule (`allOwners` needs an administrator role of P); a parent read is logged at Debug (clients poll). Otherwise a
-  read by id is `OPERATION_NOT_FOUND` and a list is empty. **Narrower than before:** until AB#8986 the reader did not look at the token
+  read by id is `OPERATION_NOT_FOUND` and a list is empty. **Narrower than before:** earlier the reader did not look at the token
   tenant at all (it relied on the HTTP gate, which is `LogOnly` in this service), so a foreign user token read its own records in
   another tenant; now it reads nothing there unless it is a parent administrator. Service tokens and own-tenant tokens are unchanged.
   The result of a dump carries `jobId` and `downloadPath`; the download is the bot-services jobs route of C, which already carries

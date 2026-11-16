@@ -11,7 +11,7 @@ Tenant-scoped endpoint to import a CK model directly from a catalog without file
 
 | Method | Endpoint | Auth Policy | Description |
 |--------|----------|-------------|-------------|
-| `POST` | `{tenantId}/v1/models/ImportFromCatalog` | ReadWrite | Import CK model from catalog into tenant |
+| `POST` | `{tenantId}/v1/models/ImportFromCatalog` | DataModelManagementPolicy | Import CK model from catalog into tenant |
 
 **Request body:**
 ```json

@@ -1,6 +1,6 @@
 ---
 description: Blueprint update preview and apply: seed values that would blank tenant values, and the explicit confirmation of each blanking.
-applies_to: **/Controllers/BlueprintsController.cs, **/DataTransferObjects/Blueprints/**, **/BlueprintUpdateBlankingFlowTests.cs
+applies_to: **/Controllers/BlueprintsController.cs, **/DataTransferObjects/Blueprints/**, **/BlueprintUpdateBlankingFlowTests.cs, **/BlueprintsMutation.cs
 ---
 
 # Blueprint update: values a seed would blank
