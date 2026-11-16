@@ -141,6 +141,42 @@ public class BlueprintsMutationCkUpgradeBlockedTests
         install.GetProperty("blueprintId").GetString().Should().Be(Target);
     }
 
+    [Theory]
+    [InlineData("dryRun: true", true)]
+    [InlineData("dryRun: false", false)]
+    [InlineData("", false)]
+    public async Task Uninstall_DryRunArgument_ChoosesThePreviewOrTheUninstall(string argument, bool dryRun)
+    {
+        // AB#8966: only dryRun: true runs the preview; without it (or false) the uninstall runs as before.
+        var engineResult = new BlueprintUninstallResult
+        {
+            Success = true, DryRun = dryRun, UninstalledBlueprintId = new BlueprintId("Shop-1.0.0"),
+            TenantOwnedKept = [new BlueprintTenantOwnedKeptEntity { Key = "page", CkTypeId = "T/Page", Reason = BlueprintTenantOwnedKeptReason.Edited }]
+        };
+        A.CallTo(() => _blueprintService.PreviewUninstallAsync(TenantId, "Shop", false, A<CancellationToken>._)).Returns(engineResult);
+        A.CallTo(() => _blueprintService.UninstallAsync(TenantId, "Shop", false, A<CancellationToken>._)).Returns(engineResult);
+        var query = argument.Length == 0
+            ? """mutation { blueprints { uninstall(blueprintName: "Shop") { success dryRun tenantOwnedKept { key reason } } } }"""
+            : $$"""mutation { blueprints { uninstall(blueprintName: "Shop", {{argument}}) { success dryRun tenantOwnedKept { key reason } } } }""";
+
+        var root = await ExecuteAsync(query);
+
+        root.TryGetProperty("errors", out _).Should().BeFalse();
+        var uninstall = root.GetProperty("data").GetProperty("blueprints").GetProperty("uninstall");
+        uninstall.GetProperty("dryRun").GetBoolean().Should().Be(dryRun);
+        uninstall.GetProperty("tenantOwnedKept")[0].GetProperty("reason").GetString().Should().Be("Edited");
+        if (dryRun)
+        {
+            A.CallTo(() => _blueprintService.UninstallAsync(A<string>._, A<string>._, A<bool>._, A<CancellationToken>._))
+                .MustNotHaveHappened();
+        }
+        else
+        {
+            A.CallTo(() => _blueprintService.PreviewUninstallAsync(A<string>._, A<string>._, A<bool>._, A<CancellationToken>._))
+                .MustNotHaveHappened();
+        }
+    }
+
     [Fact]
     public async Task ApplyUpdate_NotBlocked_ReturnsTheResultUnchanged()
     {

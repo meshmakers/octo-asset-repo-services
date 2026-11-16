@@ -608,6 +608,8 @@ public class BlueprintsController : ControllerBase
     /// <summary>
     ///     Uninstalls a blueprint from the tenant. With cascade=true, dependents
     ///     are uninstalled first and orphaned dependencies are auto-cleaned.
+    ///     AB#8966: the response lists the erased entities (<c>deletedEntities</c>) and the tenant-owned seed entities
+    ///     that stay (<c>tenantOwnedKept</c>, with the reason).
     ///     <para>
     ///         Requires the data model management policy (AB#8529): scope <c>octo_api</c> and the tenant role
     ///         <c>DataModelManagement</c>; otherwise <c>403</c> with the code <c>DataModelManagementRequired</c>.
@@ -622,12 +624,45 @@ public class BlueprintsController : ControllerBase
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(typeof(BlueprintUninstallResultDto), StatusCodes.Status409Conflict)]
     [ProducesResponseType(typeof(OperationFailedErrorDto), StatusCodes.Status400BadRequest)]
-    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(OperationFailedErrorDto), StatusCodes.Status404NotFound)]
     [ProducesResponseType(typeof(InternalServerErrorDto), StatusCodes.Status500InternalServerError)]
-    public async Task<IActionResult> Uninstall(
+    public Task<IActionResult> Uninstall(
         [Required] string blueprintName,
         [FromQuery] bool cascade = false,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default) =>
+        RunUninstallAsync(blueprintName, (tenantId, name) =>
+            _blueprintService.UninstallAsync(tenantId, name, cascade, cancellationToken));
+
+    // POST {tenantId}/v1/blueprints/{blueprintName}/uninstall/preview?cascade=true
+    /// <summary>
+    ///     AB#8966: the dry run of <see cref="Uninstall" />. Changes nothing; the response (<c>dryRun: true</c>) lists the
+    ///     entities the uninstall would erase (<c>deletedEntities</c>) and the tenant-owned seed entities it would keep
+    ///     (<c>tenantOwnedKept</c>, with the reason). Same status codes as the uninstall (409 when dependents block it,
+    ///     404 with a message when the blueprint is not installed). A route of its own, not a flag on <c>DELETE</c>: an
+    ///     asset repository without AB#8966 answers it with an empty 404 instead of ignoring an unknown flag and
+    ///     uninstalling.
+    ///     <para>Requires the data model management policy (AB#8529), like the uninstall.</para>
+    /// </summary>
+    /// <param name="blueprintName">Name of the blueprint (without version).</param>
+    /// <param name="cascade">When true, include the blueprints that depend on the target.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    [HttpPost("{blueprintName}/uninstall/preview")]
+    [Authorize(AssetRepositoryServiceConstants.DataModelManagementPolicy)]
+    [ProducesResponseType(typeof(BlueprintUninstallResultDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(BlueprintUninstallResultDto), StatusCodes.Status409Conflict)]
+    [ProducesResponseType(typeof(OperationFailedErrorDto), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(OperationFailedErrorDto), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(InternalServerErrorDto), StatusCodes.Status500InternalServerError)]
+    public Task<IActionResult> PreviewUninstall(
+        [Required] string blueprintName,
+        [FromQuery] bool cascade = false,
+        CancellationToken cancellationToken = default) =>
+        RunUninstallAsync(blueprintName, (tenantId, name) =>
+            _blueprintService.PreviewUninstallAsync(tenantId, name, cascade, cancellationToken));
+
+    private async Task<IActionResult> RunUninstallAsync(string blueprintName,
+        Func<string, string, Task<BlueprintUninstallResult>> run)
     {
         try
         {
@@ -642,18 +677,8 @@ public class BlueprintsController : ControllerBase
                 return BadRequest(new OperationFailedErrorDto("BlueprintName is required"));
             }
 
-            var result = await _blueprintService.UninstallAsync(
-                tenantId, blueprintName, cascade, cancellationToken);
-
-            var response = new BlueprintUninstallResultDto
-            {
-                Success = result.Success,
-                UninstalledBlueprintId = result.UninstalledBlueprintId?.FullName,
-                EntitiesDeleted = result.EntitiesDeleted,
-                CascadedDependencies = result.CascadedDependencies.Select(d => d.FullName).ToList(),
-                BlockingDependents = result.BlockingDependents.Select(d => d.FullName).ToList(),
-                Warnings = result.Warnings.ToList()
-            };
+            var result = await run(tenantId, blueprintName);
+            var response = BlueprintUninstallResultMapper.ToDto(result);
 
             if (result.Success)
             {
@@ -666,10 +691,11 @@ public class BlueprintsController : ControllerBase
                 return Conflict(response);
             }
 
-            // Target not installed → 404.
+            // Target not installed → 404 with a message, so a caller can tell it from a server without the route.
             if (result.UninstalledBlueprintId == null)
             {
-                return NotFound();
+                return NotFound(new OperationFailedErrorDto(
+                    string.Join(", ", result.Errors.Count > 0 ? result.Errors : [$"Blueprint '{blueprintName}' is not installed"])));
             }
 
             return BadRequest(new OperationFailedErrorDto(

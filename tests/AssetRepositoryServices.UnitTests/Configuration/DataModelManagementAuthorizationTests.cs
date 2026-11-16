@@ -46,6 +46,7 @@ public class DataModelManagementAuthorizationTests
             { typeof(TenantBlueprintsController), nameof(TenantBlueprintsController.Apply) },
             { typeof(TenantBlueprintsController), nameof(TenantBlueprintsController.ApplyUpdate) },
             { typeof(TenantBlueprintsController), nameof(TenantBlueprintsController.Uninstall) },
+            { typeof(TenantBlueprintsController), nameof(TenantBlueprintsController.PreviewUninstall) },
             { typeof(SystemBlueprintsController), nameof(SystemBlueprintsController.RefreshAllCatalogs) },
             { typeof(SystemBlueprintsController), nameof(SystemBlueprintsController.RefreshCatalog) },
             { typeof(SystemCkModelCatalogController), nameof(SystemCkModelCatalogController.RefreshAll) },
