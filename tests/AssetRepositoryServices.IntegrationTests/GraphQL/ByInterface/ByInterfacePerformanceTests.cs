@@ -64,6 +64,7 @@ public class ByInterfacePerformanceTests
 
     [Fact]
     [Trait("Category", "Performance")]
+    [Trait("Category", "LoadSensitive")]
     public async Task IndexedSort_FirstPage_GraphQlAddsNoMeasurableCostBeyondTheEngine_AndStaysInTheBudget()
     {
         var entityCount = int.TryParse(Environment.GetEnvironmentVariable(EntityCountVariable), out var configured) &&

@@ -43,6 +43,32 @@ tests/AssetRepositoryServices.IntegrationTests/
 dotnet test tests/AssetRepositoryServices.IntegrationTests/ -c DebugL
 ```
 
+### Local full suite: leave out the load-sensitive tests
+
+Tests whose result depends on the speed of the machine carry `[Trait("Category", "LoadSensitive")]` in addition to their
+own category. Today:
+
+| Test | Own category | Why it is load-sensitive | What proves the rule without a clock |
+|---|---|---|---|
+| `GraphQL/ByInterface/ByInterfacePerformanceTests` | `Performance` | median / p95 ceilings in milliseconds | - (a budget is a timing by nature) |
+| `StreamData/RollupRecomputeStatementBudgetTests.ARecomputeOfALargeRange_StaysInsideTheStatementBudget` | `StatementBudget` | every recompute statement must finish inside a one-second CrateDB budget; a slice takes ~135 ms on a quiet machine and more than a second under load | the row bound per statement: `StreamData/RollupRecomputeRowBoundTests` (this suite, real CrateDB: a 300-row recompute with a slice target of 20 runs its staging-to-live copy as at least eight statements, counted in `sys.jobs_log`, and the result equals the source) and `CrateDbArchiveRecomputeExecutorTests` (octo-construction-kit-engine-mongodb, no database) |
+
+`AStatementOverItsBudget_SurfacesAsStatementTimeout_AndACancelledTokenAsCancellation` keeps only the trait
+`StatementBudget` and stays in the local suite: its statement runs for many times the budget and the test allows 5 s
+over the budget for the timeout to end it, so load is unlikely to change its result.
+
+```bash
+# local full suite (pre-commit check, recorded verification)
+dotnet test Octo.AssetRepServices.sln -c DebugL --filter "Category!=LoadSensitive"
+# the load-sensitive tests on their own, on a quiet machine, one suite at a time
+dotnet test tests/AssetRepositoryServices.IntegrationTests/ -c DebugL --filter "Category=LoadSensitive"
+```
+
+The CI runs every test, these included. `LoadSensitiveTraitTests` pins the traits: every `Performance` or `Stress`
+test carries `LoadSensitive`, and of the two statement budget tests only the recompute does. A new test that asserts a
+wall-clock budget gets `LoadSensitive` too; a correctness timeout with a wide margin (a bounded wait that must end
+instead of hanging) does not.
+
 ### Run specific test class
 ```bash
 dotnet test tests/AssetRepositoryServices.IntegrationTests/ -c DebugL --filter "FullyQualifiedName~TenantContextTests"

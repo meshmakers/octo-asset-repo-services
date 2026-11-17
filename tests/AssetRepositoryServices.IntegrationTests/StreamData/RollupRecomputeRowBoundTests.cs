@@ -37,12 +37,17 @@ public class RollupRecomputeRowBoundTests(RowBoundStreamDataFixture fixture, ITe
     {
         fixture.OutputHelper = output;
         var ladder = await BuildLadderAsync("RowBoundSlices");
+        var mark = await _builder.ScalarLongAsync("SELECT CURRENT_TIMESTAMP::bigint");
 
         var job = await _builder.RecomputeAsync(ladder.Rollup, Anchor, Anchor.AddHours(Hours));
 
         job.State.Should().Be(RecomputeJobState.Completed, job.ErrorReason);
         job.WindowsProcessed.Should().Be(Hours);
-        // 300 rows against a slice target of 20: the copy alone is at least eight statements.
+        // 300 rows against a slice target of 20, at most twice the target per statement: the copy from the
+        // staging table into the live table is at least eight statements. Counted in CrateDB's own statement
+        // log, so the slicing is proven through the service's wiring without a clock.
+        (await StagingCopyStatementsAsync(ladder.Rollup, mark)).Should().BeGreaterThanOrEqualTo(
+            (int)Math.Ceiling(SeriesCount * Hours / (2.0 * RowBoundStreamDataFixture.SliceTargetRows)));
         await AssertRollupEqualsSourceAsync(ladder, Hours, expectedGeneration: 1);
     }
 
@@ -241,6 +246,19 @@ public class RollupRecomputeRowBoundTests(RowBoundStreamDataFixture fixture, ITe
             $"AND started >= {sinceMs.ToString(CultureInfo.InvariantCulture)} " +
             "ORDER BY started");
         return rows.Select(r => ((string)r["stmt"]!).Split(' ', 4)[0] + " " + ((string)r["stmt"]!).Split(' ', 4)[1]).ToList();
+    }
+
+    /// <summary>
+    /// The copies from the rollup's staging table into its live table CrateDB has logged since
+    /// <paramref name="sinceMs"/> (<c>sys.jobs_log</c>).
+    /// </summary>
+    private async Task<int> StagingCopyStatementsAsync(OctoObjectId rollup, long sinceMs)
+    {
+        var rows = await _builder.RowsAsync(
+            "SELECT count(*) AS n FROM sys.jobs_log " +
+            $"WHERE stmt LIKE 'INSERT INTO%' AND stmt LIKE '%FROM %archive_{rollup}__rc%' " +
+            $"AND started >= {sinceMs.ToString(CultureInfo.InvariantCulture)}");
+        return Convert.ToInt32(rows[0]["n"], CultureInfo.InvariantCulture);
     }
 
     // ── ladder + helpers ──────────────────────────────────────────────────────────────────────

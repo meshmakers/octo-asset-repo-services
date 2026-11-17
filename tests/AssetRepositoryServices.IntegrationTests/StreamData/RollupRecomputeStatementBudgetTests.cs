@@ -56,14 +56,17 @@ public class RollupRecomputeStatementBudgetTests(StatementBudgetStreamDataFixtur
     /// </para>
     /// <para>
     /// A wall-clock test: the margin is what makes it trustworthy, and it is a property of the
-    /// machine. It carries the trait <c>Category=StatementBudget</c> so it can be left out where
-    /// the margin does not hold; the row bound itself is proven without a clock by
+    /// machine. It carries the trait <c>Category=LoadSensitive</c>, so the local full suite leaves it
+    /// out (see the README of this project); <c>Category=StatementBudget</c> alone would also leave out
+    /// the timeout classification test below. The row bound itself is proven without a clock by
+    /// <c>RollupRecomputeRowBoundTests</c> (statement count in CrateDB's log) and by
     /// <c>CrateDbArchiveRecomputeExecutorTests.LargeChunk_CopiesAndSweepsInRowBoundedSlices</c> in
     /// octo-construction-kit-engine-mongodb.
     /// </para>
     /// </remarks>
     [Fact]
     [Trait("Category", "StatementBudget")]
+    [Trait("Category", "LoadSensitive")]
     public async Task ARecomputeOfALargeRange_StaysInsideTheStatementBudget()
     {
         fixture.OutputHelper = output;
