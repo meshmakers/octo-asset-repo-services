@@ -64,6 +64,7 @@ public class RollupRecomputeStatementBudgetTests(StatementBudgetStreamDataFixtur
     /// </remarks>
     [Fact]
     [Trait("Category", "StatementBudget")]
+    [Trait("Category", "LoadSensitive")]
     public async Task ARecomputeOfALargeRange_StaysInsideTheStatementBudget()
     {
         fixture.OutputHelper = output;
