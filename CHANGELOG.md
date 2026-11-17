@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- New: `System.StreamData/Archive.RedactHiddenColumns-2` (System.StreamData 1.29.0, GraphQL field `redactHiddenColumns2`), the
+  redaction of Hidden archive columns with the columns the administrator confirmed: required `expectedColumns`; when the Hidden
+  columns at execution time are not exactly that set, the call answers `STREAMDATA_REDACTION_COLUMNS_CHANGED` (parameters
+  `expectedColumns`, `currentColumns`) and drops nothing. Same role (`StreamDataAdmin`), confirmation and result as `-1`, which
+  is deprecated (it drops whatever is Hidden when it runs). Both handlers share one implementation. Needs System.StreamData 1.29.0
+  (octo-construction-kit-engine).
 - AB#8600 New: archive columns and computed columns as CK methods of System.StreamData 1.28.0, handled in-process like the
   other archive methods: `Archive.AddComputedColumn-1`, `AddColumn-1`, `RemoveComputedColumn-1`, `UpdateComputedColumnFormula-1`
   (answer `ArchiveTransitionResult`), `RetryComputedColumnBackfill-1` and `RepairComputedColumn-1` (answer the queued job as

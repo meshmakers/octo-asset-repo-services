@@ -113,6 +113,7 @@ public class ArchiveMethodTests
             ("backfillRollupFromSource", SystemStreamDataCkIds.RollupArchiveBackfillFromSourceMethodId),
             // the redaction of Hidden columns replaces no mutation
             ((string?)null, SystemStreamDataCkIds.ArchiveRedactHiddenColumnsMethodId),
+            ((string?)null, SystemStreamDataCkIds.ArchiveRedactHiddenColumns2MethodId),
             // AB#8600 (System.StreamData 1.28.0): columns and computed columns
             ("addComputedColumn", SystemStreamDataCkIds.ArchiveAddComputedColumnMethodId),
             ("addArchiveColumn", SystemStreamDataCkIds.ArchiveAddColumnMethodId),

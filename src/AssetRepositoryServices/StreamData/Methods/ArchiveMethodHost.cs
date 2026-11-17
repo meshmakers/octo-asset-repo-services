@@ -14,7 +14,7 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.StreamData.Methods;
 /// <param name="HandlerType">The handler class.</param>
 /// <param name="Mutation">
 ///     The streamData GraphQL mutation the method replaces (deprecated, still working); <c>null</c> for a method that has no
-///     mutation (<c>Archive.RedactHiddenColumns-1</c>).
+///     mutation (<c>Archive.RedactHiddenColumns-1</c> and <c>-2</c>).
 /// </param>
 /// <param name="Register">Registers the handler with the in-process host of octo-common-services.</param>
 internal sealed record ArchiveMethodHandlerRegistration(
@@ -85,6 +85,9 @@ internal static class ArchiveMethodHost
         // System.StreamData 1.27.0: the destructive way out of a Hidden-column failure; no mutation exists for it
         ArchiveMethodHandlerRegistration.For<ArchiveRedactHiddenColumnsHandler>(
             SystemStreamDataCkIds.ArchiveRedactHiddenColumnsMethodId, mutation: null),
+        // System.StreamData 1.29.0: the redaction with the columns the caller confirmed; -1 is deprecated
+        ArchiveMethodHandlerRegistration.For<ArchiveRedactHiddenColumns2Handler>(
+            SystemStreamDataCkIds.ArchiveRedactHiddenColumns2MethodId, mutation: null),
         // AB#8600 (System.StreamData 1.28.0): archive columns and computed columns; with these every streamData mutation has a
         // method
         ArchiveMethodHandlerRegistration.For<ArchiveAddComputedColumnHandler>(

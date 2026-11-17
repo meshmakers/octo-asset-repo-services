@@ -180,6 +180,20 @@ method row in `ArchiveMethodHost`.
   through the tenant-update event: this service re-checks them after its tenant setup (octo-common-services). Rules and
   background: the octo-construction-kit-engine page "Archives and Hidden attributes" (archive-hidden-columns). Tests: `UnitTests/StreamData/Methods/ArchiveRedactHiddenColumnsHandlerTests`,
   `IntegrationTests/StreamData/ArchiveLifecycleMethodTests.Redaction`.
+- **Redaction with the confirmed columns (System.StreamData 1.29.0).** `Archive.RedactHiddenColumns-1` drops whatever is
+  Hidden when it runs, also columns that became Hidden after the caller showed the list to the administrator; it is
+  **deprecated** and removed in the next major of System.StreamData. Interactive callers use `Archive.RedactHiddenColumns-2`
+  (GraphQL field `redactHiddenColumns2`, `ArchiveRedactHiddenColumns2Handler`, no mutation), with the same role, confirmation,
+  result and errors plus the **required** `expectedColumns`: the column paths the administrator confirmed. It drops only when
+  they are exactly the Hidden columns at execution time (ignoring case, order and duplicates); otherwise it answers
+  `STREAMDATA_REDACTION_COLUMNS_CHANGED` with the parameters `expectedColumns` and `currentColumns` (comma-separated) and
+  nothing is dropped or audited: read the archive again and confirm the current set. `expectedColumns: []` confirms that no
+  column is Hidden. Example:
+  `redactHiddenColumns2(rtId: "...", input: { confirmDataLoss: true, expectedColumns: ["Pin"] }) { result { status removedColumns } }`.
+  A repeat after a success finds no Hidden column and is refused; the method is declared not idempotent, so a retry with an
+  idempotency key gets the stored answer. Tests: `UnitTests/StreamData/Methods/ArchiveRedactHiddenColumns2HandlerTests`,
+  `IntegrationTests/StreamData/ArchiveLifecycleMethodTests.Redaction` (`RedactHiddenColumns2_*`); the drop against CrateDB is
+  tested in octo-construction-kit-engine-mongodb.
 - **System tenant import.** The startup validation of in-process registrations looks the methods up in the system tenant's CK cache, which holds System.StreamData only
   when stream data was enabled there. `SystemTenantStreamDataModelImport` (Order 12, after the default configuration, before the validation at 15) imports the embedded model
   into the system tenant (idempotent, downgrade guard). It does not enable stream data for the system tenant.
