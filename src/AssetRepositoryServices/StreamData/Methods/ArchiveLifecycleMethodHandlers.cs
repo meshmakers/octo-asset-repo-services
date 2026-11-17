@@ -169,11 +169,12 @@ internal sealed class ArchiveDeleteArchiveHandler(ISystemContext systemContext, 
 }
 
 /// <summary>
-///     Handler of <c>System.StreamData/Archive.RedactHiddenColumns-1</c> (System.StreamData 1.27.0;
+///     Handler of <c>System.StreamData/Archive.RedactHiddenColumns-1</c> (System.StreamData 1.27.0, deprecated since 1.29.0;
 ///     <see cref="IArchiveLifecycleService.RedactHiddenColumnsAsync" />). <b>Destructive</b>: drops the archive columns that reach
-///     a Hidden attribute and their stored values, then resumes an archive that was Failed on them. Refused with
-///     <c>STREAMDATA_CONFIRMATION_REQUIRED</c> unless <c>confirmDataLoss</c> is true; the role (<c>StreamDataAdmin</c>) is
-///     enforced by the invocation pipeline from the model. No streamData mutation exists for it.
+///     a Hidden attribute at execution time and their stored values, then resumes an archive that was Failed on them. Refused
+///     with <c>STREAMDATA_CONFIRMATION_REQUIRED</c> unless <c>confirmDataLoss</c> is true; the role (<c>StreamDataAdmin</c>) is
+///     enforced by the invocation pipeline from the model. No streamData mutation exists for it. Interactive callers use
+///     <see cref="ArchiveRedactHiddenColumns2Handler" />.
 /// </summary>
 internal sealed class ArchiveRedactHiddenColumnsHandler(
     ISystemContext systemContext,
@@ -188,59 +189,108 @@ internal sealed class ArchiveRedactHiddenColumnsHandler(
         ArchiveMethodErrors.StreamDataNotEnabled
     };
 
-    public async Task<CkMethodOutcome<ArchiveRedactHiddenColumnsResult>> HandleAsync(
-        CkMethodContext<ArchiveRedactHiddenColumnsParameters> context, CancellationToken cancellationToken)
+    public Task<CkMethodOutcome<ArchiveRedactHiddenColumnsResult>> HandleAsync(
+        CkMethodContext<ArchiveRedactHiddenColumnsParameters> context, CancellationToken cancellationToken) =>
+        ArchiveRedaction.RunAsync(systemContext, logger, context, "RedactHiddenColumns", context.Parameters.ConfirmDataLoss,
+            expectedColumns: null, RedactDeclaredCodes,
+            (lifecycle, archiveRtId) => lifecycle.RedactHiddenColumnsAsync(archiveRtId),
+            record => new ArchiveRedactHiddenColumnsResult { Value = record });
+}
+
+/// <summary>
+///     Handler of <c>System.StreamData/Archive.RedactHiddenColumns-2</c> (System.StreamData 1.29.0;
+///     <see cref="IArchiveLifecycleService.RedactConfirmedHiddenColumnsAsync" />). <b>Destructive</b>, as -1, but it drops only
+///     when the columns that reach a Hidden attribute at execution time are exactly the required <c>expectedColumns</c> (ignoring
+///     case, order and duplicates); otherwise it answers <c>STREAMDATA_REDACTION_COLUMNS_CHANGED</c> with the parameters
+///     <c>expectedColumns</c> and <c>currentColumns</c> and nothing is dropped. Same role, confirmation and result as -1.
+/// </summary>
+internal sealed class ArchiveRedactHiddenColumns2Handler(
+    ISystemContext systemContext,
+    ILogger<ArchiveRedactHiddenColumns2Handler> logger)
+    : ICkMethodHandler<ArchiveRedactHiddenColumns2Parameters, ArchiveRedactHiddenColumns2Result>
+{
+    /// <summary>The error codes <c>Archive.RedactHiddenColumns-2</c> declares in the model.</summary>
+    internal static readonly IReadOnlySet<string> Redact2DeclaredCodes =
+        new HashSet<string>(ArchiveRedactHiddenColumnsHandler.RedactDeclaredCodes, StringComparer.Ordinal)
+        {
+            ArchiveMethodErrors.RedactionColumnsChanged
+        };
+
+    public Task<CkMethodOutcome<ArchiveRedactHiddenColumns2Result>> HandleAsync(
+        CkMethodContext<ArchiveRedactHiddenColumns2Parameters> context, CancellationToken cancellationToken)
+    {
+        // Required in the model; the invocation pipeline refuses a call without it. An absent list is never read as "drop
+        // whatever is Hidden": it confirms no column.
+        IReadOnlyCollection<string> expected = context.Parameters.ExpectedColumns ?? [];
+        return ArchiveRedaction.RunAsync(systemContext, logger, context, "RedactHiddenColumns-2",
+            context.Parameters.ConfirmDataLoss, expected, Redact2DeclaredCodes,
+            (lifecycle, archiveRtId) => lifecycle.RedactConfirmedHiddenColumnsAsync(archiveRtId, expected),
+            record => new ArchiveRedactHiddenColumns2Result { Value = record });
+    }
+}
+
+/// <summary>The steps both redaction methods share: target, confirmation, tenant, the engine call and its errors.</summary>
+internal static class ArchiveRedaction
+{
+    public static async Task<CkMethodOutcome<TResult>> RunAsync<TParameters, TResult>(
+        ISystemContext systemContext,
+        ILogger logger,
+        CkMethodContext<TParameters> context,
+        string methodName,
+        bool confirmDataLoss,
+        IReadOnlyCollection<string>? expectedColumns,
+        IReadOnlySet<string> declaredCodes,
+        Func<IArchiveLifecycleService, OctoObjectId, Task<ArchiveRedactionResult>> redact,
+        Func<RtArchiveRedactionResultRecord, TResult> wrap)
+        where TParameters : class
+        where TResult : class
     {
         if (!TryGetTarget(context, out var archiveRtId))
         {
-            return CkMethodOutcome<ArchiveRedactHiddenColumnsResult>.TargetNotFound();
+            return CkMethodOutcome<TResult>.TargetNotFound();
         }
 
-        if (!context.Parameters.ConfirmDataLoss)
+        if (!confirmDataLoss)
         {
-            return CkMethodOutcome<ArchiveRedactHiddenColumnsResult>.Fail(new CkMethodFailure(
+            return CkMethodOutcome<TResult>.Fail(new CkMethodFailure(
                 ArchiveMethodErrors.ConfirmationRequired,
                 new Dictionary<string, string>(StringComparer.Ordinal)
                 {
                     ["archiveRtId"] = archiveRtId.ToString(),
                     [ArchiveMethodErrors.MessageParameter] =
-                        "RedactHiddenColumns drops columns and their stored values; call it with confirmDataLoss = true."
+                        $"{methodName} drops columns and their stored values; call it with confirmDataLoss = true."
                 }));
         }
 
         var tenant = await FindTenantAsync(systemContext, context).ConfigureAwait(false);
         if (tenant?.GetArchiveLifecycleService() is not { } lifecycle)
         {
-            return CkMethodOutcome<ArchiveRedactHiddenColumnsResult>.Fail(ArchiveMethodErrors.StreamDataNotEnabled);
+            return CkMethodOutcome<TResult>.Fail(ArchiveMethodErrors.StreamDataNotEnabled);
         }
 
         try
         {
-            var result = await lifecycle.RedactHiddenColumnsAsync(archiveRtId).ConfigureAwait(false);
+            var result = await redact(lifecycle, archiveRtId).ConfigureAwait(false);
             // The method call logs no target id (method gateway rule); the engine's lifecycle log and audit trail record
             // the archive and the dropped columns, as for every archive operation.
-            logger.LogWarning("RedactHiddenColumns dropped {Count} column(s) (CK method, invocation {InvocationId}), status {Status}",
-                result.RemovedColumns.Count, context.InvocationId, result.Status);
-            var removed = new AttributeStringValueList(result.RemovedColumns.ToList());
-            return new ArchiveRedactHiddenColumnsResult
+            logger.LogWarning("{Method} dropped {Count} column(s) (CK method, invocation {InvocationId}), status {Status}",
+                methodName, result.RemovedColumns.Count, context.InvocationId, result.Status);
+            return wrap(new RtArchiveRedactionResultRecord
             {
-                Value = new RtArchiveRedactionResultRecord
-                {
-                    ArchiveRtId = archiveRtId.ToString(),
-                    Status = (RtCkArchiveStatusEnum)(int)result.Status,
-                    RemovedColumns = removed
-                }
-            };
+                ArchiveRtId = archiveRtId.ToString(),
+                Status = (RtCkArchiveStatusEnum)(int)result.Status,
+                RemovedColumns = new AttributeStringValueList(result.RemovedColumns.ToList())
+            });
         }
         catch (StreamDataException e)
         {
             var failure = ArchiveMethodErrors.FailureOf(e);
-            logger.LogInformation("RedactHiddenColumns refused (CK method, invocation {InvocationId}): {Code}",
-                context.InvocationId, failure.Code);
-            // The method declares fewer codes than the mutations answer (no mutation exists for it); an undeclared code
+            logger.LogInformation("{Method} refused (CK method, invocation {InvocationId}, {ExpectedCount} confirmed column(s)): {Code}",
+                methodName, context.InvocationId, expectedColumns?.Count, failure.Code);
+            // The methods declare fewer codes than the mutations answer (no mutation exists for them); an undeclared code
             // would be replaced by METHOD_HANDLER_FAILED and lose the reason, so it becomes the declared STREAMDATA_ERROR.
-            return CkMethodOutcome<ArchiveRedactHiddenColumnsResult>.Fail(
-                RedactDeclaredCodes.Contains(failure.Code)
+            return CkMethodOutcome<TResult>.Fail(
+                declaredCodes.Contains(failure.Code)
                     ? failure
                     : new CkMethodFailure(Statics.GraphQlErrorStreamData, failure.Parameters));
         }

@@ -22,6 +22,12 @@ internal static class ArchiveMethodErrors
     /// <summary>A rollup aggregates a column <c>Archive.RedactHiddenColumns</c> would drop.</summary>
     public const string RedactionBlocked = "STREAMDATA_REDACTION_BLOCKED";
 
+    /// <summary>
+    ///     <c>Archive.RedactHiddenColumns-2</c>: the Hidden columns at execution time are not exactly the confirmed
+    ///     <c>expectedColumns</c>; nothing was dropped.
+    /// </summary>
+    public const string RedactionColumnsChanged = "STREAMDATA_REDACTION_COLUMNS_CHANGED";
+
     /// <summary>Error parameter with the engine's message, as the GraphQL error of the mutation carries it.</summary>
     public const string MessageParameter = "message";
 
@@ -38,6 +44,7 @@ internal static class ArchiveMethodErrors
         ArchivePathInvalidException => Statics.GraphQlErrorStreamDataPathInvalid,
         ArchiveActivationFailedException => Statics.GraphQlErrorStreamDataActivationFailed,
         HiddenColumnRedactionBlockedException => RedactionBlocked,
+        HiddenColumnRedactionColumnsChangedException => RedactionColumnsChanged,
         _ => Statics.GraphQlErrorStreamData
     };
 
@@ -72,6 +79,10 @@ internal static class ArchiveMethodErrors
             case HiddenColumnRedactionBlockedException blocked:
                 parameters["columns"] = string.Join(",", blocked.ColumnPaths);
                 parameters["rollupRtIds"] = string.Join(",", blocked.DependentRollupRtIds);
+                break;
+            case HiddenColumnRedactionColumnsChangedException changed:
+                parameters["expectedColumns"] = string.Join(",", changed.ExpectedColumns);
+                parameters["currentColumns"] = string.Join(",", changed.CurrentColumns);
                 break;
         }
 
