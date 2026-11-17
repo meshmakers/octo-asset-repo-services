@@ -20,8 +20,11 @@ under `docs/`, or the pull request whose review found the problem.
 
 ## Queries and the runtime query guard
 
-- Runtime-query resolvers get no guard call of their own; the field is wrapped by `RuntimeQueryGuardSchemaVisitor`
-  (`AGENTS.md`, "Rules"; `docs/runtime-queries.md`).
+- The runtime query guard covers exactly the fixed entry points `runtime.runtimeEntities`, every generated
+  `runtime.<CkType>` connection, `RtQuery.rows` and `RtTransientQuery.rows`: a change to one of them, or a new field that
+  loads runtime entities without a bound, is wrapped by `RuntimeQueryGuardSchemaVisitor`, never by a guard call inside
+  the resolver; `runtime.byInterface` (bounded by its required `take`) and the aggregation connections stay unwrapped
+  (`AGENTS.md`, "Rules"; `docs/runtime-queries.md`; `docs/runtime-query-guard.md`).
 - GraphQL types are thread-safe because they are cached, and date fields use the UTC `DateTime` scalar, never
   `DateTimeGraphType` (`docs/architecture.md`).
 
