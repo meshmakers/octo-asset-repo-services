@@ -28,6 +28,7 @@ The service dynamically generates GraphQL schemas per tenant:
 ### 5. Configuration and DI
 - **Program.cs** - Application startup with NLog, observability, authentication (JWT + OIDC)
 - **RuntimeEngineBuilderExtensions** - Configures Octo runtime engine, GraphQL, authentication
+- **Data Protection key ring** (`Program.cs`) - Data Protection keys (cookies, OIDC `state`/`nonce`, antiforgery) are persisted with `AddOctoDataProtectionKeyRing("OctoAssetRepositoryServices")` (octo-common-services, `docs/data-protection.md`): one key ring shared by all replicas and kept across restarts, stored in the system tenant and encrypted with the `SecretEncryption` key ring. Without a key ring the service keeps the local default directory (one ring per pod) and logs a warning; then multi-replica sign-in fails again. Roll out an identity service that ignores prefixed key names first (soft order).
 - **OctoApplicationBuilderExtensions** - Middleware pipeline configuration
 - Configuration sections:
   - `System` - System-level configuration
