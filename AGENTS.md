@@ -112,8 +112,7 @@ category: the wall-clock budget `ByInterfacePerformanceTests` (`Performance`) an
 `RollupRecomputeStatementBudgetTests.ARecomputeOfALargeRange_StaysInsideTheStatementBudget` (`StatementBudget`, a
 one-second CrateDB budget per statement). On a busy machine (other builds or suites running) they fail without a code
 change, so the local full suite leaves them out and they run on their own. The CI runs every test, these included. The
-trait is shared with `octo-construction-kit-engine-mongodb` and `octo-identity-services`; details in the README of the
-integration test project.
+trait is shared with `octo-construction-kit-engine-mongodb`; details in the README of the integration test project.
 
 Tests must be locale-independent (developer machines run e.g. `de_AT`, CI runs `en_US`): parse and
 format numbers with `CultureInfo.InvariantCulture` (e.g. `Convert.ToDouble(raw, CultureInfo.InvariantCulture)`

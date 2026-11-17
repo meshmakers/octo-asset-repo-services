@@ -51,7 +51,7 @@ own category. Today:
 | Test | Own category | Why it is load-sensitive | What proves the rule without a clock |
 |---|---|---|---|
 | `GraphQL/ByInterface/ByInterfacePerformanceTests` | `Performance` | median / p95 ceilings in milliseconds | - (a budget is a timing by nature) |
-| `StreamData/RollupRecomputeStatementBudgetTests.ARecomputeOfALargeRange_StaysInsideTheStatementBudget` | `StatementBudget` | every recompute statement must finish inside a one-second CrateDB budget; a slice takes ~135 ms on a quiet machine and more than a second under load | the row bound per statement: `StreamData/RollupRecomputeRowBoundTests` (this suite, real CrateDB) and `CrateDbArchiveRecomputeExecutorTests` (octo-construction-kit-engine-mongodb, no database) |
+| `StreamData/RollupRecomputeStatementBudgetTests.ARecomputeOfALargeRange_StaysInsideTheStatementBudget` | `StatementBudget` | every recompute statement must finish inside a one-second CrateDB budget; a slice takes ~135 ms on a quiet machine and more than a second under load | the row bound per statement: `StreamData/RollupRecomputeRowBoundTests` (this suite, real CrateDB: a 300-row recompute with a slice target of 20 runs its staging-to-live copy as at least eight statements, counted in `sys.jobs_log`, and the result equals the source) and `CrateDbArchiveRecomputeExecutorTests` (octo-construction-kit-engine-mongodb, no database) |
 
 `AStatementOverItsBudget_SurfacesAsStatementTimeout_AndACancelledTokenAsCancellation` keeps only the trait
 `StatementBudget`: its statement runs for many times the budget, so load cannot change its result, and it stays in the
@@ -64,8 +64,10 @@ dotnet test Octo.AssetRepServices.sln -c DebugL --filter "Category!=LoadSensitiv
 dotnet test tests/AssetRepositoryServices.IntegrationTests/ -c DebugL --filter "Category=LoadSensitive"
 ```
 
-The CI runs every test, these included. A new test that asserts a wall-clock budget gets `LoadSensitive` too; a
-correctness timeout with a wide margin (a bounded wait that must end instead of hanging) does not.
+The CI runs every test, these included. `LoadSensitiveTraitTests` pins the traits: every `Performance` or `Stress`
+test carries `LoadSensitive`, and of the two statement budget tests only the recompute does. A new test that asserts a
+wall-clock budget gets `LoadSensitive` too; a correctness timeout with a wide margin (a bounded wait that must end
+instead of hanging) does not.
 
 ### Run specific test class
 ```bash
