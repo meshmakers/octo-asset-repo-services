@@ -64,7 +64,8 @@ public class LoadSensitiveTraitTests
                     continue;
                 }
 
-                var categories = new HashSet<string>(classCategories, StringComparer.Ordinal);
+                // VSTest compares trait names and values case-insensitively; so does this guard.
+                var categories = new HashSet<string>(classCategories, StringComparer.OrdinalIgnoreCase);
                 categories.UnionWith(CategoriesOf(method));
                 yield return ($"{type.Name}.{method.Name}", categories);
             }
@@ -73,6 +74,6 @@ public class LoadSensitiveTraitTests
 
     private static IEnumerable<string> CategoriesOf(MemberInfo member) =>
         member.GetCustomAttributes<TraitAttribute>(inherit: true)
-            .Where(t => t.Name == Category)
+            .Where(t => string.Equals(t.Name, Category, StringComparison.OrdinalIgnoreCase))
             .Select(t => t.Value);
 }
