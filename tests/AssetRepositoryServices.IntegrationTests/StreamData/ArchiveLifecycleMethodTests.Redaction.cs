@@ -62,7 +62,9 @@ public partial class ArchiveLifecycleMethodTests
         var result = await _fixture.ExecuteGraphQlAsync(
             $"mutation {{ runtime {{ {Redact2Call(archive, string.Empty)} }} }}", user: Admin());
 
-        result.Errors.Should().NotBeNullOrEmpty();
+        // The parameter is required in the model, so the GraphQL input field is non-null: the document is refused before any
+        // handler runs.
+        result.Errors.Should().ContainSingle().Which.Message.Should().Contain("expectedColumns");
         (await SnapshotAsync(archive))!.Columns.Select(c => c.Path).Should().Equal("Voltage");
     }
 
