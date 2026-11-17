@@ -1,4 +1,5 @@
-﻿using Meshmakers.Octo.Backend.AssetRepositoryServices.Configuration;
+﻿using Meshmakers.Octo.Services.Infrastructure.DataProtection;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.Configuration;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.Observability;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.Services;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.StreamData;
@@ -118,6 +119,12 @@ try
         .AddRecomputeOrchestratorBackgroundService()
         .AddComputedColumnBackfillBackgroundService()
         .AddDisplayRuleSweepBackgroundService();
+
+    // Persisted Data Protection key ring shared by all replicas (cookies, OIDC state, antiforgery survive load
+    // balancing and restarts); encrypted with the SecretEncryption key ring, see octo-common-services
+    // docs/data-protection.md. Registered here, not in AddOctoAssetRepositoryServices, so test hosts that reuse that
+    // composition do not write keys into their system database.
+    builder.Services.AddOctoDataProtectionKeyRing("OctoAssetRepositoryServices");
 
     // Surface platform events (e.g. failed tenant creation, AB#1958) in the event log. Registers
     // IEventRepository and replaces the engine's default logging IAuditEventSink with the
