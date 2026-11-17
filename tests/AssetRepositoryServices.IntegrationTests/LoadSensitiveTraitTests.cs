@@ -37,7 +37,7 @@ public class LoadSensitiveTraitTests
     /// <summary>
     ///     The statement budget split: the recompute under a one-second budget per statement depends on the speed
     ///     of the machine and is load-sensitive; the timeout / cancellation classification runs a statement for many
-    ///     times the budget and stays in the local full suite.
+    ///     times the budget, allows 5 s over it, and stays in the local full suite.
     /// </summary>
     [Fact]
     public void TheStatementBudgetRecompute_IsLoadSensitive_AndTheTimeoutClassification_IsNot()

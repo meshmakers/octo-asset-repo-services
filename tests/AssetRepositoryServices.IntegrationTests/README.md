@@ -54,8 +54,8 @@ own category. Today:
 | `StreamData/RollupRecomputeStatementBudgetTests.ARecomputeOfALargeRange_StaysInsideTheStatementBudget` | `StatementBudget` | every recompute statement must finish inside a one-second CrateDB budget; a slice takes ~135 ms on a quiet machine and more than a second under load | the row bound per statement: `StreamData/RollupRecomputeRowBoundTests` (this suite, real CrateDB: a 300-row recompute with a slice target of 20 runs its staging-to-live copy as at least eight statements, counted in `sys.jobs_log`, and the result equals the source) and `CrateDbArchiveRecomputeExecutorTests` (octo-construction-kit-engine-mongodb, no database) |
 
 `AStatementOverItsBudget_SurfacesAsStatementTimeout_AndACancelledTokenAsCancellation` keeps only the trait
-`StatementBudget`: its statement runs for many times the budget, so load cannot change its result, and it stays in the
-local suite.
+`StatementBudget` and stays in the local suite: its statement runs for many times the budget and the test allows 5 s
+over the budget for the timeout to end it, so load is unlikely to change its result.
 
 ```bash
 # local full suite (pre-commit check, recorded verification)
