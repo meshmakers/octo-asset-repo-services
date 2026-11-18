@@ -174,3 +174,28 @@ let every token of the tenant read all stream data of types without a data polic
 - Tests: `UnitTests/GraphQL/StreamDataReadRoleGateTests` (modes x roles, claim spellings, system context, warn window, error code),
   `IntegrationTests/StreamData/StreamDataReadRoleGateTests` (mode x caller x query kind through the GraphQL layer). A new
   stream-data read resolver must call `EnsureStreamReadAllowedAsync`.
+
+## Authorization: GraphQL mutation scope (staged)
+
+`GraphQL/RequestHandling/MutationScopeListener` runs before every GraphQL operation of type `mutation`: the caller's token
+must carry the scope `octo_api` (`CommonConstants.OctoApiFullAccess`, all `scope` claims, space-separated values split). The
+GraphQL endpoint itself only requires an authenticated caller (`AuthenticatedUserPolicyGraphApi`), so without this check a
+token with `octo_api.read_only` could mutate; the REST write policies already require `octo_api`.
+
+| Setting | Env | Values |
+|---------|-----|--------|
+| `GraphQl:EnforceMutationScope` | `OCTO_GRAPHQL__ENFORCEMUTATIONSCOPE` | `false` (**default**, log-first), `true`; read with `bool.TryParse` (`Configuration/DependencyInjection/RuntimeEngineBuilderExtensions.cs`) |
+
+Chart value: `services.assetRepository.enforceMutationScope` (boolean, default `false`) of the octo-mesh chart.
+
+- `false`: the mutation runs; one warning per mutation (not rate-limited), `GraphQL mutation by subject '{sub or client_id}'
+  without the 'octo_api' scope — would be rejected once GraphQl:EnforceMutationScope is enabled …`. The text names the
+  subject only; the tenant is in the request path of the log record. Never token content.
+- `true`: GraphQL error with code `Statics.GraphQlForbidden`, message "GraphQL mutations require the 'octo_api' scope.";
+  nothing runs and the gate writes no log line.
+- Not affected: CK method mutations (the method gateway requires `octo_api` in both modes, [method-gateway.md](method-gateway.md)),
+  queries and subscriptions, and pipelines that write in-process through the engine.
+- **Switch per environment** (gate, 7-day log query, window, rollback, who gives the go):
+  [mutation-scope-enforce-plan.md](mutation-scope-enforce-plan.md).
+- Tests: no dedicated test of the listener exists yet; the plan's local end-to-end check (P4) covers both modes before the
+  first switch.
