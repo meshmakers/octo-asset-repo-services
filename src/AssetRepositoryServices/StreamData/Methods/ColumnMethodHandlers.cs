@@ -1,4 +1,6 @@
+using System.Text.Json;
 using Meshmakers.Octo.ConstructionKit.Contracts;
+using Meshmakers.Octo.Services.Contracts.DistributionEventHub.Methods;
 using Meshmakers.Octo.ConstructionKit.Models.StreamData.Generated.System.StreamData.v1;
 using Meshmakers.Octo.Runtime.Contracts.Formulas;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb;
@@ -90,6 +92,37 @@ internal static class ArchiveColumnChanges
 
     /// <summary>The job of a retry or repair; <c>null</c> when no job store is wired (the mutation answers null then).</summary>
     internal sealed record JobAnswer(RtRecomputeJobInfoRecord? Job);
+
+    /// <summary>
+    ///     The CK result type of a REST <see cref="FormulaResultType" /> (AB#9057), by member name like
+    ///     <see cref="ArchiveMethodSupport.TryToEngine{TEngine}" /> maps it back. A value outside the engine enum keeps its
+    ///     number, so the method refuses it as <c>METHOD_VALIDATION_FAILED</c> on <c>resultType</c> instead of guessing.
+    /// </summary>
+    public static RtCkComputedColumnResultTypeEnum ResultTypeOf(FormulaResultType resultType) =>
+        Enum.IsDefined(resultType) && Enum.TryParse<RtCkComputedColumnResultTypeEnum>(resultType.ToString(), ignoreCase: false,
+            out var ckValue) && Enum.IsDefined(ckValue)
+            ? ckValue
+            : (RtCkComputedColumnResultTypeEnum)(int)resultType;
+
+    /// <summary>
+    ///     The job a successful retry or repair answered (the <c>RecomputeJobInfo</c> record of the result), or <c>null</c> when
+    ///     the result holds none (AB#9057, the REST facade answers <c>204</c> then).
+    /// </summary>
+    public static RtRecomputeJobInfoRecord? JobOf(CkMethodResponse response)
+    {
+        if (!response.Success || string.IsNullOrEmpty(response.ResultJson))
+        {
+            return null;
+        }
+
+        using var document = JsonDocument.Parse(response.ResultJson);
+        var root = document.RootElement;
+        // the typed result wraps its value, as ArchiveMethodFacade.TransitionOf reads it; accept the bare record as well
+        var record = root.ValueKind == JsonValueKind.Object && root.TryGetProperty("value", out var value) ? value : root;
+        return record.ValueKind == JsonValueKind.Object
+            ? record.Deserialize<RtRecomputeJobInfoRecord>(CkMethodJson.Options)
+            : null;
+    }
 }
 
 /// <summary>

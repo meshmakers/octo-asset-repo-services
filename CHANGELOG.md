@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+- AB#9057 New: the six REST column and computed-column endpoints are facades of the Archive column methods of AB#8600
+  (System.StreamData 1.28.0): `POST {tenantId}/v1/streamdata/archives/{id}/computed-columns` → `Archive.AddComputedColumn-1`,
+  `POST archives/{id}/columns` → `Archive.AddColumn-1`, `DELETE archives/{id}/computed-columns/{name}` →
+  `Archive.RemoveComputedColumn-1`, `PUT archives/{id}/computed-columns/{name}` → `Archive.UpdateComputedColumnFormula-1`,
+  `POST .../computed-columns/{name}/retry` → `Archive.RetryComputedColumnBackfill-1`, `POST .../computed-columns/{name}/repair`
+  → `Archive.RepairComputedColumn-1`. Each call goes through the method gateway (caller tenant, role `StreamDataAdmin`, data
+  permission on the archive) and the in-process dispatcher outside the request's Mongo session and writes exactly one Method
+  audit event; it runs under the host's stopping token as before. Routes, parameters, status codes and bodies are unchanged
+  (parity table in `docs/stream-data-management.md`); a Hidden attribute is still refused with `400` (AB#6247). While the
+  method cannot serve the call (switch off, or System.StreamData older than 1.28.0) the endpoints keep their direct call behind
+  `ArchiveMethodFallbackGuard` (AB#9337). **Changed answers:** a token of another tenant is `403` / `METHOD_FORBIDDEN`
+  (`tenant-not-allowed`) and a caller whose data permission refuses the archive `403` / `METHOD_FORBIDDEN` (`data-permission`),
+  on both paths - before, these endpoints had neither check; update, retry and repair of an unknown computed column answer
+  `400` with the engine message on both paths (update answered an unhandled `500` before); a `resultType` number outside the
+  enum on add is `400` problem details `METHOD_VALIDATION_FAILED` instead of an engine error. The old WARN line with the archive
+  id and the engine message of an engine refusal is gone (Debug with the exception type; the guard's WARN line on the
+  fallback). REST is not deprecated and has no Sunset header.
 - AB#9349 Fix (Security): on the archive fallback path (`ArchiveMethodFallbackGuard`) an engine refusal (`400`) of the REST
   lifecycle endpoints, `recompute` and `backfill-from-source` no longer logs a second WARN line with the archive or rollup id and
   the engine message; the endpoint logs it at Debug with the exception type only, the guard's one WARN line stays, and the caller
