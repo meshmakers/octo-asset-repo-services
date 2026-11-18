@@ -34,7 +34,7 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Strea
 ///     The fallback to the direct lifecycle call (switch off, or a tenant whose CK model does not declare the method) opens no
 ///     path around authorization: the real <see cref="StreamDataController" /> behind a real MVC pipeline with the service's
 ///     policies keeps refusing a caller without <c>StreamDataAdmin</c> with <c>403</c> before the action runs, and lets the
-///     administrator through to the direct call. Only the authentication handler is a stand-in. The column routes (AB#9057)
+///     administrator through to the direct call. Only the authentication handler is a stand-in. The column routes
 ///     are checked on the method path as well.
 /// </summary>
 [Collection(ArchiveMethodFacadeCollection.Name)]
@@ -81,7 +81,7 @@ public class ArchiveMethodFacadeHttpTests(ArchiveMethodFacadeFixture fixture)
     }
 
     /// <summary>
-    ///     AB#9057: the six column routes through the real pipeline, on the method path (the host's real facade) and on the
+    ///     the six column routes through the real pipeline, on the method path (the host's real facade) and on the
     ///     fallback. A caller without <c>StreamDataAdmin</c> is refused by the REST policy with <c>403</c>, an administrator token
     ///     of another tenant with <c>403 METHOD_FORBIDDEN</c>; neither changes the archive or queues a job. The administrator
     ///     reaches the route (the positive control: a <c>403</c> is no unmatched route).

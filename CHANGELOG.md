@@ -16,7 +16,9 @@
   (`tenant-not-allowed`) and a caller whose data permission refuses the archive `403` / `METHOD_FORBIDDEN` (`data-permission`),
   on both paths - before, these endpoints had neither check; update, retry and repair of an unknown computed column answer
   `400` with the engine message on both paths (update answered an unhandled `500` before); a `resultType` number outside the
-  enum on add is `400` problem details `METHOD_VALIDATION_FAILED` instead of an engine error. The old WARN line with the archive
+  enum on add is `400` problem details `METHOD_VALIDATION_FAILED` instead of an engine error; on the method path a change that
+  takes longer than the methods' 60 s limit answers `504` / `METHOD_TIMEOUT` while it keeps running (the direct call had no
+  limit). The old WARN line with the archive
   id and the engine message of an engine refusal is gone (Debug with the exception type; the guard's WARN line on the
   fallback). REST is not deprecated and has no Sunset header.
 - AB#9349 Fix (Security): on the archive fallback path (`ArchiveMethodFallbackGuard`) an engine refusal (`400`) of the REST

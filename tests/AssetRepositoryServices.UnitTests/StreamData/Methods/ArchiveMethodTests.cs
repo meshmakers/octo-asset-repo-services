@@ -270,7 +270,7 @@ public class ArchiveMethodTests
     }
 
     /// <summary>
-    ///     AB#9057: the REST facade of AddComputedColumn-1 passes every result type of the REST contract to the method by name
+    ///     the REST facade of AddComputedColumn-1 passes every result type of the REST contract to the method by name
     ///     and back unchanged; a number outside the enum stays that number, which the method refuses as a validation failure.
     /// </summary>
     [Fact]
@@ -291,7 +291,7 @@ public class ArchiveMethodTests
     }
 
     /// <summary>
-    ///     AB#9057: the job a retry or repair method answers reaches REST as the same <c>RecomputeJobInfoRestDto</c> the direct
+    ///     the job a retry or repair method answers reaches REST as the same <c>RecomputeJobInfoRestDto</c> the direct
     ///     call built from the engine snapshot; a result without a job is no job (the facade answers 204).
     /// </summary>
     [Fact]

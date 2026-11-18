@@ -94,7 +94,7 @@ internal static class ArchiveColumnChanges
     internal sealed record JobAnswer(RtRecomputeJobInfoRecord? Job);
 
     /// <summary>
-    ///     The CK result type of a REST <see cref="FormulaResultType" /> (AB#9057), by member name like
+    ///     The CK result type of a REST <see cref="FormulaResultType" />, by member name like
     ///     <see cref="ArchiveMethodSupport.TryToEngine{TEngine}" /> maps it back. A value outside the engine enum keeps its
     ///     number, so the method refuses it as <c>METHOD_VALIDATION_FAILED</c> on <c>resultType</c> instead of guessing.
     /// </summary>
@@ -106,7 +106,7 @@ internal static class ArchiveColumnChanges
 
     /// <summary>
     ///     The job a successful retry or repair answered (the <c>RecomputeJobInfo</c> record of the result), or <c>null</c> when
-    ///     the result holds none (AB#9057, the REST facade answers <c>204</c> then).
+    ///     the result holds none (the REST facade answers <c>204</c> then).
     /// </summary>
     public static RtRecomputeJobInfoRecord? JobOf(CkMethodResponse response)
     {

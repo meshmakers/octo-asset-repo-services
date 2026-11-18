@@ -35,7 +35,7 @@ public sealed record RecomputeJobInfoRestDto(
     /// <summary>
     ///     Maps the <c>RecomputeJobInfo</c> record a column method answers (<c>Archive.RetryComputedColumnBackfill-1</c>,
     ///     <c>Archive.RepairComputedColumn-1</c>) to the REST projection: the same fields as <see cref="From(RecomputeJobSnapshot)" />,
-    ///     because the record is built from that snapshot (AB#9057).
+    ///     because the record is built from that snapshot.
     /// </summary>
     public static RecomputeJobInfoRestDto From(RtRecomputeJobInfoRecord job) => new(
         job.JobRtId ?? string.Empty,

@@ -242,7 +242,7 @@ public class StreamDataController : ControllerBase
     /// its backfill as a background job (AB#8002): returns at once with the column in
     /// <c>Backfilling</c>; the job writes the existing rows outside this request — a client timeout
     /// cannot cancel it — and ends the column <c>Active</c> or <c>Failed</c>. Follow it with the
-    /// recompute-jobs endpoint of the archive. Facade of <c>System.StreamData/Archive.AddComputedColumn-1</c> (AB#9057).
+    /// recompute-jobs endpoint of the archive. Facade of <c>System.StreamData/Archive.AddComputedColumn-1</c>.
     /// </summary>
     [HttpPost("archives/{archiveRtId}/computed-columns")]
     [Microsoft.AspNetCore.Authorization.Authorize(AssetRepositoryServiceConstants.StreamDataAdministrationPolicy)]
@@ -264,8 +264,8 @@ public class StreamDataController : ControllerBase
     /// time-range archive without recreating it (AB#7997): the table gains a nullable column (existing rows keep their
     /// data and read NULL for it), then the archive definition names it, and the next ingested rows fill it. Idempotent:
     /// a path the archive already captures is a no-op. 400 when the archive is not Activated, is a rollup, the path
-    /// does not resolve or reaches a Hidden attribute (AB#6247). Facade of <c>System.StreamData/Archive.AddColumn-1</c>
-    /// (AB#9057).
+    /// does not resolve or reaches a Hidden attribute. Facade of <c>System.StreamData/Archive.AddColumn-1</c>
+    ///.
     /// </summary>
     [HttpPost("archives/{archiveRtId}/columns")]
     [Microsoft.AspNetCore.Authorization.Authorize(AssetRepositoryServiceConstants.StreamDataAdministrationPolicy)]
@@ -278,7 +278,7 @@ public class StreamDataController : ControllerBase
     /// <summary>
     /// Removes a computed column from an archive (AB#4189 Phase 7). Rejected when another computed
     /// column still references it; the physical CrateDB column is left as a harmless orphan. Facade of
-    /// <c>System.StreamData/Archive.RemoveComputedColumn-1</c> (AB#9057).
+    /// <c>System.StreamData/Archive.RemoveComputedColumn-1</c>.
     /// </summary>
     [HttpDelete("archives/{archiveRtId}/computed-columns/{name}")]
     [Microsoft.AspNetCore.Authorization.Authorize(AssetRepositoryServiceConstants.StreamDataAdministrationPolicy)]
@@ -294,7 +294,7 @@ public class StreamDataController : ControllerBase
     /// backfilled, then switch atomically. The backfill runs as a background job (AB#8002); the call
     /// returns once it is queued. Rejected when another computed column references this one, or
     /// while a backfill of the column is still queued or running. Facade of
-    /// <c>System.StreamData/Archive.UpdateComputedColumnFormula-1</c> (AB#9057).
+    /// <c>System.StreamData/Archive.UpdateComputedColumnFormula-1</c>.
     /// </summary>
     [HttpPut("archives/{archiveRtId}/computed-columns/{name}")]
     [Microsoft.AspNetCore.Authorization.Authorize(AssetRepositoryServiceConstants.StreamDataAdministrationPolicy)]
@@ -312,7 +312,7 @@ public class StreamDataController : ControllerBase
     /// <c>Failed</c>, or that is stuck in <c>Pending</c> / <c>Backfilling</c> without a running job —
     /// without removing and re-adding it. Returns the queued job; poll it via the recompute-jobs
     /// endpoint. 400 when the column is Active (nothing to retry) or does not exist. Facade of
-    /// <c>System.StreamData/Archive.RetryComputedColumnBackfill-1</c> (AB#9057).
+    /// <c>System.StreamData/Archive.RetryComputedColumnBackfill-1</c>.
     /// </summary>
     [HttpPost("archives/{archiveRtId}/computed-columns/{name}/retry")]
     [Microsoft.AspNetCore.Authorization.Authorize(AssetRepositoryServiceConstants.StreamDataAdministrationPolicy)]
@@ -329,7 +329,7 @@ public class StreamDataController : ControllerBase
     /// the results; the column stays Active. <paramref name="from"/> defaults to the first row,
     /// <paramref name="to"/> to now. Returns the queued job (an already queued repair is returned as is); poll it
     /// via the recompute-jobs endpoint. 400 when the column is not Active or does not exist. Facade of
-    /// <c>System.StreamData/Archive.RepairComputedColumn-1</c> (AB#9057).
+    /// <c>System.StreamData/Archive.RepairComputedColumn-1</c>.
     /// </summary>
     [HttpPost("archives/{archiveRtId}/computed-columns/{name}/repair")]
     [Microsoft.AspNetCore.Authorization.Authorize(AssetRepositoryServiceConstants.StreamDataAdministrationPolicy)]
@@ -1325,9 +1325,9 @@ public class StreamDataController : ControllerBase
 
     /// <summary>
     ///     REST facade of a column method that answers a transition: <c>Archive.AddComputedColumn-1</c>, <c>AddColumn-1</c>,
-    ///     <c>RemoveComputedColumn-1</c>, <c>UpdateComputedColumnFormula-1</c> (AB#9057). See
+    ///     <c>RemoveComputedColumn-1</c>, <c>UpdateComputedColumnFormula-1</c>. See
     ///     <see cref="InvokeLifecycleMethodAsync{TParameters}" />. The call runs under the host's stopping token, as the direct
-    ///     call always did (AB#8002): a client that disconnects does not cancel it. The direct call of the fallback refuses an
+    ///     call always did: a client that disconnects does not cancel it. The direct call of the fallback refuses an
     ///     unknown computed column as the method does (<see cref="ArchiveColumnChanges.RefusingUnknownColumnsAsync{T}" />,
     ///     <c>400</c> with the engine message instead of an unhandled <c>500</c>).
     /// </summary>
@@ -1345,7 +1345,7 @@ public class StreamDataController : ControllerBase
 
     /// <summary>
     ///     <c>retry</c> and <c>repair</c> of a computed column as facades of <c>Archive.RetryComputedColumnBackfill-1</c> and
-    ///     <c>Archive.RepairComputedColumn-1</c> (AB#9057): route, body and status codes stay as they were - the queued job as
+    ///     <c>Archive.RepairComputedColumn-1</c>: route, body and status codes stay as they were - the queued job as
     ///     <see cref="RecomputeJobInfoRestDto" /> (<c>200</c>), <c>204</c> when the call answers no job, <c>400</c> with the
     ///     engine message for a refusal (<see cref="LifecycleFacadeOptions" />). The job is the one the method answers
     ///     (<see cref="ColumnJobAnswer" />), not read again. The call goes through <see cref="IArchiveMethodFacade" /> (gateway,

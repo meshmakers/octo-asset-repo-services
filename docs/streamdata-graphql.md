@@ -189,7 +189,7 @@ method row in `ArchiveMethodHost`.
   computed column in update, retry or repair, which the engine refuses with a plain `InvalidOperationException` (the
   mutations answer their generic error), is `STREAMDATA_ERROR` with the engine message (`ArchiveColumnChanges.RefusingUnknownColumnsAsync`), not the
   undeclared `METHOD_HANDLER_FAILED`. The shared helpers log the invocation id and the error code, never the target id or the
-  engine message. The six REST column endpoints are facades of these methods (AB#9057, parity table in
+  engine message. The six REST column endpoints are facades of these methods (parity table in
   `docs/stream-data-management.md`); `ArchiveColumnChanges.ResultTypeOf` maps the REST `FormulaResultType` to the CK enum and
   `ArchiveColumnChanges.JobOf` reads the job of a retry or repair result for the REST answer.
 - **Hidden columns: reason, readable history, redaction (System.StreamData 1.27.0).** When a CK model change makes an

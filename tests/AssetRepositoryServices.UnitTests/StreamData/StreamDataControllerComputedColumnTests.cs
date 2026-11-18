@@ -1,11 +1,15 @@
+using System.Security.Claims;
 using FakeItEasy;
 using FluentAssertions;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.StreamData.Controllers;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.StreamData.Methods;
 using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.Runtime.Contracts.Formulas;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb;
 using Meshmakers.Octo.Runtime.Contracts.StreamData;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Xunit;
@@ -15,7 +19,8 @@ namespace AssetRepositoryServices.UnitTests.StreamData;
 /// <summary>
 ///     AB#8002: the computed-column REST endpoints queue the backfill instead of running it inside the request — they call
 ///     the engine's Enqueue methods with the host's stopping token (never the request's) and never the inline variants —
-///     and the retry endpoint returns the queued job.
+///     and the retry endpoint returns the queued job. No method facade is registered here, so the endpoints take the
+///     fallback: the direct call behind the fallback guard (a pass-through stand-in that records the method id).
 /// </summary>
 public class StreamDataControllerComputedColumnTests
 {
@@ -35,8 +40,21 @@ public class StreamDataControllerComputedColumnTests
         var lifetime = A.Fake<IHostApplicationLifetime>();
         A.CallTo(() => lifetime.ApplicationStopping).Returns(_stopping.Token);
 
-        _controller = new StreamDataController(A.Fake<ILogger<StreamDataController>>(), systemContext, lifetime);
+        _controller = new StreamDataController(A.Fake<ILogger<StreamDataController>>(), systemContext, lifetime)
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = new DefaultHttpContext
+                {
+                    RequestServices = new ServiceCollection()
+                        .AddSingleton<IArchiveMethodFallbackGuard>(_guard)
+                        .BuildServiceProvider()
+                }
+            }
+        };
     }
+
+    private readonly PassThroughGuard _guard = new();
 
     private static RecomputeJobSnapshot Queued(string column) =>
         RecomputeJobSnapshot.ForComputedColumn(Archive, column, RecomputeJobState.Pending, RecomputeTrigger.Manual,
@@ -114,6 +132,9 @@ public class StreamDataControllerComputedColumnTests
             .Value.Should().BeOfType<RecomputeJobInfoRestDto>().Subject;
         job.State.Should().Be("Pending");
         job.ComputedColumnName.Should().Be("ExportPower");
+        _guard.MethodIds.Should().Equal(
+            Meshmakers.Octo.ConstructionKit.Models.StreamData.Generated.System.StreamData.v1.SystemStreamDataCkIds
+                .ArchiveRetryComputedColumnBackfillMethodId);
     }
 
     [Fact]
@@ -136,5 +157,19 @@ public class StreamDataControllerComputedColumnTests
         var result = await _controller.RetryComputedColumnBackfill(TenantId, Archive.ToString(), "Nope");
 
         result.Result.Should().BeOfType<BadRequestObjectResult>();
+    }
+
+    /// <summary>The fallback guard as a pass-through: runs the direct call and records the method id it stands for.</summary>
+    private sealed class PassThroughGuard : IArchiveMethodFallbackGuard
+    {
+        public List<string> MethodIds { get; } = [];
+
+        public async Task<ArchiveMethodFallbackResult<T>> InvokeAsync<T>(ITenantContext tenant, string ckTypeId,
+            string methodId, string operation, OctoObjectId targetRtId, ClaimsPrincipal user, Func<Task<T>> direct,
+            ArchiveMethodFallbackReason? reason = null, CancellationToken cancellationToken = default)
+        {
+            MethodIds.Add(methodId);
+            return new ArchiveMethodFallbackResult<T>(null, await direct());
+        }
     }
 }

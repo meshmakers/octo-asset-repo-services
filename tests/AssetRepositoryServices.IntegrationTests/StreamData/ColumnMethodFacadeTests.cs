@@ -27,11 +27,11 @@ using Xunit;
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.StreamData;
 
 /// <summary>
-///     AB#9057: the six REST column and computed-column endpoints of <see cref="StreamDataController" /> are facades of the
-///     Archive column methods of AB#8600, against the real host (MongoDB, CrateDB, gateway, in-process handlers). Per
+///     the six REST column and computed-column endpoints of <see cref="StreamDataController" /> are facades of the
+///     Archive column methods, against the real host (MongoDB, CrateDB, gateway, in-process handlers). Per
 ///     endpoint: the method's change with the REST answer of before (<c>204</c>, or the queued job for retry and repair) and
 ///     exactly one Method audit event; the handler starts without the request session; a Hidden attribute is refused as
-///     before (AB#6247); a token of another tenant and a caller without <c>StreamDataAdmin</c> are refused with <c>403</c>
+///     before; a token of another tenant and a caller without <c>StreamDataAdmin</c> are refused with <c>403</c>
 ///     and change nothing, on the method path and on the fallback; with the switch off every endpoint keeps its direct call
 ///     behind the fallback guard.
 /// </summary>
@@ -127,7 +127,7 @@ public class ColumnMethodFacadeTests
         }
     }
 
-    // ── Hidden attribute (AB#6247), refusals with the message of before ─────────────────────────
+    // ── Hidden attribute, refusals with the message of before ──────────────────────────────────
 
     [Fact]
     public async Task AHiddenAttribute_IsRefusedAsBefore_400WithTheEngineMessage_OnTheMethodAndTheFallback()
@@ -180,7 +180,7 @@ public class ColumnMethodFacadeTests
     [Fact]
     public async Task AnUnknownComputedColumn_Is400WithTheEngineMessage_OnEveryChangingEndpoint_OnBothPaths()
     {
-        // behaviour change of AB#9057 (CHANGELOG): update and remove of an unknown column answered an unhandled 500 before;
+        // behaviour change (CHANGELOG): update of an unknown column answered an unhandled 500 before;
         // the method refuses it as STREAMDATA_ERROR, so REST answers 400 with the engine message on both paths
         var archive = await CreateRawArchiveAsync("UnknownCol", activate: true);
         foreach (var services in new IServiceProvider?[] { null, SwitchedOff() })
