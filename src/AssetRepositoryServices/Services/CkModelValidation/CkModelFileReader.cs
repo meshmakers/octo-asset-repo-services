@@ -38,8 +38,10 @@ internal static class CkModelFileReader
                     throw new InvalidOperationException("The zip archive contains no .json or .yaml CK model file.");
                 }
 
-                await using var entryStream = entry.Open();
-                model = await ckSerializer.DeserializeCompiledModelRootAsync(entryStream, entry.Name, operationResult);
+                // Buffered: the serializer rewinds the stream after the schema validation, which a zip entry
+                // stream does not support (it answered every zip upload with a NotSupportedException before AB#9293).
+                using var entryBuffer = await BufferEntryAsync(entry);
+                model = await ckSerializer.DeserializeCompiledModelRootAsync(entryBuffer, entry.Name, operationResult);
             }
             else
             {
@@ -59,5 +61,107 @@ internal static class CkModelFileReader
         }
 
         return model;
+    }
+
+    /// <summary>
+    ///     AB#9293: the model ids of <b>every</b> CK model entry of a zip upload (extension <c>.json</c>, <c>.yaml</c> or
+    ///     <c>.yml</c>, any casing), not only the entry this reader and bot-services pick. The import refusal of
+    ///     service-managed models checks all of them, so a different entry choice in the importing job (bot-services
+    ///     picks the first <c>.yaml</c> entry when the zip holds no <c>.json</c> entry) can never import an entry the
+    ///     refusal did not see. An entry that cannot be read as a compiled model is skipped: the same serializer cannot
+    ///     import it either. A stream that is no readable zip yields no ids (the regular read reports that).
+    /// </summary>
+    public static async Task<IReadOnlyList<CkModelId>> ReadZipEntryModelIdsAsync(ICkSerializer ckSerializer,
+        byte[] upload)
+    {
+        var ids = new List<CkModelId>();
+        ZipArchive archive;
+        try
+        {
+            archive = new ZipArchive(new MemoryStream(upload, writable: false));
+        }
+        catch (InvalidDataException)
+        {
+            return ids;
+        }
+
+        using (archive)
+        {
+            // Bounded like a source zip of ValidateCk: the scan unpacks more than one entry, so a zip bomb must not
+            // reach memory. Too many entries or too many bytes refuse the upload (fail closed, 400).
+            if (archive.Entries.Count > CkModelDraftValidator.MaxZipEntries)
+            {
+                throw new InvalidOperationException(
+                    $"The zip archive has more than {CkModelDraftValidator.MaxZipEntries} entries.");
+            }
+
+            var budget = CkModelDraftValidator.MaxUnpackedBytes;
+            foreach (var entry in archive.Entries.Where(e => IsModelEntry(e.Name)))
+            {
+                MemoryStream buffer;
+                try
+                {
+                    buffer = await BufferEntryAsync(entry, budget);
+                }
+                catch (InvalidDataException e)
+                {
+                    // A corrupt entry is refused, not skipped (fail closed).
+                    throw new InvalidOperationException($"The zip entry '{entry.Name}' cannot be unpacked: {e.Message}");
+                }
+
+                await using var ownedBuffer = buffer;
+                budget -= buffer.Length;
+                try
+                {
+                    var model = await ckSerializer.DeserializeCompiledModelRootAsync(buffer, entry.Name,
+                        new OperationResult());
+                    if (model?.ModelId != null)
+                    {
+                        ids.Add(model.ModelId);
+                    }
+                }
+                catch (Exception e) when (e is not OutOfMemoryException)
+                {
+                    // Not a readable compiled model: nothing to import from this entry.
+                }
+            }
+        }
+
+        return ids;
+    }
+
+    /// <summary>
+    ///     Unpacks one entry into memory, at most <paramref name="maxBytes" /> bytes (counted while reading, the declared
+    ///     length of an entry is not trusted).
+    /// </summary>
+    private static async Task<MemoryStream> BufferEntryAsync(ZipArchiveEntry entry,
+        long maxBytes = CkModelDraftValidator.MaxUnpackedBytes)
+    {
+        await using var entryStream = entry.Open();
+        var buffer = new MemoryStream();
+        var chunk = new byte[81920];
+        int read;
+        while ((read = await entryStream.ReadAsync(chunk)) > 0)
+        {
+            if (buffer.Length + read > maxBytes)
+            {
+                await buffer.DisposeAsync();
+                throw new InvalidOperationException(
+                    $"The zip archive unpacks to more than {CkModelDraftValidator.MaxUnpackedBytes / (1024 * 1024)} MB.");
+            }
+
+            buffer.Write(chunk, 0, read);
+        }
+
+        buffer.Position = 0;
+        return buffer;
+    }
+
+    private static bool IsModelEntry(string entryName)
+    {
+        var extension = Path.GetExtension(entryName);
+        return extension.Equals(".json", StringComparison.OrdinalIgnoreCase) ||
+               extension.Equals(".yaml", StringComparison.OrdinalIgnoreCase) ||
+               extension.Equals(".yml", StringComparison.OrdinalIgnoreCase);
     }
 }
