@@ -52,6 +52,12 @@ internal static class CkModelFileReader
         {
             throw new InvalidOperationException($"The file '{fileName}' is not a readable CK model archive: {e.Message}");
         }
+        catch (Exception e) when (e is not InvalidOperationException and not OutOfMemoryException)
+        {
+            // The serializer throws on a schema or parse error; that is an unreadable upload (400), not a fault (500).
+            throw new InvalidOperationException(
+                $"The file '{fileName}' cannot be read as a compiled CK model: {e.Message}");
+        }
 
         if (model == null || operationResult.HasErrors || operationResult.HasFatalErrors)
         {
@@ -68,8 +74,9 @@ internal static class CkModelFileReader
     ///     <c>.yml</c>, any casing), not only the entry this reader and bot-services pick. The import refusal of
     ///     service-managed models checks all of them, so a different entry choice in the importing job (bot-services
     ///     picks the first <c>.yaml</c> entry when the zip holds no <c>.json</c> entry) can never import an entry the
-    ///     refusal did not see. An entry that cannot be read as a compiled model is skipped: the same serializer cannot
-    ///     import it either. A stream that is no readable zip yields no ids (the regular read reports that).
+    ///     refusal did not see. A model entry that cannot be unpacked or read as a compiled model refuses the upload
+    ///     (<see cref="InvalidOperationException" />, a 400; fail closed). A stream that is no readable zip yields no ids
+    ///     (the regular read reports that).
     /// </summary>
     public static async Task<IReadOnlyList<CkModelId>> ReadZipEntryModelIdsAsync(ICkSerializer ckSerializer,
         byte[] upload)
@@ -111,19 +118,28 @@ internal static class CkModelFileReader
 
                 await using var ownedBuffer = buffer;
                 budget -= buffer.Length;
+                // Fail closed: a model entry this service cannot read is refused, not skipped, so an importer that
+                // reads it differently (another engine version during a rolling update) never gets an entry the
+                // check did not judge.
+                CkCompiledModelRoot? model;
                 try
                 {
-                    var model = await ckSerializer.DeserializeCompiledModelRootAsync(buffer, entry.Name,
+                    model = await ckSerializer.DeserializeCompiledModelRootAsync(buffer, entry.Name,
                         new OperationResult());
-                    if (model?.ModelId != null)
-                    {
-                        ids.Add(model.ModelId);
-                    }
                 }
                 catch (Exception e) when (e is not OutOfMemoryException)
                 {
-                    // Not a readable compiled model: nothing to import from this entry.
+                    throw new InvalidOperationException(
+                        $"The zip entry '{entry.Name}' cannot be read as a compiled CK model: {e.Message}");
                 }
+
+                if (model?.ModelId == null)
+                {
+                    throw new InvalidOperationException(
+                        $"The zip entry '{entry.Name}' cannot be read as a compiled CK model.");
+                }
+
+                ids.Add(model.ModelId);
             }
         }
 

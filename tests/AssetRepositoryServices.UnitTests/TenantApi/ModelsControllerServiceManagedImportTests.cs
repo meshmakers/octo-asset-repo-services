@@ -319,6 +319,42 @@ public class ModelsControllerServiceManagedImportTests
         CkModelFileReader.LooksLikeZip([]).Should().BeFalse();
     }
 
+    [Theory]
+    [InlineData("b-broken.yaml")]
+    [InlineData("b-broken.JSON")]
+    public async Task ImportCk_ZipWithAModelEntryThisServiceCannotRead_IsRefusedWith400_NotSkipped(string brokenEntry)
+    {
+        // Fail closed: an importer with another engine version might read the entry; it is never passed on unjudged.
+        var zip = Zip(("a-basic.yaml", CompiledModel("Basic-2.6.0")), (brokenEntry, "modelId: [not, a, model"));
+
+        var result = await _controller.ImportCk(Upload(zip, "models.zip", "application/zip"));
+
+        result.Should().BeOfType<BadRequestObjectResult>();
+        NothingMayHaveBeenCachedQueuedOrWritten();
+    }
+
+    [Fact]
+    public async Task ImportCk_ZipWithACorruptModelEntry_IsRefusedWith400()
+    {
+        var zip = Zip(("a-basic.yaml", CompiledModel("Basic-2.6.0")),
+            ("b-system.yaml", CompiledModel("System.Identity-3.7.0", description: new string('x', 4000))));
+        // Damage the compressed data of the second entry (its local header is the second "PK\x03\x04").
+        var second = Enumerable.Range(4, zip.Length - 4).First(i =>
+            zip[i] == 0x50 && zip[i + 1] == 0x4B && zip[i + 2] == 0x03 && zip[i + 3] == 0x04);
+        var nameLength = zip[second + 26] | (zip[second + 27] << 8);
+        var extraLength = zip[second + 28] | (zip[second + 29] << 8);
+        var data = second + 30 + nameLength + extraLength;
+        for (var i = data + 2; i < data + 12; i++)
+        {
+            zip[i] ^= 0xFF;
+        }
+
+        var result = await _controller.ImportCk(Upload(zip, "models.zip", "application/zip"));
+
+        result.Should().BeOfType<BadRequestObjectResult>();
+        NothingMayHaveBeenCachedQueuedOrWritten();
+    }
+
     [Fact]
     public async Task ImportCk_ZipWhoseEntriesUnpackBeyondTheLimit_IsRefusedWith400_AndNothingIsCached()
     {

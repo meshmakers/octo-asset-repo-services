@@ -12,7 +12,8 @@
   write-channel restriction of AB#9291) or downgrade it explicitly; that was a bug. Service-managed models reach a tenant only
   through the services' embedded import (recovery: `ClearCache` / `ReRunTenantSetup`), blueprint and system import and tenant
   restore. Also fixed: a zip upload to `ImportCk` / `ValidateCk` was answered with 500 by the real serializer (the zip entry
-  stream cannot be rewound); entries are buffered now.
+  stream cannot be rewound); entries are buffered now. A file or zip entry that cannot be read as a compiled model is a `400`
+  (was a `500` with the real serializer), and a zip model entry that cannot be read refuses the upload instead of being skipped.
 - New: `System.StreamData/Archive.RedactHiddenColumns-2` (System.StreamData 1.29.0, GraphQL field `redactHiddenColumns2`), the
   redaction of Hidden archive columns with the columns the administrator confirmed: required `expectedColumns`; when the Hidden
   columns at execution time are not exactly that set, the call answers `STREAMDATA_REDACTION_COLUMNS_CHANGED` (parameters

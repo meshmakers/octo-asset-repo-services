@@ -1120,11 +1120,6 @@ public class ModelsController : ControllerBase
         return key;
     }
 
-    /// <summary>
-    ///     AB#6966: reads the uploaded file the way the import job does (json or yaml; a zip is opened for its .json,
-    ///     else its .yaml) so that the upgrade guard judges exactly what would be imported. Throws
-    ///     <see cref="InvalidOperationException" /> (a 400) when the file cannot be read as a compiled CK model.
-    /// </summary>
     /// <summary>Reads the upload once; every later step (refusal, upgrade guard, cache) uses these bytes.</summary>
     private static async Task<byte[]> ReadUploadAsync(IFormFile? file)
     {
@@ -1144,6 +1139,11 @@ public class ModelsController : ControllerBase
         return buffer.ToArray();
     }
 
+    /// <summary>
+    ///     Reads the uploaded file the way the import job does (json or yaml; a zip is opened for its .json, else its
+    ///     .yaml) so that the upgrade guard judges exactly what would be imported. Throws
+    ///     <see cref="InvalidOperationException" /> (a 400) when the file cannot be read as a compiled CK model.
+    /// </summary>
     private async Task<CkCompiledModelRoot> ReadCompiledModelAsync(IFormFile file, byte[] upload) =>
         await CkModelFileReader.ReadCompiledModelAsync(_ckSerializer, new MemoryStream(upload, writable: false),
             file.FileName, CkModelFileReader.IsZip(file.ContentType));
