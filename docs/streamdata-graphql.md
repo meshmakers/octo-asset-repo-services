@@ -123,7 +123,12 @@ working unchanged; each is replaced by a method of System.StreamData 1.24.0, cal
 **Lifecycle and rollup mutations are method facades.** The eight lifecycle and rollup mutations keep their role check and
 call their method through `IArchiveMethodFacade` (as the REST endpoints, `docs/stream-data-management.md`); the answer keeps the
 mutation's shape and `STREAMDATA_*` codes (`METHOD_TARGET_NOT_FOUND` becomes `STREAMDATA_ARCHIVE_NOT_FOUND`), new refusals are
-the method's `METHOD_FORBIDDEN`. With `Methods:StreamData:Enabled=false`, or in a tenant whose CK model does not declare the method, they keep the direct call.
+the method's `METHOD_FORBIDDEN`. With `Methods:StreamData:Enabled=false`, or in a tenant whose CK model does not declare the method, they keep the direct call
+behind the fallback guard (AB#9337, `docs/stream-data-management.md`, "The fallback guard"): the caller-tenant and data-permission checks of the
+method path with the same `METHOD_FORBIDDEN` errors, one audit event (transport `fallback`) and one WARN line per call. `recomputeArchive` and
+`backfillRollupFromSource` are no facade of a method and always call the service directly, always behind the same guard (reason `not-routed`):
+**new refusals** there are a token of another tenant (`METHOD_FORBIDDEN` / `tenant-not-allowed`) and a data permission that refuses the rollup
+(`METHOD_FORBIDDEN` / `data-permission`, or `STREAMDATA_ARCHIVE_NOT_FOUND` for a rollup the caller cannot see).
 
 Since System.StreamData 1.28.0 (AB#8600) **every** field of `StreamDataMutations` is deprecated with its method id. The unit test
 `ArchiveMethodTests.EveryStreamDataMutation_IsDeprecated_WithTheMethodThatReplacesIt` fails for a new streamData mutation without a

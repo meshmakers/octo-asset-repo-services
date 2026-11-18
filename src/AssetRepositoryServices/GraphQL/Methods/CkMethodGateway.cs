@@ -183,34 +183,36 @@ internal sealed class CkMethodGateway(
         // call (the exception surfaces), it never lets it pass.
         var dataAccess = CkMethodAuthorization.Resolve(definition!.Authorization);
         var access = await targetAccess(dataAccess, cancellationToken).ConfigureAwait(false);
-        switch (access.Outcome)
+        // AB#9337: the answer is the shared rule (CkMethodCallChecks), the same the archive fallback guard applies
+        var dataRefusal = CkMethodCallChecks.RefusalOf(access, call.MethodId, call.TargetRtId != null);
+        if (dataRefusal == null)
         {
-            case CkMethodTargetAccessOutcome.Allowed:
-                if (access.AuditOnlyViolation)
-                {
-                    // AuditOnly policy: the call passes and the signal is logged (method and action only, never the target).
-                    logger.LogInformation(
-                        "CK method {MethodId} invocation {InvocationId} in tenant {TenantId}: data permission would refuse {DataAccess} access (audit only)",
-                        call.MethodId, invocationId, call.TenantId, dataAccess);
-                }
-
-                break;
-            case CkMethodTargetAccessOutcome.NotVisible when call.TargetRtId != null:
+            if (access.AuditOnlyViolation)
+            {
+                // AuditOnly policy: the call passes and the signal is logged (method and action only, never the target).
+                logger.LogInformation(
+                    "CK method {MethodId} invocation {InvocationId} in tenant {TenantId}: data permission would refuse {DataAccess} access (audit only)",
+                    call.MethodId, invocationId, call.TenantId, dataAccess);
+            }
+        }
+        else
+        {
+            if (dataRefusal.Code == CkMethodErrorCodes.MethodTargetNotFound)
+            {
                 logger.LogInformation(
                     "CK method {MethodId} invocation {InvocationId} in tenant {TenantId}: target not found",
                     call.MethodId, invocationId, call.TenantId);
-                return await RefuseAsync(call, invocationId, principal, started,
-                    CkMethodResponse.Failed(invocationId, string.Empty,
-                        CkMethodError.Create(CkMethodErrorCodes.MethodTargetNotFound,
-                            (CkMethodErrorParameters.MethodId, call.MethodId)))).ConfigureAwait(false);
-            default:
+            }
+            else
+            {
                 // NotPermitted, or a static method whose declaring type the caller cannot read at all.
                 logger.LogInformation(
                     "CK method {MethodId} invocation {InvocationId} refused by a data permission in tenant {TenantId} ({DataAccess})",
                     call.MethodId, invocationId, call.TenantId, dataAccess);
-                return await RefuseAsync(call, invocationId, principal, started,
-                    CkMethodResponse.Failed(invocationId, string.Empty, CkMethodDataPermissionErrors.Forbidden(call.MethodId)))
-                    .ConfigureAwait(false);
+            }
+
+            return await RefuseAsync(call, invocationId, principal, started,
+                CkMethodResponse.Failed(invocationId, string.Empty, dataRefusal)).ConfigureAwait(false);
         }
 
         // 3. validate the parameters against the declaration. After authorization and the target lookup, so a caller who
@@ -273,37 +275,11 @@ internal sealed class CkMethodGateway(
     ///     Writes the gateway event with the given outcome and never lets a failing recorder change what the caller gets
     ///     (the refusal, or the exception of a fault).
     /// </summary>
-    private async Task RecordAsync(CkMethodGatewayCall call, Guid invocationId, CkMethodPrincipal? principal, long started,
-        string outcome)
-    {
-        var record = new CkMethodAuditRecord
-        {
-            TenantId = call.TenantId,
-            InvocationId = invocationId,
-            MethodId = call.MethodId,
-            CkTypeId = call.CkTypeId,
-            TargetRtId = call.TargetRtId,
-            Transport = CkMethodAuditRecord.GatewayTransport,
-            Outcome = outcome,
-            CallerSubject = principal?.SubjectId ?? call.User.FindFirst("client_id")?.Value,
-            CallerName = call.User.FindFirst("name")?.Value,
-            Duration = Stopwatch.GetElapsedTime(started)
-        };
-        try
-        {
-            await auditRecorder.RecordAsync(record, CancellationToken.None).ConfigureAwait(false);
-        }
-        catch (CkMethodAuditFailedException)
-        {
-            // logged and counted by the recorder; the call did not run, so it stays the refusal (or the fault) it was
-        }
-        catch (Exception e)
-        {
-            // a custom recorder must not turn a refusal into a fault
-            logger.LogError(e, "CK method {MethodId} invocation {InvocationId}: the audit recorder threw", call.MethodId,
-                invocationId);
-        }
-    }
+    private Task RecordAsync(CkMethodGatewayCall call, Guid invocationId, CkMethodPrincipal? principal, long started,
+        string outcome) =>
+        CkMethodCallChecks.RecordAsync(auditRecorder, logger, CkMethodCallChecks.RecordOf(call.TenantId, invocationId,
+            call.MethodId, call.CkTypeId, call.TargetRtId, CkMethodAuditRecord.GatewayTransport, outcome, principal,
+            call.User, Stopwatch.GetElapsedTime(started)));
 
     /// <summary>Whether the call has reached the dispatcher (from then on the pipeline and the dispatcher audit it).</summary>
     private sealed class DispatchState

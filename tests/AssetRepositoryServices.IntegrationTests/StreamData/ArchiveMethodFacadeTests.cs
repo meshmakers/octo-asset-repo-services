@@ -305,7 +305,9 @@ public class ArchiveMethodFacadeTests
         (await RollupAsync(rollup)).FrozenUntil.Should().Be(Until);
         A.CallTo(notHosted).Where(call => call.Method.Name == nameof(IArchiveMethodFacade.InvokeAsync))
             .MustNotHaveHappened();
-        _fixture.AuditEvents.Should().BeEmpty("no method ran");
+        // AB#9337: no method ran; every direct call wrote exactly one event of the fallback guard
+        _fixture.AuditEvents.Should().HaveCount(3).And.OnlyContain(e =>
+            e.Transport == ArchiveMethodFallbackGuard.Transport && e.Outcome == CkMethodAuditOutcomes.Success);
     }
 
     [Fact]
@@ -344,7 +346,9 @@ public class ArchiveMethodFacadeTests
         (await SnapshotAsync(viaRest))!.Status.Should().Be(CkArchiveStatus.Activated);
         (await SnapshotAsync(viaMutation))!.Status.Should().Be(CkArchiveStatus.Activated);
         (await RollupAsync(rollup)).FrozenUntil.Should().Be(Until);
-        _fixture.AuditEvents.Should().BeEmpty("no method ran");
+        // AB#9337: no method ran; every direct call wrote exactly one event of the fallback guard
+        _fixture.AuditEvents.Should().HaveCount(3).And.OnlyContain(e =>
+            e.Transport == ArchiveMethodFallbackGuard.Transport && e.Outcome == CkMethodAuditOutcomes.Success);
 
         // the real definition source of this host knows the methods: the facade serves them
         _fixture.GetService<IArchiveMethodFacade>().CanServe(await TenantAsync(), ArchiveMethodFacade.RollupArchiveCkTypeId,

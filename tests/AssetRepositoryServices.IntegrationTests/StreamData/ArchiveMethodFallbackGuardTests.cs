@@ -1,0 +1,445 @@
+using System.Security.Claims;
+using FakeItEasy;
+using FluentAssertions;
+using GraphQL;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.RequestHandling;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Utils;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Collections;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Fixtures;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.StreamData.Controllers;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.StreamData.Methods;
+using Meshmakers.Octo.Communication.Contracts;
+using Meshmakers.Octo.ConstructionKit.Contracts;
+using Meshmakers.Octo.ConstructionKit.Models.StreamData.Generated.System.StreamData.v1;
+using Meshmakers.Octo.Runtime.Contracts;
+using Meshmakers.Octo.Runtime.Contracts.DataPermissions;
+using Meshmakers.Octo.Runtime.Contracts.MongoDb;
+using Meshmakers.Octo.Runtime.Contracts.RepositoryEntities;
+using Meshmakers.Octo.Runtime.Contracts.Repositories;
+using Meshmakers.Octo.Runtime.Contracts.StreamData;
+using Meshmakers.Octo.Services.Contracts.DistributionEventHub.Methods;
+using Meshmakers.Octo.Services.Methods.Audit;
+using Meshmakers.Octo.Services.Methods.Authorization;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
+using Newtonsoft.Json.Linq;
+using Xunit;
+
+namespace Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.StreamData;
+
+/// <summary>
+///     AB#9337: every archive call that does not run through its CK method - the REST lifecycle, rollup, recompute and backfill
+///     endpoints and the deprecated mutations while <see cref="IArchiveMethodFacade.CanServe" /> is false, and the
+///     <c>recomputeArchive</c> / <c>backfillRollupFromSource</c> mutations always - runs behind
+///     <see cref="IArchiveMethodFallbackGuard" />: a token of another tenant and a caller without data permission on the archive
+///     are refused with the answer of the method path and change nothing, every call writes exactly one Method audit event
+///     (transport <c>fallback</c>, also for a refusal) and one WARN line without the target id; an authorised caller keeps the
+///     old answer. The controller is called without the HTTP tenant gate, i.e. as if the gate ran in LogOnly mode.
+/// </summary>
+[Collection(ArchiveMethodFacadeCollection.Name)]
+public class ArchiveMethodFallbackGuardTests
+{
+    private static readonly DateTime Until = new(2026, 3, 1, 0, 0, 0, DateTimeKind.Utc);
+    private static readonly DateTime From = new(2026, 3, 1, 0, 0, 0, DateTimeKind.Utc);
+
+    private readonly ArchiveMethodFacadeFixture _fixture;
+
+    public ArchiveMethodFallbackGuardTests(ArchiveMethodFacadeFixture fixture, ITestOutputHelper output)
+    {
+        _fixture = fixture;
+        _fixture.OutputHelper = output;
+    }
+
+    // ── REST on the fallback ──────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task OnTheFallback_ATokenOfAnotherTenant_IsRefusedOnEveryRestEndpoint_403TenantNotAllowed_AndNothingChanges()
+    {
+        var foreignAdmin = UserOf("some-other-tenant", CommonConstants.StreamDataAdminRole);
+        await AssertEveryRestEndpointRefusedAsync(foreignAdmin, Fallback(), CkMethodTokenReasons.TenantNotAllowed);
+    }
+
+    [Fact]
+    public async Task OnTheFallback_ACallerWithoutDataPermissionOnTheArchive_IsRefusedOnEveryRestEndpoint_AndNothingChanges()
+    {
+        await AssertEveryRestEndpointRefusedAsync(Admin(), Fallback(DenyingEvaluator()), "data-permission");
+    }
+
+    [Fact]
+    public async Task OnTheFallback_AnAuthorisedCaller_Gets204_WithExactlyOneFallbackAuditEvent_AndOneWarnLineWithoutTheTarget()
+    {
+        var archive = await CreateRawArchiveAsync("FbOk");
+        var rollup = await CreateRollupAsync("FbOkRollup");
+        var log = new CapturingLogger();
+        var services = Fallback(logger: log);
+
+        await ExpectOneFallbackEventAsync(SystemStreamDataCkIds.ArchiveActivateMethodId, CkMethodAuditOutcomes.Success,
+            async () => (await Controller(Admin(), services).ActivateArchive(Tenant, $"{archive}"))
+                .Should().BeOfType<NoContentResult>());
+        await ExpectOneFallbackEventAsync(SystemStreamDataCkIds.RollupArchiveFreezeMethodId, CkMethodAuditOutcomes.Success,
+            async () => (await Controller(Admin(), services).FreezeRollupArchive(Tenant, $"{rollup}", Until))
+                .Should().BeOfType<NoContentResult>());
+
+        (await SnapshotAsync(archive))!.Status.Should().Be(CkArchiveStatus.Activated);
+        (await RollupAsync(rollup)).FrozenUntil.Should().Be(Until);
+
+        var warnings = log.Entries.Where(e => e.Level == LogLevel.Warning).Select(e => e.Message).ToList();
+        warnings.Should().HaveCount(2, "one WARN line per call");
+        warnings[0].Should().Contain("ActivateArchive").And.Contain(SystemStreamDataCkIds.ArchiveActivateMethodId)
+            .And.Contain("method-not-declared").And.NotContain($"{archive}");
+        warnings[1].Should().Contain("FreezeRollup").And.NotContain($"{rollup}");
+    }
+
+    [Fact]
+    public async Task OnTheFallback_ATransitionTheStatusDoesNotAllow_StaysA400_AndIsAuditedWithItsCode()
+    {
+        var archive = await CreateRawArchiveAsync("FbBad");
+        _fixture.AuditEvents.Clear();
+
+        // Created -> Disable is not allowed: the direct call answers 400 as before, the audit names the refusal of the engine
+        var answer = await Controller(Admin(), Fallback()).DisableArchive(Tenant, $"{archive}");
+
+        answer.Should().BeOfType<BadRequestObjectResult>();
+        _fixture.AuditEvents.Should().ContainSingle().Which.Should().Match<CkMethodAuditRecord>(e =>
+            e.Transport == ArchiveMethodFallbackGuard.Transport &&
+            e.Outcome == Statics.GraphQlErrorStreamDataInvalidTransition);
+    }
+
+    [Fact]
+    public async Task WithTheSwitchOff_TheWarnLineNamesTheSwitch()
+    {
+        var archive = await CreateRawArchiveAsync("FbOff");
+        var log = new CapturingLogger();
+        var services = Fallback(logger: log, options: new StreamDataMethodsOptions { Enabled = false });
+
+        (await Controller(Admin(), services).ActivateArchive(Tenant, $"{archive}")).Should().BeOfType<NoContentResult>();
+
+        log.Entries.Should().ContainSingle(e => e.Level == LogLevel.Warning).Which.Message.Should().Contain("switch-off");
+    }
+
+    // ── the deprecated lifecycle and rollup mutations on the fallback ─────────────────────────────
+
+    [Fact]
+    public async Task OnTheFallback_TheDeprecatedMutations_RefuseATokenOfAnotherTenant_AndACallerWithoutDataPermission()
+    {
+        var callers = new (string Name, ClaimsPrincipal User, IServiceProvider Services, string Reason)[]
+        {
+            ("foreign tenant", UserOf("some-other-tenant", CommonConstants.StreamDataAdminRole), Fallback(),
+                CkMethodTokenReasons.TenantNotAllowed),
+            ("no data permission", Admin(), Fallback(DenyingEvaluator()), "data-permission")
+        };
+
+        foreach (var (name, user, services, reason) in callers)
+        {
+            var archive = await CreateRawArchiveAsync("FbMut");
+            var rollup = await CreateRollupAsync("FbMutRollup");
+            var mutations = new[]
+            {
+                $$"""mutation { streamData { activateArchive(rtId: "{{archive}}") { archiveRtId } } }""",
+                $$"""mutation { streamData { freezeRollupArchive(rtId: "{{rollup}}", until: "{{Until:O}}") { archiveRtId } } }""",
+                $$"""mutation { streamData { deleteArchive(rtId: "{{archive}}") } }"""
+            };
+
+            foreach (var mutation in mutations)
+            {
+                _fixture.AuditEvents.Clear();
+                var result = await ExecuteAsync(mutation, user, services);
+
+                AssertRefused(result, reason, $"{name}: {mutation}");
+                _fixture.AuditEvents.Should().ContainSingle(name).Which.Should().Match<CkMethodAuditRecord>(e =>
+                    e.Transport == ArchiveMethodFallbackGuard.Transport && e.Outcome == CkMethodErrorCodes.MethodForbidden);
+            }
+
+            (await SnapshotAsync(archive))!.Status.Should().Be(CkArchiveStatus.Created, name);
+            (await RollupAsync(rollup)).FrozenUntil.Should().BeNull(name);
+        }
+    }
+
+    // ── recomputeArchive and backfillRollupFromSource: always the direct call, always guarded ──────
+
+    [Fact]
+    public async Task TheRecomputeAndBackfillMutations_RefuseATokenOfAnotherTenant_AndNoJobStarts()
+    {
+        // the real host: the facade could serve Recompute-2, but these mutations are no facade of it
+        await AssertRecomputeMutationsRefusedAsync(UserOf("some-other-tenant", CommonConstants.StreamDataAdminRole), null,
+            CkMethodTokenReasons.TenantNotAllowed);
+    }
+
+    [Fact]
+    public async Task TheRecomputeAndBackfillMutations_RefuseACallerWithoutDataPermission_AndNoJobStarts()
+    {
+        await AssertRecomputeMutationsRefusedAsync(Admin(), Fallback(DenyingEvaluator()), "data-permission");
+    }
+
+    [Fact]
+    public async Task TheRecomputeMutation_ForAnAuthorisedCaller_AnswersTheJobAsBefore_WithOneAuditEventMarkedNotRouted()
+    {
+        var rollup = await CreateRollupAsync("FbRecOk", activate: true);
+        var log = new CapturingLogger();
+        _fixture.AuditEvents.Clear();
+
+        var result = await ExecuteAsync(
+            $$"""mutation { streamData { recomputeArchive(rtId: "{{rollup}}", from: "{{From:O}}", to: "{{From.AddDays(1):O}}") { state } } }""",
+            Admin(), Fallback(logger: log));
+
+        result.Errors.Should().BeNullOrEmpty(_fixture.SerializeGraphQl(result));
+        JObject.Parse(_fixture.SerializeGraphQl(result)).SelectToken("data.streamData.recomputeArchive.state")!
+            .Value<string>().Should().Be("Completed");
+        _fixture.AuditEvents.Should().ContainSingle().Which.Should().Match<CkMethodAuditRecord>(e =>
+            e.MethodId == SystemStreamDataCkIds.RollupArchiveRecompute2MethodId &&
+            e.Transport == ArchiveMethodFallbackGuard.Transport && e.Outcome == CkMethodAuditOutcomes.Success);
+        log.Entries.Should().ContainSingle(e => e.Level == LogLevel.Warning).Which.Message.Should().Contain("not-routed")
+            .And.Contain("recomputeArchive").And.NotContain($"{rollup}");
+    }
+
+    // ── helpers ─────────────────────────────────────────────────────────────────────────────────
+
+    private string Tenant => _fixture.GetSystemContext().TenantId;
+
+    private ClaimsPrincipal Admin() => UserOf(Tenant, CommonConstants.StreamDataAdminRole);
+
+    private static ClaimsPrincipal UserOf(string tokenTenant, params string[] roles)
+    {
+        var claims = new List<Claim>
+        {
+            new("sub", "65f0c0ffee65f0c0ffee9337"), new("scope", "octo_api openid"), new(ClaimTypes.Name, "archive-admin"),
+            new("tenant_id", tokenTenant)
+        };
+        foreach (var role in roles)
+        {
+            claims.Add(new Claim("role", role));
+            claims.Add(new Claim(ClaimTypes.Role, role));
+        }
+
+        return new ClaimsPrincipal(new ClaimsIdentity(claims, "Bearer"));
+    }
+
+    /// <summary>A data-permission evaluator that refuses every action on a visible archive (a policy without a grant).</summary>
+    private static IRtDataPermissionEvaluator DenyingEvaluator()
+    {
+        var evaluator = A.Fake<IRtDataPermissionEvaluator>();
+        A.CallTo(() => evaluator.EvaluateAsync(A<IRuntimeRepository>._, A<RtSecurityContext>._, A<RtEntityId>._,
+                A<RtDataAction>._, A<bool>._, A<CancellationToken>._))
+            .Returns(new RtDataPermissionVerdict(RtDataPermissionDecision.NotPermitted, RtDataPermissionReason.NoGrant));
+        return evaluator;
+    }
+
+    /// <summary>
+    ///     The request services of a tenant on the fallback: a facade that cannot serve, and the real guard of the host or one
+    ///     built from the host's services with another evaluator, logger or switch.
+    /// </summary>
+    private IServiceProvider Fallback(IRtDataPermissionEvaluator? evaluator = null, ILogger<ArchiveMethodFallbackGuard>? logger = null,
+        StreamDataMethodsOptions? options = null)
+    {
+        var inner = _fixture.GetService<IServiceScopeFactory>().CreateScope().ServiceProvider;
+        var facade = A.Fake<IArchiveMethodFacade>();
+        A.CallTo(() => facade.IsHosted).Returns(options?.Enabled ?? true);
+        A.CallTo(() => facade.CanServe(A<ITenantContext>._, A<string>._, A<string>._)).Returns(false);
+        var guard = evaluator == null && logger == null && options == null
+            ? inner.GetRequiredService<IArchiveMethodFallbackGuard>()
+            : new ArchiveMethodFallbackGuard(evaluator ?? inner.GetRequiredService<IRtDataPermissionEvaluator>(),
+                inner.GetRequiredService<ICkMethodAuthorizationDefinitionSource>(),
+                inner.GetRequiredService<ICkMethodAuditRecorder>(),
+                options != null ? Options.Create(options) : inner.GetRequiredService<IOptions<StreamDataMethodsOptions>>(),
+                logger ?? NullLogger<ArchiveMethodFallbackGuard>.Instance);
+        return new OverridingServiceProvider(inner, facade, guard);
+    }
+
+    private StreamDataController Controller(ClaimsPrincipal user, IServiceProvider services)
+    {
+        var controller = new StreamDataController(NullLogger<StreamDataController>.Instance, _fixture.GetSystemContext(),
+            A.Fake<IHostApplicationLifetime>());
+        controller.ControllerContext = new ControllerContext
+        {
+            HttpContext = new DefaultHttpContext { User = user, RequestServices = services }
+        };
+        return controller;
+    }
+
+    private async Task<ExecutionResult> ExecuteAsync(string mutation, ClaimsPrincipal user, IServiceProvider? services)
+    {
+        if (services == null)
+        {
+            return await _fixture.ExecuteGraphQlAsync(mutation, user: user);
+        }
+
+        var tenant = await TenantAsync();
+        return await _fixture.GetService<IDocumentExecuter<OctoSchema>>().ExecuteAsync(options =>
+        {
+            options.Schema = null;
+            options.Query = mutation;
+            options.RequestServices = services;
+            options.UserContext = new GraphQlUserContext(user, tenant);
+        });
+    }
+
+    private void AssertRefused(ExecutionResult result, string reason, string because)
+    {
+        result.Errors.Should().NotBeNullOrEmpty(because);
+        result.Errors!.First().Code.Should().Be(CkMethodErrorCodes.MethodForbidden, because);
+        JObject.Parse(_fixture.SerializeGraphQl(result)).SelectToken("errors[0].extensions.parameters.reason")!
+            .Value<string>().Should().Be(reason, because);
+    }
+
+    private async Task ExpectOneFallbackEventAsync(string methodId, string outcome, Func<Task> call)
+    {
+        _fixture.AuditEvents.Clear();
+        await call();
+        _fixture.AuditEvents.Should().ContainSingle(methodId).Which.Should().Match<CkMethodAuditRecord>(e =>
+            e.MethodId == methodId && e.Outcome == outcome && e.Transport == ArchiveMethodFallbackGuard.Transport &&
+            e.TenantId == Tenant && e.HandlerInstanceId == null);
+    }
+
+    /// <summary>Every REST endpoint on the fallback refused with 403 METHOD_FORBIDDEN and the reason, one fallback audit event each, nothing changed.</summary>
+    private async Task AssertEveryRestEndpointRefusedAsync(ClaimsPrincipal caller, IServiceProvider services, string reason)
+    {
+        var created = await CreateRawArchiveAsync("FbRefCreated");
+        var activated = await CreateRawArchiveAsync("FbRefActivated", activate: true);
+        var rollup = await CreateRollupAsync("FbRefRollup", activate: true);
+        await (await TenantAsync()).GetRollupArchiveLifecycleService()!.FreezeAsync(rollup, Until);
+        var calls = new (string Name, Func<StreamDataController, Task<IActionResult>> Call)[]
+        {
+            ("activate", c => c.ActivateArchive(Tenant, $"{created}")),
+            ("disable", c => c.DisableArchive(Tenant, $"{activated}")),
+            ("enable", c => c.EnableArchive(Tenant, $"{activated}")),
+            ("retry", c => c.RetryArchiveActivation(Tenant, $"{created}")),
+            ("delete", c => c.DeleteArchive(Tenant, $"{activated}")),
+            ("freeze", c => c.FreezeRollupArchive(Tenant, $"{rollup}", Until.AddDays(1))),
+            ("unfreeze", c => c.UnfreezeRollupArchive(Tenant, $"{rollup}", acceptGaps: true)),
+            ("rewind", c => c.RewindRollupWatermark(Tenant, $"{rollup}", Until.AddDays(-1))),
+            ("recompute", async c => (await c.RecomputeArchive(Tenant, $"{rollup}", From, From.AddDays(1), null)).Result!),
+            ("backfill", async c => (await c.BackfillRollupFromSource(Tenant, $"{rollup}")).Result!)
+        };
+
+        foreach (var (name, call) in calls)
+        {
+            _fixture.AuditEvents.Clear();
+            var answer = await call(Controller(caller, services));
+
+            var refused = answer.Should().BeOfType<ObjectResult>(name).Subject;
+            refused.StatusCode.Should().Be(StatusCodes.Status403Forbidden, name);
+            var problem = refused.Value.Should().BeOfType<ProblemDetails>(name).Subject;
+            problem.Extensions["code"].Should().Be(CkMethodErrorCodes.MethodForbidden, name);
+            ((IReadOnlyDictionary<string, string>)problem.Extensions["parameters"]!)["reason"].Should().Be(reason, name);
+            _fixture.AuditEvents.Should().ContainSingle(name).Which.Should().Match<CkMethodAuditRecord>(e =>
+                e.Transport == ArchiveMethodFallbackGuard.Transport && e.Outcome == CkMethodErrorCodes.MethodForbidden);
+        }
+
+        (await SnapshotAsync(created))!.Status.Should().Be(CkArchiveStatus.Created);
+        (await SnapshotAsync(activated))!.Status.Should().Be(CkArchiveStatus.Activated);
+        var unchanged = await RollupAsync(rollup);
+        unchanged.FrozenUntil.Should().Be(Until);
+        unchanged.LastAggregatedBucketEnd.Should().NotBe(Until.AddDays(-1));
+        (await (await TenantAsync()).GetRecomputeJobStore()!.GetForArchiveAsync(rollup, 10))
+            .Should().BeEmpty("a refused call starts no recompute and queues no backfill");
+    }
+
+    private async Task AssertRecomputeMutationsRefusedAsync(ClaimsPrincipal caller, IServiceProvider? services, string reason)
+    {
+        var rollup = await CreateRollupAsync("FbRecRef", activate: true);
+        var mutations = new[]
+        {
+            $$"""mutation { streamData { recomputeArchive(rtId: "{{rollup}}", from: "{{From:O}}", to: "{{From.AddDays(1):O}}") { state } } }""",
+            $$"""mutation { streamData { backfillRollupFromSource(rtId: "{{rollup}}") { state } } }"""
+        };
+
+        foreach (var mutation in mutations)
+        {
+            _fixture.AuditEvents.Clear();
+            var result = await ExecuteAsync(mutation, caller, services);
+
+            AssertRefused(result, reason, mutation);
+            _fixture.AuditEvents.Should().ContainSingle(mutation).Which.Should().Match<CkMethodAuditRecord>(e =>
+                e.Transport == ArchiveMethodFallbackGuard.Transport && e.Outcome == CkMethodErrorCodes.MethodForbidden);
+        }
+
+        (await (await TenantAsync()).GetRecomputeJobStore()!.GetForArchiveAsync(rollup, 10))
+            .Should().BeEmpty("a refused call starts no recompute and queues no backfill");
+    }
+
+    private async Task<ITenantContext> TenantAsync()
+    {
+        var systemContext = _fixture.GetSystemContext();
+        return await systemContext.FindTenantContextAsync(systemContext.TenantId);
+    }
+
+    private async Task<ArchiveSnapshot?> SnapshotAsync(OctoObjectId rtId) =>
+        await (await TenantAsync()).GetArchiveRuntimeStore().GetAsync(rtId);
+
+    private async Task<RollupArchiveSnapshot> RollupAsync(OctoObjectId rtId) =>
+        (await (await TenantAsync()).GetRollupArchiveRuntimeStore()!.GetAsync(rtId))!;
+
+    private async Task<OctoObjectId> CreateRawArchiveAsync(string namePrefix, bool activate = false)
+    {
+        var archive = new RtRawArchive
+        {
+            RtWellKnownName = $"{namePrefix}{Guid.NewGuid():N}",
+            TargetCkTypeId = _fixture.TestCkTypeId,
+            Status = RtCkArchiveStatusEnum.Created,
+            Columns = new AttributeRecordValueList<RtCkArchiveColumnRecord>
+            {
+                new() { Path = "Voltage", Indexed = true, Required = false }
+            }
+        };
+        var repository = _fixture.GetSystemContext().GetSystemTenantRepository();
+        using (var session = await repository.GetSessionAsync())
+        {
+            session.StartTransaction();
+            await repository.InsertOneRtEntityAsync(session, archive);
+            await session.CommitTransactionAsync();
+        }
+
+        if (activate)
+        {
+            await (await TenantAsync()).GetArchiveLifecycleService()!.ActivateAsync(archive.RtId);
+        }
+
+        return archive.RtId;
+    }
+
+    /// <summary>An hourly rollup of a fresh, activated raw source (empty).</summary>
+    private async Task<OctoObjectId> CreateRollupAsync(string prefix, bool activate = false)
+    {
+        var source = await CreateRawArchiveAsync($"{prefix}Src", activate: true);
+        var tenant = await TenantAsync();
+        var rollup = await tenant.GetRollupArchiveLifecycleService()!.CreateAsync($"{prefix}{Guid.NewGuid():N}",
+            [new RollupSourceReference(source)], TimeSpan.FromHours(1), TimeSpan.Zero,
+            [new CkRollupAggregationSpec("Voltage", CkRollupFunction.Sum, "voltageSum", null)],
+            BucketAlignment.FixedSize, null, null, null);
+        if (activate)
+        {
+            await tenant.GetArchiveLifecycleService()!.ActivateAsync(rollup);
+        }
+
+        return rollup;
+    }
+
+    /// <summary>The request services with another facade and another fallback guard.</summary>
+    private sealed class OverridingServiceProvider(IServiceProvider inner, IArchiveMethodFacade facade,
+        IArchiveMethodFallbackGuard guard) : IServiceProvider
+    {
+        public object? GetService(Type serviceType) =>
+            serviceType == typeof(IArchiveMethodFacade) ? facade
+            : serviceType == typeof(IArchiveMethodFallbackGuard) ? guard
+            : inner.GetService(serviceType);
+    }
+
+    /// <summary>Collects the formatted log lines of the guard.</summary>
+    private sealed class CapturingLogger : ILogger<ArchiveMethodFallbackGuard>
+    {
+        public List<(LogLevel Level, string Message)> Entries { get; } = [];
+
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception,
+            Func<TState, Exception?, string> formatter) => Entries.Add((logLevel, formatter(state, exception)));
+    }
+}

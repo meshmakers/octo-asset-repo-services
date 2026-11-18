@@ -139,6 +139,9 @@ internal static class ArchiveMethodHost
         // The REST lifecycle endpoints and the deprecated mutations call the methods through this facade; it is
         // registered with the switch off as well and then tells its callers to keep their direct lifecycle call.
         services.TryAddScoped<IArchiveMethodFacade, ArchiveMethodFacade>();
+        // AB#9337: every call that does not run through its method (switch off, method not declared, the recompute and
+        // backfill mutations) runs through this guard: caller tenant, data permission, one audit event, one WARN line
+        services.TryAddScoped<IArchiveMethodFallbackGuard, ArchiveMethodFallbackGuard>();
         if (!ReadOptions(configuration).Enabled)
         {
             return false;

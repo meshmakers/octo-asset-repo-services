@@ -59,6 +59,24 @@ public class ArchiveMethodFacadeHttpTests(ArchiveMethodFacadeFixture fixture)
         A.CallTo(facade).Where(call => call.Method.Name == nameof(IArchiveMethodFacade.InvokeAsync)).MustNotHaveHappened();
     }
 
+    [Fact]
+    public async Task OnTheFallback_AnAdminTokenOfAnotherTenant_Is403_ThroughTheRealPipeline_AndNothingChanges()
+    {
+        // AB#9337: no HTTP tenant gate in this host (as in LogOnly mode); the fallback guard refuses the foreign token
+        var archive = await CreateRawArchiveAsync();
+        var facade = A.Fake<IArchiveMethodFacade>();
+        A.CallTo(() => facade.IsHosted).Returns(true);
+        A.CallTo(() => facade.CanServe(A<ITenantContext>._, A<string>._, A<string>._)).Returns(false);
+        await using var host = await StartAsync(facade);
+        var path = $"/{fixture.GetSystemContext().TenantId}/v1/streamdata/archives/{archive}/activate";
+
+        var refused = await host.PostAsync(path, roles: CommonConstants.StreamDataAdminRole, tokenTenant: "some-other-tenant");
+
+        refused.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        (await refused.Content.ReadAsStringAsync(TestContext.Current.CancellationToken)).Should().Contain("METHOD_FORBIDDEN");
+        (await SnapshotAsync(archive))!.Status.Should().Be(CkArchiveStatus.Created, "the direct call never ran");
+    }
+
     private async Task<Host> StartAsync(IArchiveMethodFacade facade)
     {
         var builder = WebApplication.CreateBuilder();
@@ -66,6 +84,9 @@ public class ArchiveMethodFacadeHttpTests(ArchiveMethodFacadeFixture fixture)
         builder.Logging.ClearProviders();
         builder.Services.AddSingleton(fixture.GetSystemContext());
         builder.Services.AddSingleton(facade);
+        // AB#9337: the fallback guard of the host (caller tenant, data permission, audit)
+        builder.Services.AddSingleton(fixture.GetService<IServiceScopeFactory>().CreateScope().ServiceProvider
+            .GetRequiredService<IArchiveMethodFallbackGuard>());
         builder.Services.AddAuthentication(TestBearerHandler.SchemeName)
             .AddScheme<AuthenticationSchemeOptions, TestBearerHandler>(TestBearerHandler.SchemeName, null);
         builder.Services.AddAuthorization(o => o.AddAssetRepositoryPolicies());
@@ -118,12 +139,12 @@ public class ArchiveMethodFacadeHttpTests(ArchiveMethodFacadeFixture fixture)
     {
         private readonly HttpClient _client = app.GetTestClient();
 
-        public Task<HttpResponseMessage> PostAsync(string path, string roles)
+        public Task<HttpResponseMessage> PostAsync(string path, string roles, string? tokenTenant = null)
         {
             var request = new HttpRequestMessage(HttpMethod.Post, path);
             request.Headers.TryAddWithoutValidation("Authorization", "Bearer not-a-real-token");
             request.Headers.TryAddWithoutValidation("X-Roles", roles);
-            request.Headers.TryAddWithoutValidation("X-Tenant", tenantId);
+            request.Headers.TryAddWithoutValidation("X-Tenant", tokenTenant ?? tenantId);
             return _client.SendAsync(request, TestContext.Current.CancellationToken);
         }
 
