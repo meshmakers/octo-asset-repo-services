@@ -62,8 +62,26 @@ Time-series data support (`StreamData/`):
     the method (System.StreamData older than the methods, or not resolved: `IArchiveMethodFacade.CanServe`), where the
     gateway would answer `403` for an unknown method. Tests:
     `IntegrationTests/StreamData/ArchiveMethodFacadeTests` (fixture `ArchiveMethodFacadeFixture` observes the audit and the
-    session tripwire). The computed-column, recompute and backfill endpoints still call the engine directly (not migrated
-    yet).
+    session tripwire). The computed-column endpoints still call the engine directly (not migrated yet).
+  - **Recompute and backfill are facades of the asynchronous methods (AB#9056, System.StreamData 1.30.0).**
+    `POST archives/{id}/recompute?from=&to=&rtIdScope=` calls `RollupArchive.Recompute-2`, `POST archives/{id}/backfill-from-source`
+    calls `RollupArchive.BackfillFromSource-2`, through `IArchiveMethodFacade` like the lifecycle endpoints (gateway, declared
+    role, data permission, one Method audit event with outcome `Accepted`). The method accepts the call as an operation; the
+    controller then reads the operation record from the operation store (`RecomputeOperationWait`, every
+    `Methods:StreamData:OperationPollInterval`, default 1 s) and answers the job from the job store with
+    `RecomputeJobInfoRestDto`, exactly the shape of the direct call:
+
+    | REST | Method | Waits until | Answer |
+    |---|---|---|---|
+    | `POST archives/{id}/recompute` | `System.StreamData/RollupArchive.Recompute-2` | the operation ended | `200` + the job (Completed, or Failed for a refused precondition: operation `FAILED` with `STREAMDATA_RECOMPUTE_FAILED`) |
+    | `POST archives/{id}/backfill-from-source` | `System.StreamData/RollupArchive.BackfillFromSource-2` | the operation reported its queued job (`jobRtId`) or ended, at most `Methods:StreamData:BackfillQueueTimeout` (60 s) | `200` + the Pending job; `204` for an empty source; `504` problem details naming the operation after the timeout |
+
+    The accept and the wait run under the host's stopping token, never the request (AB#4286): a client that disconnects
+    does not stop the recompute or the backfill, which stay visible in `runtime.operations` and in `recompute-jobs`.
+    Refusals map as for the lifecycle endpoints (`STREAMDATA_*` `400`, `METHOD_FORBIDDEN` `403`, ...); an operation record
+    that is not readable any more answers `500` problem details naming the operation. With the switch off, or in a tenant whose
+    System.StreamData is older than 1.30.0, the endpoints keep their direct call. Tests:
+    `IntegrationTests/StreamData/RecomputeMethodFacadeTests`, `UnitTests/StreamData/Methods/RecomputeAsyncHandlerTests`.
   - **Computed columns queue their backfill.** `POST .../computed-columns` (add) and
     `PUT .../computed-columns/{name}` (formula change), like the GraphQL mutations `addComputedColumn` /
     `updateComputedColumnFormula`, only validate, provision and queue: they call the engine's

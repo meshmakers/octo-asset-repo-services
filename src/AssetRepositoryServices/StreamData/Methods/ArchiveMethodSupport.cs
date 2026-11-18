@@ -28,6 +28,18 @@ internal static class ArchiveMethodErrors
     /// </summary>
     public const string RedactionColumnsChanged = "STREAMDATA_REDACTION_COLUMNS_CHANGED";
 
+    /// <summary>
+    ///     <c>RollupArchive.Recompute-2</c> / <c>BackfillFromSource-2</c> (System.StreamData 1.30.0, AB#9056): the recompute job
+    ///     ended in state Failed. Parameters <see cref="JobRtIdParameter" /> and <see cref="ReasonParameter" />.
+    /// </summary>
+    public const string RecomputeFailed = "STREAMDATA_RECOMPUTE_FAILED";
+
+    /// <summary>Error and progress parameter naming the recompute job (recompute-jobs of the archive).</summary>
+    public const string JobRtIdParameter = "jobRtId";
+
+    /// <summary>Error parameter of <see cref="RecomputeFailed" /> with the error reason of the job.</summary>
+    public const string ReasonParameter = "reason";
+
     /// <summary>Error parameter with the engine's message, as the GraphQL error of the mutation carries it.</summary>
     public const string MessageParameter = "message";
 

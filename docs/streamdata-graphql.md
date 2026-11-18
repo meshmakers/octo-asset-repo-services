@@ -112,7 +112,7 @@ working unchanged; each is replaced by a method of System.StreamData 1.24.0, cal
 | `createTimeRangeArchive` | `System.StreamData/TimeRangeArchive.CreateArchive-1` | `TimeRangeArchiveCreateArchiveHandler` |
 | `createRollupArchive` | `System.StreamData/RollupArchive.CreateArchive-1` | `RollupArchiveCreateArchiveHandler` |
 | `freezeRollupArchive` / `unfreezeRollupArchive` / `rewindRollupWatermark` | `System.StreamData/RollupArchive.Freeze-1` / `Unfreeze-1` / `RewindWatermark-1` (1.25.0) | `RollupMethodHandlers.cs` |
-| `recomputeArchive` / `backfillRollupFromSource` | `System.StreamData/RollupArchive.Recompute-1` / `BackfillFromSource-1` (1.25.0) | `RollupMethodHandlers.cs` |
+| `recomputeArchive` / `backfillRollupFromSource` | `System.StreamData/RollupArchive.Recompute-2` / `BackfillFromSource-2` (1.30.0, asynchronous; `-1` of 1.25.0 deprecated) | `RollupMethodHandlers.cs` |
 | `addComputedColumn` | `System.StreamData/Archive.AddComputedColumn-1` (1.28.0) | `ArchiveAddComputedColumnHandler` |
 | `addArchiveColumn` | `System.StreamData/Archive.AddColumn-1` (1.28.0) | `ArchiveAddColumnHandler` |
 | `removeComputedColumn` | `System.StreamData/Archive.RemoveComputedColumn-1` (1.28.0) | `ArchiveRemoveComputedColumnHandler` |
@@ -154,8 +154,22 @@ method row in `ArchiveMethodHost`.
   missing or non-activated rollup is a job in state `Failed`, as with the mutation; an invalid `rtIdScope` is
   `METHOD_VALIDATION_FAILED`), `BackfillFromSource-1` calls `EnqueueBackfillFromSourceAsync` and answers its job: a new Pending
   job, the already active job of the rollup the backfill was folded into, a `Failed` job for a missing or non-activated rollup, or
-  no result for an empty source. A target id the caller cannot see is `METHOD_TARGET_NOT_FOUND` from the gateway, before any job. Both stay synchronous; async methods are a later decision. The five mutations are deprecated
-  with the method id.
+  no result for an empty source. A target id the caller cannot see is `METHOD_TARGET_NOT_FOUND` from the gateway, before any job. Both are
+  synchronous and deprecated since 1.30.0 (below). The five mutations are deprecated with the method id; `recomputeArchive` and
+  `backfillRollupFromSource` name the `-2` versions.
+- **Asynchronous recompute and backfill (System.StreamData 1.30.0, AB#9056).** `RollupArchive.Recompute-2` and
+  `BackfillFromSource-2` (`execution.mode: async`, GraphQL fields `recompute2` / `backfillFromSource2`) return an operation handle
+  at once; the work runs in the operation runner of this service (`AddCkMethodOperations`, registered with the handlers; records in
+  `MethodOperations` of the system database) under the runner's token, never the caller's request (AB#4286), with the service
+  identity as the REST endpoint always did. The caller's rights are checked when the call is accepted (role `StreamDataAdmin`,
+  tenant of the token, write grant on the rollup); after the accept no caller right is used and none is widened. `Recompute-2`
+  reports the stage `RECOMPUTING` and ends `SUCCEEDED` with the completed job (`RecomputeJobInfo`) or `FAILED` with
+  `STREAMDATA_RECOMPUTE_FAILED` (`jobRtId`, `reason` - at most 500 characters) for a job that ended Failed (a missing or
+  non-activated rollup included); a `StreamDataException` keeps the mutation's code. `BackfillFromSource-2` queues the backfill,
+  reports `QUEUED` with `jobRtId`, then follows the job on the job store (`Methods:StreamData:OperationPollInterval`, default 1 s;
+  stages `PENDING` / `RUNNING` / `SWAPPING`) until it ended; an empty source ends `SUCCEEDED` without a result. When the service
+  stops, the queued backfill survives (persisted range), the operation ends as lost (`METHOD_OUTCOME_UNKNOWN`). The job is read in
+  `runtime.operations` and in `recompute-jobs` of the archive. Cancel is AB#8882.
 - **Column methods (System.StreamData 1.28.0, AB#8600).** `ColumnMethodHandlers.cs`: the six instance methods of `Archive` call the
   `IArchiveLifecycleService` member of the mutation they replace and answer its shape. `AddComputedColumn-1`, `AddColumn-1`,
   `RemoveComputedColumn-1` and `UpdateComputedColumnFormula-1` answer `ArchiveTransitionResult` (transition names as the mutations:

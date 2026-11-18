@@ -8,6 +8,8 @@ using Meshmakers.Octo.Communication.Contracts;
 using Meshmakers.Octo.ConstructionKit.Models.StreamData.Generated.System.StreamData.v1;
 using Meshmakers.Octo.Services.Contracts.DistributionEventHub.Methods;
 using Meshmakers.Octo.Services.Methods.Facades;
+using Meshmakers.Octo.Services.Methods.Operations;
+using Microsoft.Extensions.Options;
 using Microsoft.Net.Http.Headers;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects.ApiErrors;
 using Meshmakers.Octo.ConstructionKit.Contracts;
@@ -381,6 +383,18 @@ public class StreamDataController : ControllerBase
                 ?? throw new StreamDataException(
                     $"Recompute support is not wired for tenant '{tenantId}'. Ensure stream data is enabled and a rollup store is registered.");
 
+            // AB#9056: while the archive methods are hosted and the tenant's model declares Recompute-2, the endpoint is its
+            // facade: accepted as an operation (runtime.operations), answered with the job once the operation ended
+            var facade = HttpContext?.RequestServices?.GetService<IArchiveMethodFacade>();
+            if (facade != null && facade.CanServe(tenantContext, ArchiveMethodFacade.RollupArchiveCkTypeId,
+                    SystemStreamDataCkIds.RollupArchiveRecompute2MethodId))
+            {
+                return await InvokeRecomputeMethodAsync(tenantContext, facade, "Recompute",
+                    SystemStreamDataCkIds.RollupArchiveRecompute2MethodId, new OctoObjectId(rollupRtId),
+                    new RollupArchiveRecompute2Parameters { From = from, To = to, RtIdScope = rtIdScope },
+                    waitForTheEnd: true);
+            }
+
             // AB#4286: run under the host application-lifetime token, NOT HttpContext.RequestAborted —
             // a client HTTP timeout / disconnect must never cancel a server-side recompute (the octo-cli
             // HttpClient's 100s default previously killed long recomputes mid-flight). The job is
@@ -427,6 +441,17 @@ public class StreamDataController : ControllerBase
             var orchestrator = tenantContext.GetRecomputeOrchestrator()
                 ?? throw new StreamDataException(
                     $"Recompute support is not wired for tenant '{tenantId}'. Ensure stream data is enabled and a rollup store is registered.");
+
+            // AB#9056: the facade of BackfillFromSource-2 - accepted as an operation, answered with the job as soon as the
+            // operation reports it queued (the Pending job, as before), 204 for an empty source
+            var facade = HttpContext?.RequestServices?.GetService<IArchiveMethodFacade>();
+            if (facade != null && facade.CanServe(tenantContext, ArchiveMethodFacade.RollupArchiveCkTypeId,
+                    SystemStreamDataCkIds.RollupArchiveBackfillFromSource2MethodId))
+            {
+                return await InvokeRecomputeMethodAsync(tenantContext, facade, "Backfill",
+                    SystemStreamDataCkIds.RollupArchiveBackfillFromSource2MethodId, new OctoObjectId(rollupRtId),
+                    new RollupArchiveBackfillFromSource2Parameters(), waitForTheEnd: false);
+            }
 
             // Enqueue + return the Pending job immediately. Use the app-lifetime token for the quick
             // resolve/enqueue writes (not HttpContext.RequestAborted) so even the enqueue is not tied to
@@ -1389,6 +1414,100 @@ public class StreamDataController : ControllerBase
             return BadRequest(e.Message);
         }
     }
+
+    /// <summary>
+    ///     AB#9056: <c>recompute</c> and <c>backfill-from-source</c> as facades of the asynchronous <c>Recompute-2</c> and
+    ///     <c>BackfillFromSource-2</c>. The call goes through <see cref="IArchiveMethodFacade" /> (gateway, declared role, data
+    ///     permission, one Method audit event) and is accepted as an operation; the endpoint then reads the operation record
+    ///     until it ended (<paramref name="waitForTheEnd" />, the recompute: the answer was always the finished job) or until it
+    ///     reported its queued job (the backfill: the answer was always the Pending job), and answers the job exactly as the
+    ///     direct call did (<see cref="RecomputeJobInfoRestDto" />, a Failed job included). The accept and the wait run under
+    ///     the host's lifetime, not the request (AB#4286): a client that disconnects never stops the operation, which keeps
+    ///     running and stays readable in runtime.operations and in recompute-jobs.
+    /// </summary>
+    private async Task<ActionResult<RecomputeJobInfoRestDto>> InvokeRecomputeMethodAsync<TParameters>(
+        ITenantContext tenantContext, IArchiveMethodFacade facade, string operation, string methodId, OctoObjectId rollupRtId,
+        TParameters parameters, bool waitForTheEnd) where TParameters : class
+    {
+        var services = HttpContext!.RequestServices;
+        var store = services.GetRequiredService<ICkMethodOperationStore>();
+        var options = services.GetRequiredService<IOptions<StreamDataMethodsOptions>>().Value;
+        var notEnabledMessage =
+            $"Recompute support is not wired for tenant '{tenantContext.TenantId}'. Ensure stream data is enabled and a rollup store is registered.";
+
+        var response = await facade.InvokeAsync(tenantContext, ArchiveMethodFacade.RollupArchiveCkTypeId, methodId, rollupRtId,
+            parameters, User, BearerTokenOf(HttpContext), _appLifetime.ApplicationStopping);
+        if (!response.IsAccepted)
+        {
+            if (response is { Success: false, Error: { } refused })
+            {
+                _logger.LogWarning("{Operation} refused for tenant '{TenantId}' by {MethodId} (invocation {InvocationId}): {Code}",
+                    operation, tenantContext.TenantId, methodId, response.InvocationId, refused.Code);
+            }
+
+            return AsActionResult(response.ToActionResult(LifecycleFacadeOptions(rollupRtId, notEnabledMessage)));
+        }
+
+        var operationId = response.Operation!.OperationId;
+        var wait = await RecomputeOperationWait.WaitAsync(store, tenantContext.TenantId, operationId,
+            waitForTheEnd ? RecomputeOperationWait.Ended : RecomputeOperationWait.EndedOrJobQueued,
+            options.OperationPollInterval, waitForTheEnd ? null : options.BackfillQueueTimeout,
+            _appLifetime.ApplicationStopping);
+
+        if (wait.Record is not { } record)
+        {
+            _logger.LogWarning("{Operation} for tenant '{TenantId}': operation {OperationId} of {MethodId} {Outcome}", operation,
+                tenantContext.TenantId, operationId, methodId, wait.TimedOut ? "reported no job in time" : "is not readable");
+            return StatusCode(wait.TimedOut ? StatusCodes.Status504GatewayTimeout : StatusCodes.Status500InternalServerError,
+                new ProblemDetails
+                {
+                    Title = wait.TimedOut ? "The operation reported no job in time" : "The operation is not readable",
+                    Detail = $"{methodId} was accepted as operation '{operationId}'; follow it in runtime.operations and in the " +
+                             "recompute-jobs of the archive.",
+                    Status = wait.TimedOut ? StatusCodes.Status504GatewayTimeout : StatusCodes.Status500InternalServerError
+                });
+        }
+
+        var jobRtId = RecomputeOperationWait.JobRtIdOf(record);
+        if (record.State == CkMethodOperationState.Succeeded && jobRtId is null)
+        {
+            // BackfillFromSource-2 on an empty source archive: no job, as the direct call answered it
+            return NoContent();
+        }
+
+        if (jobRtId is not null && (record.State != CkMethodOperationState.Failed ||
+                                    record.Error?.Code == ArchiveMethodErrors.RecomputeFailed))
+        {
+            var job = tenantContext.GetRecomputeJobStore() is { } jobStore
+                ? await jobStore.GetAsync(jobRtId.Value)
+                : null;
+            if (job != null)
+            {
+                return Ok(RecomputeJobInfoRestDto.From(job));
+            }
+        }
+
+        if (record is { State: CkMethodOperationState.Failed, Error: { } error } &&
+            error.Code != ArchiveMethodErrors.RecomputeFailed)
+        {
+            _logger.LogWarning("{Operation} for tenant '{TenantId}' failed in {MethodId} (operation {OperationId}): {Code}",
+                operation, tenantContext.TenantId, methodId, operationId, error.Code);
+            return AsActionResult(CkMethodResponse.Failed(record.InvocationId, record.HandlerInstanceId, error)
+                .ToActionResult(LifecycleFacadeOptions(rollupRtId, notEnabledMessage)));
+        }
+
+        _logger.LogWarning("{Operation} for tenant '{TenantId}': the job of operation {OperationId} ({MethodId}) is not readable",
+            operation, tenantContext.TenantId, operationId, methodId);
+        return StatusCode(StatusCodes.Status500InternalServerError, new ProblemDetails
+        {
+            Title = "The recompute job is not readable",
+            Detail = $"{methodId} ran as operation '{operationId}'; follow it in runtime.operations.",
+            Status = StatusCodes.Status500InternalServerError
+        });
+    }
+
+    private static ActionResult<RecomputeJobInfoRestDto> AsActionResult(IActionResult result) =>
+        result as ActionResult ?? new ObjectResult(result);
 
     /// <summary>
     ///     The mapping of the lifecycle facades (parity table in docs/stream-data-management.md): success <c>204</c>; every declared

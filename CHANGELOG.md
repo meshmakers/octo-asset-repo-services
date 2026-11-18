@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+- AB#9056 New: `System.StreamData/RollupArchive.Recompute-2` and `BackfillFromSource-2` (System.StreamData 1.30.0, GraphQL
+  fields `recompute2` / `backfillFromSource2`), the asynchronous recompute and backfill: the call returns an operation handle at
+  once and `runtime.operations` shows the operation `RUNNING`, then `SUCCEEDED` with the job (`RecomputeJobInfo`) or `FAILED`
+  with `STREAMDATA_RECOMPUTE_FAILED` (`jobRtId`, `reason`) for a job that ended Failed. `BackfillFromSource-2` reports the queued
+  job (`QUEUED`, `jobRtId`) and follows it until it ended. The work runs detached from the caller in this service's operation
+  runner (`AddCkMethodOperations`); roles as before (`StreamDataAdmin`), no right widened. `Recompute-1` and
+  `BackfillFromSource-1` keep working and are deprecated; the mutations `recomputeArchive` and `backfillRollupFromSource` name the
+  `-2` versions. The REST endpoints `POST {tenantId}/v1/streamdata/archives/{id}/recompute` and `/backfill-from-source` are
+  facades of the `-2` methods: route, parameters and answer unchanged (`RecomputeJobInfo`, a Failed job with `200`, `204` for an
+  empty source); `recompute` answers when the operation ended, `backfill-from-source` once the operation reported its queued job
+  (bounded by `Methods:StreamData:BackfillQueueTimeout`, default 60 s, then `504` naming the operation). Behaviour changes as for the
+  lifecycle facades: one Method audit event per call (outcome `Accepted`), a data permission that refuses the rollup refuses the
+  call (`403`), a token of another tenant is `403` `METHOD_FORBIDDEN` / `tenant-not-allowed`. No Sunset header. With
+  `Methods:StreamData:Enabled=false`, or in a tenant whose System.StreamData is older than 1.30.0, the endpoints keep their direct
+  call. Needs octo-construction-kit-engine with System.StreamData 1.30.0 (minEngineVersion 3.5.67).
 - AB#9293 Fix (Security): `POST {tenantId}/v1/Models/ImportCk`, `ImportFromCatalog` and `ImportFromCatalogBatch` (and with them
   octo-cli, SDK and MCP) refuse every service-managed CK model - `System` and `System.*`, name compared case-insensitively -
   whatever its version (upgrade, same version, downgrade) and whoever calls, `forceBreakingUpdate` included: `403` problem
