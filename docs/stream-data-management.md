@@ -6,6 +6,12 @@ applies_to: **/StreamData/Controllers/**, **/ConfigureStreamDataConfiguration.cs
 # Stream data management over REST
 
 ## 4. Stream Data Management
+
+Stream-data **reads** (time series) go through GraphQL and need a stream-data role there
+([tenant-enforcement.md](tenant-enforcement.md#authorization-stream-data-reads-staged)); the switch of that gate to `Enforce`
+per environment, and what it protects and what not, is in [stream-data-read-enforce-plan.md](stream-data-read-enforce-plan.md).
+The REST controller below has no time-series query endpoint.
+
 Time-series data support (`StreamData/`):
 - **StreamDataController** - REST API for stream data operations. **Tenant-scoped:**
   the whole controller moved from `api/v1/streamdata` to `{tenantId}/v1/streamdata` — the

@@ -169,6 +169,8 @@ let every token of the tenant read all stream data of types without a data polic
   automatically: declarative accounts from the communication controller on reconcile (`PipelineServiceAccountProvisioningService`), legacy `octo-pipeline-sa-*` accounts from identity at tenant setup.
   A manual `AddClientToRole` is unnecessary only once both versions run and a reconcile or tenant setup has granted the role;
   until then a pipeline service account may lack `StreamDataReader` and its gated GraphQL reads fail under `Enforce`.
+- **Switch per environment** and what the gate protects (GraphQL reads with the caller's token) and what not (pipeline read
+  nodes of the mesh adapter, system contexts, archive metadata): [stream-data-read-enforce-plan.md](stream-data-read-enforce-plan.md).
 - Tests: `UnitTests/GraphQL/StreamDataReadRoleGateTests` (modes x roles, claim spellings, system context, warn window, error code),
   `IntegrationTests/StreamData/StreamDataReadRoleGateTests` (mode x caller x query kind through the GraphQL layer). A new
   stream-data read resolver must call `EnsureStreamReadAllowedAsync`.
