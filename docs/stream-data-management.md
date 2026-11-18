@@ -112,9 +112,17 @@ Time-series data support (`StreamData/`):
     `fallback`, the method id the call stands for, outcome `SUCCESS`, the refusal code, the `STREAMDATA_*` code of an engine
     refusal, `CALLER_CANCELLED` or `METHOD_HANDLER_FAILED`; no handler instance. And it logs **one WARN line**
     `<operation> in tenant <tenant> ran on the fallback of <method id> (<reason>), invocation <id>: <outcome>` with the reason
-    `switch-off`, `method-not-declared` or `not-routed`; never the target id, parameters, user or token. There is no option to
-    turn the guard off. Tests: `IntegrationTests/StreamData/ArchiveMethodFallbackGuardTests` (both abuse cases on every REST
-    endpoint, the mutations, the recompute and backfill mutations, the old answers, the WARN line),
+    `switch-off`, `method-not-declared` or `not-routed`; never the target id, parameters, user or token. That WARN line is the
+    only line at Warning or above for the call: when the engine refuses it (`400`), the endpoint logs the refusal at Debug
+    with the exception type only; the target id and the engine message stay in the body of the answer. **Strict audit**
+    (`Methods:Audit:FailCallOnAuditFailure`, or the tenant in `FailCallOnAuditFailureTenants`): when the audit event of a call
+    that ran cannot be written, the answer is `METHOD_OUTCOME_UNKNOWN` (REST `500` problem details, the mutation's error),
+    the answer of the method path's audit filter - for a call that succeeded and for an engine refusal (the method handler
+    answers it as a `STREAMDATA_*` failure, which the filter does not count as "not executed"). A refusal of the guard itself
+    (caller tenant, data permission) did not run and stays the refusal. There is no option to turn the guard off. Tests:
+    `IntegrationTests/StreamData/ArchiveMethodFallbackGuardTests` (both abuse cases on every REST endpoint, the mutations, the
+    recompute and backfill mutations, the old answers, the WARN line and no target id at Warning or above on an engine
+    refusal, strict audit for an executed call and an engine refusal),
     `ArchiveMethodFacadeHttpTests` (a foreign token through the real MVC pipeline without the tenant gate).
   - **Computed columns queue their backfill.** `POST .../computed-columns` (add) and
     `PUT .../computed-columns/{name}` (formula change), like the GraphQL mutations `addComputedColumn` /
