@@ -59,7 +59,8 @@ Background, not path-triggered; each file is linked from the routed doc of its t
 (how the caller's principal kind is set and checked), `docs/runtime-query-guard.md` (operator view of the unbounded
 query guard: configuration, metric, error `ASSET1007`), `docs/method-idempotency-store.md` (records, atomic claim,
 expiry, latency), `docs/gateway-owned-method-handlers.md` (how to register an in-process method handler) and
-`docs/gridfs-orphan-sweep.md` (endpoint and runbook of the orphan sweep).
+`docs/gridfs-orphan-sweep.md` (endpoint and runbook of the orphan sweep) and `docs/stream-data-read-enforce-plan.md`
+(operator plan for switching the stream-data read gate to `Enforce` per environment).
 
 ## Build & test
 
