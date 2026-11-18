@@ -30,6 +30,38 @@ Time-series data support (`StreamData/`):
   group: scope-only refused, role allowed; a guard that every non-GET action carries the policy or is a listed exception;
   403 body with code through a TestServer pipeline). A new archive-changing endpoint must carry `StreamDataAdministrationPolicy`
   and be added to an endpoint group of that test. The `api/v1/streamdata` route no longer exists.
+  - **Lifecycle and rollup endpoints are facades of the Archive methods.** `POST archives/{id}/activate`,
+    `/disable`, `/enable`, `/retry`, `DELETE archives/{id}`, `POST archives/{id}/freeze`, `/unfreeze` and `/rewind` call
+    `Archive.Activate-1`, `Disable-1`, `Enable-1`, `RetryActivation-1`, `DeleteArchive-1` and `RollupArchive.Freeze-1`,
+    `Unfreeze-1`, `RewindWatermark-1` through `IArchiveMethodFacade` (`StreamData/Methods/ArchiveMethodFacade.cs`):
+    `ICkMethodGateway` (caller tenant, declared role `StreamDataAdmin`, data permission on the archive, parameter validation),
+    then `ICkMethodDispatcher` on the in-process path. The handler runs outside the request's Mongo session
+    (request-session tripwire) and the pipeline writes exactly one Method audit event per call. The controller only resolves the
+    tenant and keeps the one read-only pre-check its contract needs (no stream data: `400` with the message it always had);
+    it holds no lifecycle rule. Routes, bodies and status codes are unchanged; REST is not deprecated and has no Sunset header.
+    Mapping (`LifecycleFacadeOptions`, `CkMethodFacadeResults.ToActionResult`):
+
+    | REST | Method | Success | Refusal |
+    |---|---|---|---|
+    | `POST archives/{id}/activate` | `System.StreamData/Archive.Activate-1` | `204` | `STREAMDATA_*` → `400` + engine message |
+    | `POST archives/{id}/disable` | `System.StreamData/Archive.Disable-1` | `204` | as above |
+    | `POST archives/{id}/enable` | `System.StreamData/Archive.Enable-1` | `204` | as above |
+    | `POST archives/{id}/retry` | `System.StreamData/Archive.RetryActivation-1` | `204` | as above |
+    | `DELETE archives/{id}` | `System.StreamData/Archive.DeleteArchive-1` | `204` | as above |
+    | `POST archives/{id}/freeze?until=` | `System.StreamData/RollupArchive.Freeze-1` (`until`) | `204` | as above |
+    | `POST archives/{id}/unfreeze?acceptGaps=` | `System.StreamData/RollupArchive.Unfreeze-1` (`acceptGaps`) | `204` | as above |
+    | `POST archives/{id}/rewind?toBucketEnd=` | `System.StreamData/RollupArchive.RewindWatermark-1` (`toBucketEnd`) | `204` | as above |
+
+    `METHOD_TARGET_NOT_FOUND` (an archive the gateway does not see) stays `400` with the engine's not-found message,
+    `STREAMDATA_NOT_ENABLED` `400` with the endpoint's message. Every other platform code keeps the default of
+    `CkMethodFacadeResults` as problem details: `METHOD_FORBIDDEN` `403` (a token of another tenant with reason
+    `tenant-not-allowed` when the HTTP tenant gate runs in LogOnly, a caller without the role behind the REST policy, a
+    data permission that refuses the archive — new, the direct call had no data-permission check), `METHOD_VALIDATION_FAILED` `400`,
+    `METHOD_HANDLER_NOT_AVAILABLE` / `METHOD_TIMEOUT` `503` / `504`. With `Methods:StreamData:Enabled=false` no handler is
+    hosted and the endpoints keep their direct lifecycle call. Tests:
+    `IntegrationTests/StreamData/ArchiveMethodFacadeTests` (fixture `ArchiveMethodFacadeFixture` observes the audit and the
+    session tripwire). The computed-column, recompute and backfill endpoints still call the engine directly (not migrated
+    yet).
   - **Computed columns queue their backfill.** `POST .../computed-columns` (add) and
     `PUT .../computed-columns/{name}` (formula change), like the GraphQL mutations `addComputedColumn` /
     `updateComputedColumnFormula`, only validate, provision and queue: they call the engine's

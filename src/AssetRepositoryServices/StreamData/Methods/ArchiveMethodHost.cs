@@ -49,7 +49,12 @@ internal sealed record ArchiveMethodHandlerRegistration(
 ///         imports the embedded model there first (Order 12, after the default configuration of order 10). The import is
 ///         idempotent and never downgrades (embedded-import guard). Switch the host off with
 ///         <c>Methods:StreamData:Enabled=false</c> (<c>OCTO_METHODS__STREAMDATA__ENABLED</c>): no handler, no import; the
-///         mutations keep working, a method call then answers <c>METHOD_HANDLER_NOT_AVAILABLE</c>.
+///         mutations and the REST lifecycle endpoints keep working with their direct lifecycle call, a method call then
+///         answers <c>METHOD_HANDLER_NOT_AVAILABLE</c>.
+///     </para>
+///     <para>
+///         While the handlers are hosted, the REST lifecycle and rollup endpoints of <c>StreamDataController</c> and
+///         the deprecated lifecycle and rollup mutations are facades of the methods (<see cref="IArchiveMethodFacade" />).
 ///     </para>
 /// </remarks>
 internal static class ArchiveMethodHost
@@ -121,6 +126,9 @@ internal static class ArchiveMethodHost
     public static bool AddArchiveCkMethodHandlers(this IServiceCollection services, IConfiguration configuration)
     {
         services.AddOptions<StreamDataMethodsOptions>().BindConfiguration(StreamDataMethodsOptions.SectionName);
+        // The REST lifecycle endpoints and the deprecated mutations call the methods through this facade; it is
+        // registered with the switch off as well and then tells its callers to keep their direct lifecycle call.
+        services.TryAddScoped<IArchiveMethodFacade, ArchiveMethodFacade>();
         if (!ReadOptions(configuration).Enabled)
         {
             return false;
@@ -251,7 +259,8 @@ public sealed class StreamDataMethodsOptions
 
     /// <summary>
     ///     Hosts the handlers (default true). Off: no handler and no model import into the system tenant; the gateway answers
-    ///     <c>METHOD_HANDLER_NOT_AVAILABLE</c> and the streamData mutations keep working.
+    ///     <c>METHOD_HANDLER_NOT_AVAILABLE</c> to a method call; the streamData mutations and the REST lifecycle endpoints
+    ///     keep working with their direct lifecycle call (<see cref="IArchiveMethodFacade.IsHosted" />).
     /// </summary>
     public bool Enabled { get; set; } = true;
 }

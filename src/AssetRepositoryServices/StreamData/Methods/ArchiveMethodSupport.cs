@@ -32,6 +32,21 @@ internal static class ArchiveMethodErrors
     public const string MessageParameter = "message";
 
     /// <summary>
+    ///     The codes of a stream-data refusal of the lifecycle and rollup methods (<see cref="CodeOf" />): the facades
+    ///     answer them as the direct call did (REST <c>400</c> with the engine message, the mutation's GraphQL error).
+    /// </summary>
+    public static IReadOnlyList<string> StreamDataRefusalCodes { get; } =
+    [
+        Statics.GraphQlErrorStreamDataArchiveNotFound,
+        Statics.GraphQlErrorStreamDataArchiveNotActivated,
+        Statics.GraphQlErrorStreamDataInvalidTransition,
+        Statics.GraphQlErrorStreamDataSchemaImmutable,
+        Statics.GraphQlErrorStreamDataPathInvalid,
+        Statics.GraphQlErrorStreamDataActivationFailed,
+        Statics.GraphQlErrorStreamData
+    ];
+
+    /// <summary>
     ///     The code of a stream-data exception: exactly the mapping of the mutations
     ///     (<c>ResolveConnectionContextExtensions.HandleStreamDataException</c>).
     /// </summary>

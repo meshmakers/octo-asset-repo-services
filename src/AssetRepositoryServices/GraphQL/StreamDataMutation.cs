@@ -1,6 +1,7 @@
 using GraphQL;
 using GraphQL.Types;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.RequestHandling;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Methods;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Inputs;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Scalars;
@@ -8,8 +9,10 @@ using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Utils;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.StreamData.Methods;
 using Meshmakers.Octo.Communication.Contracts;
 using Meshmakers.Octo.ConstructionKit.Contracts;
+using Meshmakers.Octo.ConstructionKit.Models.StreamData.Generated.System.StreamData.v1;
 using Meshmakers.Octo.Runtime.Contracts.Formulas;
 using Meshmakers.Octo.Runtime.Contracts.StreamData;
+using Meshmakers.Octo.Services.Contracts.DistributionEventHub.Methods;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL;
 
@@ -39,28 +42,33 @@ internal sealed class StreamDataMutation : ObjectGraphType
             .Description("Provisions the Crate table and transitions the archive to Activated. Allowed from Created/Disabled/Failed; idempotent on Activated.")
             .Argument<NonNullGraphType<OctoObjectIdType>>(Statics.RtIdArg, "Runtime id of the CkArchive to activate.")
             .ResolveAsync(ctx => ResolveTransitionAsync(ctx, "Activate",
-                (svc, id) => svc.ActivateAsync(id)));
+                (svc, id) => svc.ActivateAsync(id),
+                new ArchiveMethodCall(SystemStreamDataCkIds.ArchiveActivateMethodId, new ArchiveActivateParameters())));
 
         Field<NonNullGraphType<ArchiveTransitionResultDtoType>>("disableArchive")
             .DeprecationReason(ArchiveMethodHost.DeprecationReasonOf("disableArchive"))
             .Description("Transitions the archive to Disabled. Allowed only from Activated; the Crate table is preserved.")
             .Argument<NonNullGraphType<OctoObjectIdType>>(Statics.RtIdArg, "Runtime id of the CkArchive to disable.")
             .ResolveAsync(ctx => ResolveTransitionAsync(ctx, "Disable",
-                (svc, id) => svc.DisableAsync(id)));
+                (svc, id) => svc.DisableAsync(id),
+                new ArchiveMethodCall(SystemStreamDataCkIds.ArchiveDisableMethodId, new ArchiveDisableParameters())));
 
         Field<NonNullGraphType<ArchiveTransitionResultDtoType>>("enableArchive")
             .DeprecationReason(ArchiveMethodHost.DeprecationReasonOf("enableArchive"))
             .Description("Transitions the archive from Disabled back to Activated. Re-validates column paths against the current CK model.")
             .Argument<NonNullGraphType<OctoObjectIdType>>(Statics.RtIdArg, "Runtime id of the CkArchive to enable.")
             .ResolveAsync(ctx => ResolveTransitionAsync(ctx, "Enable",
-                (svc, id) => svc.EnableAsync(id)));
+                (svc, id) => svc.EnableAsync(id),
+                new ArchiveMethodCall(SystemStreamDataCkIds.ArchiveEnableMethodId, new ArchiveEnableParameters())));
 
         Field<NonNullGraphType<ArchiveTransitionResultDtoType>>("retryArchiveActivation")
             .DeprecationReason(ArchiveMethodHost.DeprecationReasonOf("retryArchiveActivation"))
             .Description("Retries activation after a previous DDL failure. Allowed only from Failed.")
             .Argument<NonNullGraphType<OctoObjectIdType>>(Statics.RtIdArg, "Runtime id of the CkArchive to retry activation for.")
             .ResolveAsync(ctx => ResolveTransitionAsync(ctx, "RetryActivation",
-                (svc, id) => svc.RetryActivationAsync(id)));
+                (svc, id) => svc.RetryActivationAsync(id),
+                new ArchiveMethodCall(SystemStreamDataCkIds.ArchiveRetryActivationMethodId,
+                    new ArchiveRetryActivationParameters())));
 
         Field<NonNullGraphType<BooleanGraphType>>("deleteArchive")
             .DeprecationReason(ArchiveMethodHost.DeprecationReasonOf("deleteArchive"))
@@ -90,7 +98,9 @@ internal sealed class StreamDataMutation : ObjectGraphType
             .Argument<NonNullGraphType<OctoObjectIdType>>(Statics.RtIdArg, "Runtime id of the CkRollupArchive to freeze.")
             .Argument<NonNullGraphType<UtcDateTimeGraphType>>("until", "Inclusive upper bound of the frozen range, ISO-8601.")
             .ResolveAsync(ctx => ResolveRollupAsync(ctx, "Freeze",
-                (svc, id) => svc.FreezeAsync(id, ctx.GetArgument<DateTime>("until"))));
+                (svc, id) => svc.FreezeAsync(id, ctx.GetArgument<DateTime>("until")),
+                new ArchiveMethodCall(SystemStreamDataCkIds.RollupArchiveFreezeMethodId,
+                    new RollupArchiveFreezeParameters { Until = ctx.GetArgument<DateTime>("until") })));
 
         Field<NonNullGraphType<ArchiveTransitionResultDtoType>>("unfreezeRollupArchive")
             .DeprecationReason(ArchiveMethodHost.DeprecationReasonOf("unfreezeRollupArchive"))
@@ -98,7 +108,9 @@ internal sealed class StreamDataMutation : ObjectGraphType
             .Argument<NonNullGraphType<OctoObjectIdType>>(Statics.RtIdArg, "Runtime id of the CkRollupArchive to unfreeze.")
             .Argument<BooleanGraphType>("acceptGaps", "When the source data inside the previously frozen range has been truncated, acknowledge that unfreezing will produce gaps. Defaults to false.")
             .ResolveAsync(ctx => ResolveRollupAsync(ctx, "Unfreeze",
-                (svc, id) => svc.UnfreezeAsync(id, ctx.GetArgument<bool?>("acceptGaps") ?? false)));
+                (svc, id) => svc.UnfreezeAsync(id, ctx.GetArgument<bool?>("acceptGaps") ?? false),
+                new ArchiveMethodCall(SystemStreamDataCkIds.RollupArchiveUnfreezeMethodId,
+                    new RollupArchiveUnfreezeParameters { AcceptGaps = ctx.GetArgument<bool?>("acceptGaps") ?? false })));
 
         Field<NonNullGraphType<ArchiveTransitionResultDtoType>>("rewindRollupWatermark")
             .DeprecationReason(ArchiveMethodHost.DeprecationReasonOf("rewindRollupWatermark"))
@@ -106,7 +118,9 @@ internal sealed class StreamDataMutation : ObjectGraphType
             .Argument<NonNullGraphType<OctoObjectIdType>>(Statics.RtIdArg, "Runtime id of the CkRollupArchive to rewind.")
             .Argument<NonNullGraphType<UtcDateTimeGraphType>>("toBucketEnd", "Target bucket-end (exclusive) the watermark is reset to, ISO-8601. Will be truncated down to the bucket boundary.")
             .ResolveAsync(ctx => ResolveRollupAsync(ctx, "RewindWatermark",
-                (svc, id) => svc.RewindWatermarkAsync(id, ctx.GetArgument<DateTime>("toBucketEnd"))));
+                (svc, id) => svc.RewindWatermarkAsync(id, ctx.GetArgument<DateTime>("toBucketEnd")),
+                new ArchiveMethodCall(SystemStreamDataCkIds.RollupArchiveRewindWatermarkMethodId,
+                    new RollupArchiveRewindWatermarkParameters { ToBucketEnd = ctx.GetArgument<DateTime>("toBucketEnd") })));
 
         Field<NonNullGraphType<RecomputeJobInfoDtoType>>("recomputeArchive")
             .DeprecationReason(ArchiveMethodHost.DeprecationReasonOf("recomputeArchive"))
@@ -491,6 +505,15 @@ internal sealed class StreamDataMutation : ObjectGraphType
             var lifecycle = gql.TenantContext.GetArchiveLifecycleService()
                 ?? throw AssetRepositoryException.StreamDataNotAvailable();
 
+            // the facade of Archive.DeleteArchive-1 while the handlers are hosted
+            if (MethodFacadeOf(ctx) is { } facade)
+            {
+                var response = await facade.InvokeAsync(gql.TenantContext, ArchiveMethodFacade.ArchiveCkTypeId,
+                    SystemStreamDataCkIds.ArchiveDeleteArchiveMethodId, archiveRtId, new ArchiveDeleteArchiveParameters(),
+                    gql.User!, BearerTokenOf(ctx), ctx.CancellationToken);
+                return response.Success ? true : ToMutationError(ctx, response, archiveRtId);
+            }
+
             await lifecycle.DeleteAsync(archiveRtId);
             return true;
         }
@@ -503,7 +526,8 @@ internal sealed class StreamDataMutation : ObjectGraphType
     private async Task<object?> ResolveTransitionAsync(
         IResolveFieldContext<object?> ctx,
         string transitionName,
-        Func<IArchiveLifecycleService, OctoObjectId, Task> transition)
+        Func<IArchiveLifecycleService, OctoObjectId, Task> transition,
+        ArchiveMethodCall method)
     {
         try
         {
@@ -527,6 +551,14 @@ internal sealed class StreamDataMutation : ObjectGraphType
             var lifecycle = gql.TenantContext.GetArchiveLifecycleService()
                 ?? throw AssetRepositoryException.StreamDataNotAvailable();
             var store = gql.TenantContext.GetArchiveRuntimeStore();
+
+            // the facade of the Archive method while the handlers are hosted
+            if (MethodFacadeOf(ctx) is { } facade)
+            {
+                return ToTransitionResult(ctx, await facade.InvokeAsync(gql.TenantContext, ArchiveMethodFacade.ArchiveCkTypeId,
+                    method.MethodId, archiveRtId, method.Parameters, gql.User!, BearerTokenOf(ctx), ctx.CancellationToken),
+                    archiveRtId);
+            }
 
             await transition(lifecycle, archiveRtId);
 
@@ -688,7 +720,8 @@ internal sealed class StreamDataMutation : ObjectGraphType
     private async Task<object?> ResolveRollupAsync(
         IResolveFieldContext<object?> ctx,
         string mutationName,
-        Func<IRollupArchiveLifecycleService, OctoObjectId, Task> mutation)
+        Func<IRollupArchiveLifecycleService, OctoObjectId, Task> mutation,
+        ArchiveMethodCall method)
     {
         try
         {
@@ -712,6 +745,14 @@ internal sealed class StreamDataMutation : ObjectGraphType
             var store = gql.TenantContext.GetRollupArchiveRuntimeStore()
                 ?? throw AssetRepositoryException.StreamDataNotAvailable();
 
+            // the facade of the RollupArchive method while the handlers are hosted
+            if (MethodFacadeOf(ctx) is { } facade)
+            {
+                return ToTransitionResult(ctx, await facade.InvokeAsync(gql.TenantContext,
+                    ArchiveMethodFacade.RollupArchiveCkTypeId, method.MethodId, rollupRtId, method.Parameters, gql.User!,
+                    BearerTokenOf(ctx), ctx.CancellationToken), rollupRtId);
+            }
+
             await mutation(lifecycle, rollupRtId);
 
             var snapshot = await store.GetAsync(rollupRtId)
@@ -723,5 +764,85 @@ internal sealed class StreamDataMutation : ObjectGraphType
         {
             return ctx.HandleException(e);
         }
+    }
+
+    // ---- the lifecycle and rollup mutations as facades of their CK methods ----
+
+    /// <summary>The method a lifecycle or rollup field is the facade of, with the parameters of the call.</summary>
+    internal sealed record ArchiveMethodCall(string MethodId, object Parameters);
+
+    /// <summary>The facade when the archive method handlers are hosted; <c>null</c> keeps the direct lifecycle call.</summary>
+    private static IArchiveMethodFacade? MethodFacadeOf(IResolveFieldContext<object?> ctx) =>
+        ctx.RequestServices?.GetService<IArchiveMethodFacade>() is { IsHosted: true } facade ? facade : null;
+
+    private static string? BearerTokenOf(IResolveFieldContext ctx)
+    {
+        var header = ctx.RequestServices?.GetService<IHttpContextAccessor>()?.HttpContext?.Request
+            .Headers[Microsoft.Net.Http.Headers.HeaderNames.Authorization].ToString();
+        const string scheme = "Bearer ";
+        return header != null && header.StartsWith(scheme, StringComparison.OrdinalIgnoreCase)
+            ? header[scheme.Length..].Trim()
+            : null;
+    }
+
+    /// <summary>The field value of a successful call (the transition record of the method), else its GraphQL error.</summary>
+    private static object? ToTransitionResult(IResolveFieldContext<object?> ctx, CkMethodResponse response,
+        OctoObjectId targetRtId)
+    {
+        if (!response.Success)
+        {
+            return ToMutationError(ctx, response, targetRtId);
+        }
+
+        var record = ArchiveMethodFacade.TransitionOf(response);
+        if (record?.ArchiveRtId == null || record.Transition == null)
+        {
+            // the handler broke its own declaration: a handler failure, nothing of the answer leaves the service
+            ctx.Errors.Add(CkMethodGraphQlError.Create(CkMethodError.Create(CkMethodErrorCodes.MethodHandlerFailed,
+                (CkMethodErrorParameters.CorrelationId, response.InvocationId.ToString("D")))));
+            return null;
+        }
+
+        return new ArchiveTransitionResultDto(new OctoObjectId(record.ArchiveRtId), (CkArchiveStatus)(int)record.Status,
+            record.Transition);
+    }
+
+    /// <summary>
+    ///     The error of a failed call in the form the mutation always answered (parity table in docs/stream-data-management.md): a declared
+    ///     <c>STREAMDATA_*</c> refusal is the mutation's error - code, the engine message, the parameters as extensions; a target
+    ///     the gateway cannot see is <c>STREAMDATA_ARCHIVE_NOT_FOUND</c> as before; <c>STREAMDATA_NOT_ENABLED</c> is the generic
+    ///     error of the mutation. Every other code (<c>METHOD_FORBIDDEN</c> for a token of another tenant or a data permission,
+    ///     <c>METHOD_VALIDATION_FAILED</c>, ...) is the method's error with code and parameters.
+    /// </summary>
+    private static object? ToMutationError(IResolveFieldContext<object?> ctx, CkMethodResponse response,
+        OctoObjectId targetRtId)
+    {
+        var error = response.Error ?? CkMethodError.Create(CkMethodErrorCodes.MethodHandlerFailed,
+            (CkMethodErrorParameters.CorrelationId, response.InvocationId.ToString("D")));
+        if (string.Equals(error.Code, ArchiveMethodErrors.StreamDataNotEnabled, StringComparison.Ordinal))
+        {
+            return ctx.HandleException(AssetRepositoryException.StreamDataNotAvailable());
+        }
+
+        if (string.Equals(error.Code, CkMethodErrorCodes.MethodTargetNotFound, StringComparison.Ordinal))
+        {
+            return ctx.HandleException(new ArchiveNotFoundException(targetRtId));
+        }
+
+        if (ArchiveMethodErrors.StreamDataRefusalCodes.Contains(error.Code, StringComparer.Ordinal))
+        {
+            var extensions = error.Parameters
+                .Where(p => !string.Equals(p.Key, ArchiveMethodErrors.MessageParameter, StringComparison.Ordinal))
+                .ToDictionary(p => p.Key, p => (object?)p.Value, StringComparer.Ordinal);
+            ctx.Errors.Add(new ExecutionError(error.Parameters.GetValueOrDefault(ArchiveMethodErrors.MessageParameter) ?? error.Code)
+            {
+                Code = error.Code,
+                Extensions = extensions
+            });
+            return null;
+        }
+
+        ctx.Errors.Add(CkMethodGraphQlError.Create(error));
+        return null;
     }
 }
