@@ -12,7 +12,7 @@ checks the scope on its own, in [method-gateway.md](method-gateway.md).
 | `GraphQl:EnforceMutationScope` | What a generic GraphQL mutation with a token without scope `octo_api` gets |
 |---|---|
 | `false` (code and chart default, log-first) | runs; one warning per mutation |
-| `true` | GraphQL error with code `Statics.GraphQlForbidden` ("GraphQL mutations require the 'octo_api' scope."), nothing runs, no log line of the gate |
+| `true` | GraphQL error with `extensions.code` `FORBIDDEN` (`Statics.GraphQlForbidden`) and the message "GraphQL mutations require the 'octo_api' scope.", nothing runs, no log line of the gate |
 
 Nothing in this document changes an environment. Every switch, scope grant, test client and rollback is an environment
 write that the ops agent executes per cluster. Who gives the go: on **test-2** the approval of the security work item that
@@ -54,8 +54,9 @@ entry.
 - **P1** the octo-mesh chart deployed on the cluster renders `services.assetRepository.enforceMutationScope`: the first
   chart release that contains it (3.5.80 or later; check the chart version of the cluster's last octo-mesh CD run, not
   only the pin on `main`). An older chart ignores the key without an error and the pod stays log-first.
-- **P2** the asset repository on the cluster runs a release with the gate (any release since the gate shipped; the
-  environment variable `OCTO_GRAPHQL__ENFORCEMUTATIONSCOPE` is rendered once P1 holds).
+- **P2** the asset repository on the cluster runs a release with the gate (r3.4.113 or later, the first release with
+  `MutationScopeListener`) on **every day of the gate window**, at log level `Warn` or more verbose (the warning is a
+  `Warning`); the environment variable `OCTO_GRAPHQL__ENFORCEMUTATIONSCOPE` is rendered once P1 holds.
 - **P3** alerting: a Dash0 check rule counts the log-first warnings of the gate on the cluster (logger
   `MutationScopeListener`, message `would be rejected once GraphQl:EnforceMutationScope is enabled`). The enforced refusal
   writes no log line of its own and the tenant-authorization counters do not see it, so a rule on refusals needs a signal
@@ -74,7 +75,10 @@ dataset without asset-repository logs, or a changed logger name or text, also re
 every gate check, on every cluster:
 
 - **Coverage**: the cluster's Dash0 dataset holds log lines of the asset-repository container on every day of the 7-day
-  window (count per day > 0, filtered on the container, not on the logger). Most lines of the container come from engine
+  window (count per day > 0, filtered on the container, not on the logger), and on every one of those days the container
+  ran a release with the gate (P2: group the per-day count by the release, `service.version` or the image tag, every
+  value r3.4.113 or later). A day on an older release counts as a gap: container lines alone do not prove that the gate
+  could log. Most lines of the container come from engine
   loggers (`Meshmakers.Octo.Runtime.Engine.…`); the service's own loggers
   (`Meshmakers.Octo.Backend.AssetRepositoryServices.%`) write so little at log level `Warn` that a quiet day reads as a
   gap. A day without lines of the container is a gap: extend the window until 7 covered days are reached, or record the
@@ -132,7 +136,13 @@ SELECT log_attributes['Subject'] AS subject, count() AS mutations,
 FROM logs
 WHERE log_attributes['logger'] = 'Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.RequestHandling.MutationScopeListener'
   AND body LIKE '%would be rejected once GraphQl:EnforceMutationScope is enabled%'
-GROUP BY subject ORDER BY first_seen LIMIT 200
+GROUP BY subject ORDER BY first_seen
+
+-- Completeness: the number of rows the gate check reviewed must equal this count
+SELECT count(DISTINCT log_attributes['Subject']) AS subjects
+FROM logs
+WHERE log_attributes['logger'] = 'Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.RequestHandling.MutationScopeListener'
+  AND body LIKE '%would be rejected once GraphQl:EnforceMutationScope is enabled%'
 
 -- Gate lines per day (D0QL has no toDate; cut the date from the timestamp). For coverage, run the same per-day count
 -- filtered on the asset-repository container of the cluster (resource attribute k8s.container.name).
@@ -177,9 +187,11 @@ restart of the CD's rolling update.
 3. **Change** (ops): PR in `octo-mesh-deployment` that sets the value with the comment above, plus the pre-write impact
    list: the rendered diff of the octo-mesh release changes only `OCTO_GRAPHQL__ENFORCEMUTATIONSCOPE` on the asset
    repository deployment.
-4. **Roll out** with the cluster's octo-mesh CD run.
+4. **Roll out** with the cluster's octo-mesh CD run. Within 24 hours before the rollout, run the gate query again
+   (window up to the moment of the re-run): the result is empty apart from subjects already resolved in step 1.
+   Otherwise repeat the gate check; a go given on an older gate check does not cover new callers.
 5. **Smoke test** right after the rollout, with the harmless mutation of the positive control:
-   - the test token **without** `octo_api` (scope `octo_api.read_only`) gets the GraphQL error with the forbidden code and
+   - the test token **without** `octo_api` (scope `octo_api.read_only`) gets the GraphQL error with `extensions.code` `FORBIDDEN` and
      the message "GraphQL mutations require the 'octo_api' scope.", and nothing changed;
    - the same mutation with a token **with** `octo_api` succeeds;
    - Refinery Studio saves an entity change for a user of an internal tenant;
@@ -194,7 +206,8 @@ restart of the CD's rolling update.
 
 ## Rollback
 
-Set the value back to `false` (or remove the key) in the cluster values and run the same octo-mesh CD again (go as in step
+Set the value back to `false` in the cluster values (removing the key works only while the chart default is `false`;
+after the last step below it would keep the cluster enforced) and run the same octo-mesh CD again (go as in step
 2 of the switch: on staging-1, prod-1 and prod-2 Gerald's go in his own words, also for a rollback); the asset repository
 pods roll, no data changes. Mutations refused while enforced work again at once and the warnings come back.
 

@@ -191,7 +191,7 @@ Chart value: `services.assetRepository.enforceMutationScope` (boolean, default `
 - `false`: the mutation runs; one warning per mutation (not rate-limited), `GraphQL mutation by subject '{sub or client_id}'
   without the 'octo_api' scope — would be rejected once GraphQl:EnforceMutationScope is enabled …`. The text names the
   subject only; the tenant is in the request path of the log record. Never token content.
-- `true`: GraphQL error with code `Statics.GraphQlForbidden`, message "GraphQL mutations require the 'octo_api' scope.";
+- `true`: GraphQL error with `extensions.code` `FORBIDDEN` (`Statics.GraphQlForbidden`), message "GraphQL mutations require the 'octo_api' scope.";
   nothing runs and the gate writes no log line.
 - Not affected: CK method mutations (the method gateway requires `octo_api` in both modes, [method-gateway.md](method-gateway.md)),
   queries and subscriptions, and pipelines that write in-process through the engine.
