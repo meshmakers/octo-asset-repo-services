@@ -24,7 +24,9 @@ production callers are the resolver of the typed method mutations (`CkMethodFiel
 the pipeline never saw (`CkMethodCallChecks.RecordOf` / `RecordAsync`) live in `GraphQL/Methods/CkMethodCallChecks.cs`; the gateway and
 `ArchiveMethodFallbackGuard` both use them, and both call `CkMethodCallerTenantCheck` for the caller tenant. So an archive call that does not run through
 its method (switch off, method not declared, `recomputeArchive` / `backfillRollupFromSource`) gets the same caller-tenant and data-permission answer
-as the gateway, one audit event with transport `fallback` and one WARN line (`docs/stream-data-management.md`, "The fallback guard"). A change of these
+as the gateway, one audit event with transport `fallback` and one WARN line (`docs/stream-data-management.md`, "The fallback guard"). With a strict audit
+(`FailCallOnAuditFailure`) whose write fails, the fallback answers like `CkMethodAuditFilter`: a call that ran - succeeded, or refused by the engine
+(`STREAMDATA_*`) - is `METHOD_OUTCOME_UNKNOWN`, a refusal of the checks before the call stays the refusal. A change of these
 rules goes into `CkMethodCallChecks` (or the common-services check), never into one of the two callers.
 **One method call per request:** `GraphQL/RequestHandling/OneMethodCallPerRequestRule.cs` is a GraphQL.NET `IValidationRule`
 (registered with `AddValidationRule<>(useForCachedDocuments: true)` next to `MutationScopeListener` in `RuntimeEngineBuilderExtensions`). It judges only the

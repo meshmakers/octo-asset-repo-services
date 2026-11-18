@@ -18,7 +18,7 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Methods;
 internal static class CkMethodCallChecks
 {
     /// <summary>
-    ///     The refusal of a data-permission check (AB#7037), <c>null</c> when the caller may proceed: a target the caller
+    ///     The refusal of a data-permission check, <c>null</c> when the caller may proceed: a target the caller
     ///     cannot see is <c>METHOD_TARGET_NOT_FOUND</c> (answered exactly like a missing one); a visible target the caller may
     ///     not change, and a static method whose declaring type the caller cannot read, are <c>METHOD_FORBIDDEN</c> with the
     ///     fixed data-permission reason. An unknown outcome refuses.

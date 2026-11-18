@@ -421,8 +421,9 @@ public class StreamDataController : ControllerBase
         }
         catch (StreamDataException e)
         {
-            _logger.LogWarning("Recompute refused for tenant '{TenantId}', rollup '{RollupRtId}': {Reason}",
-                tenantId, rollupRtId, e.Message);
+            // Debug, without the rollup id or the engine message (the body of the answer): on the fallback the guard
+            // already wrote the one WARN line of the call (docs/method-gateway.md)
+            _logger.LogDebug("Recompute refused for tenant '{TenantId}': {ExceptionType}", tenantId, e.GetType().Name);
             return BadRequest(e.Message);
         }
     }
@@ -486,8 +487,9 @@ public class StreamDataController : ControllerBase
         }
         catch (StreamDataException e)
         {
-            _logger.LogWarning("Backfill refused for tenant '{TenantId}', rollup '{RollupRtId}': {Reason}",
-                tenantId, rollupRtId, e.Message);
+            // Debug, without the rollup id or the engine message (the body of the answer): on the fallback the guard
+            // already wrote the one WARN line of the call (docs/method-gateway.md)
+            _logger.LogDebug("Backfill refused for tenant '{TenantId}': {ExceptionType}", tenantId, e.GetType().Name);
             return BadRequest(e.Message);
         }
     }
@@ -1435,8 +1437,10 @@ public class StreamDataController : ControllerBase
         }
         catch (StreamDataException e)
         {
-            _logger.LogWarning("{Operation} refused for tenant '{TenantId}', {TargetKind} '{RtId}': {Reason}",
-                operation, tenantId, targetKind, rtId, e.Message);
+            // Debug, without the target id or the engine message (the body of the answer): on the fallback the guard
+            // already wrote the one WARN line of the call (docs/method-gateway.md)
+            _logger.LogDebug("{Operation} refused for tenant '{TenantId}' ({TargetKind}): {ExceptionType}",
+                operation, tenantId, targetKind, e.GetType().Name);
             return BadRequest(e.Message);
         }
     }

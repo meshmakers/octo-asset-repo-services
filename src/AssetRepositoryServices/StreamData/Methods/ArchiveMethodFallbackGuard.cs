@@ -63,7 +63,9 @@ internal interface IArchiveMethodFallbackGuard
     /// <summary>
     ///     Checks the caller, runs <paramref name="direct" /> when it passes and records the call. Never throws for a refused
     ///     call (the refusal is the result); an exception of <paramref name="direct" /> or of the checks is recorded and
-    ///     surfaces unchanged.
+    ///     surfaces unchanged. When the tenant fails calls on an audit failure and the event of a call that ran could not be
+    ///     written - the call succeeded, or the engine refused it with a <see cref="StreamDataException" /> - the result is
+    ///     <c>METHOD_OUTCOME_UNKNOWN</c>, the answer of the method path; a refusal of the guard itself stays the refusal.
     /// </summary>
     /// <param name="tenant">The tenant of the request.</param>
     /// <param name="ckTypeId">The declaring CK type of the method (<see cref="ArchiveMethodFacade.ArchiveCkTypeId" /> or <see cref="ArchiveMethodFacade.RollupArchiveCkTypeId" />).</param>
@@ -124,7 +126,15 @@ internal sealed class ArchiveMethodFallbackGuard(
         }
         catch (StreamDataException e)
         {
-            await FinishAsync(ArchiveMethodErrors.CodeOf(e)).ConfigureAwait(false);
+            // The engine refused the call. Like the audit filter of the method pipeline, where the handler answers this
+            // refusal as a STREAMDATA_* failure (an execution state the gateway cannot vouch for): when the tenant fails
+            // calls on an audit failure and the event could not be written, the answer is METHOD_OUTCOME_UNKNOWN. Otherwise
+            // the exception surfaces unchanged and the caller keeps its old answer.
+            if (!await FinishAsync(ArchiveMethodErrors.CodeOf(e)).ConfigureAwait(false))
+            {
+                return OutcomeUnknown();
+            }
+
             throw;
         }
         catch (OperationCanceledException)
@@ -141,14 +151,13 @@ internal sealed class ArchiveMethodFallbackGuard(
 
         // The call ran. Like the audit filter of the method pipeline: when the tenant fails calls on an audit failure and
         // the event could not be written, the answer is METHOD_OUTCOME_UNKNOWN (the change may have taken effect).
-        if (!await FinishAsync(CkMethodAuditOutcomes.Success).ConfigureAwait(false))
-        {
-            return new ArchiveMethodFallbackResult<T>(CkMethodResponse.Failed(invocationId, string.Empty,
-                CkMethodError.Create(CkMethodErrorCodes.MethodOutcomeUnknown,
-                    (CkMethodErrorParameters.MethodId, methodId))), default);
-        }
+        return await FinishAsync(CkMethodAuditOutcomes.Success).ConfigureAwait(false)
+            ? new ArchiveMethodFallbackResult<T>(null, value)
+            : OutcomeUnknown();
 
-        return new ArchiveMethodFallbackResult<T>(null, value);
+        ArchiveMethodFallbackResult<T> OutcomeUnknown() => new(CkMethodResponse.Failed(invocationId, string.Empty,
+            CkMethodError.Create(CkMethodErrorCodes.MethodOutcomeUnknown, (CkMethodErrorParameters.MethodId, methodId))),
+            default);
 
         // exactly one WARN line and one audit event per call, whatever the outcome; false when a strict audit refused the event
         async Task<bool> FinishAsync(string outcome)
@@ -174,7 +183,7 @@ internal sealed class ArchiveMethodFallbackGuard(
     private async Task<CkMethodError?> CheckAsync(ITenantContext tenant, string ckTypeId, string methodId,
         OctoObjectId targetRtId, ClaimsPrincipal user, CkMethodPrincipal? principal, CancellationToken cancellationToken)
     {
-        // 1. the caller tenant: the rule of the gateway (AB#8776/AB#8986), before the archive is read
+        // 1. the caller tenant: the rule of the gateway (cross-tenant service clients, parent tenant), before the archive is read
         var tenantCheck = await CkMethodCallerTenantCheck.CheckAsync(principal, tenant.TenantId, methodId,
             tenantOptions?.Value ?? new TenantAuthorizationOptions(), hierarchyReader, logger, Transport).ConfigureAwait(false);
         if (tenantCheck.IsRefused)

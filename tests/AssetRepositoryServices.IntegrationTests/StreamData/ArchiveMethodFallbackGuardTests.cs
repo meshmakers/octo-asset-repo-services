@@ -189,6 +189,85 @@ public class ArchiveMethodFallbackGuardTests
         (await SnapshotAsync(foreign))!.Status.Should().Be(CkArchiveStatus.Created);
     }
 
+    [Fact]
+    public async Task OnTheFallback_AnEngineRefusal_Stays400WithTheEngineMessage_WithOnlyTheGuardsWarnLine_WithoutTheTarget()
+    {
+        var archive = await CreateRawArchiveAsync("FbEngRef");
+        var rollup = await CreateRollupAsync("FbEngRefRollup", activate: true);
+        // the lifecycle call is refused by the real engine (Created -> Disable is not allowed); the recompute and the backfill
+        // run against a real rollup whose direct call the engine refuses (the orchestrator itself answers most errors with
+        // a Failed job, so the refusal is injected at the direct call the guard runs)
+        var refusal = new ArchiveNotActivatedException(rollup, CkArchiveStatus.Created);
+        var calls = new (string Name, string TargetId, string? Message, Func<IServiceProvider, Task<IActionResult>> Call)[]
+        {
+            ("lifecycle (disable)", $"{archive}", null,
+                services => Controller(Admin(), services, Log).DisableArchive(Tenant, $"{archive}")),
+            ("recompute", $"{rollup}", refusal.Message, async services =>
+                (await Controller(Admin(), services, Log).RecomputeArchive(Tenant, $"{rollup}", From, From.AddDays(1), null))
+                .Result!),
+            ("backfill-from-source", $"{rollup}", refusal.Message, async services =>
+                (await Controller(Admin(), services, Log).BackfillRollupFromSource(Tenant, $"{rollup}")).Result!)
+        };
+
+        foreach (var (name, targetId, message, call) in calls)
+        {
+            Log.Entries.Clear();
+            var services = message == null ? Fallback(logger: Log) : Fallback(logger: Log, engineRefusal: refusal);
+
+            var answer = await call(services);
+
+            var badRequest = answer.Should().BeOfType<BadRequestObjectResult>(name).Subject;
+            var body = badRequest.Value.Should().BeOfType<string>(name).Subject;
+            body.Should().NotBeNullOrEmpty(name);
+            if (message != null)
+            {
+                body.Should().Be(message, $"{name}: the caller still gets the engine message");
+            }
+
+            var warnings = Log.Entries.Where(e => e.Level >= LogLevel.Warning).ToList();
+            warnings.Should().ContainSingle($"{name}: only the guard's WARN line").Which.Message.Should()
+                .Contain("ran on the fallback of", name);
+            warnings.Should().OnlyContain(e => !e.Message.Contains(targetId) && !e.Message.Contains(body),
+                $"{name}: no line at Warning or above names the target id or the engine message");
+        }
+
+        (await SnapshotAsync(archive))!.Status.Should().Be(CkArchiveStatus.Created);
+        (await (await TenantAsync()).GetRecomputeJobStore()!.GetForArchiveAsync(rollup, 10))
+            .Should().BeEmpty("the refused calls start no recompute and queue no backfill");
+    }
+
+    [Fact]
+    public async Task OnTheFallback_WithAStrictAuditThatFails_AnEngineRefusalIsOutcomeUnknown_OnRestAndOnTheDeprecatedMutation()
+    {
+        var archive = await CreateRawArchiveAsync("FbStrictEng");
+        var rollup = await CreateRollupAsync("FbStrictEngRollup", activate: true);
+        var failingRecorder = A.Fake<ICkMethodAuditRecorder>();
+        A.CallTo(() => failingRecorder.RecordAsync(A<CkMethodAuditRecord>._, A<CancellationToken>._))
+            .ThrowsAsync(new CkMethodAuditFailedException(Guid.NewGuid(), new TimeoutException()));
+        var services = Fallback(auditRecorder: failingRecorder);
+
+        // like the audit filter of the method pipeline: the handler answers an engine refusal as a STREAMDATA_* failure,
+        // which is no "not executed" code, so a failed strict audit write turns it into METHOD_OUTCOME_UNKNOWN
+        var rest = await Controller(Admin(), services).DisableArchive(Tenant, $"{archive}");
+        var recompute = (await Controller(Admin(), Fallback(auditRecorder: failingRecorder,
+                engineRefusal: new ArchiveNotActivatedException(rollup, CkArchiveStatus.Created)))
+            .RecomputeArchive(Tenant, $"{rollup}", From, From.AddDays(1), null)).Result;
+        var mutation = await ExecuteAsync($$"""mutation { streamData { disableArchive(rtId: "{{archive}}") { archiveRtId } } }""",
+            Admin(), services);
+
+        foreach (var (name, answer) in new[] { ("rest disable", rest), ("rest recompute", recompute!) })
+        {
+            var unknown = answer.Should().BeOfType<ObjectResult>(name).Subject;
+            unknown.StatusCode.Should().Be(StatusCodes.Status500InternalServerError, name);
+            unknown.Value.Should().BeOfType<ProblemDetails>(name).Which.Extensions["code"].Should()
+                .Be(CkMethodErrorCodes.MethodOutcomeUnknown, name);
+        }
+
+        mutation.Errors.Should().NotBeNullOrEmpty();
+        mutation.Errors!.First().Code.Should().Be(CkMethodErrorCodes.MethodOutcomeUnknown);
+        (await SnapshotAsync(archive))!.Status.Should().Be(CkArchiveStatus.Created, "the engine refused the transition");
+    }
+
     // ── the deprecated lifecycle and rollup mutations on the fallback ─────────────────────────────
 
     [Fact]
@@ -268,6 +347,9 @@ public class ArchiveMethodFallbackGuardTests
 
     private string Tenant => _fixture.GetSystemContext().TenantId;
 
+    /// <summary>One sink for the lines of the guard and of the controller.</summary>
+    private CapturingLogger Log { get; } = new();
+
     private ClaimsPrincipal Admin() => UserOf(Tenant, CommonConstants.StreamDataAdminRole);
 
     private static ClaimsPrincipal UserOf(string tokenTenant, params string[] roles)
@@ -312,7 +394,7 @@ public class ArchiveMethodFallbackGuardTests
     /// </summary>
     private IServiceProvider Fallback(IRtDataPermissionEvaluator? evaluator = null, ILogger<ArchiveMethodFallbackGuard>? logger = null,
         StreamDataMethodsOptions? options = null, TenantAuthorizationOptions? tenantOptions = null,
-        ICkMethodAuditRecorder? auditRecorder = null)
+        ICkMethodAuditRecorder? auditRecorder = null, StreamDataException? engineRefusal = null)
     {
         var inner = _fixture.GetService<IServiceScopeFactory>().CreateScope().ServiceProvider;
         var facade = A.Fake<IArchiveMethodFacade>();
@@ -327,12 +409,15 @@ public class ArchiveMethodFallbackGuardTests
                 logger ?? NullLogger<ArchiveMethodFallbackGuard>.Instance,
                 tenantOptions != null ? Options.Create(tenantOptions) : inner.GetService<IOptions<TenantAuthorizationOptions>>(),
                 inner.GetService<ITenantHierarchyReader>());
-        return new OverridingServiceProvider(inner, facade, guard);
+        return new OverridingServiceProvider(inner, facade,
+            engineRefusal == null ? guard : new EngineRefusingGuard(guard, engineRefusal));
     }
 
-    private StreamDataController Controller(ClaimsPrincipal user, IServiceProvider services)
+    private StreamDataController Controller(ClaimsPrincipal user, IServiceProvider services,
+        ILogger<StreamDataController>? logger = null)
     {
-        var controller = new StreamDataController(NullLogger<StreamDataController>.Instance, _fixture.GetSystemContext(),
+        var controller = new StreamDataController(logger ?? NullLogger<StreamDataController>.Instance,
+            _fixture.GetSystemContext(),
             A.Fake<IHostApplicationLifetime>());
         controller.ControllerContext = new ControllerContext
         {
@@ -509,8 +594,22 @@ public class ArchiveMethodFallbackGuardTests
             : inner.GetService(serviceType);
     }
 
-    /// <summary>Collects the formatted log lines of the guard.</summary>
-    private sealed class CapturingLogger : ILogger<ArchiveMethodFallbackGuard>
+    /// <summary>
+    ///     The real guard, with the direct call replaced by an engine refusal: the guard's checks, audit and WARN line run
+    ///     unchanged, then the direct call throws <paramref name="refusal" /> as the engine would.
+    /// </summary>
+    private sealed class EngineRefusingGuard(IArchiveMethodFallbackGuard inner, StreamDataException refusal)
+        : IArchiveMethodFallbackGuard
+    {
+        public Task<ArchiveMethodFallbackResult<T>> InvokeAsync<T>(ITenantContext tenant, string ckTypeId, string methodId,
+            string operation, OctoObjectId targetRtId, ClaimsPrincipal user, Func<Task<T>> direct,
+            ArchiveMethodFallbackReason? reason = null, CancellationToken cancellationToken = default) =>
+            inner.InvokeAsync(tenant, ckTypeId, methodId, operation, targetRtId, user, () => Task.FromException<T>(refusal),
+                reason, cancellationToken);
+    }
+
+    /// <summary>Collects the formatted log lines of the guard and of the controller.</summary>
+    private sealed class CapturingLogger : ILogger<ArchiveMethodFallbackGuard>, ILogger<StreamDataController>
     {
         public List<(LogLevel Level, string Message)> Entries { get; } = [];
 

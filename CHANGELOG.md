@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- AB#9349 Fix (Security): on the archive fallback path (`ArchiveMethodFallbackGuard`) an engine refusal (`400`) of the REST
+  lifecycle endpoints, `recompute` and `backfill-from-source` no longer logs a second WARN line with the archive or rollup id and
+  the engine message; the endpoint logs it at Debug with the exception type only, the guard's one WARN line stays, and the caller
+  still gets `400` with the engine message. **Changed answer:** in a tenant with a strict audit (`FailCallOnAuditFailure`) whose
+  audit write fails, an engine refusal on the fallback now answers `METHOD_OUTCOME_UNKNOWN` (REST `500`, the mutation's error)
+  instead of `400` / `STREAMDATA_*`, the answer of the method path's audit filter; refusals of the guard itself stay the refusal.
+  Authorised callers otherwise keep their status codes and bodies.
 - AB#9337 Fix (Security): archive calls that do not run through their CK method get the checks of the method path. Affected: the
   REST endpoints `POST {tenantId}/v1/streamdata/archives/{id}/activate`, `disable`, `enable`, `retry`, `DELETE
   archives/{id}`, `freeze`, `unfreeze`, `rewind`, `recompute` and `backfill-from-source` and the deprecated mutations
