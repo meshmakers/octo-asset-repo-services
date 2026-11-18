@@ -188,8 +188,21 @@ restart of the CD's rolling update.
    list: the rendered diff of the octo-mesh release changes only `OCTO_GRAPHQL__ENFORCEMUTATIONSCOPE` on the asset
    repository deployment.
 4. **Roll out** with the cluster's octo-mesh CD run. Within 24 hours before the rollout, run the gate query again
-   (window up to the moment of the re-run): the result is empty apart from subjects already resolved in step 1.
-   Otherwise repeat the gate check; a go given on an older gate check does not cover new callers.
+   (window from the gate check of step 1 up to the moment of the re-run) with the same two safeguards as the gate check:
+   - **coverage per day**: the per-day count of the asset-repository container's lines, grouped by the release, shows
+     lines on every day since the gate check, and on each of those days only a release with the gate (P2); a day without
+     lines or on an older release is a gap;
+   - **a fresh positive control**: right before the re-run, the harmless mutation of the positive control runs again with
+     the test token without `octo_api`, and the re-run returns a line of the test client stamped at or after the time of
+     that fresh mutation (`last_seen` of the test client's row at or after it). The line of the positive control of step 1
+     is in the same window and does not count: a row of the test client whose `last_seen` is older than the fresh
+     mutation means the gate wrote no line for it.
+
+   Without both, the re-run is "not checked", never clean, and the switch waits: close the gap, or repeat the gate check.
+   With both, the result (apart from the positive control) is empty apart from subjects already resolved in step 1;
+   otherwise repeat the gate check, since a go given on an older gate check does not cover new callers. Record the
+   re-run (time, coverage per day with the release, the time of the fresh mutation and the `last_seen` of its line) in
+   the comment of step 1.
 5. **Smoke test** right after the rollout, with the harmless mutation of the positive control:
    - the test token **without** `octo_api` (scope `octo_api.read_only`) gets the GraphQL error with `extensions.code` `FORBIDDEN` and
      the message "GraphQL mutations require the 'octo_api' scope.", and nothing changed;
