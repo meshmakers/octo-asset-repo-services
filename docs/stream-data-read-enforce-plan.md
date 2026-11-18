@@ -15,8 +15,10 @@ in [tenant-enforcement.md](tenant-enforcement.md#authorization-stream-data-reads
 | `Warn` (code and chart default) | read, one warning per caller, tenant and query kind per `WarnLogInterval` (default 1 h) |
 | `Enforce` | GraphQL error `StreamDataReadRoleRequired`, nothing read, one warning per refused read |
 
-Nothing in this document changes an environment. Every switch is an environment write: the ops agent executes it per
-cluster with Gerald's go for that cluster in his own words; staging-1, prod-1 and prod-2 never without it.
+Nothing in this document changes an environment. Every switch, role grant, test client and rollback is an environment
+write that the ops agent executes per cluster. Who gives the go: on **test-2** the approval of the security work item that
+owns the switch (the developer who runs the agent confirms it in the session); on **staging-1, prod-1 and prod-2** Gerald,
+in his own words, for that cluster and that step — never without it, a rollback included.
 
 ## What the gate protects, and what it does not
 
@@ -37,7 +39,8 @@ It does **not** cover, by design:
   null). The HTTP endpoint always has an authenticated principal, so this is never a caller from outside.
 - **Archive metadata** (`rollupsFor`, `coverageFor`, `recomputeJobsFor`, `archivesStorageStats`, `rollupQueryMetadata`,
   `resolveSeriesQuery`), archive entity queries (runtime queries, data policies only) and the REST endpoints of
-  [stream-data-management.md](stream-data-management.md), which carry their own role policies and offer no time-series query.
+  [stream-data-management.md](stream-data-management.md), which carry their own policies (reads and automated inserts
+  scope-only, archive changes and manual writes `StreamDataAdmin`) and offer no time-series query.
 
 Consequence for the gate check: it reads the **GraphQL warnings of this gate only**. Pipeline runs that read archives
 produce no gate line in any mode and are not part of the check; a pipeline that fails after the switch fails on a GraphQL
@@ -59,18 +62,29 @@ entry.
   the cluster's Dash0 dataset, or the environment variable `OCTO_STREAMDATAREADAUTHORIZATION__ROLEENFORCEMENT` is rendered).
 - **P3** the Dash0 check rules for the gate are live on the cluster: `OctoMeshStreamDataReadRefused` (counts the
   `Enforce` refusal lines) and `OctoMeshStreamDataReadWouldRefuse` (counts the `Warn` lines), both on the log lines of
-  logger `StreamDataReadRoleGate`. Before the **first** switch, confirm on test-2 that the Dash0 label the rules match on
-  (`dash0_log_message`, the metric-label form of the log attribute `dash0.log.message`) carries the gate's warning lines,
-  for example by producing one `Warn` line with a token without a stream-data role and watching the rule's query count
-  it; a rule that matches nothing never fires.
+  logger `StreamDataReadRoleGate`. The positive control of the gate (below) must show up in
+  `OctoMeshStreamDataReadWouldRefuse` on the cluster: the rules match on the Dash0 label `dash0_log_message` (the
+  metric-label form of the log attribute `dash0.log.message`), and a rule that matches nothing never fires.
 - **P4** the local end-to-end check of the gate in `Enforce` is done (once, before the first cluster).
 
 Record P1 to P4 per cluster in a comment on the security work item before the gate check.
 
 ## Gate (per cluster, before the switch)
 
-Over the **last 7 days** before the gate check, the `Warn` lines of the gate show no legitimate caller that would be
-refused. Every caller found (tenant, subject, client) is, before the switch, either
+**An empty result only counts when the query is proven to see the cluster's gate lines** (otherwise the gate fails open:
+a dataset without asset-repository logs, or a changed logger name or text, also returns zero rows). Both of these are part
+of every gate check, on every cluster:
+
+- **Coverage**: the cluster's Dash0 dataset holds asset-repository log lines on every day of the 7-day window
+  (`log_attributes['logger'] LIKE 'Meshmakers.Octo.Backend.AssetRepositoryServices.%'`, count per day > 0). A day without
+  lines is a gap: extend the window until 7 covered days are reached, or record the gap and do not switch.
+- **Positive control**: right before the gate check, produce one `Warn` line on the cluster with the test token of the
+  smoke test (a client or user without a stream-data role, created for the test and named in the pre-write list) and a
+  stream-data query (as in step 5 of the switch); the gate query must return it (tenant, client, query kind as produced) and
+  `OctoMeshStreamDataReadWouldRefuse` must count it. Without that line the result is "not checked", not clean.
+
+Then, over the **last 7 days** before the gate check, the `Warn` lines of the gate (apart from the positive control) show no
+legitimate caller that would be refused. Every caller found (tenant, subject, client) is, before the switch, either
 
 1. **granted** a stream-data role (normally `StreamDataReader`, through a group where the tenant has one), written down
    with the octo-cli command that was run:
@@ -146,10 +160,12 @@ repository pods anyway, so plan for a normal rolling update.
 
 ## Switch, per cluster
 
-1. **Gate check**, recorded as a comment on the security work item: P1 to P4, the query of the gate with its time range,
-   every caller found with tenant, subject or client and query kind, and for each the role granted (with the command) or
+1. **Gate check**, recorded as a comment on the security work item: P1 to P4, coverage per day and the positive control
+   (time, tenant, client, and that the query and the rule saw it), the query of the gate with its time range, every caller
+   found with tenant, subject or client and query kind, and for each the role granted (with the command) or
    the reason it is not legitimate.
-2. **Gerald's go** for this cluster, in his own words.
+2. **Go** for this cluster: on test-2 the approval of the security work item, confirmed by the developer who runs the
+   agent; on staging-1, prod-1 and prod-2 Gerald's go, in his own words.
 3. **Change** (ops): PR in `octo-mesh-deployment` that sets the value with the comment above, plus the pre-write impact
    list: the rendered diff of the octo-mesh release changes only
    `OCTO_STREAMDATAREADAUTHORIZATION__ROLEENFORCEMENT` on the asset repository deployment.
@@ -171,12 +187,13 @@ repository pods anyway, so plan for a normal rolling update.
 
    Write the evidence (query, caller, result) into a comment on the security work item.
 6. **1-day watch**: the `Enforce` lines and the `OctoMeshStreamDataReadRefused` rule name no legitimate caller. A
-   legitimate refusal means: grant the role (with go on staging-1, prod-1, prod-2) or roll back, and record it. Then the
-   next cluster may start.
+   legitimate refusal means: grant the role or roll back (on staging-1, prod-1 and prod-2 either one only with Gerald's
+   go), and record it. Then the next cluster may start.
 
 ## Rollback
 
-Set the value back to `Warn` (or remove the key) in the cluster values and run the same octo-mesh CD again; the asset
+Set the value back to `Warn` (or remove the key) in the cluster values and run the same octo-mesh CD again (go as in step
+2 of the switch: on staging-1, prod-1 and prod-2 Gerald's go in his own words, also for a rollback); the asset
 repository pods roll, no data changes. Reads refused under `Enforce` work again at once. `Off` also exists, but hides the
 inventory (no lines at all): use it only as an emergency exit and go back to `Warn` afterwards.
 
@@ -190,9 +207,9 @@ and chart built with the new defaults; removing them earlier turns the cluster b
 
 Dates are decided by Gerald; the empty cells are filled at the gate check and the switch.
 
-| Cluster | P1 chart ≥ 3.5.79 deployed | P3 rules live | Gate check comment (7 days) | Gerald's go | `Enforce` set (values commit) | Smoke test comment | 1-day watch recorded |
+| Cluster | P1 chart ≥ 3.5.79 deployed | P3 rules live | Gate check comment (7 days, coverage, positive control) | Go (who, date) | `Enforce` set (values commit) | Smoke test comment | 1-day watch recorded |
 |---|---|---|---|---|---|---|---|
-| test-2 | | | | per the work item | | | |
-| staging-1 | | | | decided by Gerald | | | |
-| prod-1 | | | | decided by Gerald | | | |
-| prod-2 | | | | decided by Gerald | | | |
+| test-2 | | | | security work item approval, confirmed by the developer running the agent | | | |
+| staging-1 | | | | Gerald, own words | | | |
+| prod-1 | | | | Gerald, own words | | | |
+| prod-2 | | | | Gerald, own words | | | |
