@@ -18,8 +18,14 @@ depends on the method, the caller and the requested target id (for `allowSelf`),
 who passed the declared check. The refusal log line (Information) names method id, tenant and the rule, never the target id, parameters or token.
 `octo_api` is required for every method call independent of `GraphQl:EnforceMutationScope` (the gate never reads the flag; the generic
 `MutationScopeListener` is unchanged). `CkMethodGraphQlError.Create` turns a failed response into ONE `ExecutionError` with `extensions.code` and
-`extensions.parameters` and a fixed message. The gateway also validates the parameters (see "Method mutation resolver" below). The only
-production caller is the resolver of the typed method mutations (`CkMethodFieldResolver`).
+`extensions.parameters` and a fixed message. The gateway also validates the parameters (see "Method mutation resolver" below). The
+production callers are the resolver of the typed method mutations (`CkMethodFieldResolver`) and the archive facade (`IArchiveMethodFacade`).
+**Shared with the archive fallback:** the answer of the data-permission check (`CkMethodCallChecks.RefusalOf`) and the audit event of a call
+the pipeline never saw (`CkMethodCallChecks.RecordOf` / `RecordAsync`) live in `GraphQL/Methods/CkMethodCallChecks.cs`; the gateway and
+`ArchiveMethodFallbackGuard` both use them, and both call `CkMethodCallerTenantCheck` for the caller tenant. So an archive call that does not run through
+its method (switch off, method not declared, `recomputeArchive` / `backfillRollupFromSource`) gets the same caller-tenant and data-permission answer
+as the gateway, one audit event with transport `fallback` and one WARN line (`docs/stream-data-management.md`, "The fallback guard"). A change of these
+rules goes into `CkMethodCallChecks` (or the common-services check), never into one of the two callers.
 **One method call per request:** `GraphQL/RequestHandling/OneMethodCallPerRequestRule.cs` is a GraphQL.NET `IValidationRule`
 (registered with `AddValidationRule<>(useForCachedDocuments: true)` next to `MutationScopeListener` in `RuntimeEngineBuilderExtensions`). It judges only the
 selected mutation operation (aliases, fragments, inline fragments resolved; `@skip`/`@include` not evaluated) and refuses a method field next to a generic

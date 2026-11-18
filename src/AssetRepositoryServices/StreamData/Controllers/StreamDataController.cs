@@ -399,12 +399,21 @@ public class StreamDataController : ControllerBase
             // a client HTTP timeout / disconnect must never cancel a server-side recompute (the octo-cli
             // HttpClient's 100s default previously killed long recomputes mid-flight). The job is
             // pollable via the recompute-jobs endpoint even if the client has already gone away.
-            var job = await orchestrator.RecomputeArchiveAsync(
-                new OctoObjectId(rollupRtId), from, to,
-                rtIdScope is not null ? new OctoObjectId(rtIdScope) : null,
-                RecomputeTrigger.Manual, _appLifetime.ApplicationStopping);
+            // The direct call runs behind the fallback guard.
+            var target = new OctoObjectId(rollupRtId);
+            var guarded = await FallbackGuard().InvokeAsync(tenantContext, ArchiveMethodFacade.RollupArchiveCkTypeId,
+                SystemStreamDataCkIds.RollupArchiveRecompute2MethodId, "Recompute", target, User,
+                () => orchestrator.RecomputeArchiveAsync(target, from, to,
+                    rtIdScope is not null ? new OctoObjectId(rtIdScope) : null,
+                    RecomputeTrigger.Manual, _appLifetime.ApplicationStopping),
+                cancellationToken: _appLifetime.ApplicationStopping);
+            if (guarded.Refusal is { } refusal)
+            {
+                return AsActionResult(refusal.ToActionResult(LifecycleFacadeOptions(target,
+                    $"Recompute support is not wired for tenant '{tenantId}'. Ensure stream data is enabled and a rollup store is registered.")));
+            }
 
-            return Ok(RecomputeJobInfoRestDto.From(job));
+            return Ok(RecomputeJobInfoRestDto.From(guarded.Value!));
         }
         catch (ConfigurationException e)
         {
@@ -456,11 +465,20 @@ public class StreamDataController : ControllerBase
             // Enqueue + return the Pending job immediately. Use the app-lifetime token for the quick
             // resolve/enqueue writes (not HttpContext.RequestAborted) so even the enqueue is not tied to
             // the client connection; the recompute itself runs later on the background orchestrator tick.
-            var job = await orchestrator.EnqueueBackfillFromSourceAsync(
-                new OctoObjectId(rollupRtId), _appLifetime.ApplicationStopping);
+            // The direct call runs behind the fallback guard.
+            var target = new OctoObjectId(rollupRtId);
+            var guarded = await FallbackGuard().InvokeAsync(tenantContext, ArchiveMethodFacade.RollupArchiveCkTypeId,
+                SystemStreamDataCkIds.RollupArchiveBackfillFromSource2MethodId, "Backfill", target, User,
+                () => orchestrator.EnqueueBackfillFromSourceAsync(target, _appLifetime.ApplicationStopping),
+                cancellationToken: _appLifetime.ApplicationStopping);
+            if (guarded.Refusal is { } refusal)
+            {
+                return AsActionResult(refusal.ToActionResult(LifecycleFacadeOptions(target,
+                    $"Recompute support is not wired for tenant '{tenantId}'. Ensure stream data is enabled and a rollup store is registered.")));
+            }
 
             // Null = empty source archive (no-op): 204 so the SDK can return null.
-            return job is null ? NoContent() : Ok(RecomputeJobInfoRestDto.From(job));
+            return guarded.Value is not { } job ? NoContent() : Ok(RecomputeJobInfoRestDto.From(job));
         }
         catch (ConfigurationException e)
         {
@@ -1384,11 +1402,19 @@ public class StreamDataController : ControllerBase
             var targetRtId = new OctoObjectId(rtId);
 
             var facade = HttpContext?.RequestServices?.GetService<IArchiveMethodFacade>();
-            // switch off, or a tenant whose CK model does not declare the method: the direct call, as before
+            // switch off, or a tenant whose CK model does not declare the method: the direct call behind the fallback guard
+            // (caller tenant, data permission, one audit event, one WARN line); an authorised caller gets 204 as before
             if (facade == null || !facade.CanServe(tenantContext, ckTypeId, methodId))
             {
-                await direct(targetRtId);
-                return NoContent();
+                var guarded = await FallbackGuard().InvokeAsync(tenantContext, ckTypeId, methodId, operation, targetRtId,
+                    User, async () =>
+                    {
+                        await direct(targetRtId);
+                        return true;
+                    }, cancellationToken: HttpContext?.RequestAborted ?? CancellationToken.None);
+                return guarded.Refusal is { } fallbackRefusal
+                    ? fallbackRefusal.ToActionResult(LifecycleFacadeOptions(targetRtId, notEnabledMessage))
+                    : NoContent();
             }
 
             var response = await facade.InvokeAsync(tenantContext, ckTypeId, methodId, targetRtId, parameters, User,
@@ -1532,6 +1558,14 @@ public class StreamDataController : ControllerBase
 
         return options;
     }
+
+    /// <summary>
+    ///     The guard of every lifecycle, rollup, recompute and backfill call that does not run through its method.
+    ///     Required: a host without it fails the call instead of running the direct call unchecked.
+    /// </summary>
+    private IArchiveMethodFallbackGuard FallbackGuard() =>
+        (HttpContext?.RequestServices ?? throw new InvalidOperationException("The request has no service provider."))
+        .GetRequiredService<IArchiveMethodFallbackGuard>();
 
     /// <summary>The bearer token of the request, forwarded to the method like the GraphQL method fields do. Sensitive.</summary>
     private static string? BearerTokenOf(HttpContext? httpContext)

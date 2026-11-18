@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+- AB#9337 Fix (Security): archive calls that do not run through their CK method get the checks of the method path. Affected: the
+  REST endpoints `POST {tenantId}/v1/streamdata/archives/{id}/activate`, `disable`, `enable`, `retry`, `DELETE
+  archives/{id}`, `freeze`, `unfreeze`, `rewind`, `recompute` and `backfill-from-source` and the deprecated mutations
+  `activateArchive`, `disableArchive`, `enableArchive`, `retryArchiveActivation`, `deleteArchive`, `freezeRollupArchive`,
+  `unfreezeRollupArchive` and `rewindRollupWatermark` while the method cannot serve them (the **fallback**:
+  `Methods:StreamData:Enabled=false`, or a tenant whose System.StreamData does not declare the method), and the deprecated mutations
+  `recomputeArchive` and `backfillRollupFromSource` always (they never went through a method). Before, these calls ran the lifecycle
+  service directly without the caller-tenant check, the data-permission check and the audit. Now `ArchiveMethodFallbackGuard`
+  runs the caller-tenant check of the gateway (`CkMethodCallerTenantCheck`, including `TenantAuthorization:CrossTenantServiceClientIds`)
+  and the data-permission check on the archive with the same rule and archive resolution as the method path, writes exactly one
+  Method audit event per call (transport `fallback`, also for a refusal) and one WARN line (operation, method id, reason
+  `switch-off` / `method-not-declared` / `not-routed`; never target id, parameters, user or token). **New refusals:** a token of
+  another tenant (`403` / `METHOD_FORBIDDEN`, reason `tenant-not-allowed`, also while the HTTP tenant gate runs in LogOnly) and a
+  caller whose data permission refuses the archive (`403` / `METHOD_FORBIDDEN`, reason `data-permission`; an archive the caller
+  cannot see answers like a missing one), on REST and on the mutations, including `recomputeArchive` and
+  `backfillRollupFromSource`. Authorised callers keep their answers (`204`, `400`, the job); the method path is unchanged. No
+  option turns the checks off. The data-permission answer and the audit event of the gateway moved into the shared
+  `CkMethodCallChecks`, which the gateway and the guard both use.
 - AB#9056 New: `System.StreamData/RollupArchive.Recompute-2` and `BackfillFromSource-2` (System.StreamData 1.30.0, GraphQL
   fields `recompute2` / `backfillFromSource2`), the asynchronous recompute and backfill: the call returns an operation handle at
   once and `runtime.operations` shows the operation `RUNNING`, then `SUCCEEDED` with the job (`RecomputeJobInfo`) or `FAILED`

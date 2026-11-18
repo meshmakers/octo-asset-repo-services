@@ -60,7 +60,9 @@ Time-series data support (`StreamData/`):
     `METHOD_HANDLER_NOT_AVAILABLE` / `METHOD_TIMEOUT` `503` / `504`. With `Methods:StreamData:Enabled=false` no handler is
     hosted and the endpoints keep their direct lifecycle call; so do they in a tenant whose CK model does not declare
     the method (System.StreamData older than the methods, or not resolved: `IArchiveMethodFacade.CanServe`), where the
-    gateway would answer `403` for an unknown method. Tests:
+    gateway would answer `403` for an unknown method. That direct call (the **fallback**) runs behind
+    `IArchiveMethodFallbackGuard` (see "The fallback guard" below): the same caller-tenant and data-permission
+    checks as the method path, one audit event and one WARN line per call. Tests:
     `IntegrationTests/StreamData/ArchiveMethodFacadeTests` (fixture `ArchiveMethodFacadeFixture` observes the audit and the
     session tripwire). The computed-column endpoints still call the engine directly (not migrated yet).
   - **Recompute and backfill are facades of the asynchronous methods (System.StreamData 1.30.0).**
@@ -86,8 +88,34 @@ Time-series data support (`StreamData/`):
     that fail are retried (10 in a row end the wait).
     Refusals map as for the lifecycle endpoints (`STREAMDATA_*` `400`, `METHOD_FORBIDDEN` `403`, ...); an operation record
     that is not readable any more answers `500` problem details naming the operation. With the switch off, or in a tenant whose
-    System.StreamData is older than 1.30.0, the endpoints keep their direct call. Tests:
+    System.StreamData is older than 1.30.0, the endpoints keep their direct call, behind the fallback guard (below). Tests:
     `IntegrationTests/StreamData/RecomputeMethodFacadeTests`, `UnitTests/StreamData/Methods/RecomputeAsyncHandlerTests`.
+  - **The fallback guard.** Every archive call that does not run through its CK method runs behind
+    `StreamData/Methods/ArchiveMethodFallbackGuard` (`IArchiveMethodFallbackGuard`, registered with the facade, with the switch on
+    and off; a host without it fails the call instead of running it unchecked). That is: the eight lifecycle and rollup
+    endpoints, `recompute` and `backfill-from-source` and the deprecated lifecycle and rollup mutations while
+    `IArchiveMethodFacade.CanServe` is false, and the deprecated mutations `recomputeArchive` and `backfillRollupFromSource`
+    always (they are no facade of a method; reason `not-routed`). Before the direct call it runs, in this order:
+    1. the caller tenant: `CkMethodCallerTenantCheck` of octo-common-services, the rule of the gateway (step 0), including
+       `TenantAuthorization:CrossTenantServiceClientIds` and the parent-tenant rule, independent of the HTTP tenant gate's mode.
+       A token of another tenant is `METHOD_FORBIDDEN` / `tenant-not-allowed`;
+    2. the data permission on the archive: loaded with the caller's rights under the declaring CK type (`Archive` or
+       `RollupArchive`, as the facade does) and judged on its stored type with the data action the tenant's model declares for the
+       method, else `Write` (`CkMethodTargetAccessChecker`). An archive the caller cannot see is `METHOD_TARGET_NOT_FOUND`, a visible
+       one the caller may not change `METHOD_FORBIDDEN` / `data-permission`. The answer is `CkMethodCallChecks.RefusalOf`, the
+       function the gateway uses.
+    The declared role is not judged again (the REST policy and the mutations' role check refuse first), the parameters are not
+    validated again (the direct call validates its input as before). A refusal answers exactly like the method path: REST
+    `403` problem details (`400` with the not-found message for an archive the caller cannot see), the mutations their
+    `METHOD_FORBIDDEN` error. An authorised caller gets the old answer (`204`, `400` for an engine refusal, the job). Every call
+    writes **exactly one** Method audit event through `ICkMethodAuditRecorder`, also for a refusal or a fault: transport
+    `fallback`, the method id the call stands for, outcome `SUCCESS`, the refusal code, the `STREAMDATA_*` code of an engine
+    refusal, `CALLER_CANCELLED` or `METHOD_HANDLER_FAILED`; no handler instance. And it logs **one WARN line**
+    `<operation> in tenant <tenant> ran on the fallback of <method id> (<reason>), invocation <id>: <outcome>` with the reason
+    `switch-off`, `method-not-declared` or `not-routed`; never the target id, parameters, user or token. There is no option to
+    turn the guard off. Tests: `IntegrationTests/StreamData/ArchiveMethodFallbackGuardTests` (both abuse cases on every REST
+    endpoint, the mutations, the recompute and backfill mutations, the old answers, the WARN line),
+    `ArchiveMethodFacadeHttpTests` (a foreign token through the real MVC pipeline without the tenant gate).
   - **Computed columns queue their backfill.** `POST .../computed-columns` (add) and
     `PUT .../computed-columns/{name}` (formula change), like the GraphQL mutations `addComputedColumn` /
     `updateComputedColumnFormula`, only validate, provision and queue: they call the engine's

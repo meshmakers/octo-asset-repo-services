@@ -213,10 +213,15 @@ internal sealed class StreamDataMutation : ObjectGraphType
             var orchestrator = gql.TenantContext.GetRecomputeOrchestrator()
                 ?? throw AssetRepositoryException.StreamDataNotAvailable();
 
-            var job = await orchestrator.RecomputeArchiveAsync(
-                rollupRtId, from, to, rtIdScope, RecomputeTrigger.Manual, ctx.CancellationToken);
-
-            return RecomputeJobInfoDto.From(job);
+            // This mutation is no facade of Recompute-2; the direct call runs behind the fallback guard
+            var guarded = await FallbackGuardOf(ctx).InvokeAsync(gql.TenantContext, ArchiveMethodFacade.RollupArchiveCkTypeId,
+                SystemStreamDataCkIds.RollupArchiveRecompute2MethodId, "recomputeArchive", rollupRtId, gql.User,
+                () => orchestrator.RecomputeArchiveAsync(rollupRtId, from, to, rtIdScope, RecomputeTrigger.Manual,
+                    ctx.CancellationToken),
+                ArchiveMethodFallbackReason.NotRouted, ctx.CancellationToken);
+            return guarded.Refusal is { } refusal
+                ? ToMutationError(ctx, refusal, rollupRtId)
+                : RecomputeJobInfoDto.From(guarded.Value!);
         }
         catch (Exception e)
         {
@@ -249,10 +254,18 @@ internal sealed class StreamDataMutation : ObjectGraphType
             // the heavy recompute runs later on the background orchestrator under the host
             // application-lifetime token, not this GraphQL request. ctx.CancellationToken only bounds
             // the fast source-min resolve + enqueue writes.
-            var job = await orchestrator.EnqueueBackfillFromSourceAsync(rollupRtId, ctx.CancellationToken);
+            // This mutation is no facade of BackfillFromSource-2; the direct call runs behind the fallback guard
+            var guarded = await FallbackGuardOf(ctx).InvokeAsync(gql.TenantContext, ArchiveMethodFacade.RollupArchiveCkTypeId,
+                SystemStreamDataCkIds.RollupArchiveBackfillFromSource2MethodId, "backfillRollupFromSource", rollupRtId,
+                gql.User, () => orchestrator.EnqueueBackfillFromSourceAsync(rollupRtId, ctx.CancellationToken),
+                ArchiveMethodFallbackReason.NotRouted, ctx.CancellationToken);
+            if (guarded.Refusal is { } refusal)
+            {
+                return ToMutationError(ctx, refusal, rollupRtId);
+            }
 
             // Null = empty source archive (no-op); surface as a null job rather than an error.
-            return job is null ? null : RecomputeJobInfoDto.From(job);
+            return guarded.Value is not { } job ? null : RecomputeJobInfoDto.From(job);
         }
         catch (Exception e)
         {
@@ -516,8 +529,14 @@ internal sealed class StreamDataMutation : ObjectGraphType
                 return response.Success ? true : ToMutationError(ctx, response, archiveRtId);
             }
 
-            await lifecycle.DeleteAsync(archiveRtId);
-            return true;
+            // switch off or method not declared: the direct call behind the fallback guard
+            var guarded = await FallbackGuardOf(ctx).InvokeAsync(gql.TenantContext, ArchiveMethodFacade.ArchiveCkTypeId,
+                SystemStreamDataCkIds.ArchiveDeleteArchiveMethodId, "deleteArchive", archiveRtId, gql.User!, async () =>
+                {
+                    await lifecycle.DeleteAsync(archiveRtId);
+                    return true;
+                }, cancellationToken: ctx.CancellationToken);
+            return guarded.Refusal is { } refusal ? ToMutationError(ctx, refusal, archiveRtId) : true;
         }
         catch (Exception e)
         {
@@ -562,7 +581,17 @@ internal sealed class StreamDataMutation : ObjectGraphType
                     archiveRtId);
             }
 
-            await transition(lifecycle, archiveRtId);
+            // switch off or method not declared: the direct call behind the fallback guard
+            var guarded = await FallbackGuardOf(ctx).InvokeAsync(gql.TenantContext, ArchiveMethodFacade.ArchiveCkTypeId,
+                method.MethodId, transitionName, archiveRtId, gql.User!, async () =>
+                {
+                    await transition(lifecycle, archiveRtId);
+                    return true;
+                }, cancellationToken: ctx.CancellationToken);
+            if (guarded.Refusal is { } refusal)
+            {
+                return ToMutationError(ctx, refusal, archiveRtId);
+            }
 
             var snapshot = await store.GetAsync(archiveRtId)
                 ?? throw new ArchiveNotFoundException(archiveRtId);
@@ -755,7 +784,17 @@ internal sealed class StreamDataMutation : ObjectGraphType
                     BearerTokenOf(ctx), ctx.CancellationToken), rollupRtId);
             }
 
-            await mutation(lifecycle, rollupRtId);
+            // switch off or method not declared: the direct call behind the fallback guard
+            var guarded = await FallbackGuardOf(ctx).InvokeAsync(gql.TenantContext, ArchiveMethodFacade.RollupArchiveCkTypeId,
+                method.MethodId, mutationName, rollupRtId, gql.User!, async () =>
+                {
+                    await mutation(lifecycle, rollupRtId);
+                    return true;
+                }, cancellationToken: ctx.CancellationToken);
+            if (guarded.Refusal is { } refusal)
+            {
+                return ToMutationError(ctx, refusal, rollupRtId);
+            }
 
             var snapshot = await store.GetAsync(rollupRtId)
                 ?? throw new ArchiveNotFoundException(rollupRtId);
@@ -782,6 +821,14 @@ internal sealed class StreamDataMutation : ObjectGraphType
         ctx.RequestServices?.GetService<IArchiveMethodFacade>() is { } facade && facade.CanServe(tenant, ckTypeId, methodId)
             ? facade
             : null;
+
+    /// <summary>
+    ///     The guard of every lifecycle, rollup, recompute and backfill call that does not run through its method.
+    ///     Required: a host without it fails the field instead of running the direct call unchecked.
+    /// </summary>
+    private static IArchiveMethodFallbackGuard FallbackGuardOf(IResolveFieldContext<object?> ctx) =>
+        (ctx.RequestServices ?? throw new InvalidOperationException("The request has no service provider."))
+        .GetRequiredService<IArchiveMethodFallbackGuard>();
 
     private static string? BearerTokenOf(IResolveFieldContext ctx)
     {
