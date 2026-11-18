@@ -82,7 +82,9 @@ every gate check, on every cluster:
   loggers (`Meshmakers.Octo.Runtime.Engine.…`); the service's own loggers
   (`Meshmakers.Octo.Backend.AssetRepositoryServices.%`) write so little at log level `Warn` that a quiet day reads as a
   gap. A day without lines of the container is a gap: extend the window until 7 covered days are reached, or record the
-  gap and do not switch.
+  gap and do not switch. Before the window is evaluated, confirm that the log level of the asset repository (default
+  and the `Meshmakers.Octo.Backend.AssetRepositoryServices` category) was `Warn` or more verbose for the whole window;
+  otherwise the window counts as "not checked".
 - **Positive control**: right before the gate check, run one harmless GraphQL mutation on the cluster with a test token
   that carries `octo_api.read_only` but not `octo_api` (a client of an internal tenant, created for the test and named in
   the pre-write list; for example an update of an entity the test owns). Log-first lets it run; the gate query must
@@ -105,6 +107,7 @@ legitimate caller that would be refused. Every subject found is, before the swit
    enforcing refuses it on purpose), with the reason.
 
 A subject whose last line is older than its scope grant is resolved; lines keep showing it until the window has passed.
+A subject that shows new lines after its scope grant is reopened and must be resolved again before the switch.
 
 ### Log line (exact text, from `MutationScopeListener`)
 
@@ -191,7 +194,8 @@ restart of the CD's rolling update.
    (window from the gate check of step 1 up to the moment of the re-run) with the same two safeguards as the gate check:
    - **coverage per day**: the per-day count of the asset-repository container's lines, grouped by the release, shows
      lines on every day since the gate check, and on each of those days only a release with the gate (P2); a day without
-     lines or on an older release is a gap;
+     lines or on an older release is a gap; before the re-run is evaluated, confirm that the log level was `Warn` or more
+     verbose for the whole re-run window, otherwise it counts as "not checked";
    - **a fresh positive control**: right before the re-run, the harmless mutation of the positive control runs again with
      the test token without `octo_api`, and the re-run returns a line of the test client stamped at or after the time of
      that fresh mutation (`last_seen` of the test client's row at or after it). The line of the positive control of step 1
