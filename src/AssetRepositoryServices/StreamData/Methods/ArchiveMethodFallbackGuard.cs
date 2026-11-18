@@ -42,7 +42,7 @@ internal readonly record struct ArchiveMethodFallbackResult<T>(CkMethodResponse?
 }
 
 /// <summary>
-///     AB#9337: the guard of every archive lifecycle, rollup and recompute call that does <b>not</b> run through its CK method -
+///     The guard of every archive lifecycle, rollup and recompute call that does <b>not</b> run through its CK method -
 ///     the REST endpoints and deprecated mutations while <see cref="IArchiveMethodFacade.CanServe" /> is false (switch off, or
 ///     the method is not declared in the tenant's CK model), and the <c>recomputeArchive</c> / <c>backfillRollupFromSource</c>
 ///     mutations, which always call the service directly. Before the direct call it applies the same checks as the method
@@ -107,39 +107,56 @@ internal sealed class ArchiveMethodFallbackGuard(
         var why = reason ?? (methodOptions.Value.Enabled
             ? ArchiveMethodFallbackReason.MethodNotDeclared
             : ArchiveMethodFallbackReason.SwitchOff);
-        var outcome = CkMethodErrorCodes.MethodHandlerFailed;
+        T value;
         try
         {
             var refusal = await CheckAsync(tenant, ckTypeId, methodId, targetRtId, user, principal, cancellationToken)
                 .ConfigureAwait(false);
             if (refusal != null)
             {
-                outcome = refusal.Code;
+                // a refusal did not run: it stays the refusal, also when the audit write fails
+                await FinishAsync(refusal.Code).ConfigureAwait(false);
                 return new ArchiveMethodFallbackResult<T>(CkMethodResponse.Failed(invocationId, string.Empty, refusal),
                     default);
             }
 
-            var value = await direct().ConfigureAwait(false);
-            outcome = CkMethodAuditOutcomes.Success;
-            return new ArchiveMethodFallbackResult<T>(null, value);
+            value = await direct().ConfigureAwait(false);
         }
         catch (StreamDataException e)
         {
-            outcome = ArchiveMethodErrors.CodeOf(e);
+            await FinishAsync(ArchiveMethodErrors.CodeOf(e)).ConfigureAwait(false);
             throw;
         }
         catch (OperationCanceledException)
         {
-            outcome = CkMethodAuditOutcomes.CallerCancelled;
+            await FinishAsync(CkMethodAuditOutcomes.CallerCancelled).ConfigureAwait(false);
             throw;
         }
-        finally
+        catch (Exception)
         {
-            // exactly one WARN line and one audit event per call, whatever the outcome
+            // a fault of the checks or of the direct call: recorded, the exception surfaces unchanged
+            await FinishAsync(CkMethodErrorCodes.MethodHandlerFailed).ConfigureAwait(false);
+            throw;
+        }
+
+        // The call ran. Like the audit filter of the method pipeline: when the tenant fails calls on an audit failure and
+        // the event could not be written, the answer is METHOD_OUTCOME_UNKNOWN (the change may have taken effect).
+        if (!await FinishAsync(CkMethodAuditOutcomes.Success).ConfigureAwait(false))
+        {
+            return new ArchiveMethodFallbackResult<T>(CkMethodResponse.Failed(invocationId, string.Empty,
+                CkMethodError.Create(CkMethodErrorCodes.MethodOutcomeUnknown,
+                    (CkMethodErrorParameters.MethodId, methodId))), default);
+        }
+
+        return new ArchiveMethodFallbackResult<T>(null, value);
+
+        // exactly one WARN line and one audit event per call, whatever the outcome; false when a strict audit refused the event
+        async Task<bool> FinishAsync(string outcome)
+        {
             logger.LogWarning(
                 "{Operation} in tenant {TenantId} ran on the fallback of {MethodId} ({Reason}), invocation {InvocationId}: {Outcome}",
                 operation, tenant.TenantId, methodId, ReasonText(why), invocationId, outcome);
-            await CkMethodCallChecks.RecordAsync(auditRecorder, logger, CkMethodCallChecks.RecordOf(tenant.TenantId,
+            return await CkMethodCallChecks.RecordAsync(auditRecorder, logger, CkMethodCallChecks.RecordOf(tenant.TenantId,
                 invocationId, methodId, ckTypeId, targetRtId.ToString(), Transport, outcome, principal, user,
                 Stopwatch.GetElapsedTime(started))).ConfigureAwait(false);
         }

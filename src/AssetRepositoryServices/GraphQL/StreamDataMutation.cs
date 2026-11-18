@@ -213,7 +213,7 @@ internal sealed class StreamDataMutation : ObjectGraphType
             var orchestrator = gql.TenantContext.GetRecomputeOrchestrator()
                 ?? throw AssetRepositoryException.StreamDataNotAvailable();
 
-            // AB#9337: this mutation is no facade of Recompute-2; the direct call runs behind the fallback guard
+            // This mutation is no facade of Recompute-2; the direct call runs behind the fallback guard
             var guarded = await FallbackGuardOf(ctx).InvokeAsync(gql.TenantContext, ArchiveMethodFacade.RollupArchiveCkTypeId,
                 SystemStreamDataCkIds.RollupArchiveRecompute2MethodId, "recomputeArchive", rollupRtId, gql.User,
                 () => orchestrator.RecomputeArchiveAsync(rollupRtId, from, to, rtIdScope, RecomputeTrigger.Manual,
@@ -254,7 +254,7 @@ internal sealed class StreamDataMutation : ObjectGraphType
             // the heavy recompute runs later on the background orchestrator under the host
             // application-lifetime token, not this GraphQL request. ctx.CancellationToken only bounds
             // the fast source-min resolve + enqueue writes.
-            // AB#9337: this mutation is no facade of BackfillFromSource-2; the direct call runs behind the fallback guard
+            // This mutation is no facade of BackfillFromSource-2; the direct call runs behind the fallback guard
             var guarded = await FallbackGuardOf(ctx).InvokeAsync(gql.TenantContext, ArchiveMethodFacade.RollupArchiveCkTypeId,
                 SystemStreamDataCkIds.RollupArchiveBackfillFromSource2MethodId, "backfillRollupFromSource", rollupRtId,
                 gql.User, () => orchestrator.EnqueueBackfillFromSourceAsync(rollupRtId, ctx.CancellationToken),
@@ -529,7 +529,7 @@ internal sealed class StreamDataMutation : ObjectGraphType
                 return response.Success ? true : ToMutationError(ctx, response, archiveRtId);
             }
 
-            // switch off or method not declared: the direct call behind the fallback guard (AB#9337)
+            // switch off or method not declared: the direct call behind the fallback guard
             var guarded = await FallbackGuardOf(ctx).InvokeAsync(gql.TenantContext, ArchiveMethodFacade.ArchiveCkTypeId,
                 SystemStreamDataCkIds.ArchiveDeleteArchiveMethodId, "deleteArchive", archiveRtId, gql.User!, async () =>
                 {
@@ -581,7 +581,7 @@ internal sealed class StreamDataMutation : ObjectGraphType
                     archiveRtId);
             }
 
-            // switch off or method not declared: the direct call behind the fallback guard (AB#9337)
+            // switch off or method not declared: the direct call behind the fallback guard
             var guarded = await FallbackGuardOf(ctx).InvokeAsync(gql.TenantContext, ArchiveMethodFacade.ArchiveCkTypeId,
                 method.MethodId, transitionName, archiveRtId, gql.User!, async () =>
                 {
@@ -784,7 +784,7 @@ internal sealed class StreamDataMutation : ObjectGraphType
                     BearerTokenOf(ctx), ctx.CancellationToken), rollupRtId);
             }
 
-            // switch off or method not declared: the direct call behind the fallback guard (AB#9337)
+            // switch off or method not declared: the direct call behind the fallback guard
             var guarded = await FallbackGuardOf(ctx).InvokeAsync(gql.TenantContext, ArchiveMethodFacade.RollupArchiveCkTypeId,
                 method.MethodId, mutationName, rollupRtId, gql.User!, async () =>
                 {
@@ -823,7 +823,7 @@ internal sealed class StreamDataMutation : ObjectGraphType
             : null;
 
     /// <summary>
-    ///     AB#9337: the guard of every lifecycle, rollup, recompute and backfill call that does not run through its method.
+    ///     The guard of every lifecycle, rollup, recompute and backfill call that does not run through its method.
     ///     Required: a host without it fails the field instead of running the direct call unchecked.
     /// </summary>
     private static IArchiveMethodFallbackGuard FallbackGuardOf(IResolveFieldContext<object?> ctx) =>

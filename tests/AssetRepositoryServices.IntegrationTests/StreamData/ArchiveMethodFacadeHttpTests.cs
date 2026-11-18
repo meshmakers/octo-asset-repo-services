@@ -62,7 +62,7 @@ public class ArchiveMethodFacadeHttpTests(ArchiveMethodFacadeFixture fixture)
     [Fact]
     public async Task OnTheFallback_AnAdminTokenOfAnotherTenant_Is403_ThroughTheRealPipeline_AndNothingChanges()
     {
-        // AB#9337: no HTTP tenant gate in this host (as in LogOnly mode); the fallback guard refuses the foreign token
+        // no HTTP tenant gate in this host (as in LogOnly mode); the fallback guard refuses the foreign token
         var archive = await CreateRawArchiveAsync();
         var facade = A.Fake<IArchiveMethodFacade>();
         A.CallTo(() => facade.IsHosted).Returns(true);
@@ -84,7 +84,7 @@ public class ArchiveMethodFacadeHttpTests(ArchiveMethodFacadeFixture fixture)
         builder.Logging.ClearProviders();
         builder.Services.AddSingleton(fixture.GetSystemContext());
         builder.Services.AddSingleton(facade);
-        // AB#9337: the fallback guard of the host (caller tenant, data permission, audit)
+        // the fallback guard of the host (caller tenant, data permission, audit)
         builder.Services.AddSingleton(fixture.GetService<IServiceScopeFactory>().CreateScope().ServiceProvider
             .GetRequiredService<IArchiveMethodFallbackGuard>());
         builder.Services.AddAuthentication(TestBearerHandler.SchemeName)

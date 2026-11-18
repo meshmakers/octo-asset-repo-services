@@ -4,6 +4,7 @@ using GraphQL;
 using Meshmakers.Octo.Communication.Contracts;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Utils;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.StreamData.Methods;
 using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.ConstructionKit.Models.StreamData.Generated.System.StreamData.v1;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb.Configuration;
@@ -13,6 +14,7 @@ using Meshmakers.Octo.Runtime.Contracts.StreamData;
 using Meshmakers.Octo.Runtime.Engine.CrateDb.Configuration;
 using Meshmakers.Octo.Runtime.Engine.CrateDb.Extensions;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using Npgsql;
 
@@ -102,6 +104,13 @@ public class StreamDataFixture : AssetRepoFixture
         Services.AddSingleton(new CrateDbTestConnectionString(GetServiceConnectionString(CrateDbConnectionString)));
         ConfigureStreamDataServices(Services);
         Services.AddStreamDataDatabase<TestStreamDataConfiguration>();
+
+        // Mirrors Program.cs (AddArchiveCkMethodHandlers registers it with the switch on and off): the lifecycle, rollup,
+        // recompute and backfill calls that do not run through their method need the fallback guard, and fail without it.
+        // Fixtures that host the methods (ArchiveMethodStreamDataFixture) register the same guard again; TryAdd keeps one.
+        Services.TryAddScoped<IArchiveMethodFallbackGuard, ArchiveMethodFallbackGuard>();
+        Services.AddCkMethodAudit();
+        Services.AddCkMethodAuthorization();
 
         // Mirrors Program.cs: register the descriptor so EnsureStreamDataCkModelImportedAsync
         // resolves the shipped model id instead of the engine's hardcoded 1.0.0 fallback,
@@ -234,11 +243,29 @@ public class StreamDataFixture : AssetRepoFixture
             options.Query = query;
             options.Variables = inputs != null ? new Inputs(inputs) : null;
             options.RequestServices = Provider;
-            options.UserContext = new GraphQlUserContext(user, GetSystemContext());
+            options.UserContext = new GraphQlUserContext(Caller(user), GetSystemContext());
         });
 
         return result;
     }
+
+    /// <summary>
+    /// The archive lifecycle, rollup, recompute and backfill calls check the tenant of the caller's token (method gateway and
+    /// fallback guard), as every real token carries one. <see cref="StreamDataAdminPrincipal"/> is static and cannot know the
+    /// GUID-suffixed system tenant, so it is passed on as a token of the system tenant with a subject; every other principal
+    /// is passed on unchanged.
+    /// </summary>
+    private ClaimsPrincipal? Caller(ClaimsPrincipal? user) =>
+        ReferenceEquals(user, StreamDataAdminPrincipal)
+            ? new ClaimsPrincipal(new ClaimsIdentity(
+                [
+                    new Claim(ClaimTypes.Name, "streamdata-admin"),
+                    new Claim(ClaimTypes.Role, CommonConstants.StreamDataAdminRole),
+                    new Claim("sub", "65f0c0ffee65f0c0ffee0001"),
+                    new Claim("tenant_id", GetSystemContext().TenantId)
+                ],
+                "IntegrationTests"))
+            : user;
 
     public string SerializeGraphQl(ExecutionResult result)
     {

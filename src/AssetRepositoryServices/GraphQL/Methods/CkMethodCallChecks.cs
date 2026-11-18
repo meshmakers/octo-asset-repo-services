@@ -8,7 +8,7 @@ using Microsoft.Extensions.Logging;
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Methods;
 
 /// <summary>
-///     The pre-dispatch rules of a CK method call that more than one caller applies (AB#9337): the answer of the
+///     The pre-dispatch rules of a CK method call that more than one caller applies: the answer of the
 ///     data-permission check and the audit event of a call that did not pass the invocation pipeline. Used by
 ///     <see cref="CkMethodGateway" /> and by the archive fallback guard
 ///     (<c>StreamData.Methods.ArchiveMethodFallbackGuard</c>), so both paths give the same answer and write the same
@@ -41,21 +41,29 @@ internal static class CkMethodCallChecks
     ///     place for parameters, the idempotency key or the token. Written with a token that is not cancelled, like the
     ///     pipeline's audit filter does.
     /// </summary>
-    public static async Task RecordAsync(ICkMethodAuditRecorder recorder, ILogger logger, CkMethodAuditRecord record)
+    /// <returns>
+    ///     <c>false</c> when the recorder refused the event with <c>CkMethodAuditFailedException</c> (the tenant fails calls on
+    ///     an audit failure; the recorder has logged and counted it), so a caller whose call already ran can answer
+    ///     <c>METHOD_OUTCOME_UNKNOWN</c> like the audit filter; <c>true</c> otherwise.
+    /// </returns>
+    public static async Task<bool> RecordAsync(ICkMethodAuditRecorder recorder, ILogger logger, CkMethodAuditRecord record)
     {
         try
         {
             await recorder.RecordAsync(record, CancellationToken.None).ConfigureAwait(false);
+            return true;
         }
         catch (CkMethodAuditFailedException)
         {
-            // logged and counted by the recorder; the answer stays what it was
+            // logged and counted by the recorder; the caller decides what its answer becomes
+            return false;
         }
         catch (Exception e)
         {
             // a custom recorder must not turn an answer into a fault
             logger.LogError(e, "CK method {MethodId} invocation {InvocationId}: the audit recorder threw", record.MethodId,
                 record.InvocationId);
+            return true;
         }
     }
 

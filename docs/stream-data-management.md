@@ -61,7 +61,7 @@ Time-series data support (`StreamData/`):
     hosted and the endpoints keep their direct lifecycle call; so do they in a tenant whose CK model does not declare
     the method (System.StreamData older than the methods, or not resolved: `IArchiveMethodFacade.CanServe`), where the
     gateway would answer `403` for an unknown method. That direct call (the **fallback**) runs behind
-    `IArchiveMethodFallbackGuard` (AB#9337, see "The fallback guard" below): the same caller-tenant and data-permission
+    `IArchiveMethodFallbackGuard` (see "The fallback guard" below): the same caller-tenant and data-permission
     checks as the method path, one audit event and one WARN line per call. Tests:
     `IntegrationTests/StreamData/ArchiveMethodFacadeTests` (fixture `ArchiveMethodFacadeFixture` observes the audit and the
     session tripwire). The computed-column endpoints still call the engine directly (not migrated yet).
@@ -90,7 +90,7 @@ Time-series data support (`StreamData/`):
     that is not readable any more answers `500` problem details naming the operation. With the switch off, or in a tenant whose
     System.StreamData is older than 1.30.0, the endpoints keep their direct call, behind the fallback guard (below). Tests:
     `IntegrationTests/StreamData/RecomputeMethodFacadeTests`, `UnitTests/StreamData/Methods/RecomputeAsyncHandlerTests`.
-  - **The fallback guard (AB#9337).** Every archive call that does not run through its CK method runs behind
+  - **The fallback guard.** Every archive call that does not run through its CK method runs behind
     `StreamData/Methods/ArchiveMethodFallbackGuard` (`IArchiveMethodFallbackGuard`, registered with the facade, with the switch on
     and off; a host without it fails the call instead of running it unchecked). That is: the eight lifecycle and rollup
     endpoints, `recompute` and `backfill-from-source` and the deprecated lifecycle and rollup mutations while

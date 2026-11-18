@@ -399,7 +399,7 @@ public class StreamDataController : ControllerBase
             // a client HTTP timeout / disconnect must never cancel a server-side recompute (the octo-cli
             // HttpClient's 100s default previously killed long recomputes mid-flight). The job is
             // pollable via the recompute-jobs endpoint even if the client has already gone away.
-            // AB#9337: the direct call runs behind the fallback guard.
+            // The direct call runs behind the fallback guard.
             var target = new OctoObjectId(rollupRtId);
             var guarded = await FallbackGuard().InvokeAsync(tenantContext, ArchiveMethodFacade.RollupArchiveCkTypeId,
                 SystemStreamDataCkIds.RollupArchiveRecompute2MethodId, "Recompute", target, User,
@@ -465,7 +465,7 @@ public class StreamDataController : ControllerBase
             // Enqueue + return the Pending job immediately. Use the app-lifetime token for the quick
             // resolve/enqueue writes (not HttpContext.RequestAborted) so even the enqueue is not tied to
             // the client connection; the recompute itself runs later on the background orchestrator tick.
-            // AB#9337: the direct call runs behind the fallback guard.
+            // The direct call runs behind the fallback guard.
             var target = new OctoObjectId(rollupRtId);
             var guarded = await FallbackGuard().InvokeAsync(tenantContext, ArchiveMethodFacade.RollupArchiveCkTypeId,
                 SystemStreamDataCkIds.RollupArchiveBackfillFromSource2MethodId, "Backfill", target, User,
@@ -1403,7 +1403,7 @@ public class StreamDataController : ControllerBase
 
             var facade = HttpContext?.RequestServices?.GetService<IArchiveMethodFacade>();
             // switch off, or a tenant whose CK model does not declare the method: the direct call behind the fallback guard
-            // (AB#9337: caller tenant, data permission, one audit event, one WARN line); an authorised caller gets 204 as before
+            // (caller tenant, data permission, one audit event, one WARN line); an authorised caller gets 204 as before
             if (facade == null || !facade.CanServe(tenantContext, ckTypeId, methodId))
             {
                 var guarded = await FallbackGuard().InvokeAsync(tenantContext, ckTypeId, methodId, operation, targetRtId,
@@ -1560,7 +1560,7 @@ public class StreamDataController : ControllerBase
     }
 
     /// <summary>
-    ///     AB#9337: the guard of every lifecycle, rollup, recompute and backfill call that does not run through its method.
+    ///     The guard of every lifecycle, rollup, recompute and backfill call that does not run through its method.
     ///     Required: a host without it fails the call instead of running the direct call unchecked.
     /// </summary>
     private IArchiveMethodFallbackGuard FallbackGuard() =>

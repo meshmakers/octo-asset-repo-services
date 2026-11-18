@@ -19,6 +19,8 @@ using Meshmakers.Octo.Runtime.Contracts.RepositoryEntities;
 using Meshmakers.Octo.Runtime.Contracts.Repositories;
 using Meshmakers.Octo.Runtime.Contracts.StreamData;
 using Meshmakers.Octo.Services.Contracts.DistributionEventHub.Methods;
+using Meshmakers.Octo.Services.Infrastructure.Configuration;
+using Meshmakers.Octo.Services.Infrastructure.Services;
 using Meshmakers.Octo.Services.Methods.Audit;
 using Meshmakers.Octo.Services.Methods.Authorization;
 using Microsoft.AspNetCore.Http;
@@ -34,7 +36,7 @@ using Xunit;
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.StreamData;
 
 /// <summary>
-///     AB#9337: every archive call that does not run through its CK method - the REST lifecycle, rollup, recompute and backfill
+///     Every archive call that does not run through its CK method - the REST lifecycle, rollup, recompute and backfill
 ///     endpoints and the deprecated mutations while <see cref="IArchiveMethodFacade.CanServe" /> is false, and the
 ///     <c>recomputeArchive</c> / <c>backfillRollupFromSource</c> mutations always - runs behind
 ///     <see cref="IArchiveMethodFallbackGuard" />: a token of another tenant and a caller without data permission on the archive
@@ -121,6 +123,70 @@ public class ArchiveMethodFallbackGuardTests
         (await Controller(Admin(), services).ActivateArchive(Tenant, $"{archive}")).Should().BeOfType<NoContentResult>();
 
         log.Entries.Should().ContainSingle(e => e.Level == LogLevel.Warning).Which.Message.Should().Contain("switch-off");
+    }
+
+    [Fact]
+    public async Task OnTheFallback_AnArchiveTheCallerCannotSee_AnswersLikeAMissingOne_400OnRest_NotFoundOnTheMutation()
+    {
+        var viaRest = await CreateRawArchiveAsync("FbHidden");
+        var viaMutation = await CreateRawArchiveAsync("FbHiddenMut");
+        var services = Fallback(Evaluator(RtDataPermissionDecision.NotVisible));
+        _fixture.AuditEvents.Clear();
+
+        var rest = await Controller(Admin(), services).ActivateArchive(Tenant, $"{viaRest}");
+        var mutation = await ExecuteAsync(
+            $$"""mutation { streamData { activateArchive(rtId: "{{viaMutation}}") { archiveRtId } } }""", Admin(), services);
+
+        rest.Should().BeOfType<BadRequestObjectResult>().Which.Value.Should().Be(new ArchiveNotFoundException(viaRest).Message);
+        mutation.Errors!.First().Code.Should().Be(Statics.GraphQlErrorStreamDataArchiveNotFound);
+        _fixture.AuditEvents.Should().HaveCount(2).And.OnlyContain(e =>
+            e.Transport == ArchiveMethodFallbackGuard.Transport && e.Outcome == CkMethodErrorCodes.MethodTargetNotFound);
+        (await SnapshotAsync(viaRest))!.Status.Should().Be(CkArchiveStatus.Created);
+        (await SnapshotAsync(viaMutation))!.Status.Should().Be(CkArchiveStatus.Created);
+    }
+
+    [Fact]
+    public async Task OnTheFallback_AServiceClientOnTheCrossTenantAllowList_Passes_AndAnotherServiceClientIsRefused()
+    {
+        var options = new TenantAuthorizationOptions();
+        options.CrossTenantServiceClientIds.Add("platform-service");
+        var services = Fallback(tenantOptions: options);
+        var allowListed = await CreateRawArchiveAsync("FbAllowed");
+        var foreign = await CreateRawArchiveAsync("FbForeignService");
+
+        (await Controller(ServiceOf("platform-service"), services).ActivateArchive(Tenant, $"{allowListed}"))
+            .Should().BeOfType<NoContentResult>();
+        var refused = await Controller(ServiceOf("other-service"), services).ActivateArchive(Tenant, $"{foreign}");
+
+        refused.Should().BeOfType<ObjectResult>().Which.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
+        (await SnapshotAsync(allowListed))!.Status.Should().Be(CkArchiveStatus.Activated);
+        (await SnapshotAsync(foreign))!.Status.Should().Be(CkArchiveStatus.Created);
+    }
+
+    [Fact]
+    public async Task OnTheFallback_WithAStrictAuditThatFails_AnExecutedCallIsOutcomeUnknown_AndARefusalStaysTheRefusal()
+    {
+        var archive = await CreateRawArchiveAsync("FbStrict");
+        var foreign = await CreateRawArchiveAsync("FbStrictForeign");
+        var failingRecorder = A.Fake<ICkMethodAuditRecorder>();
+        A.CallTo(() => failingRecorder.RecordAsync(A<CkMethodAuditRecord>._, A<CancellationToken>._))
+            .ThrowsAsync(new CkMethodAuditFailedException(Guid.NewGuid(), new TimeoutException()));
+        var services = Fallback(auditRecorder: failingRecorder);
+
+        // like the audit filter of the method pipeline: the change ran, its event is missing, so the outcome is unknown
+        var executed = await Controller(Admin(), services).ActivateArchive(Tenant, $"{archive}");
+        var refused = await Controller(UserOf("some-other-tenant", CommonConstants.StreamDataAdminRole), services)
+            .ActivateArchive(Tenant, $"{foreign}");
+
+        var unknown = executed.Should().BeOfType<ObjectResult>().Subject;
+        unknown.StatusCode.Should().Be(StatusCodes.Status500InternalServerError);
+        unknown.Value.Should().BeOfType<ProblemDetails>().Which.Extensions["code"].Should()
+            .Be(CkMethodErrorCodes.MethodOutcomeUnknown);
+        var stillRefused = refused.Should().BeOfType<ObjectResult>().Subject;
+        stillRefused.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
+        stillRefused.Value.Should().BeOfType<ProblemDetails>().Which.Extensions["code"].Should()
+            .Be(CkMethodErrorCodes.MethodForbidden);
+        (await SnapshotAsync(foreign))!.Status.Should().Be(CkArchiveStatus.Created);
     }
 
     // ── the deprecated lifecycle and rollup mutations on the fallback ─────────────────────────────
@@ -221,33 +287,46 @@ public class ArchiveMethodFallbackGuardTests
     }
 
     /// <summary>A data-permission evaluator that refuses every action on a visible archive (a policy without a grant).</summary>
-    private static IRtDataPermissionEvaluator DenyingEvaluator()
+    private static IRtDataPermissionEvaluator DenyingEvaluator() => Evaluator(RtDataPermissionDecision.NotPermitted);
+
+    private static IRtDataPermissionEvaluator Evaluator(RtDataPermissionDecision decision)
     {
         var evaluator = A.Fake<IRtDataPermissionEvaluator>();
         A.CallTo(() => evaluator.EvaluateAsync(A<IRuntimeRepository>._, A<RtSecurityContext>._, A<RtEntityId>._,
                 A<RtDataAction>._, A<bool>._, A<CancellationToken>._))
-            .Returns(new RtDataPermissionVerdict(RtDataPermissionDecision.NotPermitted, RtDataPermissionReason.NoGrant));
+            .Returns(new RtDataPermissionVerdict(decision, RtDataPermissionReason.NoGrant));
         return evaluator;
     }
+
+    /// <summary>A client-credentials token (no <c>sub</c>) of a service client issued for another tenant.</summary>
+    private static ClaimsPrincipal ServiceOf(string clientId) => new(new ClaimsIdentity(
+    [
+        new Claim("client_id", clientId), new Claim("scope", "octo_api"),
+        new Claim("role", CommonConstants.StreamDataAdminRole), new Claim(ClaimTypes.Role, CommonConstants.StreamDataAdminRole),
+        new Claim("tenant_id", "othertenant")
+    ], "Bearer"));
 
     /// <summary>
     ///     The request services of a tenant on the fallback: a facade that cannot serve, and the real guard of the host or one
     ///     built from the host's services with another evaluator, logger or switch.
     /// </summary>
     private IServiceProvider Fallback(IRtDataPermissionEvaluator? evaluator = null, ILogger<ArchiveMethodFallbackGuard>? logger = null,
-        StreamDataMethodsOptions? options = null)
+        StreamDataMethodsOptions? options = null, TenantAuthorizationOptions? tenantOptions = null,
+        ICkMethodAuditRecorder? auditRecorder = null)
     {
         var inner = _fixture.GetService<IServiceScopeFactory>().CreateScope().ServiceProvider;
         var facade = A.Fake<IArchiveMethodFacade>();
         A.CallTo(() => facade.IsHosted).Returns(options?.Enabled ?? true);
         A.CallTo(() => facade.CanServe(A<ITenantContext>._, A<string>._, A<string>._)).Returns(false);
-        var guard = evaluator == null && logger == null && options == null
+        var guard = evaluator == null && logger == null && options == null && tenantOptions == null && auditRecorder == null
             ? inner.GetRequiredService<IArchiveMethodFallbackGuard>()
             : new ArchiveMethodFallbackGuard(evaluator ?? inner.GetRequiredService<IRtDataPermissionEvaluator>(),
                 inner.GetRequiredService<ICkMethodAuthorizationDefinitionSource>(),
-                inner.GetRequiredService<ICkMethodAuditRecorder>(),
+                auditRecorder ?? inner.GetRequiredService<ICkMethodAuditRecorder>(),
                 options != null ? Options.Create(options) : inner.GetRequiredService<IOptions<StreamDataMethodsOptions>>(),
-                logger ?? NullLogger<ArchiveMethodFallbackGuard>.Instance);
+                logger ?? NullLogger<ArchiveMethodFallbackGuard>.Instance,
+                tenantOptions != null ? Options.Create(tenantOptions) : inner.GetService<IOptions<TenantAuthorizationOptions>>(),
+                inner.GetService<ITenantHierarchyReader>());
         return new OverridingServiceProvider(inner, facade, guard);
     }
 

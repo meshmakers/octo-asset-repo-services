@@ -183,7 +183,7 @@ internal sealed class CkMethodGateway(
         // call (the exception surfaces), it never lets it pass.
         var dataAccess = CkMethodAuthorization.Resolve(definition!.Authorization);
         var access = await targetAccess(dataAccess, cancellationToken).ConfigureAwait(false);
-        // AB#9337: the answer is the shared rule (CkMethodCallChecks), the same the archive fallback guard applies
+        // The answer is the shared rule (CkMethodCallChecks), the same the archive fallback guard applies
         var dataRefusal = CkMethodCallChecks.RefusalOf(access, call.MethodId, call.TargetRtId != null);
         if (dataRefusal == null)
         {

@@ -20,7 +20,7 @@ who passed the declared check. The refusal log line (Information) names method i
 `MutationScopeListener` is unchanged). `CkMethodGraphQlError.Create` turns a failed response into ONE `ExecutionError` with `extensions.code` and
 `extensions.parameters` and a fixed message. The gateway also validates the parameters (see "Method mutation resolver" below). The
 production callers are the resolver of the typed method mutations (`CkMethodFieldResolver`) and the archive facade (`IArchiveMethodFacade`).
-**Shared with the archive fallback (AB#9337):** the answer of the data-permission check (`CkMethodCallChecks.RefusalOf`) and the audit event of a call
+**Shared with the archive fallback:** the answer of the data-permission check (`CkMethodCallChecks.RefusalOf`) and the audit event of a call
 the pipeline never saw (`CkMethodCallChecks.RecordOf` / `RecordAsync`) live in `GraphQL/Methods/CkMethodCallChecks.cs`; the gateway and
 `ArchiveMethodFallbackGuard` both use them, and both call `CkMethodCallerTenantCheck` for the caller tenant. So an archive call that does not run through
 its method (switch off, method not declared, `recomputeArchive` / `backfillRollupFromSource`) gets the same caller-tenant and data-permission answer
