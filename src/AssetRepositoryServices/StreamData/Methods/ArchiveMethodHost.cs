@@ -5,6 +5,7 @@ using Meshmakers.Octo.Runtime.Contracts.MongoDb;
 using Meshmakers.Octo.Runtime.Engine.MongoDb.Repositories.MongoDb;
 using Meshmakers.Octo.Services.Infrastructure.Initialization;
 using Meshmakers.Octo.Services.Methods;
+using Meshmakers.Octo.Services.Methods.Operations;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.StreamData.Methods;
@@ -83,10 +84,16 @@ internal static class ArchiveMethodHost
             "unfreezeRollupArchive"),
         ArchiveMethodHandlerRegistration.For<RollupArchiveRewindWatermarkHandler>(
             SystemStreamDataCkIds.RollupArchiveRewindWatermarkMethodId, "rewindRollupWatermark"),
+        // Recompute-1 and BackfillFromSource-1 are deprecated since System.StreamData 1.30.0; the mutations name the -2 versions
         ArchiveMethodHandlerRegistration.For<RollupArchiveRecomputeHandler>(SystemStreamDataCkIds.RollupArchiveRecomputeMethodId,
-            "recomputeArchive"),
+            mutation: null),
         ArchiveMethodHandlerRegistration.For<RollupArchiveBackfillFromSourceHandler>(
-            SystemStreamDataCkIds.RollupArchiveBackfillFromSourceMethodId, "backfillRollupFromSource"),
+            SystemStreamDataCkIds.RollupArchiveBackfillFromSourceMethodId, mutation: null),
+        // System.StreamData 1.30.0: the asynchronous versions (execution.mode async, operation handle)
+        ArchiveMethodHandlerRegistration.For<RollupArchiveRecompute2Handler>(
+            SystemStreamDataCkIds.RollupArchiveRecompute2MethodId, "recomputeArchive"),
+        ArchiveMethodHandlerRegistration.For<RollupArchiveBackfillFromSource2Handler>(
+            SystemStreamDataCkIds.RollupArchiveBackfillFromSource2MethodId, "backfillRollupFromSource"),
         // System.StreamData 1.27.0: the destructive way out of a Hidden-column failure; no mutation exists for it
         ArchiveMethodHandlerRegistration.For<ArchiveRedactHiddenColumnsHandler>(
             SystemStreamDataCkIds.ArchiveRedactHiddenColumnsMethodId, mutation: null),
@@ -125,7 +132,10 @@ internal static class ArchiveMethodHost
     /// <returns><c>true</c> when the handlers are hosted.</returns>
     public static bool AddArchiveCkMethodHandlers(this IServiceCollection services, IConfiguration configuration)
     {
-        services.AddOptions<StreamDataMethodsOptions>().BindConfiguration(StreamDataMethodsOptions.SectionName);
+        services.AddOptions<StreamDataMethodsOptions>().BindConfiguration(StreamDataMethodsOptions.SectionName)
+            .Validate(o => o.OperationPollInterval > TimeSpan.Zero && o.BackfillQueueTimeout > TimeSpan.Zero,
+                $"{StreamDataMethodsOptions.SectionName}: OperationPollInterval and BackfillQueueTimeout must be greater than zero")
+            .ValidateOnStart();
         // The REST lifecycle endpoints and the deprecated mutations call the methods through this facade; it is
         // registered with the switch off as well and then tells its callers to keep their direct lifecycle call.
         services.TryAddScoped<IArchiveMethodFacade, ArchiveMethodFacade>();
@@ -141,6 +151,9 @@ internal static class ArchiveMethodHost
                 handler.Register(builder);
             }
         });
+        // Recompute-2 and BackfillFromSource-2 are asynchronous; the runner records their operations in the store of
+        // the host (AddCkMethodMongoOperationStore, MethodOperations in the system database) and keeps their heartbeat
+        services.AddCkMethodOperations();
         services.AddInitializationService<SystemTenantStreamDataModelImport>();
         return true;
     }
@@ -263,4 +276,18 @@ public sealed class StreamDataMethodsOptions
     ///     keep working with their direct lifecycle call (<see cref="IArchiveMethodFacade.IsHosted" />).
     /// </summary>
     public bool Enabled { get; set; } = true;
+
+    /// <summary>
+    ///     How often a waiting operation or REST facade reads the recompute job or the operation record : the work of
+    ///     <c>BackfillFromSource-2</c> following its job, and the REST endpoints <c>recompute</c> and
+    ///     <c>backfill-from-source</c> waiting for their operation. Default 1 s.
+    /// </summary>
+    public TimeSpan OperationPollInterval { get; set; } = TimeSpan.FromSeconds(1);
+
+    /// <summary>
+    ///     How long the REST endpoint <c>backfill-from-source</c> waits for the operation of <c>BackfillFromSource-2</c> to
+    ///     report its queued job ; the enqueue only resolves the source range. Default 60 s (the accept bound of
+    ///     <c>BackfillFromSource-1</c>).
+    /// </summary>
+    public TimeSpan BackfillQueueTimeout { get; set; } = TimeSpan.FromSeconds(60);
 }

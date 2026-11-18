@@ -109,8 +109,11 @@ public class ArchiveMethodTests
             ("freezeRollupArchive", SystemStreamDataCkIds.RollupArchiveFreezeMethodId),
             ("unfreezeRollupArchive", SystemStreamDataCkIds.RollupArchiveUnfreezeMethodId),
             ("rewindRollupWatermark", SystemStreamDataCkIds.RollupArchiveRewindWatermarkMethodId),
-            ("recomputeArchive", SystemStreamDataCkIds.RollupArchiveRecomputeMethodId),
-            ("backfillRollupFromSource", SystemStreamDataCkIds.RollupArchiveBackfillFromSourceMethodId),
+            // System.StreamData 1.30.0: the mutations name the asynchronous -2 versions; -1 are deprecated and kept
+            ((string?)null, SystemStreamDataCkIds.RollupArchiveRecomputeMethodId),
+            ((string?)null, SystemStreamDataCkIds.RollupArchiveBackfillFromSourceMethodId),
+            ("recomputeArchive", SystemStreamDataCkIds.RollupArchiveRecompute2MethodId),
+            ("backfillRollupFromSource", SystemStreamDataCkIds.RollupArchiveBackfillFromSource2MethodId),
             // the redaction of Hidden columns replaces no mutation
             ((string?)null, SystemStreamDataCkIds.ArchiveRedactHiddenColumnsMethodId),
             ((string?)null, SystemStreamDataCkIds.ArchiveRedactHiddenColumns2MethodId),
@@ -125,6 +128,9 @@ public class ArchiveMethodTests
         ArchiveMethodHost.Handlers.Should().OnlyContain(h => !h.MethodId.Contains("-1.", StringComparison.Ordinal),
             "the ids are version-less");
         ArchiveMethodHost.DeprecationReasonOf("deleteArchive").Should().Be("Use System.StreamData/Archive.DeleteArchive-1");
+        ArchiveMethodHost.DeprecationReasonOf("recomputeArchive").Should().Be("Use System.StreamData/RollupArchive.Recompute-2");
+        ArchiveMethodHost.DeprecationReasonOf("backfillRollupFromSource")
+            .Should().Be("Use System.StreamData/RollupArchive.BackfillFromSource-2");
     }
 
     [Fact]
