@@ -14,6 +14,19 @@
   restore. Also fixed: a zip upload to `ImportCk` / `ValidateCk` was answered with 500 by the real serializer (the zip entry
   stream cannot be rewound); entries are buffered now. A file or zip entry that cannot be read as a compiled model is a `400`
   (was a `500` with the real serializer), and a zip model entry that cannot be read refuses the upload instead of being skipped.
+- Refactor: the REST archive lifecycle and rollup endpoints (`POST {tenantId}/v1/streamdata/archives/{id}/activate`,
+  `/disable`, `/enable`, `/retry`, `DELETE .../archives/{id}`, `POST .../archives/{id}/freeze`, `/unfreeze`, `/rewind`) and the
+  deprecated mutations `activateArchive`, `disableArchive`, `enableArchive`, `retryArchiveActivation`, `deleteArchive`,
+  `freezeRollupArchive`, `unfreezeRollupArchive` and `rewindRollupWatermark` call the Archive methods of System.StreamData
+  (`Archive.Activate-1` … `RollupArchive.RewindWatermark-1`) through the method gateway and the in-process dispatcher instead
+  of the lifecycle services: one Method audit event per call, the handler outside the request transaction. Routes, bodies,
+  status codes and the mutation schema are unchanged; REST gets no Sunset header. Behaviour changes: a data permission that
+  refuses the archive now refuses the call (REST `403` / `METHOD_FORBIDDEN`, before there was no data-permission check); a
+  caller token of another tenant is refused by the method with `METHOD_FORBIDDEN` / `tenant-not-allowed` (REST `403` problem
+  details) also while the HTTP tenant gate only logs; platform failures of the method answer with their documented codes
+  (`METHOD_VALIDATION_FAILED` `400`, `METHOD_TIMEOUT` `504`, ...). With `Methods:StreamData:Enabled=false` (default true)
+  the endpoints and mutations keep their direct lifecycle call, and so they do in a tenant whose CK model does not declare
+  the method (System.StreamData older than the methods, or not resolved), instead of answering `403`.
 - New: `System.StreamData/Archive.RedactHiddenColumns-2` (System.StreamData 1.29.0, GraphQL field `redactHiddenColumns2`), the
   redaction of Hidden archive columns with the columns the administrator confirmed: required `expectedColumns`; when the Hidden
   columns at execution time are not exactly that set, the call answers `STREAMDATA_REDACTION_COLUMNS_CHANGED` (parameters

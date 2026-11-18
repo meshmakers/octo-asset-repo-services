@@ -3,7 +3,12 @@ using System.Globalization;
 using Asp.Versioning;
 using GraphQL;
 using Duende.IdentityModel;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.StreamData.Methods;
 using Meshmakers.Octo.Communication.Contracts;
+using Meshmakers.Octo.ConstructionKit.Models.StreamData.Generated.System.StreamData.v1;
+using Meshmakers.Octo.Services.Contracts.DistributionEventHub.Methods;
+using Meshmakers.Octo.Services.Methods.Facades;
+using Microsoft.Net.Http.Headers;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects.ApiErrors;
 using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb;
@@ -95,8 +100,9 @@ public class StreamDataController : ControllerBase
     [HttpPost("archives/{archiveRtId}/activate")]
     [Microsoft.AspNetCore.Authorization.Authorize(AssetRepositoryServiceConstants.StreamDataAdministrationPolicy)]
     public Task<IActionResult> ActivateArchive([Required] string tenantId, [Required] string archiveRtId)
-        => InvokeArchiveTransitionAsync(tenantId, archiveRtId, "ActivateArchive",
-            (lifecycle, id) => lifecycle.ActivateAsync(id));
+        => InvokeArchiveMethodAsync(tenantId, archiveRtId, "ActivateArchive",
+            (lifecycle, id) => lifecycle.ActivateAsync(id),
+            SystemStreamDataCkIds.ArchiveActivateMethodId, new ArchiveActivateParameters());
 
     /// <summary>
     /// Disables stream data for a given tenant
@@ -155,8 +161,9 @@ public class StreamDataController : ControllerBase
     [HttpPost("archives/{archiveRtId}/disable")]
     [Microsoft.AspNetCore.Authorization.Authorize(AssetRepositoryServiceConstants.StreamDataAdministrationPolicy)]
     public Task<IActionResult> DisableArchive([Required] string tenantId, [Required] string archiveRtId)
-        => InvokeArchiveTransitionAsync(tenantId, archiveRtId, "DisableArchive",
-            (lifecycle, id) => lifecycle.DisableAsync(id));
+        => InvokeArchiveMethodAsync(tenantId, archiveRtId, "DisableArchive",
+            (lifecycle, id) => lifecycle.DisableAsync(id),
+            SystemStreamDataCkIds.ArchiveDisableMethodId, new ArchiveDisableParameters());
 
     /// <summary>
     /// Re-enables a previously disabled archive: transitions <c>Disabled → Activated</c>. Re-validates
@@ -165,8 +172,9 @@ public class StreamDataController : ControllerBase
     [HttpPost("archives/{archiveRtId}/enable")]
     [Microsoft.AspNetCore.Authorization.Authorize(AssetRepositoryServiceConstants.StreamDataAdministrationPolicy)]
     public Task<IActionResult> EnableArchive([Required] string tenantId, [Required] string archiveRtId)
-        => InvokeArchiveTransitionAsync(tenantId, archiveRtId, "EnableArchive",
-            (lifecycle, id) => lifecycle.EnableAsync(id));
+        => InvokeArchiveMethodAsync(tenantId, archiveRtId, "EnableArchive",
+            (lifecycle, id) => lifecycle.EnableAsync(id),
+            SystemStreamDataCkIds.ArchiveEnableMethodId, new ArchiveEnableParameters());
 
     /// <summary>
     /// Retries activation after a previous DDL failure. Allowed only from <c>Failed</c>.
@@ -174,8 +182,9 @@ public class StreamDataController : ControllerBase
     [HttpPost("archives/{archiveRtId}/retry")]
     [Microsoft.AspNetCore.Authorization.Authorize(AssetRepositoryServiceConstants.StreamDataAdministrationPolicy)]
     public Task<IActionResult> RetryArchiveActivation([Required] string tenantId, [Required] string archiveRtId)
-        => InvokeArchiveTransitionAsync(tenantId, archiveRtId, "RetryArchiveActivation",
-            (lifecycle, id) => lifecycle.RetryActivationAsync(id));
+        => InvokeArchiveMethodAsync(tenantId, archiveRtId, "RetryArchiveActivation",
+            (lifecycle, id) => lifecycle.RetryActivationAsync(id),
+            SystemStreamDataCkIds.ArchiveRetryActivationMethodId, new ArchiveRetryActivationParameters());
 
     /// <summary>
     /// Drops the per-archive CrateDB table (idempotent) and soft-deletes the <c>CkArchive</c>
@@ -184,8 +193,9 @@ public class StreamDataController : ControllerBase
     [HttpDelete("archives/{archiveRtId}")]
     [Microsoft.AspNetCore.Authorization.Authorize(AssetRepositoryServiceConstants.StreamDataAdministrationPolicy)]
     public Task<IActionResult> DeleteArchive([Required] string tenantId, [Required] string archiveRtId)
-        => InvokeArchiveTransitionAsync(tenantId, archiveRtId, "DeleteArchive",
-            (lifecycle, id) => lifecycle.DeleteAsync(id));
+        => InvokeArchiveMethodAsync(tenantId, archiveRtId, "DeleteArchive",
+            (lifecycle, id) => lifecycle.DeleteAsync(id),
+            SystemStreamDataCkIds.ArchiveDeleteArchiveMethodId, new ArchiveDeleteArchiveParameters());
 
     /// <summary>
     /// Freezes a rollup archive at <paramref name="until"/>. Monotonic — rejected when the new
@@ -196,7 +206,8 @@ public class StreamDataController : ControllerBase
     public Task<IActionResult> FreezeRollupArchive(
         [Required] string tenantId, [Required] string rollupRtId, [Required] DateTime until)
         => InvokeRollupAsync(tenantId, rollupRtId, "FreezeRollup",
-            (lifecycle, id) => lifecycle.FreezeAsync(id, until));
+            (lifecycle, id) => lifecycle.FreezeAsync(id, until),
+            SystemStreamDataCkIds.RollupArchiveFreezeMethodId, new RollupArchiveFreezeParameters { Until = until });
 
     /// <summary>
     /// Clears FrozenUntil on the rollup archive. Idempotent. Concept §9.
@@ -206,7 +217,9 @@ public class StreamDataController : ControllerBase
     public Task<IActionResult> UnfreezeRollupArchive(
         [Required] string tenantId, [Required] string rollupRtId, bool acceptGaps = false)
         => InvokeRollupAsync(tenantId, rollupRtId, "UnfreezeRollup",
-            (lifecycle, id) => lifecycle.UnfreezeAsync(id, acceptGaps));
+            (lifecycle, id) => lifecycle.UnfreezeAsync(id, acceptGaps),
+            SystemStreamDataCkIds.RollupArchiveUnfreezeMethodId,
+            new RollupArchiveUnfreezeParameters { AcceptGaps = acceptGaps });
 
     /// <summary>
     /// Resets the rollup's watermark (truncated down to the bucket boundary) so subsequent
@@ -218,7 +231,9 @@ public class StreamDataController : ControllerBase
     public Task<IActionResult> RewindRollupWatermark(
         [Required] string tenantId, [Required] string rollupRtId, [Required] DateTime toBucketEnd)
         => InvokeRollupAsync(tenantId, rollupRtId, "RewindRollup",
-            (lifecycle, id) => lifecycle.RewindWatermarkAsync(id, toBucketEnd));
+            (lifecycle, id) => lifecycle.RewindWatermarkAsync(id, toBucketEnd),
+            SystemStreamDataCkIds.RollupArchiveRewindWatermarkMethodId,
+            new RollupArchiveRewindWatermarkParameters { ToBucketEnd = toBucketEnd });
 
     /// <summary>
     /// Adds a computed column to an Activated raw or time-range archive (AB#4189 Phase 7) and queues
@@ -1292,18 +1307,76 @@ public class StreamDataController : ControllerBase
         }
     }
 
-    private async Task<IActionResult> InvokeRollupAsync(
+    /// <summary>
+    ///     REST facade of an Archive lifecycle method: <c>Archive.Activate-1</c>, <c>Disable-1</c>,
+    ///     <c>Enable-1</c>, <c>RetryActivation-1</c>, <c>DeleteArchive-1</c>. See <see cref="InvokeLifecycleMethodAsync{TParameters}" />.
+    /// </summary>
+    private Task<IActionResult> InvokeArchiveMethodAsync<TParameters>(
+        string tenantId, string archiveRtId, string operation,
+        Func<IArchiveLifecycleService, OctoObjectId, Task> transition, string methodId, TParameters parameters)
+        where TParameters : class
+        => InvokeLifecycleMethodAsync(tenantId, archiveRtId, operation, "archive", ArchiveMethodFacade.ArchiveCkTypeId,
+            methodId, parameters,
+            tenantContext => tenantContext.GetArchiveLifecycleService() is { } lifecycle
+                ? id => transition(lifecycle, id)
+                : null,
+            $"StreamData is not enabled for tenant '{tenantId}'. Call POST /streamdata/enable first.");
+
+    /// <summary>
+    ///     REST facade of a RollupArchive method: <c>RollupArchive.Freeze-1</c>, <c>Unfreeze-1</c>,
+    ///     <c>RewindWatermark-1</c>. See <see cref="InvokeLifecycleMethodAsync{TParameters}" />.
+    /// </summary>
+    private Task<IActionResult> InvokeRollupAsync<TParameters>(
         string tenantId, string rollupRtId, string operation,
-        Func<IRollupArchiveLifecycleService, OctoObjectId, Task> mutation)
+        Func<IRollupArchiveLifecycleService, OctoObjectId, Task> mutation, string methodId, TParameters parameters)
+        where TParameters : class
+        => InvokeLifecycleMethodAsync(tenantId, rollupRtId, operation, "rollup", ArchiveMethodFacade.RollupArchiveCkTypeId,
+            methodId, parameters,
+            tenantContext => tenantContext.GetRollupArchiveLifecycleService() is { } lifecycle
+                ? id => mutation(lifecycle, id)
+                : null,
+            $"Rollup support is not wired for tenant '{tenantId}'. Ensure stream data is enabled and a rollup store is registered.");
+
+    /// <summary>
+    ///     One lifecycle endpoint as the facade of its CK method: route, body and status
+    ///     codes stay as they were. The controller resolves the tenant and makes the one read-only pre-check the REST contract
+    ///     demands (a tenant without stream data answers <c>400</c> with the message it always had), then calls the method
+    ///     through <see cref="IArchiveMethodFacade" /> - gateway, declared role, data permission, in-process handler outside the
+    ///     request transaction, one Method audit event - and maps the envelope with
+    ///     <see cref="CkMethodFacadeResults.ToActionResult" /> and <see cref="LifecycleFacadeOptions" />. While
+    ///     <c>Methods:StreamData:Enabled</c> is off, or the tenant's CK model does not declare the method
+    ///     (<see cref="IArchiveMethodFacade.CanServe" />), the endpoint keeps its direct lifecycle call.
+    /// </summary>
+    private async Task<IActionResult> InvokeLifecycleMethodAsync<TParameters>(
+        string tenantId, string rtId, string operation, string targetKind, string ckTypeId, string methodId,
+        TParameters parameters, Func<ITenantContext, Func<OctoObjectId, Task>?> directCall, string notEnabledMessage)
+        where TParameters : class
     {
         try
         {
             var tenantContext = await _systemContext.FindTenantContextAsync(tenantId);
-            var lifecycle = tenantContext.GetRollupArchiveLifecycleService()
-                ?? throw new StreamDataException(
-                    $"Rollup support is not wired for tenant '{tenantId}'. Ensure stream data is enabled and a rollup store is registered.");
-            await mutation(lifecycle, new OctoObjectId(rollupRtId));
-            return NoContent();
+            var direct = directCall(tenantContext) ?? throw new StreamDataException(notEnabledMessage);
+            var targetRtId = new OctoObjectId(rtId);
+
+            var facade = HttpContext?.RequestServices?.GetService<IArchiveMethodFacade>();
+            // switch off, or a tenant whose CK model does not declare the method: the direct call, as before
+            if (facade == null || !facade.CanServe(tenantContext, ckTypeId, methodId))
+            {
+                await direct(targetRtId);
+                return NoContent();
+            }
+
+            var response = await facade.InvokeAsync(tenantContext, ckTypeId, methodId, targetRtId, parameters, User,
+                BearerTokenOf(HttpContext), HttpContext?.RequestAborted ?? CancellationToken.None);
+            if (response is { Success: false, Error: { } error })
+            {
+                // method id, invocation and code only: never the target id, the parameters or the engine message of a method
+                // call (docs/method-gateway.md); the message is the body of the answer
+                _logger.LogWarning("{Operation} refused for tenant '{TenantId}' by {MethodId} (invocation {InvocationId}): {Code}",
+                    operation, tenantId, methodId, response.InvocationId, error.Code);
+            }
+
+            return response.ToActionResult(LifecycleFacadeOptions(targetRtId, notEnabledMessage));
         }
         catch (ConfigurationException e)
         {
@@ -1311,10 +1384,44 @@ public class StreamDataController : ControllerBase
         }
         catch (StreamDataException e)
         {
-            _logger.LogWarning("{Operation} refused for tenant '{TenantId}', rollup '{RollupRtId}': {Reason}",
-                operation, tenantId, rollupRtId, e.Message);
+            _logger.LogWarning("{Operation} refused for tenant '{TenantId}', {TargetKind} '{RtId}': {Reason}",
+                operation, tenantId, targetKind, rtId, e.Message);
             return BadRequest(e.Message);
         }
+    }
+
+    /// <summary>
+    ///     The mapping of the lifecycle facades (parity table in docs/stream-data-management.md): success <c>204</c>; every declared
+    ///     <c>STREAMDATA_*</c> refusal <c>400</c> with the engine message as the body (what the direct call answered);
+    ///     <c>METHOD_TARGET_NOT_FOUND</c> - the gateway does not see the archive - <c>400</c> with the engine's not-found
+    ///     message, as before; <c>STREAMDATA_NOT_ENABLED</c> <c>400</c> with the endpoint's message. Every other platform code
+    ///     keeps the documented default of <see cref="CkMethodFacadeResults" /> (<c>METHOD_FORBIDDEN</c> <c>403</c>,
+    ///     <c>METHOD_VALIDATION_FAILED</c> <c>400</c>, ... as problem details).
+    /// </summary>
+    private static CkMethodFacadeOptions LifecycleFacadeOptions(OctoObjectId targetRtId, string notEnabledMessage)
+    {
+        var options = new CkMethodFacadeOptions()
+            .MapSuccess(_ => new NoContentResult())
+            .MapError(CkMethodErrorCodes.MethodTargetNotFound,
+                _ => new BadRequestObjectResult(new ArchiveNotFoundException(targetRtId).Message))
+            .MapError(ArchiveMethodErrors.StreamDataNotEnabled, _ => new BadRequestObjectResult(notEnabledMessage));
+        foreach (var code in ArchiveMethodErrors.StreamDataRefusalCodes)
+        {
+            options.MapError(code, error => new BadRequestObjectResult(
+                error.Parameters.GetValueOrDefault(ArchiveMethodErrors.MessageParameter) ?? error.Code));
+        }
+
+        return options;
+    }
+
+    /// <summary>The bearer token of the request, forwarded to the method like the GraphQL method fields do. Sensitive.</summary>
+    private static string? BearerTokenOf(HttpContext? httpContext)
+    {
+        var header = httpContext?.Request.Headers[HeaderNames.Authorization].ToString();
+        const string scheme = "Bearer ";
+        return header != null && header.StartsWith(scheme, StringComparison.OrdinalIgnoreCase)
+            ? header[scheme.Length..].Trim()
+            : null;
     }
 
     /// <summary>

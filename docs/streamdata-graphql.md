@@ -120,6 +120,11 @@ working unchanged; each is replaced by a method of System.StreamData 1.24.0, cal
 | `retryComputedColumnBackfill` | `System.StreamData/Archive.RetryComputedColumnBackfill-1` (1.28.0) | `ArchiveRetryComputedColumnBackfillHandler` |
 | `repairComputedColumn` | `System.StreamData/Archive.RepairComputedColumn-1` (1.28.0) | `ArchiveRepairComputedColumnHandler` |
 
+**Lifecycle and rollup mutations are method facades.** The eight lifecycle and rollup mutations keep their role check and
+call their method through `IArchiveMethodFacade` (as the REST endpoints, `docs/stream-data-management.md`); the answer keeps the
+mutation's shape and `STREAMDATA_*` codes (`METHOD_TARGET_NOT_FOUND` becomes `STREAMDATA_ARCHIVE_NOT_FOUND`), new refusals are
+the method's `METHOD_FORBIDDEN`. With `Methods:StreamData:Enabled=false`, or in a tenant whose CK model does not declare the method, they keep the direct call.
+
 Since System.StreamData 1.28.0 (AB#8600) **every** field of `StreamDataMutations` is deprecated with its method id. The unit test
 `ArchiveMethodTests.EveryStreamDataMutation_IsDeprecated_WithTheMethodThatReplacesIt` fails for a new streamData mutation without a
 method row in `ArchiveMethodHost`.
