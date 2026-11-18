@@ -304,25 +304,25 @@ public class ModelsControllerUpgradeGuardEnforcementTests
 
     // ---- ImportCk (AB#6966) ----
 
-    private static FormFile Upload(string fileName = "ck-system-2.yaml", string contentType = "application/x-yaml",
+    private static FormFile Upload(string fileName = "ck-basic-2.yaml", string contentType = "application/x-yaml",
         byte[]? content = null)
     {
-        var bytes = content ?? "modelId: System-2.8.0"u8.ToArray();
+        var bytes = content ?? "modelId: Basic-2.8.0"u8.ToArray();
         return new FormFile(new MemoryStream(bytes), 0, bytes.Length, "file", fileName)
         {
             Headers = new HeaderDictionary(), ContentType = contentType
         };
     }
 
-    private void FakeFileModel(string modelId = "System-2.8.0") =>
+    private void FakeFileModel(string modelId = "Basic-2.8.0") =>
         A.CallTo(() => _ckSerializer.DeserializeCompiledModelRootAsync(A<Stream>._, A<string>._, A<OperationResult>._))
             .ReturnsLazily(() => Task.FromResult(new CkCompiledModelRoot { ModelId = new CkModelId(modelId) }));
 
     private static CkUpgradeBlockerDto SystemBlocker() => new()
     {
-        Dependent = "System.Identity-2.26.0", Update = "System-2.8.0", Kind = "ElementRemoved",
+        Dependent = "System.Identity-2.26.0", Update = "Basic-2.8.0", Kind = "ElementRemoved",
         Subject = "System@2/DisplayName-1", Code = "CK_UPGRADE_ELEMENT_REMOVED",
-        Message = "System.Identity 2.26.0 would break: uses System@2/DisplayName-1, which System-2.8.0 does not define"
+        Message = "System.Identity 2.26.0 would break: uses System@2/DisplayName-1, which Basic-2.8.0 does not define"
     };
 
     private void FakeFileGuard(params CkUpgradeBlockerDto[] blockers) =>
@@ -347,8 +347,8 @@ public class ModelsControllerUpgradeGuardEnforcementTests
         conflict.ContentTypes.Should().Contain("application/problem+json");
         var problem = conflict.Value.Should().BeOfType<ProblemDetails>().Subject;
         problem.Extensions["code"].Should().Be("CK_UPGRADE_BLOCKED");
-        problem.Extensions["updateSet"].Should().BeEquivalentTo(new[] { "System-2.8.0" });
-        problem.Extensions["fileName"].Should().Be("ck-system-2.yaml");
+        problem.Extensions["updateSet"].Should().BeEquivalentTo(new[] { "Basic-2.8.0" });
+        problem.Extensions["fileName"].Should().Be("ck-basic-2.yaml");
         problem.Extensions["blockers"].Should().BeAssignableTo<IReadOnlyList<CkUpgradeBlockerDto>>().Subject
             .Should().ContainSingle().Which.Dependent.Should().Be("System.Identity-2.26.0");
         problem.Detail.Should().Contain("Nothing was imported").And.Contain("forceBreakingUpdate")
@@ -372,7 +372,7 @@ public class ModelsControllerUpgradeGuardEnforcementTests
         var warn = _logger.Entries.Should().ContainSingle().Subject;
         warn.Level.Should().Be(LogLevel.Warning);
         warn.Message.Should().Contain("sbeg").And.Contain("sub=user-4711").And.Contain("name=Ada Admin")
-            .And.Contain("ck-system-2.yaml").And.Contain("System-2.8.0")
+            .And.Contain("ck-basic-2.yaml").And.Contain("Basic-2.8.0")
             .And.Contain("System.Identity-2.26.0").And.Contain("ElementRemoved");
     }
 
@@ -429,7 +429,7 @@ public class ModelsControllerUpgradeGuardEnforcementTests
         var result = await _controller.ImportCk(Upload());
 
         result.Should().BeOfType<BadRequestObjectResult>().Which.Value.Should().BeOfType<Meshmakers.Octo.Communication.Contracts.DataTransferObjects.ApiErrors.InternalServerErrorDto>()
-            .Which.Message.Should().Contain("ck-system-2.yaml");
+            .Which.Message.Should().Contain("ck-basic-2.yaml");
         NothingMayHaveBeenWritten();
         A.CallTo(() => _libraryStatusService.EvaluateFileImportBlockersAsync(A<string>._,
             A<IReadOnlyList<CkCompiledModelRoot>>._, A<CancellationToken>._)).MustNotHaveHappened();
@@ -467,7 +467,7 @@ public class ModelsControllerUpgradeGuardEnforcementTests
 
         result.Should().BeOfType<OkObjectResult>();
         A.CallTo(() => _ckSerializer.DeserializeCompiledModelRootAsync(A<Stream>._, "ck-basic.json", A<OperationResult>._))
-            .MustHaveHappenedOnceExactly();
+            .MustHaveHappenedTwiceExactly();
     }
 
     [Fact]

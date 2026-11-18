@@ -320,9 +320,13 @@ public class ModelsController : ControllerBase
     /// <summary>
     ///     Imports a construction kit model
     ///     <para>
+    ///         Service-managed models (<c>System</c>, <c>System.*</c>, any casing) are refused with
+    ///         <c>403 CK_SERVICE_MANAGED_MODEL</c> whatever their version and whoever calls, <c>forceBreakingUpdate</c>
+    ///         included; for a zip every CK model entry is checked, and exactly the judged bytes are cached.
+    ///     </para>
+    ///     <para>
     ///         Tenant upgrade guard (CK v2 F2.5, AB#6966): the uploaded file is read and judged before anything is cached
-    ///         or queued, as an explicit caller (service-managed models such as <c>System</c> are judged too, and a
-    ///         downgrade like an upgrade). When it would break an installed model the request is refused with
+    ///         or queued, as an explicit caller (a downgrade is judged like an upgrade). When it would break an installed model the request is refused with
     ///         <c>409 CK_UPGRADE_BLOCKED</c> (problem details with the structured blockers); no job is queued and
     ///         nothing is written. <c>forceBreakingUpdate=true</c> (form member) imports anyway, needs the data model
     ///         management policy (403 otherwise) and logs the blockers and the caller at WARN. A file that cannot be read
@@ -360,8 +364,21 @@ public class ModelsController : ControllerBase
                 return Forbid();
             }
 
+            // The upload is read once; the refusal and the upgrade guard judge exactly the bytes that are
+            // cached for bot-services, so the importing job can never see another model than the one judged here.
+            var upload = await ReadUploadAsync(file);
+            var compiled = await ReadCompiledModelAsync(file, upload);
+
+            // Service-managed models (System, System.*) are never imported by a caller - before anything is
+            // cached or queued, whatever the version and whoever calls, forceBreakingUpdate included.
+            var serviceManaged = await FindServiceManagedInUploadAsync(file, upload, compiled);
+            if (serviceManaged.Count > 0)
+            {
+                LogServiceManagedRefusal(tenantId, serviceManaged, "ImportCk");
+                return ServiceManagedImportGuard.CreateResult(serviceManaged);
+            }
+
             // AB#6966: tenant upgrade guard - before anything is cached or queued.
-            var compiled = await ReadCompiledModelAsync(file);
             var blockers = await _libraryStatusService.EvaluateFileImportBlockersAsync(tenantId, [compiled],
                 HttpContext.RequestAborted);
             if (blockers.Count > 0)
@@ -379,7 +396,7 @@ public class ModelsController : ControllerBase
                     string.Join("; ", blockers.Select(b => $"{b.Dependent} [{b.Kind} {b.Subject}] by {b.Update}")));
             }
 
-            var cacheKey = await AddFileToCache(tenantId, file);
+            var cacheKey = await AddUploadToCache(tenantId, file, upload);
             var args = new ImportCkCommandRequest(tenantId, cacheKey);
             var r =
                 await _importCkCommandClient.GetResponse<JobCreatedResponse>(args);
@@ -459,6 +476,10 @@ public class ModelsController : ControllerBase
     ///         queued and nothing is written. <c>ForceBreakingUpdate = true</c> imports anyway and logs the blockers and
     ///         the caller at WARN.
     ///     </para>
+    ///     <para>
+    ///         A service-managed model (<c>System</c>, <c>System.*</c>, any casing; by requested id or by catalog content)
+    ///         is refused with <c>403 CK_SERVICE_MANAGED_MODEL</c>, forced or not.
+    ///     </para>
     /// </summary>
     /// <param name="request">The catalog name and model ID to import</param>
     /// <returns>A job ID for tracking the async import operation</returns>
@@ -467,6 +488,7 @@ public class ModelsController : ControllerBase
     [Authorize(AssetRepositoryServiceConstants.DataModelManagementPolicy)]
     [ProducesResponseType(typeof(TransferModelResponseDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(OperationFailedErrorDto), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(typeof(InternalServerErrorDto), StatusCodes.Status500InternalServerError)]
@@ -491,6 +513,14 @@ public class ModelsController : ControllerBase
             }
 
             var ckModelId = new CkModelId(request.ModelId);
+
+            // Service-managed models are never imported by a caller (requested id first, content below).
+            if (ServiceManagedImportGuard.IsServiceManaged(ckModelId.Name))
+            {
+                LogServiceManagedRefusal(tenantId, [ckModelId.FullName], "ImportFromCatalog");
+                return ServiceManagedImportGuard.CreateResult([ckModelId.FullName]);
+            }
+
             var operationResult = new OperationResult();
 
             var compiledModel =
@@ -499,6 +529,13 @@ public class ModelsController : ControllerBase
             if (compiledModel == null)
             {
                 return NotFound();
+            }
+
+            // Judged by the content that is cached and imported, not by the requested id.
+            if (ServiceManagedImportGuard.IsServiceManaged(compiledModel.ModelId?.Name))
+            {
+                LogServiceManagedRefusal(tenantId, [compiledModel.ModelId!.FullName], "ImportFromCatalog");
+                return ServiceManagedImportGuard.CreateResult([compiledModel.ModelId.FullName]);
             }
 
             if (operationResult.HasErrors || operationResult.HasFatalErrors)
@@ -837,6 +874,10 @@ public class ModelsController : ControllerBase
     ///         <c>409 CK_UPGRADE_BLOCKED</c> (no partial import); <c>ForceBreakingUpdate = true</c> imports anyway and
     ///         logs the blockers and the caller at WARN.
     ///     </para>
+    ///     <para>
+    ///         One service-managed model in the set (<c>System</c>, <c>System.*</c>, any casing; by requested id or by
+    ///         catalog content) refuses the whole set with <c>403 CK_SERVICE_MANAGED_MODEL</c>, forced or not.
+    ///     </para>
     /// </summary>
     /// <param name="request">Catalog name and ordered list of model IDs</param>
     /// <returns>Single job ID for tracking the entire batch import</returns>
@@ -845,6 +886,7 @@ public class ModelsController : ControllerBase
     [Authorize(AssetRepositoryServiceConstants.DataModelManagementPolicy)]
     [ProducesResponseType(typeof(BatchImportResponseDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(OperationFailedErrorDto), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
     [ProducesResponseType(typeof(InternalServerErrorDto), StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> ImportFromCatalogBatch(
@@ -861,6 +903,15 @@ public class ModelsController : ControllerBase
             if (string.IsNullOrWhiteSpace(request.CatalogName) || request.ModelIds.Count == 0)
             {
                 return BadRequest(new OperationFailedErrorDto("CatalogName and at least one ModelId are required"));
+            }
+
+            // One service-managed model refuses the whole batch, before anything is loaded, cached or queued.
+            var requestedServiceManaged = request.ModelIds.Select(id => new CkModelId(id))
+                .Where(id => ServiceManagedImportGuard.IsServiceManaged(id.Name)).Select(id => id.FullName).ToList();
+            if (requestedServiceManaged.Count > 0)
+            {
+                LogServiceManagedRefusal(tenantId, requestedServiceManaged, "ImportFromCatalogBatch");
+                return ServiceManagedImportGuard.CreateResult(requestedServiceManaged);
             }
 
             // Pre-check system compatibility for all models
@@ -896,6 +947,16 @@ public class ModelsController : ControllerBase
                 }
 
                 compiledModels.Add(compiledModel);
+            }
+
+            // Judged by the content that is cached and imported, not by the requested ids.
+            var loadedServiceManaged = compiledModels
+                .Where(m => ServiceManagedImportGuard.IsServiceManaged(m.ModelId?.Name))
+                .Select(m => m.ModelId!.FullName).ToList();
+            if (loadedServiceManaged.Count > 0)
+            {
+                LogServiceManagedRefusal(tenantId, loadedServiceManaged, "ImportFromCatalogBatch");
+                return ServiceManagedImportGuard.CreateResult(loadedServiceManaged);
             }
 
             var refusal = await EnforceUpgradeGuardAsync(tenantId,
@@ -1059,22 +1120,60 @@ public class ModelsController : ControllerBase
         return key;
     }
 
-    /// <summary>
-    ///     AB#6966: reads the uploaded file the way the import job does (json or yaml; a zip is opened for its .json,
-    ///     else its .yaml) so that the upgrade guard judges exactly what would be imported. Throws
-    ///     <see cref="InvalidOperationException" /> (a 400) when the file cannot be read as a compiled CK model.
-    /// </summary>
-    private async Task<CkCompiledModelRoot> ReadCompiledModelAsync(IFormFile? file)
+    /// <summary>Reads the upload once; every later step (refusal, upgrade guard, cache) uses these bytes.</summary>
+    private static async Task<byte[]> ReadUploadAsync(IFormFile? file)
     {
         if (file == null || file.Length == 0)
         {
             throw new InvalidOperationException("A CK model file is required.");
         }
 
-        await using var upload = file.OpenReadStream();
-        return await CkModelFileReader.ReadCompiledModelAsync(_ckSerializer, upload, file.FileName,
-            CkModelFileReader.IsZip(file.ContentType));
+        await using var stream = file.OpenReadStream();
+        using var buffer = new MemoryStream();
+        await stream.CopyToAsync(buffer);
+        if (buffer.Length == 0)
+        {
+            throw new InvalidOperationException("A CK model file is required.");
+        }
+
+        return buffer.ToArray();
     }
+
+    /// <summary>
+    ///     Reads the uploaded file the way the import job does (json or yaml; a zip is opened for its .json, else its
+    ///     .yaml) so that the upgrade guard judges exactly what would be imported. Throws
+    ///     <see cref="InvalidOperationException" /> (a 400) when the file cannot be read as a compiled CK model.
+    /// </summary>
+    private async Task<CkCompiledModelRoot> ReadCompiledModelAsync(IFormFile file, byte[] upload) =>
+        await CkModelFileReader.ReadCompiledModelAsync(_ckSerializer, new MemoryStream(upload, writable: false),
+            file.FileName, CkModelFileReader.IsZip(file.ContentType));
+
+    /// <summary>
+    ///     The service-managed models an upload would import: the model read by the regular read and, for a zip (by
+    ///     content type or by content), every other CK model entry of it.
+    /// </summary>
+    private async Task<IReadOnlyList<string>> FindServiceManagedInUploadAsync(IFormFile file, byte[] upload,
+        CkCompiledModelRoot compiled)
+    {
+        var ids = new List<CkModelId>();
+        if (compiled.ModelId != null)
+        {
+            ids.Add(compiled.ModelId);
+        }
+
+        if (CkModelFileReader.IsZip(file.ContentType) || CkModelFileReader.LooksLikeZip(upload))
+        {
+            ids.AddRange(await CkModelFileReader.ReadZipEntryModelIdsAsync(_ckSerializer, upload));
+        }
+
+        return ids.Where(id => ServiceManagedImportGuard.IsServiceManaged(id.Name)).Select(id => id.FullName)
+            .Distinct(StringComparer.Ordinal).ToList();
+    }
+
+    private void LogServiceManagedRefusal(string tenantId, IReadOnlyCollection<string> models, string operation) =>
+        _logger.LogWarning(
+            "Refused {Operation} of service-managed CK model(s) {Models} on tenant {TenantId} by {Caller}",
+            operation, string.Join(", ", models), tenantId, CallerDescription.From(HttpContext.User));
 
     /// <summary>
     ///     AB#6966: overriding the tenant upgrade guard is a data model operation. Since AB#8529 the <c>ImportCk</c>
@@ -1092,6 +1191,14 @@ public class ModelsController : ControllerBase
         await using var memoryStream = new MemoryStream();
         await file.CopyToAsync(memoryStream);
         memoryStream.Position = 0;
+        var key = await _distributedCache.CreateStreamAsync(tenantId, memoryStream, file.ContentType, file.FileName,
+            TimeSpan.FromHours(1));
+        return key;
+    }
+
+    private async Task<string> AddUploadToCache(string tenantId, IFormFile file, byte[] upload)
+    {
+        await using var memoryStream = new MemoryStream(upload, writable: false);
         var key = await _distributedCache.CreateStreamAsync(tenantId, memoryStream, file.ContentType, file.FileName,
             TimeSpan.FromHours(1));
         return key;

@@ -1,4 +1,5 @@
 using Meshmakers.Octo.Backend.AssetRepositoryServices.DataTransferObjects.CkModelCatalog;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.UpgradeGuard;
 using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.ConstructionKit.Contracts.Services;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb;
@@ -132,10 +133,10 @@ public sealed class CkModelLibraryStatusService : ICkModelLibraryStatusService
 
     /// <summary>
     ///     True for models the platform owns and a user must not update by hand (<c>System</c> and
-    ///     everything under <c>System.</c>).
+    ///     everything under <c>System.</c>, case-insensitive; one rule with the import refusal,
+    ///     <see cref="ServiceManagedImportGuard.IsServiceManaged" />).
     /// </summary>
-    public static bool IsSystemManaged(string modelName) =>
-        modelName == "System" || modelName.StartsWith("System.", StringComparison.Ordinal);
+    public static bool IsSystemManaged(string modelName) => ServiceManagedImportGuard.IsServiceManaged(modelName);
 
     /// <inheritdoc />
     public async Task<CkModelLibraryStatusResponseDto> GetLibraryStatusAsync(string tenantId,

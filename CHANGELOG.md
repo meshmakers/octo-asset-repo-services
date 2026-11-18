@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- AB#9293 Fix (Security): `POST {tenantId}/v1/Models/ImportCk`, `ImportFromCatalog` and `ImportFromCatalogBatch` (and with them
+  octo-cli, SDK and MCP) refuse every service-managed CK model - `System` and `System.*`, name compared case-insensitively -
+  whatever its version (upgrade, same version, downgrade) and whoever calls, `forceBreakingUpdate` included: `403` problem
+  details with `code: CK_SERVICE_MANAGED_MODEL`, `message` and `models`, logged at WARN; nothing is cached, queued or imported.
+  The check reads the model the uploaded or catalog bytes actually parse to (every CK model entry of a zip, the requested and the
+  loaded ids of a catalog import), and `ImportCk` caches exactly the bytes it judged. **Behaviour change:** before, a caller with
+  `DataModelManagement` could replace a service-managed model with a self-built one (for example System.Identity without the
+  write-channel restriction of AB#9291) or downgrade it explicitly; that was a bug. Service-managed models reach a tenant only
+  through the services' embedded import (recovery: `ClearCache` / `ReRunTenantSetup`), blueprint and system import and tenant
+  restore. Also fixed: a zip upload to `ImportCk` / `ValidateCk` was answered with 500 by the real serializer (the zip entry
+  stream cannot be rewound); entries are buffered now. A file or zip entry that cannot be read as a compiled model is a `400`
+  (was a `500` with the real serializer), and a zip model entry that cannot be read refuses the upload instead of being skipped.
 - New: `System.StreamData/Archive.RedactHiddenColumns-2` (System.StreamData 1.29.0, GraphQL field `redactHiddenColumns2`), the
   redaction of Hidden archive columns with the columns the administrator confirmed: required `expectedColumns`; when the Hidden
   columns at execution time are not exactly that set, the call answers `STREAMDATA_REDACTION_COLUMNS_CHANGED` (parameters

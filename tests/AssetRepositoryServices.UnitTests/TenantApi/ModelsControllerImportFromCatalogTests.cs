@@ -175,11 +175,11 @@ public class ModelsControllerImportFromCatalogTests
         var request = new ImportFromCatalogRequestDto
         {
             CatalogName = "LocalFileSystem",
-            ModelId = "System-1.0.0"
+            ModelId = "Basic-1.0.0"
         };
         var compiledModel = new CkCompiledModelRoot
         {
-            ModelId = new CkModelId("System", "1.0.0")
+            ModelId = new CkModelId("Basic", "1.0.0")
         };
         A.CallTo(() => _catalogService.GetAsync(
                 A<string>.Ignored, A<CkModelId>.Ignored, A<OperationResult>.Ignored,
@@ -202,7 +202,7 @@ public class ModelsControllerImportFromCatalogTests
         // Assert - verify cache was called with correct content type
         A.CallTo(() => _distributedCache.CreateStreamAsync(
                 A<string>.Ignored, A<Stream>.Ignored, "application/json",
-                "System-1.0.0.json", A<TimeSpan?>.Ignored))
+                "Basic-1.0.0.json", A<TimeSpan?>.Ignored))
             .MustHaveHappenedOnceExactly();
     }
 

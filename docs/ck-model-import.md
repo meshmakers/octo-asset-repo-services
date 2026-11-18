@@ -38,7 +38,8 @@ parent's compile-time exact pin stays exact (a newer installed version would mak
 range-retaining parent (`CkCompiledModelRoot.DependencyRanges`) accepts any installed version within its range and
 ≥ the floor, and no requirement is ever satisfied across majors. Actions: requirement met → `none`; a newer installed
 version that does not meet it (or any unmet service-managed model) → `incompatible`, which blocks the batch import —
-a newer installed version is never offered for a downgrade install (explicit downgrades go through `ImportCk`); an
+a newer installed version is never offered for a downgrade install (explicit downgrades go through `ImportCk`; never
+for a service-managed model, section "Service-managed models are never imported by a caller"); an
 older installed version → `install` (upgrade). The root model is judged as an exact pin. A dependency shared by
 several parents is judged once per distinct requirement (re-review N8). `RequiredVersion` stays the pinned (floor)
 version; `RequiredRange` (new, display only) carries the declared range + floor of a range-retaining parent, and the
@@ -146,6 +147,14 @@ closes this for every version and every guard surface (it runs inside `EvaluateC
   `IntegrationTests/Tenant/DependentRangeGuardFlowTests` (real engine guard and tenant: range-retaining and exact-pinned
   dependents, nothing written).
 
+### Service-managed models are never imported by a caller
+
+`ImportCk`, `ImportFromCatalog` and `ImportFromCatalogBatch` refuse every model named `System` or `System.*` (case-insensitive,
+one platform-wide rule in `UpgradeGuard/ServiceManagedImportGuard`) in every version, for every caller and also when forced:
+`403 CK_SERVICE_MANAGED_MODEL`, nothing cached or queued. The check reads the model the bytes parse to (every model entry of a
+zip; requested ids and loaded content of a catalog import) before every other step. Invariant, flow, refusal shape and tests:
+`docs/service-managed-ck-import.md`.
+
 ### Tenant upgrade guard for the file import
 
 `POST {tenantId}/v1/models/ImportCk` (a CK model file; octo-cli `ImportCk -f`) used to be unguarded ("explicit operator decision"): a System
@@ -156,9 +165,10 @@ path back, `Delete` fails too). Decided 2026-10-18: the file import is guarded l
   via `ICkSerializer`; a `zip` is opened for its `.json`, else its `.yaml`; unreadable -> `400`) -> `ICkModelLibraryStatusService.
   EvaluateFileImportBlockersAsync` -> `409 CK_UPGRADE_BLOCKED` **before anything is cached or queued**, else cache + queue as before.
 - **Explicit caller**: the evaluation calls `ITenantContext.EvaluateExplicitCkImportAsync` (engine-mongodb), which, unlike the default
-  `EvaluateCkUpdateAsync`, also judges service-managed models (`System`, `System.*`) and judges a **downgrade** like an upgrade (a harmless
-  one is no blocker and stays allowed with the WARN of the engine; a breaking one is refused). Blueprints, FixAll, the batch import and the
-  embedded import keep the default (System skipped).
+  `EvaluateCkUpdateAsync`, also judges service-managed models (`System`, `System.*`) and judges a **downgrade** like an upgrade. A
+  service-managed file never reaches this evaluation (refused before, see the section above); for other models a harmless
+  downgrade is no blocker and stays allowed with the WARN of the engine, a breaking one is refused. Blueprints, FixAll, the batch
+  import and the embedded import keep the default (System skipped).
 - **Refusal** = the contract of the section "Tenant upgrade guard enforcement" above (`CkUpgradeBlockedError.CreateFileImportResult`: `409`, `application/problem+json`, `code`, `updateSet` =
   the model id of the file, `blockers[]`, plus `fileName`; the English `detail` names `forceBreakingUpdate` / `--forceBreakingUpdate`).
 - **Override** = form member `forceBreakingUpdate` (default `false`). The endpoint stays on `TenantAssetApiReadWritePolicy`; a *requested*

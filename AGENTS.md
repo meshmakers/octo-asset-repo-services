@@ -55,7 +55,8 @@ kit models, and time-series stream data stored in MongoDB.
 | `**/Security/**`, `**/ConfigureJwtBearer*.cs`, `**/*Authorization*.cs`, `**/StreamDataReadRoleGate.cs`, `**/OctoApplicationBuilder*.cs` | `docs/tenant-enforcement.md` |
 <!-- <<< end generated: routing -->
 
-Background, not path-triggered; each file is linked from the routed doc of its topic: `docs/principal-kind.md`
+Background, not path-triggered; each file is linked from the routed doc of its topic:
+`docs/service-managed-ck-import.md` (why and how caller imports refuse System models), `docs/principal-kind.md`
 (how the caller's principal kind is set and checked), `docs/runtime-query-guard.md` (operator view of the unbounded
 query guard: configuration, metric, error `ASSET1007`), `docs/method-idempotency-store.md` (records, atomic claim,
 expiry, latency), `docs/gateway-owned-method-handlers.md` (how to register an in-process method handler) and
