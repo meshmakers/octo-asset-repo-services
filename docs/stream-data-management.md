@@ -58,7 +58,9 @@ Time-series data support (`StreamData/`):
     `tenant-not-allowed` when the HTTP tenant gate runs in LogOnly, a caller without the role behind the REST policy, a
     data permission that refuses the archive — new, the direct call had no data-permission check), `METHOD_VALIDATION_FAILED` `400`,
     `METHOD_HANDLER_NOT_AVAILABLE` / `METHOD_TIMEOUT` `503` / `504`. With `Methods:StreamData:Enabled=false` no handler is
-    hosted and the endpoints keep their direct lifecycle call. Tests:
+    hosted and the endpoints keep their direct lifecycle call; so do they in a tenant whose CK model does not declare
+    the method (System.StreamData older than the methods, or not resolved: `IArchiveMethodFacade.CanServe`), where the
+    gateway would answer `403` for an unknown method. Tests:
     `IntegrationTests/StreamData/ArchiveMethodFacadeTests` (fixture `ArchiveMethodFacadeFixture` observes the audit and the
     session tripwire). The computed-column, recompute and backfill endpoints still call the engine directly (not migrated
     yet).

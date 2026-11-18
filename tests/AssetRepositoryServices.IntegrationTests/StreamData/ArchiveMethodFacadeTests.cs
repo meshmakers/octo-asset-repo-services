@@ -3,6 +3,7 @@ using FakeItEasy;
 using FluentAssertions;
 using GraphQL;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Methods;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.RequestHandling;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Utils;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Collections;
@@ -12,6 +13,7 @@ using Meshmakers.Octo.Backend.AssetRepositoryServices.StreamData.Methods;
 using Meshmakers.Octo.Communication.Contracts;
 using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.ConstructionKit.Models.StreamData.Generated.System.StreamData.v1;
+using Meshmakers.Octo.Runtime.Contracts.DataPermissions;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb;
 using Meshmakers.Octo.Runtime.Contracts.RepositoryEntities;
 using Meshmakers.Octo.Runtime.Contracts.StreamData;
@@ -24,6 +26,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using Newtonsoft.Json.Linq;
 using Xunit;
 
@@ -93,6 +96,54 @@ public class ArchiveMethodFacadeTests
     }
 
     [Fact]
+    public async Task EveryMutation_RunsItsMethod_AndAnswersTheMutationsResult_WithExactlyOneAuditEvent()
+    {
+        var archive = await CreateRawArchiveAsync("MutAll");
+        var failed = await CreateRawArchiveAsync("MutRetry");
+        await (await TenantAsync()).GetArchiveRuntimeStore().SetStatusAsync(failed, CkArchiveStatus.Failed);
+        var rollup = await CreateRollupAsync("MutRollup");
+        var calls = new (string MethodId, string Mutation, OctoObjectId RtId, string Transition, string Status)[]
+        {
+            (SystemStreamDataCkIds.ArchiveActivateMethodId, $$"""activateArchive(rtId: "{{archive}}")""", archive, "Activate", "ACTIVATED"),
+            (SystemStreamDataCkIds.ArchiveDisableMethodId, $$"""disableArchive(rtId: "{{archive}}")""", archive, "Disable", "DISABLED"),
+            (SystemStreamDataCkIds.ArchiveEnableMethodId, $$"""enableArchive(rtId: "{{archive}}")""", archive, "Enable", "ACTIVATED"),
+            (SystemStreamDataCkIds.ArchiveRetryActivationMethodId, $$"""retryArchiveActivation(rtId: "{{failed}}")""", failed,
+                "RetryActivation", "ACTIVATED"),
+            (SystemStreamDataCkIds.RollupArchiveFreezeMethodId, $$"""freezeRollupArchive(rtId: "{{rollup}}", until: "{{Until:O}}")""",
+                rollup, "Freeze", "CREATED"),
+            (SystemStreamDataCkIds.RollupArchiveUnfreezeMethodId, $$"""unfreezeRollupArchive(rtId: "{{rollup}}", acceptGaps: true)""",
+                rollup, "Unfreeze", "CREATED"),
+            (SystemStreamDataCkIds.RollupArchiveRewindWatermarkMethodId,
+                $$"""rewindRollupWatermark(rtId: "{{rollup}}", toBucketEnd: "{{Until:O}}")""", rollup, "RewindWatermark", "CREATED")
+        };
+
+        foreach (var (methodId, mutation, rtId, transition, status) in calls)
+        {
+            _fixture.AuditEvents.Clear();
+            var result = await _fixture.ExecuteGraphQlAsync(
+                $"mutation {{ streamData {{ {mutation} {{ archiveRtId status transition }} }} }}", user: Admin());
+
+            var json = _fixture.SerializeGraphQl(result);
+            result.Errors.Should().BeNullOrEmpty(json);
+            var node = JObject.Parse(json).SelectToken("data.streamData")!.First!.First!;
+            node.Value<string>("archiveRtId").Should().Be(rtId.ToString(), methodId);
+            node.Value<string>("transition").Should().Be(transition, methodId);
+            node.Value<string>("status")!.Replace("_", "", StringComparison.Ordinal).ToUpperInvariant()
+                .Should().Be(status, methodId);
+            _fixture.AuditEvents.Should().ContainSingle(methodId).Which.MethodId.Should().Be(methodId);
+        }
+
+        _fixture.AuditEvents.Clear();
+        var delete = await _fixture.ExecuteGraphQlAsync(
+            $$"""mutation { streamData { deleteArchive(rtId: "{{archive}}") } }""", user: Admin());
+        JObject.Parse(_fixture.SerializeGraphQl(delete)).SelectToken("data.streamData.deleteArchive")!.Value<bool>()
+            .Should().BeTrue();
+        _fixture.AuditEvents.Should().ContainSingle().Which.MethodId.Should().Be(SystemStreamDataCkIds.ArchiveDeleteArchiveMethodId);
+        (await SnapshotAsync(archive)).Should().BeNull();
+        (await RollupAsync(rollup)).LastAggregatedBucketEnd.Should().Be(Until);
+    }
+
+    [Fact]
     public async Task TheHandler_RunsOutsideTheRequestSession_EvenWhenTheCallerHoldsOne()
     {
         var archive = await CreateRawArchiveAsync("RestSession");
@@ -115,6 +166,22 @@ public class ArchiveMethodFacadeTests
             accessor.HasSession.Should().BeTrue("the request session is untouched");
             (await SnapshotAsync(archive))!.Status.Should().Be(CkArchiveStatus.Activated,
                 "the method committed on its own, not in the request transaction");
+
+            // the deprecated mutation, the second caller of the facade, inside the same request transaction
+            _fixture.SessionVisibleAtHandlerEntry.Clear();
+            var mutation = await _fixture.GetService<IDocumentExecuter<OctoSchema>>().ExecuteAsync(options =>
+            {
+                options.Schema = null;
+                options.Query = $$"""mutation { streamData { disableArchive(rtId: "{{archive}}") { archiveRtId status transition } } }""";
+                options.RequestServices = scope.ServiceProvider;
+                options.UserContext = new GraphQlUserContext(Admin(), TenantAsync().GetAwaiter().GetResult());
+            });
+
+            mutation.Errors.Should().BeNullOrEmpty(_fixture.SerializeGraphQl(mutation));
+            _fixture.SessionVisibleAtHandlerEntry.Should().ContainSingle().Which.Should()
+                .BeFalse("the mutation's handler starts without the request session too");
+            accessor.HasSession.Should().BeTrue("the request session is untouched");
+            (await SnapshotAsync(archive))!.Status.Should().Be(CkArchiveStatus.Disabled);
         }
         finally
         {
@@ -216,6 +283,7 @@ public class ArchiveMethodFacadeTests
         var rollup = await CreateRollupAsync("OffRollup");
         var notHosted = A.Fake<IArchiveMethodFacade>();
         A.CallTo(() => notHosted.IsHosted).Returns(false);
+        A.CallTo(() => notHosted.CanServe(A<ITenantContext>._, A<string>._, A<string>._)).Returns(false);
         using var scope = _fixture.GetService<IServiceScopeFactory>().CreateScope();
         var services = new OverridingServiceProvider(scope.ServiceProvider, notHosted);
         _fixture.AuditEvents.Clear();
@@ -238,6 +306,49 @@ public class ArchiveMethodFacadeTests
         A.CallTo(notHosted).Where(call => call.Method.Name == nameof(IArchiveMethodFacade.InvokeAsync))
             .MustNotHaveHappened();
         _fixture.AuditEvents.Should().BeEmpty("no method ran");
+    }
+
+    [Fact]
+    public async Task ATenantWhoseCkModelDoesNotDeclareTheMethod_KeepsTheDirectCall_NotA403()
+    {
+        // A tenant whose System.StreamData is older than the methods or not resolved: the gateway would refuse the call as an
+        // unknown method (403), where the endpoint and the mutation worked before. The facade sees the missing declaration
+        // and keeps the direct lifecycle call. The real facade, with a definition source that knows no method.
+        var viaRest = await CreateRawArchiveAsync("UnknownRest");
+        var viaMutation = await CreateRawArchiveAsync("UnknownMut");
+        var rollup = await CreateRollupAsync("UnknownRollup");
+        using var scope = _fixture.GetService<IServiceScopeFactory>().CreateScope();
+        var noDefinitions = A.Fake<ICkMethodAuthorizationDefinitionSource>();
+        A.CallTo(() => noDefinitions.Find(A<string>._, A<string>._, A<string>._)).Returns(null);
+        var facade = new ArchiveMethodFacade(scope.ServiceProvider.GetRequiredService<ICkMethodGateway>(),
+            scope.ServiceProvider.GetRequiredService<IRtDataPermissionEvaluator>(), noDefinitions,
+            scope.ServiceProvider.GetRequiredService<IOptions<StreamDataMethodsOptions>>());
+        facade.IsHosted.Should().BeTrue("the switch is on; only the tenant's model lacks the method");
+        facade.CanServe(await TenantAsync(), ArchiveMethodFacade.ArchiveCkTypeId,
+            SystemStreamDataCkIds.ArchiveActivateMethodId).Should().BeFalse();
+        var services = new OverridingServiceProvider(scope.ServiceProvider, facade);
+        _fixture.AuditEvents.Clear();
+
+        (await Controller(Admin(), services).ActivateArchive(Tenant, $"{viaRest}")).Should().BeOfType<NoContentResult>();
+        (await Controller(Admin(), services).FreezeRollupArchive(Tenant, $"{rollup}", Until))
+            .Should().BeOfType<NoContentResult>();
+        var mutation = await _fixture.GetService<IDocumentExecuter<OctoSchema>>().ExecuteAsync(options =>
+        {
+            options.Schema = null;
+            options.Query = $$"""mutation { streamData { activateArchive(rtId: "{{viaMutation}}") { archiveRtId status transition } } }""";
+            options.RequestServices = services;
+            options.UserContext = new GraphQlUserContext(Admin(), TenantAsync().GetAwaiter().GetResult());
+        });
+
+        mutation.Errors.Should().BeNullOrEmpty(_fixture.SerializeGraphQl(mutation));
+        (await SnapshotAsync(viaRest))!.Status.Should().Be(CkArchiveStatus.Activated);
+        (await SnapshotAsync(viaMutation))!.Status.Should().Be(CkArchiveStatus.Activated);
+        (await RollupAsync(rollup)).FrozenUntil.Should().Be(Until);
+        _fixture.AuditEvents.Should().BeEmpty("no method ran");
+
+        // the real definition source of this host knows the methods: the facade serves them
+        _fixture.GetService<IArchiveMethodFacade>().CanServe(await TenantAsync(), ArchiveMethodFacade.RollupArchiveCkTypeId,
+            SystemStreamDataCkIds.RollupArchiveFreezeMethodId).Should().BeTrue();
     }
 
     [Fact]

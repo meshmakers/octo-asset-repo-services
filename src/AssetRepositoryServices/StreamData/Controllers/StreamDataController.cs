@@ -1344,7 +1344,8 @@ public class StreamDataController : ControllerBase
     ///     through <see cref="IArchiveMethodFacade" /> - gateway, declared role, data permission, in-process handler outside the
     ///     request transaction, one Method audit event - and maps the envelope with
     ///     <see cref="CkMethodFacadeResults.ToActionResult" /> and <see cref="LifecycleFacadeOptions" />. While
-    ///     <c>Methods:StreamData:Enabled</c> is off no handler is hosted and the endpoint keeps its direct lifecycle call.
+    ///     <c>Methods:StreamData:Enabled</c> is off, or the tenant's CK model does not declare the method
+    ///     (<see cref="IArchiveMethodFacade.CanServe" />), the endpoint keeps its direct lifecycle call.
     /// </summary>
     private async Task<IActionResult> InvokeLifecycleMethodAsync<TParameters>(
         string tenantId, string rtId, string operation, string targetKind, string ckTypeId, string methodId,
@@ -1358,7 +1359,8 @@ public class StreamDataController : ControllerBase
             var targetRtId = new OctoObjectId(rtId);
 
             var facade = HttpContext?.RequestServices?.GetService<IArchiveMethodFacade>();
-            if (facade is not { IsHosted: true })
+            // switch off, or a tenant whose CK model does not declare the method: the direct call, as before
+            if (facade == null || !facade.CanServe(tenantContext, ckTypeId, methodId))
             {
                 await direct(targetRtId);
                 return NoContent();

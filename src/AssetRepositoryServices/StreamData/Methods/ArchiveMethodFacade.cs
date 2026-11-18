@@ -8,6 +8,7 @@ using Meshmakers.Octo.Runtime.Contracts.DataPermissions;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb;
 using Meshmakers.Octo.Services.Contracts.DistributionEventHub.Methods;
 using Meshmakers.Octo.Services.Methods;
+using Meshmakers.Octo.Services.Methods.Authorization;
 using Microsoft.Extensions.Options;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.StreamData.Methods;
@@ -23,12 +24,21 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.StreamData.Methods;
 /// <remarks>
 ///     <see cref="IsHosted" /> follows <c>Methods:StreamData:Enabled</c> (default true). While the switch is off no handler is
 ///     hosted, so the callers keep their direct lifecycle call (a configuration switch never turns a working REST
-///     endpoint or mutation off).
+///     endpoint or mutation off). <see cref="CanServe" /> also keeps the direct call for a tenant whose CK model does not
+///     declare the method (System.StreamData older than the method, or not resolved): there the gateway would refuse the
+///     call as an unknown method, and the endpoint worked before.
 /// </remarks>
 internal interface IArchiveMethodFacade
 {
     /// <summary><c>true</c> when the archive method handlers are hosted (<c>Methods:StreamData:Enabled</c>).</summary>
     bool IsHosted { get; }
+
+    /// <summary>
+    ///     <c>true</c> when the call of <paramref name="methodId" /> in <paramref name="tenant" /> goes through the method:
+    ///     the handlers are hosted (<see cref="IsHosted" />) and the tenant's CK model declares the method on
+    ///     <paramref name="ckTypeId" />. Otherwise the caller keeps its direct lifecycle call. Reads the CK cache only.
+    /// </summary>
+    bool CanServe(ITenantContext tenant, string ckTypeId, string methodId);
 
     /// <summary>
     ///     Calls <paramref name="methodId" /> on the archive <paramref name="targetRtId" /> of the tenant
@@ -52,6 +62,7 @@ internal interface IArchiveMethodFacade
 internal sealed class ArchiveMethodFacade(
     ICkMethodGateway gateway,
     IRtDataPermissionEvaluator dataPermissions,
+    ICkMethodAuthorizationDefinitionSource definitions,
     IOptions<StreamDataMethodsOptions> options) : IArchiveMethodFacade
 {
     /// <summary>CK type id of the abstract archive (the declaring type of the lifecycle methods).</summary>
@@ -62,6 +73,13 @@ internal sealed class ArchiveMethodFacade(
 
     /// <inheritdoc />
     public bool IsHosted => options.Value.Enabled;
+
+    /// <inheritdoc />
+    public bool CanServe(ITenantContext tenant, string ckTypeId, string methodId)
+    {
+        ArgumentNullException.ThrowIfNull(tenant);
+        return IsHosted && definitions.Find(tenant.TenantId, ckTypeId, methodId) != null;
+    }
 
     /// <inheritdoc />
     public Task<CkMethodResponse> InvokeAsync<TParameters>(ITenantContext tenant, string ckTypeId, string methodId,

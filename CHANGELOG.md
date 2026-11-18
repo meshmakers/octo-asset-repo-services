@@ -25,7 +25,8 @@
   caller token of another tenant is refused by the method with `METHOD_FORBIDDEN` / `tenant-not-allowed` (REST `403` problem
   details) also while the HTTP tenant gate only logs; platform failures of the method answer with their documented codes
   (`METHOD_VALIDATION_FAILED` `400`, `METHOD_TIMEOUT` `504`, ...). With `Methods:StreamData:Enabled=false` (default true)
-  the endpoints and mutations keep their direct lifecycle call.
+  the endpoints and mutations keep their direct lifecycle call, and so they do in a tenant whose CK model does not declare
+  the method (System.StreamData older than the methods, or not resolved), instead of answering `403`.
 - New: `System.StreamData/Archive.RedactHiddenColumns-2` (System.StreamData 1.29.0, GraphQL field `redactHiddenColumns2`), the
   redaction of Hidden archive columns with the columns the administrator confirmed: required `expectedColumns`; when the Hidden
   columns at execution time are not exactly that set, the call answers `STREAMDATA_REDACTION_COLUMNS_CHANGED` (parameters

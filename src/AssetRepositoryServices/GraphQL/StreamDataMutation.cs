@@ -11,6 +11,7 @@ using Meshmakers.Octo.Communication.Contracts;
 using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.ConstructionKit.Models.StreamData.Generated.System.StreamData.v1;
 using Meshmakers.Octo.Runtime.Contracts.Formulas;
+using Meshmakers.Octo.Runtime.Contracts.MongoDb;
 using Meshmakers.Octo.Runtime.Contracts.StreamData;
 using Meshmakers.Octo.Services.Contracts.DistributionEventHub.Methods;
 
@@ -506,7 +507,8 @@ internal sealed class StreamDataMutation : ObjectGraphType
                 ?? throw AssetRepositoryException.StreamDataNotAvailable();
 
             // the facade of Archive.DeleteArchive-1 while the handlers are hosted
-            if (MethodFacadeOf(ctx) is { } facade)
+            if (MethodFacadeOf(ctx, gql.TenantContext, ArchiveMethodFacade.ArchiveCkTypeId,
+                    SystemStreamDataCkIds.ArchiveDeleteArchiveMethodId) is { } facade)
             {
                 var response = await facade.InvokeAsync(gql.TenantContext, ArchiveMethodFacade.ArchiveCkTypeId,
                     SystemStreamDataCkIds.ArchiveDeleteArchiveMethodId, archiveRtId, new ArchiveDeleteArchiveParameters(),
@@ -553,7 +555,7 @@ internal sealed class StreamDataMutation : ObjectGraphType
             var store = gql.TenantContext.GetArchiveRuntimeStore();
 
             // the facade of the Archive method while the handlers are hosted
-            if (MethodFacadeOf(ctx) is { } facade)
+            if (MethodFacadeOf(ctx, gql.TenantContext, ArchiveMethodFacade.ArchiveCkTypeId, method.MethodId) is { } facade)
             {
                 return ToTransitionResult(ctx, await facade.InvokeAsync(gql.TenantContext, ArchiveMethodFacade.ArchiveCkTypeId,
                     method.MethodId, archiveRtId, method.Parameters, gql.User!, BearerTokenOf(ctx), ctx.CancellationToken),
@@ -746,7 +748,7 @@ internal sealed class StreamDataMutation : ObjectGraphType
                 ?? throw AssetRepositoryException.StreamDataNotAvailable();
 
             // the facade of the RollupArchive method while the handlers are hosted
-            if (MethodFacadeOf(ctx) is { } facade)
+            if (MethodFacadeOf(ctx, gql.TenantContext, ArchiveMethodFacade.RollupArchiveCkTypeId, method.MethodId) is { } facade)
             {
                 return ToTransitionResult(ctx, await facade.InvokeAsync(gql.TenantContext,
                     ArchiveMethodFacade.RollupArchiveCkTypeId, method.MethodId, rollupRtId, method.Parameters, gql.User!,
@@ -771,9 +773,15 @@ internal sealed class StreamDataMutation : ObjectGraphType
     /// <summary>The method a lifecycle or rollup field is the facade of, with the parameters of the call.</summary>
     internal sealed record ArchiveMethodCall(string MethodId, object Parameters);
 
-    /// <summary>The facade when the archive method handlers are hosted; <c>null</c> keeps the direct lifecycle call.</summary>
-    private static IArchiveMethodFacade? MethodFacadeOf(IResolveFieldContext<object?> ctx) =>
-        ctx.RequestServices?.GetService<IArchiveMethodFacade>() is { IsHosted: true } facade ? facade : null;
+    /// <summary>
+    ///     The facade when it can serve the method in this tenant (handlers hosted, method declared in the tenant's CK model,
+    ///     <see cref="IArchiveMethodFacade.CanServe" />); <c>null</c> keeps the direct lifecycle call.
+    /// </summary>
+    private static IArchiveMethodFacade? MethodFacadeOf(IResolveFieldContext<object?> ctx, ITenantContext tenant,
+        string ckTypeId, string methodId) =>
+        ctx.RequestServices?.GetService<IArchiveMethodFacade>() is { } facade && facade.CanServe(tenant, ckTypeId, methodId)
+            ? facade
+            : null;
 
     private static string? BearerTokenOf(IResolveFieldContext ctx)
     {
@@ -803,7 +811,9 @@ internal sealed class StreamDataMutation : ObjectGraphType
             return null;
         }
 
-        return new ArchiveTransitionResultDto(new OctoObjectId(record.ArchiveRtId), (CkArchiveStatus)(int)record.Status,
+        // by member name: the numbers of the generated CK enum are not part of the contract
+        return new ArchiveTransitionResultDto(new OctoObjectId(record.ArchiveRtId),
+            ArchiveMethodSupport.ToEngine<CkArchiveStatus>(record.Status),
             record.Transition);
     }
 
