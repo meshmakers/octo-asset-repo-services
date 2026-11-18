@@ -383,7 +383,7 @@ public class StreamDataController : ControllerBase
                 ?? throw new StreamDataException(
                     $"Recompute support is not wired for tenant '{tenantId}'. Ensure stream data is enabled and a rollup store is registered.");
 
-            // AB#9056: while the archive methods are hosted and the tenant's model declares Recompute-2, the endpoint is its
+            // while the archive methods are hosted and the tenant's model declares Recompute-2, the endpoint is its
             // facade: accepted as an operation (runtime.operations), answered with the job once the operation ended
             var facade = HttpContext?.RequestServices?.GetService<IArchiveMethodFacade>();
             if (facade != null && facade.CanServe(tenantContext, ArchiveMethodFacade.RollupArchiveCkTypeId,
@@ -442,7 +442,7 @@ public class StreamDataController : ControllerBase
                 ?? throw new StreamDataException(
                     $"Recompute support is not wired for tenant '{tenantId}'. Ensure stream data is enabled and a rollup store is registered.");
 
-            // AB#9056: the facade of BackfillFromSource-2 - accepted as an operation, answered with the job as soon as the
+            // the facade of BackfillFromSource-2 - accepted as an operation, answered with the job as soon as the
             // operation reports it queued (the Pending job, as before), 204 for an empty source
             var facade = HttpContext?.RequestServices?.GetService<IArchiveMethodFacade>();
             if (facade != null && facade.CanServe(tenantContext, ArchiveMethodFacade.RollupArchiveCkTypeId,
@@ -1416,13 +1416,13 @@ public class StreamDataController : ControllerBase
     }
 
     /// <summary>
-    ///     AB#9056: <c>recompute</c> and <c>backfill-from-source</c> as facades of the asynchronous <c>Recompute-2</c> and
+    ///     <c>recompute</c> and <c>backfill-from-source</c> as facades of the asynchronous <c>Recompute-2</c> and
     ///     <c>BackfillFromSource-2</c>. The call goes through <see cref="IArchiveMethodFacade" /> (gateway, declared role, data
     ///     permission, one Method audit event) and is accepted as an operation; the endpoint then reads the operation record
     ///     until it ended (<paramref name="waitForTheEnd" />, the recompute: the answer was always the finished job) or until it
     ///     reported its queued job (the backfill: the answer was always the Pending job), and answers the job exactly as the
     ///     direct call did (<see cref="RecomputeJobInfoRestDto" />, a Failed job included). The accept and the wait run under
-    ///     the host's lifetime, not the request (AB#4286): a client that disconnects never stops the operation, which keeps
+    ///     the host's lifetime, not the request : a client that disconnects never stops the operation, which keeps
     ///     running and stays readable in runtime.operations and in recompute-jobs.
     /// </summary>
     private async Task<ActionResult<RecomputeJobInfoRestDto>> InvokeRecomputeMethodAsync<TParameters>(

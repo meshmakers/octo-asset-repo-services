@@ -109,7 +109,7 @@ public class ArchiveMethodTests
             ("freezeRollupArchive", SystemStreamDataCkIds.RollupArchiveFreezeMethodId),
             ("unfreezeRollupArchive", SystemStreamDataCkIds.RollupArchiveUnfreezeMethodId),
             ("rewindRollupWatermark", SystemStreamDataCkIds.RollupArchiveRewindWatermarkMethodId),
-            // AB#9056 (System.StreamData 1.30.0): the mutations name the asynchronous -2 versions; -1 are deprecated and kept
+            // System.StreamData 1.30.0: the mutations name the asynchronous -2 versions; -1 are deprecated and kept
             ((string?)null, SystemStreamDataCkIds.RollupArchiveRecomputeMethodId),
             ((string?)null, SystemStreamDataCkIds.RollupArchiveBackfillFromSourceMethodId),
             ("recomputeArchive", SystemStreamDataCkIds.RollupArchiveRecompute2MethodId),

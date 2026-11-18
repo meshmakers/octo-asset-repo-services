@@ -12,8 +12,11 @@
   `-2` versions. The REST endpoints `POST {tenantId}/v1/streamdata/archives/{id}/recompute` and `/backfill-from-source` are
   facades of the `-2` methods: route, parameters and answer unchanged (`RecomputeJobInfo`, a Failed job with `200`, `204` for an
   empty source); `recompute` answers when the operation ended, `backfill-from-source` once the operation reported its queued job
-  (bounded by `Methods:StreamData:BackfillQueueTimeout`, default 60 s, then `504` naming the operation). Behaviour changes as for the
-  lifecycle facades: one Method audit event per call (outcome `Accepted`), a data permission that refuses the rollup refuses the
+  (bounded by `Methods:StreamData:BackfillQueueTimeout`, default 60 s, then `504` naming the operation). **Behaviour change on an
+  error path:** recompute/backfill-from-source on a deleted or non-rollup archive now answers 400 (not found) instead of 200 with
+  a Failed job (the gateway refuses the call before any job exists; no job is persisted, no operation accepted). The polling of
+  the job and of the operation record retries transient read errors (`Methods:StreamData:OperationPollInterval` and
+  `BackfillQueueTimeout` must be greater than zero, checked at startup). Other behaviour changes as for the lifecycle facades: one Method audit event per call (outcome `Accepted`), a data permission that refuses the rollup refuses the
   call (`403`), a token of another tenant is `403` `METHOD_FORBIDDEN` / `tenant-not-allowed`. No Sunset header. With
   `Methods:StreamData:Enabled=false`, or in a tenant whose System.StreamData is older than 1.30.0, the endpoints keep their direct
   call. Needs octo-construction-kit-engine with System.StreamData 1.30.0 (minEngineVersion 3.5.67).

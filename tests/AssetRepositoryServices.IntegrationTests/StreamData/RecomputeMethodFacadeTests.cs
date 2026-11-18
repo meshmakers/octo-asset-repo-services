@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using System.Text.Json;
 using FakeItEasy;
 using FluentAssertions;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Collections;
@@ -25,7 +26,7 @@ using Xunit;
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.StreamData;
 
 /// <summary>
-///     AB#9056: the asynchronous <c>RollupArchive.Recompute-2</c> and <c>BackfillFromSource-2</c> against the real host
+///     the asynchronous <c>RollupArchive.Recompute-2</c> and <c>BackfillFromSource-2</c> against the real host
 ///     (MongoDB, CrateDB, gateway, invocation pipeline, operation runner and store). The method returns an operation handle at
 ///     once and the operation ends with the job; the REST endpoints <c>recompute</c> and <c>backfill-from-source</c> are their
 ///     facades and answer <see cref="RecomputeJobInfoRestDto" /> as before; the job is visible in recompute-jobs and in the
@@ -98,7 +99,7 @@ public class RecomputeMethodFacadeTests
         var response = await _fixture.GetService<IArchiveMethodFacade>().InvokeAsync(await TenantAsync(),
             ArchiveMethodFacade.RollupArchiveCkTypeId, SystemStreamDataCkIds.RollupArchiveRecompute2MethodId, rollup,
             new RollupArchiveRecompute2Parameters { From = From, To = To }, Admin(), null, caller.Token);
-        await caller.CancelAsync(); // the client disconnects right after the accept (AB#4286)
+        await caller.CancelAsync(); // the client disconnects right after the accept 
 
         response.IsAccepted.Should().BeTrue(response.ToString());
         response.ResultJson.Should().BeNull("the job is read through the operation, not the answer");
@@ -162,7 +163,71 @@ public class RecomputeMethodFacadeTests
         rollupState!.Status.Should().Be(CkArchiveStatus.Activated, "nothing changed on the rollup");
     }
 
+    [Fact]
+    public async Task RestBackfill_OfASourceWithData_AnswersThePendingJobAsBefore_AndTheOperationFollowsItToTheEnd()
+    {
+        var (source, rollup) = await CreateRollupWithSourceAsync("BackData");
+        var write = await Controller(Admin()).Insert(Tenant, $"{source}", Bind($$"""
+            [{ "rtId": "{{OctoObjectId.GenerateNewId()}}", "ckTypeId": "{{_fixture.TestCkTypeId}}",
+               "timestamp": "{{From.AddHours(1):O}}", "attributes": { "Voltage": 230.0 } }]
+            """));
+        write.Should().BeOfType<OkObjectResult>();
+        await new MultiSourceArchiveBuilder(_fixture).RefreshAsync(source); // CrateDB: make the row visible to the source scan
+
+        var answer = await Controller(Admin()).BackfillRollupFromSource(Tenant, $"{rollup}");
+
+        var job = answer.Result.Should().BeOfType<OkObjectResult>().Subject.Value.Should().BeOfType<RecomputeJobInfoRestDto>()
+            .Subject;
+        job.State.Should().BeOneOf(RecomputeJobState.Pending.ToString(), RecomputeJobState.Running.ToString(),
+            RecomputeJobState.Swapping.ToString(), RecomputeJobState.Completed.ToString());
+        var queued = await OperationOfJobAsync(SystemStreamDataCkIds.RollupArchiveBackfillFromSource2MethodId, job.RtId);
+
+        // the background orchestrator drains the queued range; the operation follows the job until it ended
+        await (await TenantAsync()).GetRecomputeOrchestrator()!.TickAsync(TestContext.Current.CancellationToken);
+        var ended = await WaitForEndAsync(queued.OperationId);
+        ended.State.Should().Be(CkMethodOperationState.Succeeded);
+        RecomputeOperationWait.JobRtIdOf(ended).ToString().Should().Be(job.RtId);
+        var finished = await (await TenantAsync()).GetRecomputeJobStore()!.GetAsync(new OctoObjectId(job.RtId));
+        finished!.State.Should().Be(RecomputeJobState.Completed);
+    }
+
+    [Fact]
+    public async Task ADeletedOrNonRollupTarget_Is400NotFound_NoJobIsPersisted_AndNoOperationIsAccepted()
+    {
+        var raw = await CreateRawArchiveAsync("NotARollup");
+        var missing = OctoObjectId.GenerateNewId();
+        var store = _fixture.GetService<ICkMethodOperationStore>();
+        var since = DateTime.UtcNow.AddSeconds(-1);
+
+        foreach (var target in new[] { raw, missing })
+        {
+            var recompute = await Controller(Admin()).RecomputeArchive(Tenant, $"{target}", From, To, null);
+            var backfill = await Controller(Admin()).BackfillRollupFromSource(Tenant, $"{target}");
+
+            // a behaviour change on an error path: the direct call answered 200 with a Failed job
+            recompute.Result.Should().BeOfType<BadRequestObjectResult>($"recompute {target}").Which.Value.Should()
+                .BeOfType<string>().Which.Should().Contain("does not exist");
+            backfill.Result.Should().BeOfType<BadRequestObjectResult>($"backfill {target}");
+            (await (await TenantAsync()).GetRecomputeJobStore()!.GetForArchiveAsync(target, 10)).Should()
+                .BeEmpty("the gateway refuses the call before any job exists");
+        }
+
+        var operations = await store.ListAsync(new CkMethodOperationQuery
+        {
+            TenantId = Tenant,
+            MethodIds = [SystemStreamDataCkIds.RollupArchiveRecompute2MethodId, SystemStreamDataCkIds.RollupArchiveBackfillFromSource2MethodId],
+            SinceUtc = since, Take = 200
+        }, TestContext.Current.CancellationToken);
+        operations.Items.Should().BeEmpty("a refused call is never accepted as an operation");
+    }
+
     // ── helpers ─────────────────────────────────────────────────────────────────────────────────
+
+    private static readonly JsonSerializerOptions MvcBodyOptions = new JsonOptions().JsonSerializerOptions;
+
+    private static IReadOnlyList<InsertRawPointRestDto> Bind(string body) =>
+        JsonSerializer.Deserialize<IReadOnlyList<InsertRawPointRestDto>>(body, MvcBodyOptions)
+        ?? throw new InvalidOperationException("The body deserialized to null.");
 
     private string Tenant => _fixture.GetSystemContext().TenantId;
 
@@ -265,7 +330,11 @@ public class RecomputeMethodFacadeTests
     }
 
     /// <summary>An hourly rollup of a fresh, activated raw source (empty).</summary>
-    private async Task<OctoObjectId> CreateRollupAsync(string prefix, bool activate = false)
+    private async Task<OctoObjectId> CreateRollupAsync(string prefix, bool activate = false) =>
+        (await CreateRollupWithSourceAsync(prefix, activate)).Rollup;
+
+    private async Task<(OctoObjectId Source, OctoObjectId Rollup)> CreateRollupWithSourceAsync(string prefix,
+        bool activate = true)
     {
         var source = await CreateRawArchiveAsync($"{prefix}Src");
         var tenant = await TenantAsync();
@@ -278,7 +347,7 @@ public class RecomputeMethodFacadeTests
             await tenant.GetArchiveLifecycleService()!.ActivateAsync(rollup);
         }
 
-        return rollup;
+        return (source, rollup);
     }
 
     private sealed class OverridingServiceProvider(IServiceProvider inner, IArchiveMethodFacade facade) : IServiceProvider

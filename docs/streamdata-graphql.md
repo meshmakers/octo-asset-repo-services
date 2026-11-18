@@ -157,10 +157,10 @@ method row in `ArchiveMethodHost`.
   no result for an empty source. A target id the caller cannot see is `METHOD_TARGET_NOT_FOUND` from the gateway, before any job. Both are
   synchronous and deprecated since 1.30.0 (below). The five mutations are deprecated with the method id; `recomputeArchive` and
   `backfillRollupFromSource` name the `-2` versions.
-- **Asynchronous recompute and backfill (System.StreamData 1.30.0, AB#9056).** `RollupArchive.Recompute-2` and
+- **Asynchronous recompute and backfill (System.StreamData 1.30.0).** `RollupArchive.Recompute-2` and
   `BackfillFromSource-2` (`execution.mode: async`, GraphQL fields `recompute2` / `backfillFromSource2`) return an operation handle
   at once; the work runs in the operation runner of this service (`AddCkMethodOperations`, registered with the handlers; records in
-  `MethodOperations` of the system database) under the runner's token, never the caller's request (AB#4286), with the service
+  `MethodOperations` of the system database) under the runner's token, never the caller's request, with the service
   identity as the REST endpoint always did. The caller's rights are checked when the call is accepted (role `StreamDataAdmin`,
   tenant of the token, write grant on the rollup); after the accept no caller right is used and none is widened. `Recompute-2`
   reports the stage `RECOMPUTING` and ends `SUCCEEDED` with the completed job (`RecomputeJobInfo`) or `FAILED` with
@@ -169,7 +169,7 @@ method row in `ArchiveMethodHost`.
   reports `QUEUED` with `jobRtId`, then follows the job on the job store (`Methods:StreamData:OperationPollInterval`, default 1 s;
   stages `PENDING` / `RUNNING` / `SWAPPING`) until it ended; an empty source ends `SUCCEEDED` without a result. When the service
   stops, the queued backfill survives (persisted range), the operation ends as lost (`METHOD_OUTCOME_UNKNOWN`). The job is read in
-  `runtime.operations` and in `recompute-jobs` of the archive. Cancel is AB#8882.
+  `runtime.operations` and in `recompute-jobs` of the archive.
 - **Column methods (System.StreamData 1.28.0, AB#8600).** `ColumnMethodHandlers.cs`: the six instance methods of `Archive` call the
   `IArchiveLifecycleService` member of the mutation they replace and answer its shape. `AddComputedColumn-1`, `AddColumn-1`,
   `RemoveComputedColumn-1` and `UpdateComputedColumnFormula-1` answer `ArchiveTransitionResult` (transition names as the mutations:

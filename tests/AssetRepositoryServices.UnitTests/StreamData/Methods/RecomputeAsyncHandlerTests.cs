@@ -15,7 +15,7 @@ using Xunit;
 namespace AssetRepositoryServices.UnitTests.StreamData.Methods;
 
 /// <summary>
-///     AB#9056: the asynchronous <c>RollupArchive.Recompute-2</c> and <c>BackfillFromSource-2</c>. The handler accepts at once
+///     the asynchronous <c>RollupArchive.Recompute-2</c> and <c>BackfillFromSource-2</c>. The handler accepts at once
 ///     (no engine call before the accept); the work runs the recompute or follows the backfill job to its end and answers the
 ///     job, or <c>STREAMDATA_RECOMPUTE_FAILED</c> with the job id for a job that ended Failed. The REST wait reads the job id
 ///     from the operation record.
@@ -192,6 +192,58 @@ public class RecomputeAsyncHandlerTests
 
         outcome.Failure!.Code.Should().Be(ArchiveMethodErrors.RecomputeFailed);
         outcome.Failure.Parameters[ArchiveMethodErrors.ReasonParameter].Should().Be("job-not-found");
+    }
+
+    [Fact]
+    public async Task BackfillFromSource2Work_ATransientReadError_DoesNotEndTheOperation()
+    {
+        var jobId = OctoObjectId.GenerateNewId();
+        A.CallTo(() => _orchestrator.EnqueueBackfillFromSourceAsync(RollupId, A<CancellationToken>._))
+            .Returns(Job(jobId, RecomputeJobState.Pending));
+        A.CallTo(() => _jobStore.GetAsync(jobId))
+            .Throws(new TimeoutException("primary election")).Once()
+            .Then.Returns(Job(jobId, RecomputeJobState.Completed));
+
+        var outcome = await Backfill().RunAsync(_orchestrator, _jobStore, RollupId, TimeSpan.FromMilliseconds(1), _progress,
+            CancellationToken.None);
+
+        outcome.IsSuccess.Should().BeTrue("one failed read must not decide the outcome of a job that keeps running");
+        outcome.Value!.Value!.State.Should().Be(RtCkRecomputeJobStateEnum.Completed);
+    }
+
+    [Fact]
+    public async Task BackfillFromSource2Work_PersistentReadErrors_EndTheOperation_AfterTheBound()
+    {
+        var jobId = OctoObjectId.GenerateNewId();
+        A.CallTo(() => _orchestrator.EnqueueBackfillFromSourceAsync(RollupId, A<CancellationToken>._))
+            .Returns(Job(jobId, RecomputeJobState.Pending));
+        A.CallTo(() => _jobStore.GetAsync(jobId)).Throws(new TimeoutException("database down"));
+
+        var run = () => Backfill().RunAsync(_orchestrator, _jobStore, RollupId, TimeSpan.FromMilliseconds(1), _progress,
+            CancellationToken.None);
+
+        await run.Should().ThrowAsync<TimeoutException>();
+        A.CallTo(() => _jobStore.GetAsync(jobId)).MustHaveHappened(RecomputeOperations.MaxConsecutiveReadFailures,
+            Times.Exactly);
+    }
+
+    [Fact]
+    public async Task TheRestWait_RetriesATransientReadError()
+    {
+        var store = A.Fake<ICkMethodOperationStore>();
+        var done = new CkMethodOperationRecord
+        {
+            TenantId = TenantId, OperationId = "op", MethodId = "m", InvocationId = Guid.NewGuid(), HandlerInstanceId = "h",
+            State = CkMethodOperationState.Succeeded, AcceptedAtUtc = DateTime.UtcNow, HeartbeatAtUtc = DateTime.UtcNow
+        };
+        A.CallTo(() => store.GetAsync(TenantId, "op", A<CancellationToken>._))
+            .Throws(new CkMethodOperationStoreException("election")).Once()
+            .Then.Returns(done);
+
+        var result = await RecomputeOperationWait.WaitAsync(store, TenantId, "op", RecomputeOperationWait.Ended,
+            TimeSpan.FromMilliseconds(1), null, CancellationToken.None);
+
+        result.Record.Should().BeSameAs(done);
     }
 
     [Fact]

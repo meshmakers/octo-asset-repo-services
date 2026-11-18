@@ -230,8 +230,8 @@ internal sealed class RollupArchiveBackfillFromSourceHandler(
 }
 
 /// <summary>
-///     The asynchronous recompute methods of System.StreamData 1.30.0 (AB#9056, Feature AB#5702 F5.4): the outcome of a finished
-///     job and the stage codes the operations report.
+///     The asynchronous recompute methods of System.StreamData 1.30.0: the outcome of a finished job, the stage codes the
+///     operations report and the read retry of the waits.
 /// </summary>
 internal static class RecomputeOperations
 {
@@ -243,6 +243,12 @@ internal static class RecomputeOperations
 
     /// <summary>Bound of the error reason copied into the operation error (the full text stays on the job).</summary>
     internal const int MaxReasonLength = 500;
+
+    /// <summary>
+    ///     Reads of the job or the operation record that may fail in a row (a transient database error, an election) before
+    ///     a wait gives up. A single failed read never decides the outcome of a recompute that keeps running.
+    /// </summary>
+    internal const int MaxConsecutiveReadFailures = 10;
 
     /// <summary>
     ///     The outcome of a job that ended: <c>Completed</c> is the job record, <c>Failed</c> the declared error
@@ -273,13 +279,14 @@ internal static class RecomputeOperations
 }
 
 /// <summary>
-///     Handler of the asynchronous <c>System.StreamData/RollupArchive.Recompute-2</c> (System.StreamData 1.30.0, AB#9056). The
-///     call is authorized by the invocation pipeline before this handler runs (role <c>StreamDataAdmin</c>, tenant of the token,
-///     write grant on the rollup); the handler checks the target and the parameters, accepts the call and returns the operation
+///     Handler of the asynchronous <c>System.StreamData/RollupArchive.Recompute-2</c> (System.StreamData 1.30.0). The call is
+///     authorized by the invocation pipeline before this handler runs (role <c>StreamDataAdmin</c>, tenant of the token, write
+///     grant on the rollup); the handler checks the target and the parameters, accepts the call and returns the operation
 ///     handle at once. The work then runs the same recompute as <c>Recompute-1</c> and <c>streamData.recomputeArchive</c>
 ///     (<see cref="IRecomputeOrchestrator.RecomputeArchiveAsync" />, trigger Manual) under the token of the operation runner -
-///     the host's lifetime, never the caller's request (AB#4286) - with the service identity of the asset repository, as the
-///     REST endpoint always did; no right of the caller is used after the accept and none is widened.
+///     the host's lifetime, never the caller's request - with the service identity of the asset repository, as the REST
+///     endpoint always did; no right of the caller is used after the accept and none is widened. Log lines name the
+///     invocation, the operation and the job, never the target or the parameters.
 /// </summary>
 internal sealed class RollupArchiveRecompute2Handler(
     ISystemContext systemContext,
@@ -314,9 +321,7 @@ internal sealed class RollupArchiveRecompute2Handler(
         // copy what the work needs; it runs detached and never keeps the caller's token or request
         var from = context.Parameters.From;
         var to = context.Parameters.To;
-        var invocationId = context.InvocationId;
-        logger.LogDebug("Recompute of {RollupRtId} [{From:O}, {To:O}) accepted (CK method, invocation {InvocationId})",
-            rollupRtId, from, to, invocationId);
+        logger.LogDebug("Recompute accepted (CK method, invocation {InvocationId})", context.InvocationId);
         return CkMethodOutcome<RollupArchiveRecompute2Result>.Accepted((progress, ct) =>
             RunAsync(orchestrator, rollupRtId, from, to, scope, progress, ct));
     }
@@ -331,8 +336,8 @@ internal sealed class RollupArchiveRecompute2Handler(
         {
             var job = await orchestrator.RecomputeArchiveAsync(rollupRtId, from, to, scope, RecomputeTrigger.Manual, ct)
                 .ConfigureAwait(false);
-            logger.LogInformation("Recompute of {RollupRtId} (operation {OperationId}) ended as job {JobRtId} in state {State}",
-                rollupRtId, progress.OperationId, job.RtId, job.State);
+            logger.LogInformation("Recompute (operation {OperationId}) ended as job {JobRtId} in state {State}",
+                progress.OperationId, job.RtId, job.State);
             var outcome = RecomputeOperations.OutcomeOf(job);
             return outcome.IsSuccess
                 ? new RollupArchiveRecompute2Result { Value = outcome.Value! }
@@ -340,22 +345,24 @@ internal sealed class RollupArchiveRecompute2Handler(
         }
         catch (StreamDataException e)
         {
-            logger.LogInformation("Recompute of {RollupRtId} refused (CK method, operation {OperationId}): {Reason}", rollupRtId,
-                progress.OperationId, e.Message);
+            logger.LogInformation("Recompute refused (CK method, operation {OperationId}): {Code}", progress.OperationId,
+                ArchiveMethodErrors.CodeOf(e));
             return CkMethodOutcome<RollupArchiveRecompute2Result>.Fail(ArchiveMethodErrors.FailureOf(e));
         }
     }
 }
 
 /// <summary>
-///     Handler of the asynchronous <c>System.StreamData/RollupArchive.BackfillFromSource-2</c> (System.StreamData 1.30.0,
-///     AB#9056). Authorized like <see cref="RollupArchiveRecompute2Handler" /> before it runs; accepts the call at once. The work
-///     queues the same durable backfill as <c>BackfillFromSource-1</c> and <c>streamData.backfillRollupFromSource</c>
+///     Handler of the asynchronous <c>System.StreamData/RollupArchive.BackfillFromSource-2</c> (System.StreamData 1.30.0).
+///     Authorized like <see cref="RollupArchiveRecompute2Handler" /> before it runs; accepts the call at once. The work queues
+///     the same durable backfill as <c>BackfillFromSource-1</c> and <c>streamData.backfillRollupFromSource</c>
 ///     (<see cref="IRecomputeOrchestrator.EnqueueBackfillFromSourceAsync" />), reports the job (stage <c>QUEUED</c>, parameter
 ///     <c>jobRtId</c>) and then follows it on the job store until it ended; the recompute itself runs on the background
-///     orchestrator under the host's lifetime (AB#4286). An empty source ends the operation with no result. When the asset
-///     repository stops, the queued work survives (persisted range) while the operation ends as lost
-///     (<c>METHOD_OUTCOME_UNKNOWN</c>); the job stays readable in the recompute jobs of the archive.
+///     orchestrator under the host's lifetime. A failed read of the job is retried
+///     (<see cref="RecomputeOperations.MaxConsecutiveReadFailures" /> in a row) before the operation gives up. An empty
+///     source ends the operation with no result. When the asset repository stops, the queued work survives (persisted range)
+///     while the operation ends as lost (<c>METHOD_OUTCOME_UNKNOWN</c>); the job stays readable in the recompute jobs of the
+///     archive.
 /// </summary>
 internal sealed class RollupArchiveBackfillFromSource2Handler(
     ISystemContext systemContext,
@@ -377,8 +384,7 @@ internal sealed class RollupArchiveBackfillFromSource2Handler(
             return CkMethodOutcome<RollupArchiveBackfillFromSource2Result>.Fail(ArchiveMethodErrors.StreamDataNotEnabled);
         }
 
-        logger.LogDebug("Backfill-from-source of {RollupRtId} accepted (CK method, invocation {InvocationId})", rollupRtId,
-            context.InvocationId);
+        logger.LogDebug("Backfill-from-source accepted (CK method, invocation {InvocationId})", context.InvocationId);
         var pollInterval = options.Value.OperationPollInterval;
         return CkMethodOutcome<RollupArchiveBackfillFromSource2Result>.Accepted((progress, ct) =>
             RunAsync(orchestrator, jobStore, rollupRtId, pollInterval, progress, ct));
@@ -395,8 +401,8 @@ internal sealed class RollupArchiveBackfillFromSource2Handler(
         }
         catch (StreamDataException e)
         {
-            logger.LogInformation("Backfill of {RollupRtId} refused (CK method, operation {OperationId}): {Reason}", rollupRtId,
-                progress.OperationId, e.Message);
+            logger.LogInformation("Backfill refused (CK method, operation {OperationId}): {Code}", progress.OperationId,
+                ArchiveMethodErrors.CodeOf(e));
             return CkMethodOutcome<RollupArchiveBackfillFromSource2Result>.Fail(ArchiveMethodErrors.FailureOf(e));
         }
 
@@ -408,18 +414,37 @@ internal sealed class RollupArchiveBackfillFromSource2Handler(
 
         await progress.ReportAsync(RecomputeOperations.ProgressOf(job, RecomputeOperations.QueuedStage), ct)
             .ConfigureAwait(false);
-        logger.LogInformation("Backfill of {RollupRtId} queued as job {JobRtId} (operation {OperationId})", rollupRtId, job.RtId,
-            progress.OperationId);
+        logger.LogInformation("Backfill queued as job {JobRtId} (operation {OperationId})", job.RtId, progress.OperationId);
 
         var lastState = job.State;
+        var failedReads = 0;
         while (!RecomputeOperations.IsFinished(job))
         {
             await Task.Delay(pollInterval, ct).ConfigureAwait(false);
-            var current = await jobStore.GetAsync(job.RtId).ConfigureAwait(false);
+            RecomputeJobSnapshot? current;
+            try
+            {
+                current = await jobStore.GetAsync(job.RtId).ConfigureAwait(false);
+                failedReads = 0;
+            }
+            catch (Exception e) when (e is not OperationCanceledException)
+            {
+                // the job keeps running on the orchestrator; one failed read must not end the operation
+                failedReads++;
+                logger.LogWarning("Reading recompute job {JobRtId} of operation {OperationId} failed ({Attempt} of {Max}): {ExceptionType}",
+                    job.RtId, progress.OperationId, failedReads, RecomputeOperations.MaxConsecutiveReadFailures, e.GetType().Name);
+                if (failedReads < RecomputeOperations.MaxConsecutiveReadFailures)
+                {
+                    continue;
+                }
+
+                throw;
+            }
+
             if (current is null)
             {
-                logger.LogWarning("Recompute job {JobRtId} of the backfill of {RollupRtId} disappeared (operation {OperationId})",
-                    job.RtId, rollupRtId, progress.OperationId);
+                logger.LogWarning("Recompute job {JobRtId} of operation {OperationId} disappeared", job.RtId,
+                    progress.OperationId);
                 return CkMethodOutcome<RollupArchiveBackfillFromSource2Result>.Fail(ArchiveMethodErrors.RecomputeFailed,
                     (ArchiveMethodErrors.JobRtIdParameter, job.RtId.ToString()),
                     (ArchiveMethodErrors.ReasonParameter, "job-not-found"));
@@ -433,8 +458,8 @@ internal sealed class RollupArchiveBackfillFromSource2Handler(
             }
         }
 
-        logger.LogInformation("Backfill of {RollupRtId} (operation {OperationId}) ended as job {JobRtId} in state {State}",
-            rollupRtId, progress.OperationId, job.RtId, job.State);
+        logger.LogInformation("Backfill (operation {OperationId}) ended as job {JobRtId} in state {State}",
+            progress.OperationId, job.RtId, job.State);
         var outcome = RecomputeOperations.OutcomeOf(job);
         return outcome.IsSuccess
             ? new RollupArchiveBackfillFromSource2Result { Value = outcome.Value }

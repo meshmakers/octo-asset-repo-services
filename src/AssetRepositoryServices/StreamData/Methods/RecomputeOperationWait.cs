@@ -5,7 +5,7 @@ using Meshmakers.Octo.Services.Methods.Operations;
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.StreamData.Methods;
 
 /// <summary>
-///     AB#9056: how the REST facades of <c>Recompute-2</c> and <c>BackfillFromSource-2</c> wait for their operation. They read
+///     how the REST facades of <c>Recompute-2</c> and <c>BackfillFromSource-2</c> wait for their operation. They read
 ///     the operation record from the store of the host (the same record runtime.operations shows) - never the request's
 ///     session - until a condition holds.
 /// </summary>
@@ -24,7 +24,9 @@ internal static class RecomputeOperationWait
     /// <summary>
     ///     Reads the record every <paramref name="pollInterval" /> until <paramref name="until" /> holds. Returns no record when
     ///     the record is unknown (expired, or of another tenant) or when <paramref name="timeout" /> passed; throws
-    ///     <see cref="OperationCanceledException" /> only for <paramref name="cancellationToken" />.
+    ///     <see cref="OperationCanceledException" /> only for <paramref name="cancellationToken" />. A failed read (a transient
+    ///     database error) is retried; only <see cref="RecomputeOperations.MaxConsecutiveReadFailures" /> failures in a row end
+    ///     the wait with the last error.
     /// </summary>
     public static async Task<Result> WaitAsync(ICkMethodOperationStore store, string tenantId, string operationId,
         Func<CkMethodOperationRecord, bool> until, TimeSpan pollInterval, TimeSpan? timeout,
@@ -33,15 +35,29 @@ internal static class RecomputeOperationWait
         ArgumentNullException.ThrowIfNull(store);
         ArgumentNullException.ThrowIfNull(until);
         var deadline = timeout is { } t ? DateTime.UtcNow + t : (DateTime?)null;
+        var failedReads = 0;
         while (true)
         {
-            var record = await store.GetAsync(tenantId, operationId, cancellationToken).ConfigureAwait(false);
-            if (record is null)
+            CkMethodOperationRecord? record = null;
+            var read = false;
+            try
+            {
+                record = await store.GetAsync(tenantId, operationId, cancellationToken).ConfigureAwait(false);
+                read = true;
+                failedReads = 0;
+            }
+            catch (Exception) when (!cancellationToken.IsCancellationRequested &&
+                                    ++failedReads < RecomputeOperations.MaxConsecutiveReadFailures)
+            {
+                // the operation keeps running; one failed read must not decide the answer
+            }
+
+            if (read && record is null)
             {
                 return new Result(null, false);
             }
 
-            if (until(record))
+            if (record != null && until(record))
             {
                 return new Result(record, false);
             }

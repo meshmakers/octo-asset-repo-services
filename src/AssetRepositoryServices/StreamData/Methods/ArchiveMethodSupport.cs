@@ -29,7 +29,7 @@ internal static class ArchiveMethodErrors
     public const string RedactionColumnsChanged = "STREAMDATA_REDACTION_COLUMNS_CHANGED";
 
     /// <summary>
-    ///     <c>RollupArchive.Recompute-2</c> / <c>BackfillFromSource-2</c> (System.StreamData 1.30.0, AB#9056): the recompute job
+    ///     <c>RollupArchive.Recompute-2</c> / <c>BackfillFromSource-2</c> (System.StreamData 1.30.0): the recompute job
     ///     ended in state Failed. Parameters <see cref="JobRtIdParameter" /> and <see cref="ReasonParameter" />.
     /// </summary>
     public const string RecomputeFailed = "STREAMDATA_RECOMPUTE_FAILED";
