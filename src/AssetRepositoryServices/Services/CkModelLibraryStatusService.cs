@@ -133,7 +133,7 @@ public sealed class CkModelLibraryStatusService : ICkModelLibraryStatusService
 
     /// <summary>
     ///     True for models the platform owns and a user must not update by hand (<c>System</c> and
-    ///     everything under <c>System.</c>, case-insensitive; one rule with the import refusal of AB#9293,
+    ///     everything under <c>System.</c>, case-insensitive; one rule with the import refusal,
     ///     <see cref="ServiceManagedImportGuard.IsServiceManaged" />).
     /// </summary>
     public static bool IsSystemManaged(string modelName) => ServiceManagedImportGuard.IsServiceManaged(modelName);

@@ -29,11 +29,11 @@ using Xunit;
 namespace AssetRepositoryServices.UnitTests.TenantApi;
 
 /// <summary>
-///     AB#9293 (Security): caller-initiated CK imports refuse every service-managed model (<c>System</c>,
+///     Security: caller-initiated CK imports refuse every service-managed model (<c>System</c>,
 ///     <c>System.*</c>), whatever the version and whoever calls. Invariant: no request to <c>ImportCk</c>,
 ///     <c>ImportFromCatalog</c> or <c>ImportFromCatalogBatch</c> caches, queues or imports such a model; the refusal is
 ///     decided on the model the bytes parse to (the real CK serializer, the one bot-services imports with), before
-///     anything is cached or queued. One test per abuse case of the work item.
+///     anything is cached or queued. One test per abuse case.
 /// </summary>
 public class ModelsControllerServiceManagedImportTests
 {
@@ -171,7 +171,7 @@ public class ModelsControllerServiceManagedImportTests
         problem.Extensions["models"].Should().BeEquivalentTo(models);
         problem.Detail.Should().Contain("Nothing was imported").And.Contain("ClearCache");
 
-        // The SDK reads a coded refusal from the top-level "code" and "message" members (AB#8529).
+        // The SDK reads a coded refusal from the top-level "code" and "message" members.
         using var json = JsonDocument.Parse(JsonSerializer.Serialize(problem));
         json.RootElement.GetProperty("code").GetString().Should().Be(ServiceManagedImportGuard.Code);
         json.RootElement.GetProperty("message").GetString().Should().Contain(models[0]);
@@ -182,7 +182,7 @@ public class ModelsControllerServiceManagedImportTests
     [Fact]
     public async Task ImportCk_ForgedHigherMinorOfSystemIdentity_IsRefused_AndNothingIsCachedOrQueued()
     {
-        // The attack of the bug: a self-built 3.7.0 without the writeAccess restriction of 3.6.0 (AB#9291).
+        // A self-built higher minor without the write-channel restriction of the installed version.
         var result = await _controller.ImportCk(YamlUpload("System.Identity-3.7.0"));
 
         ShouldBeTheRefusal(result, "System.Identity-3.7.0");
@@ -293,6 +293,30 @@ public class ModelsControllerServiceManagedImportTests
 
         ShouldBeTheRefusal(result, "System.Identity-3.7.0");
         NothingMayHaveBeenCachedQueuedOrWritten();
+    }
+
+    [Theory]
+    [InlineData("application/octet-stream")]
+    [InlineData("application/x-yaml")]
+    [InlineData("application/ZIP")]
+    public async Task ImportCk_ZipWithAServiceManagedEntryUnderAnyContentType_IsNeverQueued(string contentType)
+    {
+        // The importing job decides "zip" by its own reading of the content type; whatever this service reads, a zip with
+        // a System model is never cached or queued (refused, or unreadable as a single model).
+        var zip = Zip(("a-basic.yaml", CompiledModel("Basic-2.6.0")), ("b-system.yaml", CompiledModel("System.Identity-3.7.0")));
+
+        var result = await _controller.ImportCk(Upload(zip, "models.zip", contentType));
+
+        result.Should().NotBeOfType<OkObjectResult>();
+        NothingMayHaveBeenCachedQueuedOrWritten();
+    }
+
+    [Fact]
+    public void LooksLikeZip_DetectsTheZipHeader_WhateverTheContentType()
+    {
+        CkModelFileReader.LooksLikeZip(Zip(("a.yaml", "x"))).Should().BeTrue();
+        CkModelFileReader.LooksLikeZip(Encoding.UTF8.GetBytes(CompiledModel("Basic-2.6.0"))).Should().BeFalse();
+        CkModelFileReader.LooksLikeZip([]).Should().BeFalse();
     }
 
     [Fact]

@@ -3,13 +3,12 @@ using Microsoft.AspNetCore.Mvc;
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.UpgradeGuard;
 
 /// <summary>
-///     AB#9293: caller-initiated CK imports (<c>Models/ImportCk</c>, <c>ImportFromCatalog</c>,
+///     Caller-initiated CK imports (<c>Models/ImportCk</c>, <c>ImportFromCatalog</c>,
 ///     <c>ImportFromCatalogBatch</c>) refuse every service-managed model (<c>System</c> and everything under
 ///     <c>System.</c>) - upgrade, same version and downgrade alike, for every caller. Service-managed models reach a tenant
 ///     only through the services' embedded import (recovery: <c>ClearCache</c> / <c>ReRunTenantSetup</c>), blueprint and
-///     system import and tenant restore. Before AB#9293 a caller with <c>DataModelManagement</c> could replace, for
-///     example, System.Identity with a self-built version without the identity write-channel restriction (AB#9291), or
-///     downgrade it explicitly; the embedded-import guard then kept that model.
+///     system import and tenant restore. A caller must never replace a model the services rely on (for example the
+///     write-channel restriction of System.Identity) with a self-built or older version.
 /// </summary>
 public static class ServiceManagedImportGuard
 {

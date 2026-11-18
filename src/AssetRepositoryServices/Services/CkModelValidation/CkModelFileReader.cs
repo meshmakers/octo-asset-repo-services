@@ -39,7 +39,7 @@ internal static class CkModelFileReader
                 }
 
                 // Buffered: the serializer rewinds the stream after the schema validation, which a zip entry
-                // stream does not support (it answered every zip upload with a NotSupportedException before AB#9293).
+                // stream does not support.
                 using var entryBuffer = await BufferEntryAsync(entry);
                 model = await ckSerializer.DeserializeCompiledModelRootAsync(entryBuffer, entry.Name, operationResult);
             }
@@ -64,7 +64,7 @@ internal static class CkModelFileReader
     }
 
     /// <summary>
-    ///     AB#9293: the model ids of <b>every</b> CK model entry of a zip upload (extension <c>.json</c>, <c>.yaml</c> or
+    ///     The model ids of <b>every</b> CK model entry of a zip upload (extension <c>.json</c>, <c>.yaml</c> or
     ///     <c>.yml</c>, any casing), not only the entry this reader and bot-services pick. The import refusal of
     ///     service-managed models checks all of them, so a different entry choice in the importing job (bot-services
     ///     picks the first <c>.yaml</c> entry when the zip holds no <c>.json</c> entry) can never import an entry the
@@ -156,6 +156,14 @@ internal static class CkModelFileReader
         buffer.Position = 0;
         return buffer;
     }
+
+    /// <summary>
+    ///     True when the bytes start with a zip local file header (<c>PK\x03\x04</c>), whatever the content type said:
+    ///     the service-managed check scans such an upload as a zip too, so a content type that only the importing job
+    ///     reads as zip cannot hide an entry.
+    /// </summary>
+    public static bool LooksLikeZip(byte[] upload) =>
+        upload.Length >= 4 && upload[0] == 0x50 && upload[1] == 0x4B && upload[2] == 0x03 && upload[3] == 0x04;
 
     private static bool IsModelEntry(string entryName)
     {

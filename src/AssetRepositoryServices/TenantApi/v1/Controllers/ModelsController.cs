@@ -322,7 +322,7 @@ public class ModelsController : ControllerBase
     ///     <para>
     ///         Service-managed models (<c>System</c>, <c>System.*</c>, any casing) are refused with
     ///         <c>403 CK_SERVICE_MANAGED_MODEL</c> whatever their version and whoever calls, <c>forceBreakingUpdate</c>
-    ///         included (AB#9293); for a zip every CK model entry is checked, and exactly the judged bytes are cached.
+    ///         included; for a zip every CK model entry is checked, and exactly the judged bytes are cached.
     ///     </para>
     ///     <para>
     ///         Tenant upgrade guard (CK v2 F2.5, AB#6966): the uploaded file is read and judged before anything is cached
@@ -364,12 +364,12 @@ public class ModelsController : ControllerBase
                 return Forbid();
             }
 
-            // AB#9293: the upload is read once; the refusal and the upgrade guard judge exactly the bytes that are
+            // The upload is read once; the refusal and the upgrade guard judge exactly the bytes that are
             // cached for bot-services, so the importing job can never see another model than the one judged here.
             var upload = await ReadUploadAsync(file);
             var compiled = await ReadCompiledModelAsync(file, upload);
 
-            // AB#9293: service-managed models (System, System.*) are never imported by a caller - before anything is
+            // Service-managed models (System, System.*) are never imported by a caller - before anything is
             // cached or queued, whatever the version and whoever calls, forceBreakingUpdate included.
             var serviceManaged = await FindServiceManagedInUploadAsync(file, upload, compiled);
             if (serviceManaged.Count > 0)
@@ -478,7 +478,7 @@ public class ModelsController : ControllerBase
     ///     </para>
     ///     <para>
     ///         A service-managed model (<c>System</c>, <c>System.*</c>, any casing; by requested id or by catalog content)
-    ///         is refused with <c>403 CK_SERVICE_MANAGED_MODEL</c>, forced or not (AB#9293).
+    ///         is refused with <c>403 CK_SERVICE_MANAGED_MODEL</c>, forced or not.
     ///     </para>
     /// </summary>
     /// <param name="request">The catalog name and model ID to import</param>
@@ -514,7 +514,7 @@ public class ModelsController : ControllerBase
 
             var ckModelId = new CkModelId(request.ModelId);
 
-            // AB#9293: service-managed models are never imported by a caller (requested id first, content below).
+            // Service-managed models are never imported by a caller (requested id first, content below).
             if (ServiceManagedImportGuard.IsServiceManaged(ckModelId.Name))
             {
                 LogServiceManagedRefusal(tenantId, [ckModelId.FullName], "ImportFromCatalog");
@@ -531,7 +531,7 @@ public class ModelsController : ControllerBase
                 return NotFound();
             }
 
-            // AB#9293: judged by the content that is cached and imported, not by the requested id.
+            // Judged by the content that is cached and imported, not by the requested id.
             if (ServiceManagedImportGuard.IsServiceManaged(compiledModel.ModelId?.Name))
             {
                 LogServiceManagedRefusal(tenantId, [compiledModel.ModelId!.FullName], "ImportFromCatalog");
@@ -876,7 +876,7 @@ public class ModelsController : ControllerBase
     ///     </para>
     ///     <para>
     ///         One service-managed model in the set (<c>System</c>, <c>System.*</c>, any casing; by requested id or by
-    ///         catalog content) refuses the whole set with <c>403 CK_SERVICE_MANAGED_MODEL</c>, forced or not (AB#9293).
+    ///         catalog content) refuses the whole set with <c>403 CK_SERVICE_MANAGED_MODEL</c>, forced or not.
     ///     </para>
     /// </summary>
     /// <param name="request">Catalog name and ordered list of model IDs</param>
@@ -905,7 +905,7 @@ public class ModelsController : ControllerBase
                 return BadRequest(new OperationFailedErrorDto("CatalogName and at least one ModelId are required"));
             }
 
-            // AB#9293: one service-managed model refuses the whole batch, before anything is loaded, cached or queued.
+            // One service-managed model refuses the whole batch, before anything is loaded, cached or queued.
             var requestedServiceManaged = request.ModelIds.Select(id => new CkModelId(id))
                 .Where(id => ServiceManagedImportGuard.IsServiceManaged(id.Name)).Select(id => id.FullName).ToList();
             if (requestedServiceManaged.Count > 0)
@@ -949,7 +949,7 @@ public class ModelsController : ControllerBase
                 compiledModels.Add(compiledModel);
             }
 
-            // AB#9293: judged by the content that is cached and imported, not by the requested ids.
+            // Judged by the content that is cached and imported, not by the requested ids.
             var loadedServiceManaged = compiledModels
                 .Where(m => ServiceManagedImportGuard.IsServiceManaged(m.ModelId?.Name))
                 .Select(m => m.ModelId!.FullName).ToList();
@@ -1125,7 +1125,7 @@ public class ModelsController : ControllerBase
     ///     else its .yaml) so that the upgrade guard judges exactly what would be imported. Throws
     ///     <see cref="InvalidOperationException" /> (a 400) when the file cannot be read as a compiled CK model.
     /// </summary>
-    /// <summary>AB#9293: reads the upload once; every later step (refusal, upgrade guard, cache) uses these bytes.</summary>
+    /// <summary>Reads the upload once; every later step (refusal, upgrade guard, cache) uses these bytes.</summary>
     private static async Task<byte[]> ReadUploadAsync(IFormFile? file)
     {
         if (file == null || file.Length == 0)
@@ -1149,8 +1149,8 @@ public class ModelsController : ControllerBase
             file.FileName, CkModelFileReader.IsZip(file.ContentType));
 
     /// <summary>
-    ///     AB#9293: the service-managed models an upload would import: the model read by the regular read and, for a zip
-    ///     (by content type, the rule bot-services follows too), every other CK model entry of it.
+    ///     The service-managed models an upload would import: the model read by the regular read and, for a zip (by
+    ///     content type or by content), every other CK model entry of it.
     /// </summary>
     private async Task<IReadOnlyList<string>> FindServiceManagedInUploadAsync(IFormFile file, byte[] upload,
         CkCompiledModelRoot compiled)
@@ -1161,7 +1161,7 @@ public class ModelsController : ControllerBase
             ids.Add(compiled.ModelId);
         }
 
-        if (CkModelFileReader.IsZip(file.ContentType))
+        if (CkModelFileReader.IsZip(file.ContentType) || CkModelFileReader.LooksLikeZip(upload))
         {
             ids.AddRange(await CkModelFileReader.ReadZipEntryModelIdsAsync(_ckSerializer, upload));
         }
@@ -1172,7 +1172,7 @@ public class ModelsController : ControllerBase
 
     private void LogServiceManagedRefusal(string tenantId, IReadOnlyCollection<string> models, string operation) =>
         _logger.LogWarning(
-            "Refused {Operation} of service-managed CK model(s) {Models} on tenant {TenantId} by {Caller} (AB#9293)",
+            "Refused {Operation} of service-managed CK model(s) {Models} on tenant {TenantId} by {Caller}",
             operation, string.Join(", ", models), tenantId, CallerDescription.From(HttpContext.User));
 
     /// <summary>
