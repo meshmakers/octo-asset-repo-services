@@ -242,8 +242,7 @@ public class StreamDataController : ControllerBase
     /// its backfill as a background job (AB#8002): returns at once with the column in
     /// <c>Backfilling</c>; the job writes the existing rows outside this request — a client timeout
     /// cannot cancel it — and ends the column <c>Active</c> or <c>Failed</c>. Follow it with the
-    /// recompute-jobs endpoint of the archive. Same lifecycle path as the <c>addComputedColumn</c>
-    /// GraphQL mutation.
+    /// recompute-jobs endpoint of the archive. Facade of <c>System.StreamData/Archive.AddComputedColumn-1</c>.
     /// </summary>
     [HttpPost("archives/{archiveRtId}/computed-columns")]
     [Microsoft.AspNetCore.Authorization.Authorize(AssetRepositoryServiceConstants.StreamDataAdministrationPolicy)]
@@ -251,118 +250,100 @@ public class StreamDataController : ControllerBase
         [Required] string tenantId, [Required] string archiveRtId,
         [Required] string name, [Required] string formula, [Required] FormulaResultType resultType,
         bool indexed = true)
-        => InvokeArchiveTransitionAsync(tenantId, archiveRtId, "AddComputedColumn",
+        => InvokeColumnMethodAsync(tenantId, archiveRtId, "AddComputedColumn",
             (lifecycle, id) => lifecycle.EnqueueAddComputedColumnAsync(
-                id, name, formula, resultType, indexed, _appLifetime.ApplicationStopping));
+                id, name, formula, resultType, indexed, _appLifetime.ApplicationStopping),
+            SystemStreamDataCkIds.ArchiveAddComputedColumnMethodId,
+            new ArchiveAddComputedColumnParameters
+            {
+                Name = name, Formula = formula, ResultType = ArchiveColumnChanges.ResultTypeOf(resultType), Indexed = indexed
+            });
 
     /// <summary>
     /// Adds an ingested column for an existing attribute of the archive's target CK type to an Activated raw or
     /// time-range archive without recreating it (AB#7997): the table gains a nullable column (existing rows keep their
     /// data and read NULL for it), then the archive definition names it, and the next ingested rows fill it. Idempotent:
-    /// a path the archive already captures is a no-op. 400 when the archive is not Activated, is a rollup, or the path
-    /// does not resolve. Same lifecycle path as the <c>addArchiveColumn</c> GraphQL mutation.
+    /// a path the archive already captures is a no-op. 400 when the archive is not Activated, is a rollup, the path
+    /// does not resolve or reaches a Hidden attribute. Facade of <c>System.StreamData/Archive.AddColumn-1</c>
+    ///.
     /// </summary>
     [HttpPost("archives/{archiveRtId}/columns")]
     [Microsoft.AspNetCore.Authorization.Authorize(AssetRepositoryServiceConstants.StreamDataAdministrationPolicy)]
     public Task<IActionResult> AddArchiveColumn(
         [Required] string tenantId, [Required] string archiveRtId, [Required] string path, bool indexed = false)
-        => InvokeArchiveTransitionAsync(tenantId, archiveRtId, "AddArchiveColumn",
-            (lifecycle, id) => lifecycle.AddArchiveColumnAsync(id, path, indexed, _appLifetime.ApplicationStopping));
+        => InvokeColumnMethodAsync(tenantId, archiveRtId, "AddArchiveColumn",
+            (lifecycle, id) => lifecycle.AddArchiveColumnAsync(id, path, indexed, _appLifetime.ApplicationStopping),
+            SystemStreamDataCkIds.ArchiveAddColumnMethodId, new ArchiveAddColumnParameters { Path = path, Indexed = indexed });
 
     /// <summary>
     /// Removes a computed column from an archive (AB#4189 Phase 7). Rejected when another computed
-    /// column still references it; the physical CrateDB column is left as a harmless orphan.
+    /// column still references it; the physical CrateDB column is left as a harmless orphan. Facade of
+    /// <c>System.StreamData/Archive.RemoveComputedColumn-1</c>.
     /// </summary>
     [HttpDelete("archives/{archiveRtId}/computed-columns/{name}")]
     [Microsoft.AspNetCore.Authorization.Authorize(AssetRepositoryServiceConstants.StreamDataAdministrationPolicy)]
     public Task<IActionResult> RemoveComputedColumn(
         [Required] string tenantId, [Required] string archiveRtId, [Required] string name)
-        => InvokeArchiveTransitionAsync(tenantId, archiveRtId, "RemoveComputedColumn",
-            (lifecycle, id) => lifecycle.RemoveComputedColumnAsync(id, name));
+        => InvokeColumnMethodAsync(tenantId, archiveRtId, "RemoveComputedColumn",
+            (lifecycle, id) => lifecycle.RemoveComputedColumnAsync(id, name),
+            SystemStreamDataCkIds.ArchiveRemoveComputedColumnMethodId, new ArchiveRemoveComputedColumnParameters { Name = name });
 
     /// <summary>
     /// Changes the formula of an existing computed column on an active archive with optimistic /
     /// atomic semantics (AB#4189 Phase 7): readers keep the previous values while the new formula is
     /// backfilled, then switch atomically. The backfill runs as a background job (AB#8002); the call
     /// returns once it is queued. Rejected when another computed column references this one, or
-    /// while a backfill of the column is still queued or running.
+    /// while a backfill of the column is still queued or running. Facade of
+    /// <c>System.StreamData/Archive.UpdateComputedColumnFormula-1</c>.
     /// </summary>
     [HttpPut("archives/{archiveRtId}/computed-columns/{name}")]
     [Microsoft.AspNetCore.Authorization.Authorize(AssetRepositoryServiceConstants.StreamDataAdministrationPolicy)]
     public Task<IActionResult> UpdateComputedColumnFormula(
         [Required] string tenantId, [Required] string archiveRtId, [Required] string name,
         [Required] string formula)
-        => InvokeArchiveTransitionAsync(tenantId, archiveRtId, "UpdateComputedColumnFormula",
+        => InvokeColumnMethodAsync(tenantId, archiveRtId, "UpdateComputedColumnFormula",
             (lifecycle, id) => lifecycle.EnqueueUpdateComputedColumnFormulaAsync(
-                id, name, formula, _appLifetime.ApplicationStopping));
+                id, name, formula, _appLifetime.ApplicationStopping),
+            SystemStreamDataCkIds.ArchiveUpdateComputedColumnFormulaMethodId,
+            new ArchiveUpdateComputedColumnFormulaParameters { Name = name, Formula = formula });
 
     /// <summary>
     /// Queues the backfill of a computed column again (AB#8002) — for a column that ended
     /// <c>Failed</c>, or that is stuck in <c>Pending</c> / <c>Backfilling</c> without a running job —
     /// without removing and re-adding it. Returns the queued job; poll it via the recompute-jobs
-    /// endpoint. 400 when the column is Active (nothing to retry) or does not exist.
+    /// endpoint. 400 when the column is Active (nothing to retry) or does not exist. Facade of
+    /// <c>System.StreamData/Archive.RetryComputedColumnBackfill-1</c>.
     /// </summary>
     [HttpPost("archives/{archiveRtId}/computed-columns/{name}/retry")]
     [Microsoft.AspNetCore.Authorization.Authorize(AssetRepositoryServiceConstants.StreamDataAdministrationPolicy)]
-    public async Task<ActionResult<RecomputeJobInfoRestDto>> RetryComputedColumnBackfill(
+    public Task<ActionResult<RecomputeJobInfoRestDto>> RetryComputedColumnBackfill(
         [Required] string tenantId, [Required] string archiveRtId, [Required] string name)
-    {
-        try
-        {
-            var tenantContext = await _systemContext.FindTenantContextAsync(tenantId);
-            var lifecycle = tenantContext.GetArchiveLifecycleService()
-                ?? throw new StreamDataException(
-                    $"StreamData is not enabled for tenant '{tenantId}'. Call POST /streamdata/enable first.");
-            var job = await lifecycle.RetryComputedColumnBackfillAsync(
-                new OctoObjectId(archiveRtId), name, _appLifetime.ApplicationStopping);
-            return job is null ? NoContent() : Ok(RecomputeJobInfoRestDto.From(job));
-        }
-        catch (ConfigurationException e)
-        {
-            return BadRequest(e.Message);
-        }
-        catch (Exception e) when (e is StreamDataException or InvalidOperationException)
-        {
-            _logger.LogWarning("RetryComputedColumnBackfill refused for tenant '{TenantId}', archive '{ArchiveRtId}', column '{Column}': {Reason}",
-                tenantId, archiveRtId, name, e.Message);
-            return BadRequest(e.Message);
-        }
-    }
+        => InvokeColumnJobMethodAsync(tenantId, archiveRtId, "RetryComputedColumnBackfill",
+            (lifecycle, id) => lifecycle.RetryComputedColumnBackfillAsync(id, name, _appLifetime.ApplicationStopping),
+            SystemStreamDataCkIds.ArchiveRetryComputedColumnBackfillMethodId,
+            new ArchiveRetryComputedColumnBackfillParameters { Name = name });
 
     /// <summary>
     /// Queues a repair of an Active computed column (AB#8331): a background job re-evaluates the rows in
     /// <c>[from, to)</c> whose cell is NULL although an operand the formula references is not NULL and writes
     /// the results; the column stays Active. <paramref name="from"/> defaults to the first row,
     /// <paramref name="to"/> to now. Returns the queued job (an already queued repair is returned as is); poll it
-    /// via the recompute-jobs endpoint. 400 when the column is not Active or does not exist.
+    /// via the recompute-jobs endpoint. 400 when the column is not Active or does not exist. Facade of
+    /// <c>System.StreamData/Archive.RepairComputedColumn-1</c>.
     /// </summary>
     [HttpPost("archives/{archiveRtId}/computed-columns/{name}/repair")]
     [Microsoft.AspNetCore.Authorization.Authorize(AssetRepositoryServiceConstants.StreamDataAdministrationPolicy)]
-    public async Task<ActionResult<RecomputeJobInfoRestDto>> RepairComputedColumn(
+    public Task<ActionResult<RecomputeJobInfoRestDto>> RepairComputedColumn(
         [Required] string tenantId, [Required] string archiveRtId, [Required] string name,
         DateTime? from, DateTime? to)
     {
-        try
-        {
-            var tenantContext = await _systemContext.FindTenantContextAsync(tenantId);
-            var lifecycle = tenantContext.GetArchiveLifecycleService()
-                ?? throw new StreamDataException(
-                    $"StreamData is not enabled for tenant '{tenantId}'. Call POST /streamdata/enable first.");
-            var job = await lifecycle.RepairComputedColumnAsync(
-                new OctoObjectId(archiveRtId), name, AsUtc(from), AsUtc(to),
-                _appLifetime.ApplicationStopping);
-            return job is null ? NoContent() : Ok(RecomputeJobInfoRestDto.From(job));
-        }
-        catch (ConfigurationException e)
-        {
-            return BadRequest(e.Message);
-        }
-        catch (Exception e) when (e is StreamDataException or InvalidOperationException)
-        {
-            _logger.LogWarning("RepairComputedColumn refused for tenant '{TenantId}', archive '{ArchiveRtId}', column '{Column}': {Reason}",
-                tenantId, archiveRtId, name, e.Message);
-            return BadRequest(e.Message);
-        }
+        // an offset-free bound is UTC, as before; the method receives the same instants
+        var fromUtc = AsUtc(from);
+        var toUtc = AsUtc(to);
+        return InvokeColumnJobMethodAsync(tenantId, archiveRtId, "RepairComputedColumn",
+            (lifecycle, id) => lifecycle.RepairComputedColumnAsync(id, name, fromUtc, toUtc, _appLifetime.ApplicationStopping),
+            SystemStreamDataCkIds.ArchiveRepairComputedColumnMethodId,
+            new ArchiveRepairComputedColumnParameters { Name = name, From = fromUtc, To = toUtc });
     }
 
     /// <summary>
@@ -1327,31 +1308,6 @@ public class StreamDataController : ControllerBase
         }
     }
 
-    private async Task<IActionResult> InvokeArchiveTransitionAsync(
-        string tenantId, string archiveRtId, string operation,
-        Func<IArchiveLifecycleService, OctoObjectId, Task> transition)
-    {
-        try
-        {
-            var tenantContext = await _systemContext.FindTenantContextAsync(tenantId);
-            var lifecycle = tenantContext.GetArchiveLifecycleService()
-                ?? throw new StreamDataException(
-                    $"StreamData is not enabled for tenant '{tenantId}'. Call POST /streamdata/enable first.");
-            await transition(lifecycle, new OctoObjectId(archiveRtId));
-            return NoContent();
-        }
-        catch (ConfigurationException e)
-        {
-            return BadRequest(e.Message);
-        }
-        catch (StreamDataException e)
-        {
-            _logger.LogWarning("{Operation} refused for tenant '{TenantId}', archive '{ArchiveRtId}': {Reason}",
-                operation, tenantId, archiveRtId, e.Message);
-            return BadRequest(e.Message);
-        }
-    }
-
     /// <summary>
     ///     REST facade of an Archive lifecycle method: <c>Archive.Activate-1</c>, <c>Disable-1</c>,
     ///     <c>Enable-1</c>, <c>RetryActivation-1</c>, <c>DeleteArchive-1</c>. See <see cref="InvokeLifecycleMethodAsync{TParameters}" />.
@@ -1366,6 +1322,98 @@ public class StreamDataController : ControllerBase
                 ? id => transition(lifecycle, id)
                 : null,
             $"StreamData is not enabled for tenant '{tenantId}'. Call POST /streamdata/enable first.");
+
+    /// <summary>
+    ///     REST facade of a column method that answers a transition: <c>Archive.AddComputedColumn-1</c>, <c>AddColumn-1</c>,
+    ///     <c>RemoveComputedColumn-1</c>, <c>UpdateComputedColumnFormula-1</c>. See
+    ///     <see cref="InvokeLifecycleMethodAsync{TParameters}" />. The call runs under the host's stopping token, as the direct
+    ///     call always did: a client that disconnects does not cancel it. The direct call of the fallback refuses an
+    ///     unknown computed column as the method does (<see cref="ArchiveColumnChanges.RefusingUnknownColumnsAsync{T}" />,
+    ///     <c>400</c> with the engine message instead of an unhandled <c>500</c>).
+    /// </summary>
+    private Task<IActionResult> InvokeColumnMethodAsync<TParameters>(
+        string tenantId, string archiveRtId, string operation,
+        Func<IArchiveLifecycleService, OctoObjectId, Task> change, string methodId, TParameters parameters)
+        where TParameters : class
+        => InvokeLifecycleMethodAsync(tenantId, archiveRtId, operation, "archive", ArchiveMethodFacade.ArchiveCkTypeId,
+            methodId, parameters,
+            tenantContext => tenantContext.GetArchiveLifecycleService() is { } lifecycle
+                ? id => ArchiveColumnChanges.RefusingUnknownColumnsAsync(id, () => change(lifecycle, id))
+                : null,
+            $"StreamData is not enabled for tenant '{tenantId}'. Call POST /streamdata/enable first.",
+            _appLifetime.ApplicationStopping);
+
+    /// <summary>
+    ///     <c>retry</c> and <c>repair</c> of a computed column as facades of <c>Archive.RetryComputedColumnBackfill-1</c> and
+    ///     <c>Archive.RepairComputedColumn-1</c>: route, body and status codes stay as they were - the queued job as
+    ///     <see cref="RecomputeJobInfoRestDto" /> (<c>200</c>), <c>204</c> when the call answers no job, <c>400</c> with the
+    ///     engine message for a refusal (<see cref="LifecycleFacadeOptions" />). The job is the one the method answers
+    ///     (<see cref="ColumnJobAnswer" />), not read again. The call goes through <see cref="IArchiveMethodFacade" /> (gateway,
+    ///     declared role, data permission, in-process handler outside the request transaction, one Method audit event) under
+    ///     the host's stopping token; while the facade cannot serve the method, the direct call runs behind the fallback guard.
+    /// </summary>
+    private async Task<ActionResult<RecomputeJobInfoRestDto>> InvokeColumnJobMethodAsync<TParameters>(
+        string tenantId, string archiveRtId, string operation,
+        Func<IArchiveLifecycleService, OctoObjectId, Task<RecomputeJobSnapshot?>> change, string methodId,
+        TParameters parameters) where TParameters : class
+    {
+        var notEnabledMessage = $"StreamData is not enabled for tenant '{tenantId}'. Call POST /streamdata/enable first.";
+        try
+        {
+            var tenantContext = await _systemContext.FindTenantContextAsync(tenantId);
+            var lifecycle = tenantContext.GetArchiveLifecycleService() ?? throw new StreamDataException(notEnabledMessage);
+            var target = new OctoObjectId(archiveRtId);
+            var options = LifecycleFacadeOptions(target, notEnabledMessage).MapSuccess(ColumnJobAnswer);
+
+            var facade = HttpContext?.RequestServices?.GetService<IArchiveMethodFacade>();
+            if (facade == null || !facade.CanServe(tenantContext, ArchiveMethodFacade.ArchiveCkTypeId, methodId))
+            {
+                var guarded = await FallbackGuard().InvokeAsync(tenantContext, ArchiveMethodFacade.ArchiveCkTypeId, methodId,
+                    operation, target, User,
+                    () => ArchiveColumnChanges.RefusingUnknownColumnsAsync(target, () => change(lifecycle, target)),
+                    cancellationToken: _appLifetime.ApplicationStopping);
+                if (guarded.Refusal is { } refusal)
+                {
+                    return AsActionResult(refusal.ToActionResult(options));
+                }
+
+                return guarded.Value is not { } job ? NoContent() : Ok(RecomputeJobInfoRestDto.From(job));
+            }
+
+            var response = await facade.InvokeAsync(tenantContext, ArchiveMethodFacade.ArchiveCkTypeId, methodId, target,
+                parameters, User, BearerTokenOf(HttpContext), _appLifetime.ApplicationStopping);
+            if (response is { Success: false, Error: { } error })
+            {
+                // method id, invocation and code only: never the target id, the parameters or the engine message
+                _logger.LogWarning("{Operation} refused for tenant '{TenantId}' by {MethodId} (invocation {InvocationId}): {Code}",
+                    operation, tenantId, methodId, response.InvocationId, error.Code);
+            }
+
+            return AsActionResult(response.ToActionResult(options));
+        }
+        catch (ConfigurationException e)
+        {
+            return BadRequest(e.Message);
+        }
+        catch (StreamDataException e)
+        {
+            // Debug, without the archive id or the engine message (the body of the answer): on the fallback the guard
+            // already wrote the one WARN line of the call (docs/method-gateway.md)
+            _logger.LogDebug("{Operation} refused for tenant '{TenantId}': {ExceptionType}", operation, tenantId,
+                e.GetType().Name);
+            return BadRequest(e.Message);
+        }
+    }
+
+    /// <summary>
+    ///     The success answer of a retry or repair facade: the job of the method's result (<c>RecomputeJobInfo</c>) as
+    ///     <see cref="RecomputeJobInfoRestDto" /> (<c>200</c>), or <c>204</c> when the result holds no job (no job store wired),
+    ///     as the direct call answered a <c>null</c> job.
+    /// </summary>
+    private static IActionResult ColumnJobAnswer(CkMethodResponse response) =>
+        ArchiveColumnChanges.JobOf(response) is { } job
+            ? new OkObjectResult(RecomputeJobInfoRestDto.From(job))
+            : new NoContentResult();
 
     /// <summary>
     ///     REST facade of a RollupArchive method: <c>RollupArchive.Freeze-1</c>, <c>Unfreeze-1</c>,
@@ -1390,15 +1438,18 @@ public class StreamDataController : ControllerBase
     ///     request transaction, one Method audit event - and maps the envelope with
     ///     <see cref="CkMethodFacadeResults.ToActionResult" /> and <see cref="LifecycleFacadeOptions" />. While
     ///     <c>Methods:StreamData:Enabled</c> is off, or the tenant's CK model does not declare the method
-    ///     (<see cref="IArchiveMethodFacade.CanServe" />), the endpoint keeps its direct lifecycle call.
+    ///     (<see cref="IArchiveMethodFacade.CanServe" />), the endpoint keeps its direct lifecycle call behind the fallback
+    ///     guard. <paramref name="callToken" /> replaces the request's token (the column endpoints run under the host's).
     /// </summary>
     private async Task<IActionResult> InvokeLifecycleMethodAsync<TParameters>(
         string tenantId, string rtId, string operation, string targetKind, string ckTypeId, string methodId,
-        TParameters parameters, Func<ITenantContext, Func<OctoObjectId, Task>?> directCall, string notEnabledMessage)
+        TParameters parameters, Func<ITenantContext, Func<OctoObjectId, Task>?> directCall, string notEnabledMessage,
+        CancellationToken? callToken = null)
         where TParameters : class
     {
         try
         {
+            var cancellationToken = callToken ?? HttpContext?.RequestAborted ?? CancellationToken.None;
             var tenantContext = await _systemContext.FindTenantContextAsync(tenantId);
             var direct = directCall(tenantContext) ?? throw new StreamDataException(notEnabledMessage);
             var targetRtId = new OctoObjectId(rtId);
@@ -1413,14 +1464,14 @@ public class StreamDataController : ControllerBase
                     {
                         await direct(targetRtId);
                         return true;
-                    }, cancellationToken: HttpContext?.RequestAborted ?? CancellationToken.None);
+                    }, cancellationToken: cancellationToken);
                 return guarded.Refusal is { } fallbackRefusal
                     ? fallbackRefusal.ToActionResult(LifecycleFacadeOptions(targetRtId, notEnabledMessage))
                     : NoContent();
             }
 
             var response = await facade.InvokeAsync(tenantContext, ckTypeId, methodId, targetRtId, parameters, User,
-                BearerTokenOf(HttpContext), HttpContext?.RequestAborted ?? CancellationToken.None);
+                BearerTokenOf(HttpContext), cancellationToken);
             if (response is { Success: false, Error: { } error })
             {
                 // method id, invocation and code only: never the target id, the parameters or the engine message of a method

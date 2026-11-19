@@ -269,6 +269,61 @@ public class ArchiveMethodTests
         }
     }
 
+    /// <summary>
+    ///     the REST facade of AddComputedColumn-1 passes every result type of the REST contract to the method by name
+    ///     and back unchanged; a number outside the enum stays that number, which the method refuses as a validation failure.
+    /// </summary>
+    [Fact]
+    public void ResultTypeOf_MapsEveryRestResultTypeByName_AndKeepsAnUndefinedNumber()
+    {
+        foreach (var value in Enum.GetValues<Meshmakers.Octo.Runtime.Contracts.Formulas.FormulaResultType>())
+        {
+            var ckValue = ArchiveColumnChanges.ResultTypeOf(value);
+            Enum.IsDefined(ckValue).Should().BeTrue(value.ToString());
+            ckValue.ToString().Should().Be(value.ToString());
+            ArchiveMethodSupport.ToEngine<Meshmakers.Octo.Runtime.Contracts.Formulas.FormulaResultType>(ckValue).Should().Be(value);
+        }
+
+        var undefined = ArchiveColumnChanges.ResultTypeOf((Meshmakers.Octo.Runtime.Contracts.Formulas.FormulaResultType)999);
+        Enum.IsDefined(undefined).Should().BeFalse();
+        ArchiveMethodSupport.TryToEngine<Meshmakers.Octo.Runtime.Contracts.Formulas.FormulaResultType>(undefined, out _)
+            .Should().BeFalse("the handler answers METHOD_VALIDATION_FAILED on resultType");
+    }
+
+    /// <summary>
+    ///     the job a retry or repair method answers reaches REST as the same <c>RecomputeJobInfoRestDto</c> the direct
+    ///     call built from the engine snapshot; a result without a job is no job (the facade answers 204).
+    /// </summary>
+    [Fact]
+    public void JobOf_ReadsTheJobOfTheMethodResult_AsTheDirectCallMappedTheSnapshot()
+    {
+        var snapshot = new RecomputeJobSnapshot(OctoObjectId.GenerateNewId(), OctoObjectId.GenerateNewId(),
+            RecomputeJobState.Running, RecomputeTrigger.Manual, new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc),
+            new DateTime(2026, 2, 1, 0, 0, 0, DateTimeKind.Utc), null, 12, 3,
+            new DateTime(2026, 3, 1, 8, 0, 0, DateTimeKind.Utc), null, null, null,
+            RecomputeJobSnapshot.ComputedColumnMarkerPrefix + RecomputeJobSnapshot.ComputedColumnRepairMarker + "fixed",
+            new DateTime(2026, 3, 1, 8, 1, 0, DateTimeKind.Utc));
+        var result = new ArchiveRepairComputedColumnResult { Value = RollupTransitions.ToRecord(snapshot) };
+        var response = CkMethodResponse.Succeeded(Guid.NewGuid(), "h",
+            System.Text.Json.JsonSerializer.Serialize(result, CkMethodJson.Options));
+
+        var job = ArchiveColumnChanges.JobOf(response);
+
+        job.Should().NotBeNull();
+        var viaMethod = Meshmakers.Octo.Backend.AssetRepositoryServices.StreamData.Controllers.RecomputeJobInfoRestDto.From(job!);
+        var direct = Meshmakers.Octo.Backend.AssetRepositoryServices.StreamData.Controllers.RecomputeJobInfoRestDto.From(snapshot);
+        viaMethod.Should().BeEquivalentTo(direct);
+        viaMethod.ComputedColumnName.Should().Be("fixed");
+
+        var noJob = CkMethodResponse.Succeeded(Guid.NewGuid(), "h",
+            System.Text.Json.JsonSerializer.Serialize(new ArchiveRetryComputedColumnBackfillResult { Value = null },
+                CkMethodJson.Options));
+        ArchiveColumnChanges.JobOf(noJob).Should().BeNull();
+        ArchiveColumnChanges.JobOf(CkMethodResponse.Succeeded(Guid.NewGuid(), "h")).Should().BeNull();
+        ArchiveColumnChanges.JobOf(CkMethodResponse.Failed(Guid.NewGuid(), "h",
+            CkMethodError.Create(CkMethodErrorCodes.MethodForbidden))).Should().BeNull();
+    }
+
     [Theory]
     [InlineData("\"aggregations\":[{\"sourcePath\":\"Voltage\",\"function\":999}]", "archive.aggregations.function")]
     [InlineData("\"bucketAlignment\":999,\"aggregations\":[]", "archive.bucketAlignment")]
