@@ -197,7 +197,10 @@ public class RecomputeMethodFacadeTests
         var raw = await CreateRawArchiveAsync("NotARollup");
         var missing = OctoObjectId.GenerateNewId();
         var store = _fixture.GetService<ICkMethodOperationStore>();
-        var since = DateTime.UtcNow.AddSeconds(-1);
+        // the fixture is shared by the whole collection: an earlier test's recompute can have been accepted moments
+        // ago, so compare the operations before and after the refused calls instead of trusting a time window
+        var since = DateTime.UtcNow.AddMinutes(-10);
+        var before = (await ListRecomputeOperationsAsync(store, since)).Select(o => o.OperationId).ToHashSet();
 
         foreach (var target in new[] { raw, missing })
         {
@@ -212,14 +215,19 @@ public class RecomputeMethodFacadeTests
                 .BeEmpty("the gateway refuses the call before any job exists");
         }
 
-        var operations = await store.ListAsync(new CkMethodOperationQuery
+        before.Should().HaveCountLessThan(CkMethodOperationQuery.MaxTake, "the comparison needs the complete list");
+        (await ListRecomputeOperationsAsync(store, since)).Where(o => !before.Contains(o.OperationId)).Should()
+            .BeEmpty("a refused call is never accepted as an operation");
+    }
+
+    private async Task<IReadOnlyList<CkMethodOperationRecord>> ListRecomputeOperationsAsync(ICkMethodOperationStore store,
+        DateTime since) =>
+        (await store.ListAsync(new CkMethodOperationQuery
         {
             TenantId = Tenant,
             MethodIds = [SystemStreamDataCkIds.RollupArchiveRecompute2MethodId, SystemStreamDataCkIds.RollupArchiveBackfillFromSource2MethodId],
-            SinceUtc = since, Take = 200
-        }, TestContext.Current.CancellationToken);
-        operations.Items.Should().BeEmpty("a refused call is never accepted as an operation");
-    }
+            SinceUtc = since, Take = CkMethodOperationQuery.MaxTake
+        }, TestContext.Current.CancellationToken)).Items;
 
     // ── helpers ─────────────────────────────────────────────────────────────────────────────────
 
