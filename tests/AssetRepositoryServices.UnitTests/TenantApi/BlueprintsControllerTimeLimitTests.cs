@@ -21,7 +21,7 @@ using Xunit;
 namespace AssetRepositoryServices.UnitTests.TenantApi;
 
 /// <summary>
-///     AB#8897: the read-only blueprint update previews (<c>GET blueprints/updates</c>,
+///     The read-only blueprint update previews (<c>GET blueprints/updates</c>,
 ///     <c>POST blueprints/updates/preview</c>) are open to read-only callers and keep the runtime query time limit; a
 ///     preview above the limit ends with <c>504</c> / <c>ASSET1008</c> like any query, never 400 or 500. The update run
 ///     (<c>POST blueprints/updates/apply</c>) is a batch path and runs without the limit.
@@ -98,7 +98,22 @@ public class BlueprintsControllerTimeLimitTests
         await _controller.ApplyUpdate(UpdateRequest(), Ct);
 
         seen.Should().Be(ScopeSeen.Disabled, "the update run is a batch path");
-        TimeLimitScope.Read().Should().Be(ScopeSeen.NoScope, "the scope ends with the request");
+    }
+
+    /// <summary>
+    ///     The scope the batch paths open ends when it is disposed. Checked in one execution context: a scope set inside
+    ///     an awaited action never flows back to the caller, so reading it after the action would prove nothing.
+    /// </summary>
+    [Fact]
+    public void DisabledScope_EndsWhenDisposed()
+    {
+        TimeLimitScope.Read().Should().Be(ScopeSeen.NoScope);
+
+        var noQueryTimeLimit = RuntimeQueryTimeLimit.Disable();
+        TimeLimitScope.Read().Should().Be(ScopeSeen.Disabled);
+
+        noQueryTimeLimit.Dispose();
+        TimeLimitScope.Read().Should().Be(ScopeSeen.NoScope, "the limit applies again after the batch path");
     }
 
     public static TheoryData<bool> Wrapped => new() { false, true };

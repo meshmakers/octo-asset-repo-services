@@ -326,7 +326,7 @@ public class BlueprintsController : ControllerBase
                 return BadRequest(new OperationFailedErrorDto("TenantId is required"));
             }
 
-            // A read-only preview keeps the runtime query time limit (AB#8897); a time-out is rethrown below and
+            // A read-only preview keeps the runtime query time limit; a time-out is rethrown below and
             // answered by RuntimeQueryTimeoutExceptionFilter (504, ASSET1008).
             var updateInfo = await _blueprintService.GetUpdateInfoAsync(
                 tenantId, NormalizeBlueprintName(blueprintName), cancellationToken);
@@ -389,7 +389,7 @@ public class BlueprintsController : ControllerBase
             var targetBlueprintId = new BlueprintId(request.TargetVersion);
             var updateMode = Enum.Parse<BlueprintUpdateMode>(request.UpdateMode, ignoreCase: true);
 
-            // A read-only preview keeps the runtime query time limit (AB#8897); a time-out is rethrown below and
+            // A read-only preview keeps the runtime query time limit; a time-out is rethrown below and
             // answered by RuntimeQueryTimeoutExceptionFilter (504, ASSET1008).
             var preview = await _blueprintService.PreviewUpdateAsync(
                 tenantId,
