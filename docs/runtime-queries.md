@@ -1,6 +1,6 @@
 ---
 description: Unbounded runtime-entity query guard, the server-side query time limit and the runtime.byInterface query: where each is wired, limits, error codes and tests.
-applies_to: **/RtEntityByInterfaceTypes.cs, **/RuntimeQueryGuard*.cs, **/RuntimeModelQuery.cs, **/RtTransientQuery.cs, **/InterfaceQuery*.cs, tests/**/ByInterface*.cs
+applies_to: **/RtEntityByInterfaceTypes.cs, **/RuntimeQueryGuard*.cs, **/RuntimeModelQuery.cs, **/RtTransientQuery.cs, **/InterfaceQuery*.cs, tests/**/ByInterface*.cs, **/RuntimeQueryTimeout*.cs, **/RuntimeQueryTimeLimit*.cs, **/Blueprints*.cs, **/RuntimeEngineBuilderExtensions.cs
 ---
 
 # Runtime query guard and query by interface
@@ -39,6 +39,12 @@ type, by id, by type with navigation and by CK interface to MongoDB with `maxTim
 - Batch paths override the limit at the call site, never globally: blueprint install, update and uninstall (GraphQL
   `BlueprintsMutation`, REST `BlueprintsController`) run inside `RuntimeQueryTimeLimit.Disable()`; the engine does the same for
   CK migrations and the blueprint of a new child tenant. Exports run in the bot services, which do not opt in.
+- The read-only blueprint previews keep the limit: GraphQL `blueprints.updateInfo` / `previewUpdate` and REST
+  `GET blueprints/updates` / `POST blueprints/updates/preview` are open to read-only callers, so they must not start
+  unlimited whole-type reads. A preview above the limit ends with `ASSET1008` / `504` like any query; the REST actions
+  rethrow the time-out from their generic `catch` so that the filter answers it. The uninstall dry run (GraphQL `dryRun`,
+  REST `uninstall/preview`) stays inside `Disable()`: it needs the data model management role and is part of the
+  uninstall path.
 - Not covered yet: association and deep-graph queries (navigation connections, `associations`, deep graph).
 
 ## Query by interface: `runtime.byInterface`

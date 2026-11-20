@@ -26,10 +26,9 @@ public sealed class RuntimeQueryTimeLimitTests(GraphQlTestFixture fixture, ITest
     [Fact]
     public async Task ARuntimeQuery_ReachesMongoDbWithTheConfiguredMaxTimeMS()
     {
-        var aggregates = await ProfiledAggregatesAsync(PagedQuery);
+        var operations = await ProfiledOperationsAsync(PagedQuery);
 
-        LimitsOf(aggregates).Should().NotBeEmpty("page and count of the query carry the limit")
-            .And.AllSatisfy(limit => limit.Should().Be(120_000));
+        AssertLimit(operations, 120_000);
     }
 
     [Fact]
@@ -40,12 +39,12 @@ public sealed class RuntimeQueryTimeLimitTests(GraphQlTestFixture fixture, ITest
         try
         {
             options.MaxTimeMs = 5_000;
-            var changed = await ProfiledAggregatesAsync(PagedQuery);
+            var changed = await ProfiledOperationsAsync(PagedQuery);
             options.MaxTimeMs = 0;
-            var off = await ProfiledAggregatesAsync(PagedQuery);
+            var off = await ProfiledOperationsAsync(PagedQuery);
 
-            LimitsOf(changed).Should().NotBeEmpty().And.AllSatisfy(limit => limit.Should().Be(5_000));
-            LimitsOf(off).Should().BeEmpty();
+            AssertLimit(changed, 5_000);
+            AssertLimit(off, null);
         }
         finally
         {
@@ -53,12 +52,53 @@ public sealed class RuntimeQueryTimeLimitTests(GraphQlTestFixture fixture, ITest
         }
     }
 
-    private static List<long> LimitsOf(IEnumerable<BsonDocument> aggregates) =>
-        aggregates.Where(op => op["command"].AsBsonDocument.Contains("maxTimeMS"))
-            .Select(op => op["command"]["maxTimeMS"].ToInt64())
-            .ToList();
+    /// <summary>
+    ///     The profiler captured the page and the count of the query (the count as a <c>count</c> command or as an
+    ///     aggregate ending in <c>$count</c> / <c>$group</c>, which is how the driver sends <c>countDocuments</c>), and
+    ///     each of them carries <paramref name="expected" /> as <c>maxTimeMS</c> - or none when it is null.
+    /// </summary>
+    private static void AssertLimit(List<BsonDocument> operations, long? expected)
+    {
+        var counts = operations.Where(IsCount).ToList();
+        var countNamespaces = counts.Select(op => op["ns"].AsString).ToHashSet();
+        // Page operations: the other aggregates on the collection the count read.
+        var pages = operations.Where(op => !IsCount(op) && countNamespaces.Contains(op["ns"].AsString)).ToList();
 
-    private async Task<List<BsonDocument>> ProfiledAggregatesAsync(string query)
+        counts.Should().NotBeEmpty("the query asks for totalCount");
+        pages.Should().NotBeEmpty("the query asks for a page of items");
+        foreach (var op in pages.Concat(counts))
+        {
+            var command = op["command"].AsBsonDocument;
+            if (expected is { } limit)
+            {
+                command.Contains("maxTimeMS").Should().BeTrue($"every operation carries the limit: {command}");
+                command["maxTimeMS"].ToInt64().Should().Be(limit);
+            }
+            else
+            {
+                command.Contains("maxTimeMS").Should().BeFalse($"no operation carries a limit: {command}");
+            }
+        }
+    }
+
+    private static bool IsCount(BsonDocument op)
+    {
+        var command = op["command"].AsBsonDocument;
+        if (command.Contains("count"))
+        {
+            return true;
+        }
+
+        if (!command.TryGetValue("pipeline", out var pipeline) || !pipeline.IsBsonArray || pipeline.AsBsonArray.Count == 0)
+        {
+            return false;
+        }
+
+        var last = pipeline.AsBsonArray.Last().AsBsonDocument;
+        return last.Contains("$count") || last.Contains("$group");
+    }
+
+    private async Task<List<BsonDocument>> ProfiledOperationsAsync(string query)
     {
         fixture.OutputHelper = output;
         using var client = new MongoClient(fixture.GetConnectionString());
@@ -77,7 +117,11 @@ public sealed class RuntimeQueryTimeLimitTests(GraphQlTestFixture fixture, ITest
             await database.RunCommandAsync<BsonDocument>(new BsonDocument("profile", 0));
         }
 
-        return await database.GetCollection<BsonDocument>("system.profile")
-            .Find(new BsonDocument("command.aggregate", new BsonDocument("$exists", true))).ToListAsync();
+        var filter = new BsonDocument("$or", new BsonArray
+        {
+            new BsonDocument("command.aggregate", new BsonDocument("$exists", true)),
+            new BsonDocument("command.count", new BsonDocument("$exists", true))
+        });
+        return await database.GetCollection<BsonDocument>("system.profile").Find(filter).ToListAsync();
     }
 }

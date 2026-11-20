@@ -11,8 +11,9 @@
   details with the same code) instead of the generic `ASSET1002` or a hung request, and logged once as a warning with
   tenant, CK type, duration, limit and error id. A query that completes after more than 80 % of its limit is logged as a
   warning; the client gets its result. Blueprint install, update and uninstall run without the limit (explicit
-  override at the call site); CK migrations and the blueprint of a new child tenant likewise, in the engine. Not covered
-  yet: association and deep-graph queries. Needs `Meshmakers.Octo.Runtime.Engine.MongoDb` with the time limit.
+  override at the call site); the read-only update previews keep it. CK migrations and the blueprint of a new child
+  tenant run without it in the engine. Not covered yet: association and deep-graph queries. Needs
+  `Meshmakers.Octo.Runtime.Engine.MongoDb` with the time limit.
 - AB#9057 New: the six REST column and computed-column endpoints are facades of the Archive column methods of AB#8600
   (System.StreamData 1.28.0): `POST {tenantId}/v1/streamdata/archives/{id}/computed-columns` → `Archive.AddComputedColumn-1`,
   `POST archives/{id}/columns` → `Archive.AddColumn-1`, `DELETE archives/{id}/computed-columns/{name}` →

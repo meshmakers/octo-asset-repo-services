@@ -2,6 +2,7 @@ using System.ComponentModel.DataAnnotations;
 using Asp.Versioning;
 using Duende.IdentityModel;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.DataTransferObjects.Blueprints;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Utils;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.Services;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.UpgradeGuard;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects.ApiErrors;
@@ -325,8 +326,8 @@ public class BlueprintsController : ControllerBase
                 return BadRequest(new OperationFailedErrorDto("TenantId is required"));
             }
 
-            // A blueprint preview reads whole types like the run it previews: no runtime query time limit (batch path).
-            using var noQueryTimeLimit = RuntimeQueryTimeLimit.Disable();
+            // A read-only preview keeps the runtime query time limit (AB#8897); a time-out is rethrown below and
+            // answered by RuntimeQueryTimeoutExceptionFilter (504, ASSET1008).
             var updateInfo = await _blueprintService.GetUpdateInfoAsync(
                 tenantId, NormalizeBlueprintName(blueprintName), cancellationToken);
 
@@ -340,6 +341,11 @@ public class BlueprintsController : ControllerBase
             };
 
             return Ok(response);
+        }
+        catch (Exception e) when (RuntimeQueryTimeoutError.TryFind(e, out _))
+        {
+            // The runtime query time-out goes on to RuntimeQueryTimeoutExceptionFilter (504, ASSET1008), not 400/500.
+            throw;
         }
         catch (PersistenceException e)
         {
@@ -383,8 +389,8 @@ public class BlueprintsController : ControllerBase
             var targetBlueprintId = new BlueprintId(request.TargetVersion);
             var updateMode = Enum.Parse<BlueprintUpdateMode>(request.UpdateMode, ignoreCase: true);
 
-            // A blueprint preview reads whole types like the run it previews: no runtime query time limit (batch path).
-            using var noQueryTimeLimit = RuntimeQueryTimeLimit.Disable();
+            // A read-only preview keeps the runtime query time limit (AB#8897); a time-out is rethrown below and
+            // answered by RuntimeQueryTimeoutExceptionFilter (504, ASSET1008).
             var preview = await _blueprintService.PreviewUpdateAsync(
                 tenantId,
                 targetBlueprintId,
@@ -392,6 +398,11 @@ public class BlueprintsController : ControllerBase
                 cancellationToken);
 
             return Ok(BlueprintUpdatePreviewMapper.ToDto(preview, request.TargetVersion));
+        }
+        catch (Exception e) when (RuntimeQueryTimeoutError.TryFind(e, out _))
+        {
+            // The runtime query time-out goes on to RuntimeQueryTimeoutExceptionFilter (504, ASSET1008), not 400/500.
+            throw;
         }
         catch (ArgumentException e)
         {
