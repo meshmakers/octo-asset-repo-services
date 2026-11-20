@@ -214,6 +214,7 @@ internal sealed class BlueprintsQuery : ObjectGraphType
             var blueprintService = ctx.RequestServices!.GetRequiredService<IBlueprintService>();
             var blueprintName = NormalizeBlueprintName(ctx.GetArgument<string?>("blueprintName"));
 
+            // A read-only preview keeps the runtime query time limit: a time-out ends as ASSET1008.
             var info = await blueprintService.GetUpdateInfoAsync(
                 gql.TenantId, blueprintName, ctx.CancellationToken);
             return new BlueprintUpdateInfoDto
@@ -224,6 +225,11 @@ internal sealed class BlueprintsQuery : ObjectGraphType
                 HasUpdate = info?.RecommendedVersion != null,
                 AvailableVersions = info?.AvailableVersions.Select(v => v.FullName).ToList() ?? []
             };
+        }
+        catch (Exception e) when (RuntimeQueryTimeoutError.TryFind(e, out _))
+        {
+            // HandleException answers ASSET1008 and logs the time-out once as a warning.
+            return ctx.HandleException(e);
         }
         catch (Exception e)
         {
@@ -247,10 +253,16 @@ internal sealed class BlueprintsQuery : ObjectGraphType
             var blueprintService = ctx.RequestServices!.GetRequiredService<IBlueprintService>();
 
             var targetBlueprintId = new BlueprintId(input.TargetVersion);
+            // A read-only preview keeps the runtime query time limit: a time-out ends as ASSET1008.
             var preview = await blueprintService.PreviewUpdateAsync(
                 gql.TenantId, targetBlueprintId, input.UpdateMode, ctx.CancellationToken);
 
             return BlueprintUpdatePreviewMapper.ToDto(preview, input.TargetVersion);
+        }
+        catch (Exception e) when (RuntimeQueryTimeoutError.TryFind(e, out _))
+        {
+            // HandleException answers ASSET1008 and logs the time-out once as a warning.
+            return ctx.HandleException(e);
         }
         catch (Exception e)
         {

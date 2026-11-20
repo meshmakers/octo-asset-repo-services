@@ -1,6 +1,6 @@
 ---
-description: Unbounded runtime-entity query guard and the runtime.byInterface query: where each is wired, limits, error codes and tests.
-applies_to: **/RtEntityByInterfaceTypes.cs, **/RuntimeQueryGuard*.cs, **/RuntimeModelQuery.cs, **/RtTransientQuery.cs, **/InterfaceQuery*.cs, tests/**/ByInterface*.cs
+description: Unbounded runtime-entity query guard, the server-side query time limit and the runtime.byInterface query: where each is wired, limits, error codes and tests.
+applies_to: **/RtEntityByInterfaceTypes.cs, **/RuntimeQueryGuard*.cs, **/RuntimeModelQuery.cs, **/RtTransientQuery.cs, **/InterfaceQuery*.cs, tests/**/ByInterface*.cs, **/RuntimeQueryTimeout*.cs, **/RuntimeQueryTimeLimit*.cs, **/Blueprints*.cs, **/RuntimeEngineBuilderExtensions.cs
 ---
 
 # Runtime query guard and query by interface
@@ -16,6 +16,36 @@ totalCount-only, aggregation queries and key lookups within the limit are bounde
 (default: warning + counter `octo.asset.runtime_query.unbounded`) / `Enforce` (`ASSET1007`, never capped). In-process
 `ITenantRepository` calls are never checked. Do not add a guard call inside a resolver: wrap the field in the visitor instead.
 Details: `docs/runtime-query-guard.md`.
+
+## Server-side time limit of runtime queries
+
+The host opts in with `AddRuntimeQueryTimeLimit()` (in `AddOctoAssetRepositoryServices`) and binds `RuntimeQueryOptions` from
+the section `RuntimeQuery` (`OCTO_RUNTIMEQUERY__MAXTIMEMS`). The engine then sends every runtime-entity query and count by
+type, by id, by type with navigation and by CK interface to MongoDB with `maxTimeMS`:
+
+| Key | Values | Default |
+|---|---|---|
+| `MaxTimeMs` | milliseconds; `0` switches the limit off | `120000` |
+
+- Applies per MongoDB operation (page and count of a paged query each get the full limit), for GraphQL, REST and
+  in-process `ITenantRepository` calls of this host alike. Read from the options per query; the environment variable is
+  read at start-up, so a changed helm value needs a rollout.
+- A query that exceeds the limit is stopped on the database and ends with `RuntimeQueryTimeoutException`.
+  `RuntimeQueryTimeoutError` maps it: GraphQL `ASSET1008` (`HandleException` and the `UnhandledExceptionDelegate`) with
+  `extensions.errorId` and `parameters` (`ckTypeId`, `maxTimeMs`, `elapsedMs`); REST `504` problem details with the same code
+  (`RuntimeQueryTimeoutExceptionFilter`). Each time-out is logged once as a warning (tenant, CK type, duration, limit, error id).
+- A query that completes after more than 80 % of its limit is logged as a warning by the engine (tenant, CK type, duration,
+  limit); the client gets its result.
+- Batch paths override the limit at the call site, never globally: blueprint install, update and uninstall (GraphQL
+  `BlueprintsMutation`, REST `BlueprintsController`) run inside `RuntimeQueryTimeLimit.Disable()`; the engine does the same for
+  CK migrations and the blueprint of a new child tenant. Exports run in the bot services, which do not opt in.
+- The read-only blueprint previews keep the limit: GraphQL `blueprints.updateInfo` / `previewUpdate` and REST
+  `GET blueprints/updates` / `POST blueprints/updates/preview` are open to read-only callers, so they must not start
+  unlimited whole-type reads. A preview above the limit ends with `ASSET1008` / `504` like any query; the REST actions
+  rethrow the time-out from their generic `catch` so that the filter answers it. The uninstall dry run (GraphQL `dryRun`,
+  REST `uninstall/preview`) stays inside `Disable()`: it needs the data model management role and is part of the
+  uninstall path.
+- Not covered yet: association and deep-graph queries (navigation connections, `associations`, deep graph).
 
 ## Query by interface: `runtime.byInterface`
 

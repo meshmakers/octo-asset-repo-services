@@ -27,6 +27,7 @@ using Meshmakers.Octo.ConstructionKit.Contracts.Serialization;
 using Meshmakers.Octo.Runtime.Contracts.Blueprints;
 using Meshmakers.Octo.Runtime.Contracts.MongoDb.Configuration;
 using Meshmakers.Octo.Runtime.Engine.Configuration.DependencyInjection;
+using Meshmakers.Octo.Runtime.Engine.MongoDb.RuntimeQueries;
 using Meshmakers.Octo.Services.Contracts.DistributionEventHub.Commands;
 using Meshmakers.Octo.Services.Contracts.DistributionEventHub.Messages;
 using Meshmakers.Octo.Services.Infrastructure;
@@ -159,7 +160,12 @@ public static class RuntimeEngineBuilderExtensions
         builder.Services.AddOctoTenantRoleAuthorization();
 
         // AB#6385: REST answers a blueprint-lock refusal with 403 problem details (code BLUEPRINT_LOCKED).
-        builder.Services.AddMvcCore(options => options.Filters.Add<BlueprintLockedExceptionFilter>())
+        builder.Services.AddMvcCore(options =>
+            {
+                options.Filters.Add<BlueprintLockedExceptionFilter>();
+                // A runtime query MongoDB stopped at its time limit answers 504 problem details (code ASSET1008).
+                options.Filters.Add<RuntimeQueryTimeoutExceptionFilter>();
+            })
             .AddAuthorization();
 
         builder.Services.AddOctoApiVersioningAndDocumentation(options =>
@@ -239,6 +245,16 @@ public static class RuntimeEngineBuilderExtensions
                 var logger = options.RequestServices?.GetService<ILogger<OctoAssetRepositoryServicesOptions>>();
                 options.UnhandledExceptionDelegate = ctx =>
                 {
+                    // A runtime query MongoDB stopped at its time limit, raised by a resolver that does not catch: the
+                    // coded error ASSET1008 (logged once as a warning) instead of a generic resolver error.
+                    if (RuntimeQueryTimeoutError.TryFind(ctx.OriginalException, out var timeout))
+                    {
+                        ctx.Exception = RuntimeQueryTimeoutError.CreateGraphQlError(timeout,
+                            options.RequestServices?.GetService<ILoggerFactory>()
+                                ?.CreateLogger(RuntimeQueryTimeoutError.LogCategory));
+                        return Task.CompletedTask;
+                    }
+
                     // AB#5528: a Secret attribute refused by a resolver that does not catch (e.g. a nested
                     // connection) still surfaces with the stable code instead of a generic resolver error.
                     if (ResolveConnectionContextExtensions.TryCreateSecretNotQueryableError(ctx.OriginalException,
@@ -325,6 +341,11 @@ public static class RuntimeEngineBuilderExtensions
         builder.Services.AddMetrics();
         builder.Services.TryAddSingleton<RuntimeQueryGuardMetrics>();
         builder.Services.TryAddSingleton<RuntimeQueryGuard>();
+
+        // Server-side time limit of runtime-entity queries (maxTimeMS), default 120 s, 0 = off. Bound from the
+        // RuntimeQuery section when the host has a configuration; batch paths override it at the call site.
+        builder.Services.AddOptions<RuntimeQueryOptions>().Configure<IServiceProvider>((o, sp) =>
+            sp.GetService<IConfiguration>()?.GetSection(RuntimeQueryOptions.SectionName).Bind(o));
 
         builder.Services.AddSingleton<IDocumentExecuter<OctoSchema>, TenantDocumentExecutor>();
 
@@ -430,7 +451,8 @@ public static class RuntimeEngineBuilderExtensions
         // BlueprintsQuery.catalogs in the studio).
         builder
             .AddMongoDbRuntimeRepository()
-            .AddMongoBlueprintSupport();
+            .AddMongoBlueprintSupport()
+            .AddRuntimeQueryTimeLimit();
 
         // Override engine's default LoggingBlueprintNotifications with the event-hub adapter
         builder.Services.AddSingleton<IBlueprintNotifications, DistributedBlueprintNotifications>();

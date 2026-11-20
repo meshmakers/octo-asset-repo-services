@@ -102,6 +102,14 @@ internal static class Statics
     public const string GraphQlUnboundedQueryRefused = "ASSET1007";
 
     /// <summary>
+    ///     A runtime-entity query or count exceeded its server-side time limit (<c>RuntimeQuery:MaxTimeMs</c>) and was
+    ///     stopped by MongoDB. Extensions: <c>code</c>, <c>errorId</c> and <c>parameters</c> (<c>ckTypeId</c>,
+    ///     <c>maxTimeMs</c>, <c>elapsedMs</c>). ASSET family until a coded error contract exists. REST answers it with
+    ///     <c>504</c> and the same code in problem details.
+    /// </summary>
+    public const string GraphQlRuntimeQueryTimeout = "ASSET1008";
+
+    /// <summary>
     ///     AB#5528 (concept §4.4): a Secret attribute was used for something other than an IS_NULL / IS_NOT_NULL
     ///     filter (other filter operators, sort, attribute search, aggregation, group-by, query columns).
     /// </summary>

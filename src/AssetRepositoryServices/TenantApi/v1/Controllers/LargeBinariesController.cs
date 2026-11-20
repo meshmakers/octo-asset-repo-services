@@ -1,5 +1,6 @@
 using Asp.Versioning;
 using Duende.IdentityModel;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Utils;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.Services;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.Services.Files;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
@@ -151,8 +152,9 @@ public class LargeBinariesController : ControllerBase
         {
             return BadRequest(new InternalServerErrorDto($"Invalid largeBinaryId format: {ex.Message}"));
         }
-        catch (Exception ex)
+        catch (Exception ex) when (!RuntimeQueryTimeoutError.TryFind(ex, out _))
         {
+            // A runtime query time-out passes on to RuntimeQueryTimeoutExceptionFilter (504, ASSET1008).
             return StatusCode(StatusCodes.Status500InternalServerError, new InternalServerErrorDto(ex.Message));
         }
     }

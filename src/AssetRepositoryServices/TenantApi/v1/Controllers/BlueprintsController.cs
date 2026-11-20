@@ -2,6 +2,7 @@ using System.ComponentModel.DataAnnotations;
 using Asp.Versioning;
 using Duende.IdentityModel;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.DataTransferObjects.Blueprints;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Utils;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.Services;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.UpgradeGuard;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects.ApiErrors;
@@ -9,6 +10,7 @@ using Meshmakers.Octo.ConstructionKit.Contracts.BlueprintCatalogs;
 using Meshmakers.Octo.ConstructionKit.Contracts.Messages;
 using Meshmakers.Octo.Runtime.Contracts;
 using Meshmakers.Octo.Runtime.Contracts.Blueprints;
+using Meshmakers.Octo.Runtime.Engine.MongoDb.RuntimeQueries;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
@@ -109,6 +111,8 @@ public class BlueprintsController : ControllerBase
                 return Forbid();
             }
 
+            // A blueprint run reads and writes whole types: no runtime query time limit (batch path).
+            using var noQueryTimeLimit = RuntimeQueryTimeLimit.Disable();
             var result = await _blueprintService.ApplyBlueprintAsync(
                 tenantId,
                 blueprintId,
@@ -322,6 +326,8 @@ public class BlueprintsController : ControllerBase
                 return BadRequest(new OperationFailedErrorDto("TenantId is required"));
             }
 
+            // A read-only preview keeps the runtime query time limit; a time-out is rethrown below and
+            // answered by RuntimeQueryTimeoutExceptionFilter (504, ASSET1008).
             var updateInfo = await _blueprintService.GetUpdateInfoAsync(
                 tenantId, NormalizeBlueprintName(blueprintName), cancellationToken);
 
@@ -335,6 +341,11 @@ public class BlueprintsController : ControllerBase
             };
 
             return Ok(response);
+        }
+        catch (Exception e) when (RuntimeQueryTimeoutError.TryFind(e, out _))
+        {
+            // The runtime query time-out goes on to RuntimeQueryTimeoutExceptionFilter (504, ASSET1008), not 400/500.
+            throw;
         }
         catch (PersistenceException e)
         {
@@ -378,6 +389,8 @@ public class BlueprintsController : ControllerBase
             var targetBlueprintId = new BlueprintId(request.TargetVersion);
             var updateMode = Enum.Parse<BlueprintUpdateMode>(request.UpdateMode, ignoreCase: true);
 
+            // A read-only preview keeps the runtime query time limit; a time-out is rethrown below and
+            // answered by RuntimeQueryTimeoutExceptionFilter (504, ASSET1008).
             var preview = await _blueprintService.PreviewUpdateAsync(
                 tenantId,
                 targetBlueprintId,
@@ -385,6 +398,11 @@ public class BlueprintsController : ControllerBase
                 cancellationToken);
 
             return Ok(BlueprintUpdatePreviewMapper.ToDto(preview, request.TargetVersion));
+        }
+        catch (Exception e) when (RuntimeQueryTimeoutError.TryFind(e, out _))
+        {
+            // The runtime query time-out goes on to RuntimeQueryTimeoutExceptionFilter (504, ASSET1008), not 400/500.
+            throw;
         }
         catch (ArgumentException e)
         {
@@ -472,6 +490,8 @@ public class BlueprintsController : ControllerBase
                 }
             }
 
+            // A blueprint run reads and writes whole types: no runtime query time limit (batch path).
+            using var noQueryTimeLimit = RuntimeQueryTimeLimit.Disable();
             var result = await _blueprintService.ApplyUpdateAsync(
                 tenantId,
                 targetBlueprintId,
@@ -677,6 +697,8 @@ public class BlueprintsController : ControllerBase
                 return BadRequest(new OperationFailedErrorDto("BlueprintName is required"));
             }
 
+            // A blueprint run reads and writes whole types: no runtime query time limit (batch path).
+            using var noQueryTimeLimit = RuntimeQueryTimeLimit.Disable();
             var result = await run(tenantId, blueprintName);
             var response = BlueprintUninstallResultMapper.ToDto(result);
 
