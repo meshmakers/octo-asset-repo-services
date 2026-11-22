@@ -84,6 +84,27 @@ public class CkModelDraftValidationTests(BlueprintUpdateFlowFixture fixture)
         });
     }
 
+    [Theory(Timeout = TestTimeoutMs)]
+    [InlineData("draft.bin", "application/octet-stream")]
+    [InlineData("draft", null)]
+    public async Task ASourceZip_WithoutZipNameOrContentType_IsCompiledByItsZipHeader(string fileName,
+        string? contentType)
+    {
+        await WithTenantAsync("ckv-hdr", TestContext.Current.CancellationToken, async (tenantId, sut, ct) =>
+        {
+            using var zip = SourceZip(("ckModel.yaml", CkModelYaml), ("attributes/attributes.yaml", AttributesYaml),
+                ("types/pump.yaml", PumpYaml("FlowRate")));
+
+            var result = await sut.ValidateAsync(tenantId, zip, fileName, contentType, ct);
+            AssertNoServerPath(result);
+
+            result.Errors.Should().BeEmpty();
+            result.IsValid.Should().BeTrue();
+            result.SourceKind.Should().Be(CkModelValidationResponseDto.SourceKindSource);
+            result.ModelId.Should().Be("DraftValidation-1.0.0");
+        });
+    }
+
     [Fact(Timeout = TestTimeoutMs)]
     public async Task ASourceZipThatValidated_IsImportedThroughImportCk_AsTheModelValidateCkJudged()
     {

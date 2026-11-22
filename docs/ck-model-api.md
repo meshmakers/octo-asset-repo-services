@@ -74,7 +74,8 @@ folder, so the draft that `ValidateCk` judged can be imported as it is (MCP `val
 - **Compile errors** are refused **before anything is cached or queued**: `400`, `application/problem+json`,
   `code` `CK_MODEL_COMPILE_FAILED` (`CkModelCompileFailedError`), `message` and `detail` (an English summary with up to 10 findings), `fileName`,
   `errors` / `warnings` = the `CkModelValidationMessageDto` list `ValidateCk` reports (message number, file relative to `ConstructionKit/`,
-  element path; no server path or temp folder name). An unsafe or unreadable source zip is such a finding too. Only the compile half runs
+  element path; no server path or temp folder name). An unsafe source zip, or one whose entries cannot be extracted, is such a finding too; a
+  zip whose directory cannot be read at all is no source draft and gets the `400` of the compiled read, as before. Only the compile half runs
   here; the tenant checks run in the import job as for every import.
 - **The compiled model is what is judged and imported**: the service-managed refusal (`403 CK_SERVICE_MANAGED_MODEL`) and the upgrade guard
   (`409 CK_UPGRADE_BLOCKED`, `forceBreakingUpdate`) judge it, and it is serialized to JSON and cached (`<modelId>.json`), so the import job
