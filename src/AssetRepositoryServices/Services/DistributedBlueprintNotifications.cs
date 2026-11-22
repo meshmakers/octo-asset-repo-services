@@ -39,7 +39,11 @@ internal sealed class DistributedBlueprintNotifications : IBlueprintNotification
             notification.EntitiesUpdated,
             notification.EntitiesDeleted,
             notification.CorrelationId,
-            notification.Timestamp);
+            notification.Timestamp)
+        {
+            // Forwarded as is; null from an engine that does not report it (consumers fail closed).
+            CkModelDependencies = notification.CkModelDependencies
+        };
 
         await PublishAsync(ev, "BlueprintApplied", cancellationToken).ConfigureAwait(false);
     }
@@ -55,7 +59,10 @@ internal sealed class DistributedBlueprintNotifications : IBlueprintNotification
             notification.EntitiesUpdated,
             notification.EntitiesDeleted,
             notification.CorrelationId,
-            notification.Timestamp);
+            notification.Timestamp)
+        {
+            CkModelDependencies = notification.CkModelDependencies
+        };
 
         await PublishAsync(ev, "BlueprintUpdated", cancellationToken).ConfigureAwait(false);
     }
