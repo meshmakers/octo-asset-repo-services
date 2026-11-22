@@ -161,8 +161,9 @@ zip; requested ids and loaded content of a catalog import) before every other st
 file that removed an attribute used by `System.Identity` was accepted, left every model `Available` and made the tenant unloadable (no API
 path back, `Delete` fails too). Decided 2026-10-18: the file import is guarded like every other upgrade guard surface.
 
-- **Flow** (`ModelsController.ImportCk`): policy check of a requested force -> read the upload exactly as the import job does (`json`/`yaml`
-  via `ICkSerializer`; a `zip` is opened for its `.json`, else its `.yaml`; unreadable -> `400`) -> `ICkModelLibraryStatusService.
+- **Flow** (`ModelsController.ImportCk`): policy check of a requested force -> a source draft (zip with `ckModel.yaml`) is compiled first
+  and the compiled model is judged (`docs/ck-model-api.md`, "Import a source draft"); otherwise read the upload exactly as the import job
+  does (`json`/`yaml` via `ICkSerializer`; a `zip` is opened for its `.json`, else its `.yaml`; unreadable -> `400`) -> `ICkModelLibraryStatusService.
   EvaluateFileImportBlockersAsync` -> `409 CK_UPGRADE_BLOCKED` **before anything is cached or queued**, else cache + queue as before.
 - **Explicit caller**: the evaluation calls `ITenantContext.EvaluateExplicitCkImportAsync` (engine-mongodb), which, unlike the default
   `EvaluateCkUpdateAsync`, also judges service-managed models (`System`, `System.*`) and judges a **downgrade** like an upgrade. A

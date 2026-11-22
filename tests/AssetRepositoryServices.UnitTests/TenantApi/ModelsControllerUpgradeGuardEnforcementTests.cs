@@ -85,7 +85,12 @@ public class ModelsControllerUpgradeGuardEnforcementTests
             _logger,
             _ckSerializer,
             _authorization,
-            A.Fake<Meshmakers.Octo.Backend.AssetRepositoryServices.Services.CkModelValidation.ICkModelDraftValidator>());
+            // The real validator: a compiled upload (no ckModel.yaml) must take the compiled path, exactly as before.
+            new Meshmakers.Octo.Backend.AssetRepositoryServices.Services.CkModelValidation.CkModelDraftValidator(
+                A.Fake<ICompilerService>(), _ckSerializer, _systemContext, _libraryStatusService,
+                Microsoft.Extensions.Logging.Abstractions.NullLogger<
+                    Meshmakers.Octo.Backend.AssetRepositoryServices.Services.CkModelValidation.CkModelDraftValidator>
+                    .Instance));
 
         var httpContext = new DefaultHttpContext();
         httpContext.Request.RouteValues["tenantId"] = "sbeg";

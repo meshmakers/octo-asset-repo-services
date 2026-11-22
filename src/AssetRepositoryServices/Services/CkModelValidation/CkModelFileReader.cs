@@ -178,7 +178,10 @@ internal static class CkModelFileReader
     ///     the service-managed check scans such an upload as a zip too, so a content type that only the importing job
     ///     reads as zip cannot hide an entry.
     /// </summary>
-    public static bool LooksLikeZip(byte[] upload) =>
+    public static bool LooksLikeZip(byte[] upload) => LooksLikeZip(upload.AsSpan());
+
+    /// <inheritdoc cref="LooksLikeZip(byte[])" />
+    public static bool LooksLikeZip(ReadOnlySpan<byte> upload) =>
         upload.Length >= 4 && upload[0] == 0x50 && upload[1] == 0x4B && upload[2] == 0x03 && upload[3] == 0x04;
 
     private static bool IsModelEntry(string entryName)

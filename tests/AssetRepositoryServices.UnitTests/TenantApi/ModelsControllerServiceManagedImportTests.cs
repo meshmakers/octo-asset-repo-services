@@ -48,6 +48,7 @@ public class ModelsControllerServiceManagedImportTests
     private readonly IAuthorizationService _authorization = A.Fake<IAuthorizationService>();
     private readonly ISystemContext _systemContext = A.Fake<ISystemContext>();
     private readonly ITenantContext _tenantContext = A.Fake<ITenantContext>();
+    private readonly ICompilerService _compiler = A.Fake<ICompilerService>();
     private readonly ListLogger _logger = new();
     private readonly ICkSerializer _ckSerializer;
     private readonly ModelsController _controller;
@@ -107,7 +108,10 @@ public class ModelsControllerServiceManagedImportTests
             _logger,
             _ckSerializer,
             _authorization,
-            A.Fake<ICkModelDraftValidator>());
+            // The real validator: a compiled upload (no ckModel.yaml) must take the compiled path, exactly as before;
+            // a source draft is compiled by the (faked) engine compiler.
+            new CkModelDraftValidator(_compiler, _ckSerializer, _systemContext, _libraryStatusService,
+                Microsoft.Extensions.Logging.Abstractions.NullLogger<CkModelDraftValidator>.Instance));
 
         var httpContext = new DefaultHttpContext();
         httpContext.Request.RouteValues["tenantId"] = Tenant;

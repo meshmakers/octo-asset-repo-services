@@ -22,7 +22,9 @@ one with a self-built or older version.
   every CK model entry (`.json`, `.yaml`, `.yml`, any casing) is checked, not only the entry this reader picks (the import job picks
   the first `.yaml` entry when there is no `.json` entry), so no entry choice can import an entry the check did not see. The scan is
   bounded like a `ValidateCk` source zip (at most `MaxZipEntries` = 2,000 entries and `MaxUnpackedBytes` = 50 MB unpacked, counted
-  while reading; a model entry that cannot be unpacked or read as a compiled model is refused, `400`, never skipped). The catalog imports check the requested ids **and** the loaded models (a harmless
+  while reading; a model entry that cannot be unpacked or read as a compiled model is refused, `400`, never skipped). A source draft
+  (zip with `ckModel.yaml`) is judged by the model it compiles to; only that compiled model is cached, so no other entry of the zip can
+  be imported. The catalog imports check the requested ids **and** the loaded models (a harmless
   id whose catalog content is a System model is refused). One service-managed model refuses the whole batch.
 - **Order**: after the tenant id and the force-policy check, before the system compatibility check, the upgrade guards, the cache
   and the queue.
