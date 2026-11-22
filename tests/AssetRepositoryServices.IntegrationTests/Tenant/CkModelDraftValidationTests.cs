@@ -1,4 +1,5 @@
 using System.IO.Compression;
+using System.Security.Claims;
 using System.Text;
 using System.Text.Json;
 using FakeItEasy;
@@ -8,7 +9,15 @@ using Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Collectio
 using Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Fixtures;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.Services;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.Services.CkModelValidation;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.TenantApi.v1.Controllers;
+using Meshmakers.Octo.Common.DistributionEventHub.Services;
+using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
 using Meshmakers.Octo.ConstructionKit.Contracts;
+using Meshmakers.Octo.Runtime.Contracts.CkModelMigrations;
+using Meshmakers.Octo.Services.Contracts.DistributionEventHub.Commands;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
 using Meshmakers.Octo.ConstructionKit.Contracts.DataTransferObjects;
 using Meshmakers.Octo.ConstructionKit.Contracts.Serialization;
 using Meshmakers.Octo.ConstructionKit.Contracts.Services;
@@ -72,6 +81,112 @@ public class CkModelDraftValidationTests(BlueprintUpdateFlowFixture fixture)
             result.IsBlocked.Should().BeFalse();
             var tenant = await fixture.GetSystemContext().FindTenantContextAsync(tenantId);
             (await tenant.IsCkModelExistingAsync(new CkModelId("DraftValidation-1.0.0"))).Should().BeFalse();
+        });
+    }
+
+    [Theory(Timeout = TestTimeoutMs)]
+    [InlineData("draft.bin", "application/octet-stream")]
+    [InlineData("draft", null)]
+    public async Task ASourceZip_WithoutZipNameOrContentType_IsCompiledByItsZipHeader(string fileName,
+        string? contentType)
+    {
+        await WithTenantAsync("ckv-hdr", TestContext.Current.CancellationToken, async (tenantId, sut, ct) =>
+        {
+            using var zip = SourceZip(("ckModel.yaml", CkModelYaml), ("attributes/attributes.yaml", AttributesYaml),
+                ("types/pump.yaml", PumpYaml("FlowRate")));
+
+            var result = await sut.ValidateAsync(tenantId, zip, fileName, contentType, ct);
+            AssertNoServerPath(result);
+
+            result.Errors.Should().BeEmpty();
+            result.IsValid.Should().BeTrue();
+            result.SourceKind.Should().Be(CkModelValidationResponseDto.SourceKindSource);
+            result.ModelId.Should().Be("DraftValidation-1.0.0");
+        });
+    }
+
+    [Fact(Timeout = TestTimeoutMs)]
+    public async Task ASourceZipThatValidated_IsImportedThroughImportCk_AsTheModelValidateCkJudged()
+    {
+        await WithTenantAsync("ckv-imp", TestContext.Current.CancellationToken, async (tenantId, sut, ct) =>
+        {
+            var draft = SourceZip(("ConstructionKit/ckModel.yaml", CkModelYaml),
+                ("ConstructionKit/attributes/attributes.yaml", AttributesYaml),
+                ("ConstructionKit/types/pump.yaml", PumpYaml("FlowRate"))).ToArray();
+
+            // 1. ValidateCk judges the draft.
+            var validation = await sut.ValidateAsync(tenantId, new MemoryStream(draft), "draft.zip", "application/zip", ct);
+            validation.IsValid.Should().BeTrue();
+            validation.SourceKind.Should().Be(CkModelValidationResponseDto.SourceKindSource);
+
+            // 2. ImportCk with the same bytes: compiled on the validator's path, the compiled model is cached and queued.
+            var cache = A.Fake<IDistributedCacheService>();
+            byte[]? cached = null;
+            string? cachedName = null;
+            A.CallTo(() => cache.CreateStreamAsync(A<string>._, A<Stream>._, A<string>._, A<string>._, A<TimeSpan?>._))
+                .ReturnsLazily((string _, Stream stream, string _, string fileName, TimeSpan? _) =>
+                {
+                    using var copy = new MemoryStream();
+                    stream.CopyTo(copy);
+                    cached = copy.ToArray();
+                    cachedName = fileName;
+                    return Task.FromResult("cache-key");
+                });
+            var importCk = A.Fake<ICommandClient<ImportCkCommandRequest>>();
+            A.CallTo(() => importCk.GetResponse<JobCreatedResponse>(A<ImportCkCommandRequest>._))
+                .Returns(new JobCreatedResponse("job-1"));
+            var controller = CreateController(sut, cache, importCk, tenantId);
+
+            var result = await controller.ImportCk(new FormFile(new MemoryStream(draft), 0, draft.Length, "file",
+                "draft.zip") { Headers = new HeaderDictionary(), ContentType = "application/zip" });
+
+            result.Should().BeOfType<OkObjectResult>();
+            A.CallTo(() => importCk.GetResponse<JobCreatedResponse>(A<ImportCkCommandRequest>._))
+                .MustHaveHappenedOnceExactly();
+            cached.Should().NotBeNull();
+
+            // 3. The import job (bot-services ImportCkModelCommand) reads the cached file as a compiled model and imports it.
+            var operationResult = new OperationResult();
+            var compiled = await fixture.GetService<ICkSerializer>()
+                .DeserializeCompiledModelRootAsync(new MemoryStream(cached!), cachedName!, operationResult);
+            operationResult.HasErrors.Should().BeFalse();
+            var tenant = await fixture.GetSystemContext().FindTenantContextAsync(tenantId);
+            await tenant.ImportCkModelAsync(compiled);
+
+            compiled.ModelId.FullName.Should().Be(validation.ModelId);
+            (await tenant.IsCkModelExistingAsync(new CkModelId("DraftValidation-1.0.0"))).Should().BeTrue();
+        });
+    }
+
+    [Fact(Timeout = TestTimeoutMs)]
+    public async Task ASourceZipWithAnUnknownAttribute_IsRefusedByImportCk_WithTheValidateCkFindings()
+    {
+        await WithTenantAsync("ckv-imx", TestContext.Current.CancellationToken, async (tenantId, sut, ct) =>
+        {
+            var draft = SourceZip(("ConstructionKit/ckModel.yaml", CkModelYaml),
+                ("ConstructionKit/attributes/attributes.yaml", AttributesYaml),
+                ("ConstructionKit/types/pump.yaml", PumpYaml("NoSuchAttribute"))).ToArray();
+            var validation = await sut.ValidateAsync(tenantId, new MemoryStream(draft), "draft.zip", "application/zip", ct);
+            validation.IsValid.Should().BeFalse();
+
+            var cache = A.Fake<IDistributedCacheService>();
+            var importCk = A.Fake<ICommandClient<ImportCkCommandRequest>>();
+            var controller = CreateController(sut, cache, importCk, tenantId);
+
+            var result = await controller.ImportCk(new FormFile(new MemoryStream(draft), 0, draft.Length, "file",
+                "draft.zip") { Headers = new HeaderDictionary(), ContentType = "application/zip" });
+
+            var refused = result.Should().BeOfType<ObjectResult>().Subject;
+            refused.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+            var problem = refused.Value.Should().BeOfType<ProblemDetails>().Subject;
+            problem.Extensions["code"].Should().Be(CkModelCompileFailedError.Code);
+            var errors = ((IEnumerable<CkModelValidationMessageDto>)problem.Extensions["errors"]!).ToList();
+            errors.Select(e => (e.MessageNumber, e.File, e.ElementPath)).Should()
+                .BeEquivalentTo(validation.Errors.Select(e => (e.MessageNumber, e.File, e.ElementPath)));
+            errors.Should().Contain(e => e.File == "types/pump.yaml");
+            JsonSerializer.Serialize(problem).Should().NotContain("octo-ck-validate-");
+            A.CallTo(cache).MustNotHaveHappened();
+            A.CallTo(importCk).MustNotHaveHappened();
         });
     }
 
@@ -241,6 +356,44 @@ public class CkModelDraftValidationTests(BlueprintUpdateFlowFixture fixture)
         return new CkModelDraftValidator(fixture.GetService<ICompilerService>(), fixture.GetService<ICkSerializer>(),
             systemContext, new CkModelLibraryStatusService(catalog, systemContext),
             NullLogger<CkModelDraftValidator>.Instance);
+    }
+
+    /// <summary>
+    ///     The real <c>ModelsController</c> with the real validator, serializers, tenant context and upgrade guard; only the
+    ///     distributed cache and the import job queue are fakes (the job runs in bot-services).
+    /// </summary>
+    private ModelsController CreateController(CkModelDraftValidator validator, IDistributedCacheService cache,
+        ICommandClient<ImportCkCommandRequest> importCk, string tenantId)
+    {
+        var systemContext = fixture.GetSystemContext();
+        var catalog = A.Fake<ICatalogService>();
+        A.CallTo(() => catalog.ListAsync(A<int>._, A<int>._, A<object?>._, A<CancellationToken?>._))
+            .Returns(new ModelListResult { ModelResultItems = [], TotalCount = 0, SkippedCount = 0, TakeCount = 500 });
+        var authorization = A.Fake<IAuthorizationService>();
+        A.CallTo(() => authorization.AuthorizeAsync(A<ClaimsPrincipal>._, A<object?>._, A<string>._))
+            .Returns(AuthorizationResult.Success());
+        var controller = new ModelsController(cache,
+            A.Fake<ICommandClient<ExportRtByQueryCommandRequest>>(),
+            A.Fake<ICommandClient<ExportRtByDeepGraphCommandRequest>>(),
+            A.Fake<ICommandClient<ImportRtCommandRequest>>(),
+            importCk,
+            A.Fake<ICommandClient<ImportCkBatchCommandRequest>>(),
+            catalog,
+            fixture.GetService<ICkJsonSerializer>(),
+            systemContext,
+            A.Fake<ICkModelUpgradeService>(),
+            A.Fake<ICkModelMigrationService>(),
+            new CkModelLibraryStatusService(catalog, systemContext),
+            NullLogger<ModelsController>.Instance,
+            fixture.GetService<ICkSerializer>(),
+            authorization,
+            validator);
+        var httpContext = new DefaultHttpContext();
+        httpContext.Request.RouteValues["tenantId"] = tenantId;
+        httpContext.User = new ClaimsPrincipal(new ClaimsIdentity(
+            [new Claim("sub", "user-4711"), new Claim("role", "DataModelManagement")], "Bearer"));
+        controller.ControllerContext = new ControllerContext { HttpContext = httpContext };
+        return controller;
     }
 
     private async Task WithTenantAsync(string prefix, CancellationToken ct,

@@ -41,7 +41,7 @@ Code: `Services/CkModelValidation/CkModelDraftValidator` (registered transient i
 
 - **No second validator.** A zip that contains `ckModel.yaml` (the shallowest one marks the folder) is a source draft: it is extracted
   to a temp folder and compiled with the engine's `ICompilerService.CompileInMemoryAsync` (dependencies from the configured catalogs),
-  every other upload is read by `CkModelFileReader`, the reader `ImportCk` uses too (moved out of the controller, same behaviour). The
+  every other upload is read by `CkModelFileReader`, the reader `ImportCk` uses for compiled uploads too. The
   compiled model then goes through the engine's `ITenantContext.ValidateCkModelAsync` (octo-construction-kit-engine-mongodb: the import's
   pre-write checks, read-only) and, without errors, `EvaluateFileImportBlockersAsync` (the guard of `ImportCk`).
 - **Nothing is written**: no cache stream, no import command, no tenant write; the temp folder is deleted.
@@ -54,11 +54,37 @@ Code: `Services/CkModelValidation/CkModelDraftValidator` (registered transient i
   name `octo-ck-validate-<guid>` never leave the service, under any spelling such as `/private/var` on macOS; temp paths are also
   stripped from the message text and the parameters), `elementPath` is built from the message placeholders (type/record/enum/interface/model, then attribute/
   role/method).
-- `ImportCk` still does **not** compile a source zip (it reads the first `.json`/`.yaml` entry as a compiled model); only `ValidateCk` does.
+- **Source or compiled** is decided by `ckModel.yaml` alone: an upload that is a zip by content type, by a `.zip` name or by its zip header
+  (`MayBeSourceZip`) is probed for it; without it the upload is a compiled model. The same rule holds for `ImportCk` (below).
 - Tests: `UnitTests/Services/CkModelValidation/CkModelDraftValidatorTests`, `UnitTests/TenantApi/ModelsControllerValidateCkTests`,
   `IntegrationTests/Tenant/CkModelDraftValidationTests` (real compiler, catalogs, tenant and MongoDB: valid source folder not imported, unknown
   attribute with file and element, missing dependency of a compiled model and of a source draft, broken YAML, unreadable file, zip slip;
   every case asserts that the serialized response contains no temp folder name or temp path).
+
+## Import a source draft: `Models/ImportCk` compiles a zipped `ConstructionKit/` folder
+
+`POST {tenantId}/v1/Models/ImportCk` accepts a compiled model (json, yaml or a zip of one) **or** a zip of the source `ConstructionKit/`
+folder, so the draft that `ValidateCk` judged can be imported as it is (MCP `validate_ck_model` then `import_ck_model`).
+
+- **One source path.** `ImportCk` calls `ICkModelDraftValidator.TryCompileSourceAsync`: the same `MayBeSourceZip` / `ckModel.yaml` decision,
+  the same extraction (`ExtractSource`: zip slip, 2,000 entries, 50 MB) and the same compiler call (`CompileSourceZipAsync` ->
+  `ICompilerService.CompileInMemoryAsync`) as `ValidateAsync`; there is no second extraction or compile path. `null` = no source draft: the
+  upload is read as a compiled model exactly as before (regression tests in `ModelsControllerServiceManagedImportTests`,
+  `ModelsControllerUpgradeGuardEnforcementTests`, `ModelsControllerImportCkSourceTests`).
+- **Compile errors** are refused **before anything is cached or queued**: `400`, `application/problem+json`,
+  `code` `CK_MODEL_COMPILE_FAILED` (`CkModelCompileFailedError`), `message` and `detail` (an English summary with up to 10 findings), `fileName`,
+  `errors` / `warnings` = the `CkModelValidationMessageDto` list `ValidateCk` reports (message number, file relative to `ConstructionKit/`,
+  element path; no server path or temp folder name). An unsafe source zip, or one whose entries cannot be extracted, is such a finding too; a
+  zip whose directory cannot be read at all is no source draft and gets the `400` of the compiled read, as before. Only the compile half runs
+  here; the tenant checks run in the import job as for every import.
+- **The compiled model is what is judged and imported**: the service-managed refusal (`403 CK_SERVICE_MANAGED_MODEL`) and the upgrade guard
+  (`409 CK_UPGRADE_BLOCKED`, `forceBreakingUpdate`) judge it, and it is serialized to JSON and cached (`<modelId>.json`), so the import job
+  (octo-bot-services, unchanged) reads a compiled model as it always did. Other entries of the zip are never imported.
+- Tests: `UnitTests/TenantApi/ModelsControllerImportCkSourceTests` (compiled and queued, folder deleted, decision by `ckModel.yaml` whatever
+  the content type, compile errors 400 with findings and nothing cached, zip slip, System model refused, 409 and forced import, compiled
+  uploads unchanged), `IntegrationTests/Tenant/CkModelDraftValidationTests` (real compiler and tenant: validate then `ImportCk` the same
+  zip, the cached model imported the way the job does it is in the tenant's CK collections; an invalid draft is refused with the findings
+  `ValidateCk` reports).
 
 ## Export entry points run as the caller
 

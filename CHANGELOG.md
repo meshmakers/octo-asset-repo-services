@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- AB#8501 Fix: `POST {tenantId}/v1/Models/ImportCk` compiles a zip of the source `ConstructionKit/` folder (a zip that holds
+  `ckModel.yaml`) instead of reading one of its files as a compiled model. The draft is compiled on the path of
+  `Models/ValidateCk` (same extraction limits, same engine compiler, dependencies from the configured catalogs); the compiled
+  model is what the service-managed refusal and the upgrade guard judge and what the import job imports, so a draft that
+  validated is imported as validated. A draft with compile errors is refused with `400` problem details, `code`
+  `CK_MODEL_COMPILE_FAILED`, and the findings in `errors` / `warnings` as `ValidateCk` reports them (file relative to
+  `ConstructionKit/`, element path, no server path); nothing is queued. Compiled uploads (json, yaml, a zip of one) are
+  unchanged. `ValidateCk` now also probes a zip by its header (not only by content type or `.zip` name) for `ckModel.yaml`.
 - AB#8897 New: runtime-entity queries have a server-side time limit. Every query and count by type, by id, by type with
   navigation and by CK interface is sent to MongoDB with `maxTimeMS` from `RuntimeQuery:MaxTimeMs`
   (`OCTO_RUNTIMEQUERY__MAXTIMEMS`, default 120000 ms, 0 = off; helm value `assetRepository.runtimeQuery.maxTimeMs` of the

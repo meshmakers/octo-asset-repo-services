@@ -26,7 +26,25 @@ public interface ICkModelDraftValidator
     /// </summary>
     Task<CkModelValidationResponseDto> ValidateAsync(string tenantId, Stream upload, string fileName,
         string? contentType, CancellationToken cancellationToken);
+
+    /// <summary>
+    ///     Compiles the upload when it is a source draft: a zip (by content type, <c>.zip</c> name or zip header) that holds
+    ///     <c>ckModel.yaml</c>. Same extraction (entry, size and path limits) and the same compiler call as
+    ///     <see cref="ValidateAsync" />, so <c>Models/ImportCk</c> imports exactly the model <c>Models/ValidateCk</c> judged.
+    ///     Returns <c>null</c> when the upload is no source draft (a compiled model, or not a readable zip): the caller reads
+    ///     it as a compiled model. Otherwise the compiled model, or no model with the compile findings in
+    ///     <see cref="CkModelSourceCompilation.Findings" /> (file relative to <c>ConstructionKit/</c>, no server path).
+    ///     The tenant checks and the upgrade guard are not part of it.
+    /// </summary>
+    Task<CkModelSourceCompilation?> TryCompileSourceAsync(byte[] upload, string fileName, string? contentType,
+        CancellationToken cancellationToken);
 }
+
+/// <summary>
+///     Result of <see cref="ICkModelDraftValidator.TryCompileSourceAsync" />: the compiled model (<c>null</c> when the
+///     draft has compile errors) and the findings in the shape <c>Models/ValidateCk</c> reports them.
+/// </summary>
+public sealed record CkModelSourceCompilation(CkCompiledModelRoot? Model, CkModelValidationResponseDto Findings);
 
 /// <inheritdoc />
 public sealed class CkModelDraftValidator(
@@ -62,16 +80,15 @@ public sealed class CkModelDraftValidator(
         var isZip = CkModelFileReader.IsZip(contentType) ||
                     fileName.EndsWith(".zip", StringComparison.OrdinalIgnoreCase);
 
+        var mayBeSource = MayBeSourceZip(contentType, fileName, buffer.GetBuffer().AsSpan(0, (int)buffer.Length));
+
         CkCompiledModelRoot? compiled;
-        string? sourceRoot = null;
         try
         {
-            if (isZip && TryFindSourceRoot(buffer, out var prefix))
+            if (mayBeSource && TryFindSourceRoot(buffer, out var prefix))
             {
                 response.SourceKind = CkModelValidationResponseDto.SourceKindSource;
-                sourceRoot = Path.Combine(Path.GetTempPath(), $"octo-ck-validate-{Guid.NewGuid():N}");
-                ExtractSource(buffer, prefix, sourceRoot);
-                compiled = await CompileSourceAsync(sourceRoot, response);
+                compiled = await CompileSourceZipAsync(buffer, prefix, fileName, response);
             }
             else
             {
@@ -82,30 +99,19 @@ public sealed class CkModelDraftValidator(
         }
         catch (InvalidOperationException e)
         {
-            response.Errors.Add(Unreadable(WithoutRoot(e.Message, sourceRoot)));
+            response.Errors.Add(Unreadable(e.Message));
             compiled = null;
         }
         catch (InvalidDataException e)
         {
-            // Also thrown while extracting (corrupt entry data), so the text may name the temp folder: strip it.
-            response.Errors.Add(Unreadable(
-                $"The file '{fileName}' is not a readable zip archive: {WithoutRoot(e.Message, sourceRoot)}"));
+            response.Errors.Add(Unreadable($"The file '{fileName}' is not a readable zip archive: {e.Message}"));
             compiled = null;
         }
         catch (Exception e) when (e is not OperationCanceledException)
         {
             // e.g. a YAML syntax error in a compiled model: a finding about the draft, not a server error.
-            // An I/O failure while extracting (e.g. a duplicate zip entry) names the temp path: strip it.
-            response.Errors.Add(Unreadable(
-                $"The file '{fileName}' cannot be read as a CK model: {WithoutRoot(e.Message, sourceRoot)}"));
+            response.Errors.Add(Unreadable($"The file '{fileName}' cannot be read as a CK model: {e.Message}"));
             compiled = null;
-        }
-        finally
-        {
-            if (sourceRoot != null)
-            {
-                TryDelete(sourceRoot);
-            }
         }
 
         if (compiled != null)
@@ -133,6 +139,85 @@ public sealed class CkModelDraftValidator(
             fileName, response.SourceKind ?? "unreadable", response.ModelId ?? "-", tenantId, response.Errors.Count,
             response.Warnings.Count, response.Blockers.Count);
         return response;
+    }
+
+    /// <inheritdoc />
+    public async Task<CkModelSourceCompilation?> TryCompileSourceAsync(byte[] upload, string fileName,
+        string? contentType, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(upload);
+        if (!MayBeSourceZip(contentType, fileName, upload))
+        {
+            return null;
+        }
+
+        using var buffer = new MemoryStream(upload, writable: false);
+        string prefix;
+        try
+        {
+            if (!TryFindSourceRoot(buffer, out prefix))
+            {
+                return null;
+            }
+        }
+        catch (InvalidDataException)
+        {
+            // Not a readable zip: the compiled read reports it, exactly as it did before source drafts were accepted.
+            return null;
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+        var findings = new CkModelValidationResponseDto { SourceKind = CkModelValidationResponseDto.SourceKindSource };
+        var compiled = await CompileSourceZipAsync(buffer, prefix, fileName, findings);
+        findings.IsValid = compiled != null && findings.Errors.Count == 0;
+        if (findings.IsValid)
+        {
+            findings.ModelId = compiled!.ModelId.FullName;
+        }
+
+        logger.LogInformation(
+            "CK model source draft '{FileName}' compiled (model {ModelId}): {ErrorCount} error(s), {WarningCount} warning(s)",
+            fileName, findings.ModelId ?? "-", findings.Errors.Count, findings.Warnings.Count);
+        return new CkModelSourceCompilation(findings.IsValid ? compiled : null, findings);
+    }
+
+    /// <summary>
+    ///     Extracts the source folder below <paramref name="prefix" /> into a fresh temp folder, compiles it and deletes the
+    ///     folder again. Every finding (also an unreadable or unsafe zip) lands in <paramref name="response" /> without the
+    ///     temp folder; returns the compiled model, or <c>null</c> when there was an error. The one source path of
+    ///     <see cref="ValidateAsync" /> and <see cref="TryCompileSourceAsync" />.
+    /// </summary>
+    private async Task<CkCompiledModelRoot?> CompileSourceZipAsync(Stream zip, string prefix, string fileName,
+        CkModelValidationResponseDto response)
+    {
+        var sourceRoot = Path.Combine(Path.GetTempPath(), $"octo-ck-validate-{Guid.NewGuid():N}");
+        try
+        {
+            ExtractSource(zip, prefix, sourceRoot);
+            return await CompileSourceAsync(sourceRoot, response);
+        }
+        catch (InvalidOperationException e)
+        {
+            response.Errors.Add(Unreadable(StripRoot(e.Message, sourceRoot)));
+        }
+        catch (InvalidDataException e)
+        {
+            // Thrown while extracting (corrupt entry data), so the text may name the temp folder: strip it.
+            response.Errors.Add(Unreadable(
+                $"The file '{fileName}' is not a readable zip archive: {StripRoot(e.Message, sourceRoot)}"));
+        }
+        catch (Exception e) when (e is not OperationCanceledException)
+        {
+            // An I/O failure while extracting (e.g. a duplicate zip entry) names the temp path: strip it.
+            response.Errors.Add(Unreadable(
+                $"The file '{fileName}' cannot be read as a CK model: {StripRoot(e.Message, sourceRoot)}"));
+        }
+        finally
+        {
+            TryDelete(sourceRoot);
+        }
+
+        return null;
     }
 
     private async Task<CkCompiledModelRoot?> CompileSourceAsync(string sourceRoot, CkModelValidationResponseDto response)
@@ -176,6 +261,16 @@ public sealed class CkModelDraftValidator(
     internal static bool IsDependencyResolutionFailure(Exception exception, OperationResult operationResult) =>
         exception is ModelValidationException &&
         operationResult.Messages.Any(m => m.MessageNumber == UnknownCkModelNumber);
+
+    /// <summary>
+    ///     True when the upload may be a source draft and is probed for <c>ckModel.yaml</c>: a zip by content type, by a
+    ///     <c>.zip</c> name or by its zip header. The one rule of <see cref="ValidateAsync" /> and
+    ///     <see cref="TryCompileSourceAsync" />; whether it is a source draft is decided by <c>ckModel.yaml</c> alone.
+    /// </summary>
+    internal static bool MayBeSourceZip(string? contentType, string fileName, ReadOnlySpan<byte> upload) =>
+        CkModelFileReader.IsZip(contentType) ||
+        fileName.EndsWith(".zip", StringComparison.OrdinalIgnoreCase) ||
+        CkModelFileReader.LooksLikeZip(upload);
 
     /// <summary>The folder inside the zip that holds <c>ckModel.yaml</c> (shallowest one), as an entry prefix.</summary>
     internal static bool TryFindSourceRoot(Stream zip, out string prefix)
@@ -329,9 +424,6 @@ public sealed class CkModelDraftValidator(
         return Path.IsPathRooted(location) ? Path.GetFileName(location) : location;
     }
 
-    private static string WithoutRoot(string text, string? sourceRoot) =>
-        sourceRoot == null ? text : StripRoot(text, sourceRoot);
-
     /// <summary>
     ///     The text without the server's temp folder: a path inside the draft becomes relative to it, the folder itself
     ///     becomes <c>.</c>. Matches every spelling of the folder (e.g. <c>/private/var</c> vs. <c>/var</c> on macOS) by its
@@ -392,7 +484,10 @@ public sealed class CkModelDraftValidator(
     {
         try
         {
-            Directory.Delete(path, recursive: true);
+            if (Directory.Exists(path))
+            {
+                Directory.Delete(path, recursive: true);
+            }
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {

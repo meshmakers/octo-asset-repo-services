@@ -320,6 +320,14 @@ public class ModelsController : ControllerBase
     /// <summary>
     ///     Imports a construction kit model
     ///     <para>
+    ///         Accepts a compiled model (json, yaml or a zip of one) or a zip of the source <c>ConstructionKit/</c> folder.
+    ///         A zip that holds <c>ckModel.yaml</c> is a source draft: it is compiled here on the path of
+    ///         <c>ValidateCk</c> (same extraction limits, same compiler, dependencies from the configured catalogs) and the
+    ///         compiled model is what is judged, cached and imported. A draft with compile errors is refused with
+    ///         <c>400 CK_MODEL_COMPILE_FAILED</c> (problem details; <c>errors</c> and <c>warnings</c> as <c>ValidateCk</c>
+    ///         reports them) before anything is cached or queued.
+    ///     </para>
+    ///     <para>
     ///         Service-managed models (<c>System</c>, <c>System.*</c>, any casing) are refused with
     ///         <c>403 CK_SERVICE_MANAGED_MODEL</c> whatever their version and whoever calls, <c>forceBreakingUpdate</c>
     ///         included; for a zip every CK model entry is checked, and exactly the judged bytes are cached.
@@ -367,11 +375,23 @@ public class ModelsController : ControllerBase
             // The upload is read once; the refusal and the upgrade guard judge exactly the bytes that are
             // cached for bot-services, so the importing job can never see another model than the one judged here.
             var upload = await ReadUploadAsync(file);
-            var compiled = await ReadCompiledModelAsync(file, upload);
+
+            // A zip with ckModel.yaml is a source draft: compiled here on the path of ValidateCk (same extraction
+            // limits, same compiler); only the compiled model is judged and cached, so the job reads a compiled model.
+            var source = await _draftValidator.TryCompileSourceAsync(upload, file.FileName, file.ContentType,
+                HttpContext.RequestAborted);
+            if (source is { Model: null })
+            {
+                return CkModelCompileFailedError.CreateResult(file.FileName, source.Findings);
+            }
+
+            var compiled = source?.Model ?? await ReadCompiledModelAsync(file, upload);
 
             // Service-managed models (System, System.*) are never imported by a caller - before anything is
             // cached or queued, whatever the version and whoever calls, forceBreakingUpdate included.
-            var serviceManaged = await FindServiceManagedInUploadAsync(file, upload, compiled);
+            var serviceManaged = source != null
+                ? FindServiceManagedInCompiled(compiled)
+                : await FindServiceManagedInUploadAsync(file, upload, compiled);
             if (serviceManaged.Count > 0)
             {
                 LogServiceManagedRefusal(tenantId, serviceManaged, "ImportCk");
@@ -396,7 +416,9 @@ public class ModelsController : ControllerBase
                     string.Join("; ", blockers.Select(b => $"{b.Dependent} [{b.Kind} {b.Subject}] by {b.Update}")));
             }
 
-            var cacheKey = await AddUploadToCache(tenantId, file, upload);
+            var cacheKey = source != null
+                ? await SerializeModelToCache(tenantId, compiled)
+                : await AddUploadToCache(tenantId, file, upload);
             var args = new ImportCkCommandRequest(tenantId, cacheKey);
             var r =
                 await _importCkCommandClient.GetResponse<JobCreatedResponse>(args);
@@ -1169,6 +1191,15 @@ public class ModelsController : ControllerBase
         return ids.Where(id => ServiceManagedImportGuard.IsServiceManaged(id.Name)).Select(id => id.FullName)
             .Distinct(StringComparer.Ordinal).ToList();
     }
+
+    /// <summary>
+    ///     The service-managed model of a compiled source draft: only the compiled model is cached and imported, so its id
+    ///     is the only one to judge.
+    /// </summary>
+    private static IReadOnlyList<string> FindServiceManagedInCompiled(CkCompiledModelRoot compiled) =>
+        compiled.ModelId != null && ServiceManagedImportGuard.IsServiceManaged(compiled.ModelId.Name)
+            ? [compiled.ModelId.FullName]
+            : [];
 
     private void LogServiceManagedRefusal(string tenantId, IReadOnlyCollection<string> models, string operation) =>
         _logger.LogWarning(
