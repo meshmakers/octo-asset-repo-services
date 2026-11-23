@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- AB#9578 New: the `BlueprintApplied` and `BlueprintUpdated` events on the distribution event hub carry the CK model
+  dependencies of the blueprint (`CkModelDependencies`, as the blueprint engine reports them), so the Communication
+  Controller and the AI service enable the capabilities a blueprint needs for its tenant without `EnableCommunication` /
+  `EnableAi`. Additive: older consumers ignore the property. Needs the engine and octo-common-services packages of the same
+  change.
 - AB#8501 Fix: `POST {tenantId}/v1/Models/ImportCk` compiles a zip of the source `ConstructionKit/` folder (a zip that holds
   `ckModel.yaml`) instead of reading one of its files as a compiled model. The draft is compiled on the path of
   `Models/ValidateCk` (same extraction limits, same engine compiler, dependencies from the configured catalogs); the compiled
