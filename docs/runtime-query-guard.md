@@ -58,10 +58,13 @@ as the entry points above:
 - The field is checked where it is declared (the resolver of the entity type), so aliases, fragments, inline fragments on
   interfaces or unions, `first` from a variable, mutations and subscriptions that return entities, and navigations nested
   inside navigations are all covered.
-- **Once per request**: a navigation is resolved once per parent entity. Its decision is taken once per response path of
-  the request (list indices left out): one warning and one metric increment, whatever the number of parents. In `Enforce`
-  every parent's navigation is refused with `ASSET1007` and the same error id, before its load is queued; the parents
-  themselves (paged by their own connection) are returned.
+- **Once per operation**: a navigation is resolved once per parent entity. Its decision is taken once per operation,
+  mode, response path (list indices left out) and facts (CK type, reason, `first`, keys): one warning and one metric
+  increment, whatever the number of parents. Type-specific variants of one response path (fragments on the members of a
+  union) are decided each with their own facts. The mode is read on every call, so a switch to `Enforce` applies at once,
+  also on a user context that outlives one operation (a subscription connection, a batched request). In `Enforce` every
+  parent's navigation is refused with `ASSET1007` and the same error id, before its load is queued; the parents themselves
+  (paged by their own connection) are returned.
 - Code: `RuntimeQueryGuard.CheckNested` / `IsToOneNavigation`; the fields carry the metadata `Statics.NestedNavigation`
   (and `Statics.NavigationToOne` for typed navigations), which the schema visitor wraps.
 
@@ -69,7 +72,7 @@ Log line of a navigation (the field path uses field names, not aliases):
 
 ```
 Unbounded nested navigation (NoFirst) at runtime.basicEnergyCommunity.items.children on CK type System/Entity-2 in tenant
-meshtest: requested first (null), keys (null), limit 1000, entry point NestedTypedNavigation, operation Communities, client
+<tenant>: requested first (null), keys (null), limit 1000, entry point NestedTypedNavigation, operation Communities, client
 octo-studio, subject …, mode warn, error id 3f2c…
 ```
 
@@ -95,6 +98,10 @@ Every other query is **unbounded** (`reason`):
 - `TooManyKeys`: a key lookup with more keys than `MaxPageSize` and no `first` within the limit.
 
 Code: `RuntimeQueryGuard.Classify` (checks in this order: no items, aggregation, `first` within the limit, key lookup).
+
+`first` counts with its absolute value (`RuntimeQueryGuard.EffectivePageSize`): GraphQL.NET's connection context hands the
+resolvers the absolute value, so `first: -5000` loads 5000 items and is `FirstAboveLimit` (`requestedFirst` 5000);
+`int.MinValue` counts as `int.MaxValue`. This holds for the entry points and the navigations.
 
 ## Configuration
 
@@ -171,5 +178,5 @@ the ASSET error family until a coded error contract exists; it moves there then.
 - Navigations: unit `tests/AssetRepositoryServices.UnitTests/GraphQL/RuntimeQueryNestedNavigationGuardTests.cs`
   (one test per abuse case), integration
   `tests/AssetRepositoryServices.IntegrationTests/GraphQL/Queries/RuntimeQueryNestedNavigationGuardTests.cs`
-  (`OperatingFacility.children` to-many, `MeteringPoint.parent` to-one, generic targets/definitions, and a test that every
+  (`Car.children` to-many, `VehicleReading.parent` to-one, generic targets/definitions, and a test that every
   connection of entities inside an entity in the real schema is wrapped).

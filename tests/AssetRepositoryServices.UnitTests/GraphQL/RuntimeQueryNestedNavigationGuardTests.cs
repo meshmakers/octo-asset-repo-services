@@ -25,7 +25,7 @@ using Xunit;
 namespace AssetRepositoryServices.UnitTests.GraphQL;
 
 /// <summary>
-///     Navigation connections inside an entity follow the rules of the top-level guard (AB#8898). Only to-many
+///     Navigation connections inside an entity follow the rules of the top-level guard. Only to-many
 ///     navigations are checked; a to-one navigation is exempt in every mode; whatever is not provably to-one counts as
 ///     to-many. One test per abuse case of the PR description.
 /// </summary>
@@ -248,6 +248,55 @@ public sealed class RuntimeQueryNestedNavigationGuardTests : IDisposable
             .Contain("reason", nameof(RuntimeQueryBoundReason.NoFirst)).And.Contain("keyCount", null);
     }
 
+    [Theory]
+    [InlineData(-5000, true)]
+    [InlineData(-1001, true)]
+    [InlineData(int.MinValue, true)]
+    [InlineData(-1000, false)]
+    [InlineData(-1, false)]
+    public void Enforce_ANegativeFirstCountsWithItsAbsoluteValue(int first, bool refused)
+    {
+        // The connection resolver pages with the absolute value of first.
+        _options.Mode = RuntimeQueryGuardMode.Enforce;
+
+        var act = () => Check(Typed(toOne: false, first: first));
+
+        if (refused)
+        {
+            act.Should().Throw<UnboundedRuntimeQueryException>().Which.Extensions!["parameters"].Should()
+                .BeAssignableTo<IDictionary<string, object?>>().Which.Should()
+                .Contain("reason", nameof(RuntimeQueryBoundReason.FirstAboveLimit));
+        }
+        else
+        {
+            act.Should().NotThrow();
+        }
+    }
+
+    [Theory]
+    [InlineData(null, null)]
+    [InlineData(0, 0)]
+    [InlineData(5, 5)]
+    [InlineData(-5, 5)]
+    [InlineData(int.MinValue, int.MaxValue)]
+    public void EffectivePageSize_IsTheAbsoluteValueWithoutOverflow(int? first, int? expected)
+    {
+        RuntimeQueryGuard.EffectivePageSize(first).Should().Be(expected);
+    }
+
+    [Fact]
+    public void Warn_NavigationWithoutQueryBaseType_NamesTheCkIdTargetType()
+    {
+        _options.Mode = RuntimeQueryGuardMode.Warn;
+        var context = Typed(toOne: false);
+        context.FieldDefinition.Metadata.Remove(Statics.QueryBaseType);
+        context.FieldDefinition.Metadata[Statics.CkId] = new RtCkId<CkTypeId>("Basic.Energy/Producer");
+
+        Check(context);
+
+        _logger.Entries.Should().ContainSingle().Which.Message.Should().Contain("Basic.Energy/Producer");
+    }
+
     [Fact]
     public void Enforce_ExplicitFirstNull_IsNoFirst()
     {
@@ -374,6 +423,56 @@ public sealed class RuntimeQueryNestedNavigationGuardTests : IDisposable
             responsePath: ["runtime", "community", "items", 0, "kidsB"]));
 
         _logger.Entries.Should().HaveCount(2);
+    }
+
+    [Fact]
+    public void AModeSwitchOnALongLivedUserContext_IsAppliedAtOnce()
+    {
+        // A subscription connection or a batched request keeps one user context for several operations.
+        var userContext = UserContext();
+        _options.Mode = RuntimeQueryGuardMode.Warn;
+        Check(Typed(toOne: false, userContext: userContext));
+
+        _options.Mode = RuntimeQueryGuardMode.Enforce;
+        var act = () => Check(Typed(toOne: false, userContext: userContext));
+
+        act.Should().Throw<UnboundedRuntimeQueryException>("the current mode decides, not the earlier decision");
+        _logger.Entries.Should().HaveCount(2, "the decision in Enforce is a new one");
+    }
+
+    [Fact]
+    public void Warn_TheSameNavigationInTwoOperationsOfOneUserContext_IsLoggedForEach()
+    {
+        _options.Mode = RuntimeQueryGuardMode.Warn;
+        var userContext = UserContext();
+
+        Check(Typed(toOne: false, userContext: userContext));
+        _operation = NewOperation();
+        Check(Typed(toOne: false, userContext: userContext));
+
+        _logger.Entries.Should().HaveCount(2);
+        _measurements.Should().HaveCount(2);
+    }
+
+    [Fact]
+    public void Enforce_TwoVariantsOfOneResponsePath_CarryTheirOwnFacts()
+    {
+        // ... on A { children { items } } ... on B { children(rtIds: [3 keys]) { items } } with MaxPageSize 2.
+        _options.Mode = RuntimeQueryGuardMode.Enforce;
+        _options.MaxPageSize = 2;
+        var userContext = UserContext();
+        var keys = Enumerable.Range(0, 3).Select(_ => OctoObjectId.GenerateNewId()).ToList();
+
+        var first = ((Action)(() => Check(Typed(toOne: false, userContext: userContext)))).Should()
+            .Throw<UnboundedRuntimeQueryException>().Which;
+        var second = ((Action)(() => Check(Typed(toOne: false, userContext: userContext, rtIds: keys)))).Should()
+            .Throw<UnboundedRuntimeQueryException>().Which;
+
+        ((IDictionary<string, object?>)first.Extensions!["parameters"]!)["reason"].Should()
+            .Be(nameof(RuntimeQueryBoundReason.NoFirst));
+        ((IDictionary<string, object?>)second.Extensions!["parameters"]!)["reason"].Should()
+            .Be(nameof(RuntimeQueryBoundReason.TooManyKeys));
+        second.ErrorId.Should().NotBe(first.ErrorId);
     }
 
     [Fact]
@@ -587,12 +686,17 @@ public sealed class RuntimeQueryNestedNavigationGuardTests : IDisposable
             Path = path ?? ChildrenPath,
             ResponsePath = responsePath ?? path ?? ChildrenPath,
             RequestServices = _provider,
-            Operation = new GraphQLOperationDefinition(new GraphQLSelectionSet([]))
-            {
-                Name = new GraphQLName("ListCommunities")
-            }
+            Operation = _operation
         };
     }
+
+    // One operation per test: the parents of a page are resolved within the same operation.
+    private GraphQLOperationDefinition _operation = NewOperation();
+
+    private static GraphQLOperationDefinition NewOperation() => new(new GraphQLSelectionSet([]))
+    {
+        Name = new GraphQLName("ListCommunities")
+    };
 
     private sealed class CapturingLogger : ILogger<RuntimeQueryGuard>
     {

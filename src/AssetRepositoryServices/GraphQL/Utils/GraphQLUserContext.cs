@@ -12,8 +12,9 @@ internal class GraphQlUserContext(ClaimsPrincipal? user, ITenantContext tenantCo
     public ITenantContext TenantContext { get; } = tenantContext;
 
     /// <summary>
-    ///     The unbounded-query guard's decision per nested navigation (response path without list indices) of
-    ///     this request, so a navigation resolved once per parent entity is logged and counted once.
+    ///     The unbounded-query guard's decisions on nested navigations, keyed by operation, mode, response path (without
+    ///     list indices) and the facts of the decision, so a navigation resolved once per parent entity is logged and
+    ///     counted once per operation.
     /// </summary>
     internal ConcurrentDictionary<string, NestedNavigationGuardDecision> NestedNavigationGuardDecisions { get; } =
         new(StringComparer.Ordinal);

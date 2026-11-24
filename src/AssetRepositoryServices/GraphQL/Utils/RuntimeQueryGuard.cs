@@ -1,4 +1,6 @@
+using System.Globalization;
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using System.Security.Claims;
 using GraphQL;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.Configuration;
@@ -305,14 +307,20 @@ internal sealed class RuntimeQueryGuard
             return;
         }
 
+        var enforce = mode == RuntimeQueryGuardMode.Enforce;
         var candidate = new NestedNavigationGuardDecision(GetCkTypeId(context, entryPoint), GetFieldPath(context.Path),
-            reason, shape.First, shape.KeyCount, maxPageSize, mode == RuntimeQueryGuardMode.Enforce,
-            Guid.NewGuid().ToString("N"));
+            reason, shape.First, shape.KeyCount, maxPageSize, enforce, Guid.NewGuid().ToString("N"));
         var decision = candidate;
         var isFirst = true;
         if (userContext != null)
         {
-            var key = $"{entryPoint}|{GetFieldPath(context.ResponsePath)}";
+            // A user context can outlive one operation (a subscription connection, a batched HTTP request), and one
+            // response path can carry several type-specific variants of a navigation (fragments on the members of a
+            // union or interface). So the key holds the operation, the mode and every fact of the decision: a reused
+            // decision is one with exactly these facts, taken in this operation and this mode.
+            var key = string.Join('|', entryPoint, OperationIdentity(context), mode, GetFieldPath(context.ResponsePath),
+                candidate.CkTypeId, reason, shape.First?.ToString(CultureInfo.InvariantCulture) ?? "-",
+                shape.KeyCount?.ToString(CultureInfo.InvariantCulture) ?? "-", maxPageSize);
             isFirst = userContext.NestedNavigationGuardDecisions.TryAdd(key, candidate);
             if (!isFirst)
             {
@@ -338,7 +346,7 @@ internal sealed class RuntimeQueryGuard
                 subject, modeLabel, decision.ErrorId);
         }
 
-        if (decision.Enforce)
+        if (enforce)
         {
             // A new error per parent: the executor writes the path and location into the error it catches.
             throw new UnboundedRuntimeQueryException(decision.CkTypeId, decision.MaxPageSize, decision.RequestedFirst,
@@ -403,6 +411,25 @@ internal sealed class RuntimeQueryGuard
         }
     }
 
+    /// <summary>
+    ///     The page size the connection resolvers really use: GraphQL.NET's connection context hands them the absolute
+    ///     value of <c>first</c>, so <c>first: -5000</c> loads 5000 items. Classifying the raw argument would let a negative
+    ///     <c>first</c> pass as within the limit. <see cref="int.MinValue" /> has no positive counterpart and maps to
+    ///     <see cref="int.MaxValue" />.
+    /// </summary>
+    internal static int? EffectivePageSize(int? first) => first switch
+    {
+        null => null,
+        int.MinValue => int.MaxValue,
+        < 0 => -first.Value,
+        _ => first
+    };
+
+    // The operation being executed: the parsed document and its operation definition are created per execution, so
+    // their identity tells two operations on one user context apart.
+    private static string OperationIdentity(IResolveFieldContext context) =>
+        string.Join(':', RuntimeHelpers.GetHashCode(context.Document), RuntimeHelpers.GetHashCode(context.Operation));
+
     // The value of an argument as the executor coerced it (the enum value for an enum argument), null when absent.
     private static object? RawArgument(IResolveFieldContext context, string name) =>
         context.Arguments != null && context.Arguments.TryGetValue(name, out var value) ? value.Value : null;
@@ -415,7 +442,7 @@ internal sealed class RuntimeQueryGuard
     {
         // The keys of SubFields are response keys (aliases); the field name is on the AST node. Fragments are merged.
         var selectsItems = context.SubFields?.Values.Any(f => ItemFieldNames.Contains(f.Field.Name.StringValue)) == true;
-        var first = context.GetArgument<int?>("first");
+        var first = EffectivePageSize(context.GetArgument<int?>("first"));
 
         int? keyCount = null;
         bool isAggregation = false;
@@ -496,10 +523,13 @@ internal sealed class RuntimeQueryGuard
             RuntimeQueryEntryPoint.TransientQueryRows =>
                 (context.Source as RtTransientQueryDto)?.AssociatedCkTypeId?.ToString(),
             // The target type of a typed navigation (the base type when it is abstract), from the schema.
+            // (RtEntityAssociationType carries its target type as CkId).
             RuntimeQueryEntryPoint.NestedTypedNavigation =>
                 context.FieldDefinition.Metadata.TryGetValue(Statics.QueryBaseType, out var baseType)
                     ? baseType?.ToString()
-                    : null,
+                    : context.FieldDefinition.Metadata.TryGetValue(Statics.CkId, out var targetType)
+                        ? targetType?.ToString()
+                        : null,
             RuntimeQueryEntryPoint.NestedGenericAssociations or RuntimeQueryEntryPoint.NestedGenericTargets =>
                 NormalizeCkTypeId(RawArgument(context, Statics.CkIdArg) as string),
             // Association records have no target type: the type of the entity they belong to.

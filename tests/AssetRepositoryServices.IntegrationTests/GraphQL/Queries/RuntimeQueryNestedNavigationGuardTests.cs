@@ -1,5 +1,6 @@
 using System.Diagnostics.Metrics;
 using System.Security.Claims;
+using System.Text.RegularExpressions;
 using FluentAssertions;
 using GraphQL;
 using GraphQL.Execution;
@@ -114,7 +115,7 @@ public sealed class RuntimeQueryNestedNavigationGuardTests : IDisposable
             error.Message.Should().Contain("children").And.Contain("1000");
             ((IDictionary<string, object?>)error.Extensions!["parameters"]!)["fieldPath"].Should()
                 .Be("runtime.assetRepositoryIntegrationTestCar.items.children");
-            json.Should().NotContain(Reading1, "no metering point was loaded");
+            json.Should().NotContain(Reading1, "no reading was loaded");
             json.Should().Contain(Car1, "the paged parents themselves are read");
         }
         else
@@ -130,7 +131,7 @@ public sealed class RuntimeQueryNestedNavigationGuardTests : IDisposable
         }
         else
         {
-            counted.Should().ContainSingle("the navigation is counted once per request, not once per facility")
+            counted.Should().ContainSingle("the navigation is counted once per request, not once per car")
                 .Which.Should().Contain(RuntimeQueryGuardMetrics.ModeLabel,
                     mode == RuntimeQueryGuardMode.Enforce ? "enforce" : "warn");
         }
@@ -154,6 +155,27 @@ public sealed class RuntimeQueryNestedNavigationGuardTests : IDisposable
             result.Errors.Should().BeNullOrEmpty();
             _fixture.SerializeGraphQl(result).Should().Contain(Reading1);
         }
+    }
+
+    [Fact]
+    public async Task ANegativeFirstPagesWithItsAbsoluteValue_AndIsRefusedAboveTheLimit()
+    {
+        // The premise: the connection resolver pages with the absolute value of first (car 1 has two readings).
+        _options.Mode = RuntimeQueryGuardMode.Off;
+        var off = await ExecuteAsync(Children("first: -1, rtIds: [\"" + Reading1 + "\", \"67000005eeee5555ffff0002\"]"));
+        off.Errors.Should().BeNullOrEmpty();
+        Regex.Matches(_fixture.SerializeGraphQl(off), "67000005eeee5555ffff000[12]")
+            .Should().ContainSingle("first: -1 pages one item");
+
+        _options.Mode = RuntimeQueryGuardMode.Enforce;
+        _options.MaxPageSize = 1;
+        var nested = await ExecuteAsync(Children("first: -2"));
+        var topLevel = await ExecuteAsync(
+            "{ runtime { assetRepositoryIntegrationTestCar(first: -2) { items { rtId } } } }");
+
+        nested.Errors.Should().NotBeNullOrEmpty().And.OnlyContain(e => e.Code == "ASSET1007");
+        _fixture.SerializeGraphQl(nested).Should().NotContain(Reading1);
+        topLevel.Errors.Should().ContainSingle().Which.Code.Should().Be("ASSET1007");
     }
 
     [Fact]
@@ -224,11 +246,11 @@ public sealed class RuntimeQueryNestedNavigationGuardTests : IDisposable
             query Hidden {
               runtime {
                 assetRepositoryIntegrationTestCar(first: 10) {
-                  rows: items { ...Facility }
+                  rows: items { ...CarWithChildren }
                 }
               }
             }
-            fragment Facility on AssetRepositoryIntegrationTestCar {
+            fragment CarWithChildren on AssetRepositoryIntegrationTestCar {
               ... on AssetRepositoryIntegrationTestCar {
                 kids: children(ckTypeIds: ["{{ReadingCkTypeId}}"]) {
                   list: items { ... on AssetRepositoryIntegrationTestVehicleReading { rtId } }
@@ -302,7 +324,7 @@ public sealed class RuntimeQueryNestedNavigationGuardTests : IDisposable
     {
         _options.Mode = RuntimeQueryGuardMode.Enforce;
 
-        // facility -> children (paged) -> parent (to-one) -> children (no first)
+        // car -> children (paged) -> parent (to-one) -> children (no first)
         var result = await ExecuteAsync($$"""
             {
               runtime {
