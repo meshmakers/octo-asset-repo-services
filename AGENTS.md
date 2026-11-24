@@ -61,9 +61,10 @@ Background, not path-triggered; each file is linked from the routed doc of its t
 query guard: configuration, metric, error `ASSET1007`), `docs/method-idempotency-store.md` (records, atomic claim,
 expiry, latency), `docs/gateway-owned-method-handlers.md` (how to register an in-process method handler),
 `docs/gridfs-orphan-sweep.md` (endpoint and runbook of the orphan sweep), `docs/stream-data-read-enforce-plan.md`
-(operator plan for switching the stream-data read gate to `Enforce` per environment) and
+(operator plan for switching the stream-data read gate to `Enforce` per environment),
 `docs/mutation-scope-enforce-plan.md` (operator plan for switching the GraphQL mutation scope gate to enforced per
-environment).
+environment) and `docs/graphql-transient-transaction-retry.md` (whole-request retry of GraphQL mutations on
+`TransientTransactionError`: scope, bound, side effects and limits).
 
 ## Build & test
 
