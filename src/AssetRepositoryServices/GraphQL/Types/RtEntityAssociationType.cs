@@ -41,6 +41,8 @@ internal class RtEntityAssociationType : ObjectGraphType
         {
             this.Connection<object?, IGraphType, RtEntityDto>(entityDtoCache, rtEntityDtoType, rtEntityDtoType.Name)
                 .AddMetadata(Statics.CkId, rtEntityDtoType.CkTypeId.ToRtCkId())
+                // No multiplicity is known here, so the guard treats the connection as to-many.
+                .AddMetadata(Statics.NestedNavigation, RuntimeQueryEntryPoint.NestedTypedNavigation)
                 .Argument<OctoObjectIdType>(Statics.RtIdArg, "Returns the entity with the given rtId.")
                 .Argument<ListGraphType<OctoObjectIdType>>(Statics.RtIdsArg,
                     "Returns entities with the given rtIds.")

@@ -21,7 +21,10 @@ under `docs/`, or the pull request whose review found the problem.
 ## Queries and the runtime query guard
 
 - The runtime query guard covers exactly the fixed entry points `runtime.runtimeEntities`, every generated
-  `runtime.<CkType>` connection, `RtQuery.rows` and `RtTransientQuery.rows`: a change to one of them, or a new field that
+  `runtime.<CkType>` connection, `RtQuery.rows` and `RtTransientQuery.rows`, plus every navigation connection inside an
+  entity (field metadata `NestedNavigation`; to-one navigations pass, anything not provably to-one counts as to-many;
+  `RuntimeQueryNestedNavigationGuardTests.Schema_EveryConnectionOfEntitiesInsideAnEntityIsGuarded` checks the real
+  schema): a change to one of them, or a new field that
   loads runtime entities without a bound, is wrapped by `RuntimeQueryGuardSchemaVisitor`, never by a guard call inside
   the resolver; `runtime.byInterface` (bounded by its required `take`) and the aggregation connections stay unwrapped
   (`AGENTS.md`, "Rules"; `docs/runtime-queries.md`; `docs/runtime-query-guard.md`).
