@@ -34,12 +34,44 @@ public sealed class SystemIdentitySnapshotCkModel(ICkYamlSerializer ckYamlSerial
     }
 }
 
+/// <summary>
+///     The last 2.x release of <c>System.Identity</c> (<c>testData/ck-models/ck-system.identity-2.30.0.yaml</c>) as an
+///     embedded model, for tests that start from a tenant on that version. System.Identity is service-managed: a caller
+///     import (<c>ImportCkModelAsync(CkCompiledModelRoot)</c>) refuses it with <c>CK_SERVICE_MANAGED_MODEL</c>, so such a
+///     tenant is set up through the service path, <c>ImportCkModelAsync(CkModelId, OperationResult)</c>, from here.
+/// </summary>
+public sealed class SystemIdentity230SnapshotCkModel(ICkYamlSerializer ckYamlSerializer) : ICkEmbeddedModel
+{
+    /// <summary>The model version of the snapshot.</summary>
+    public const string ModelFullName = "System.Identity-2.30.0";
+
+    private static readonly string SnapshotPath =
+        Path.Combine(AppContext.BaseDirectory, "testData", "ck-models", "ck-system.identity-2.30.0.yaml");
+
+    public CkModelId ModelId => new(ModelFullName);
+
+    public string Description => "System.Identity 2.30.0 (test snapshot of the identity service's last 2.x model)";
+
+    public async Task<CkCompiledModelRoot> GetCompiledModelRootAsync(OperationResult operationResult)
+    {
+        await using var stream = File.OpenRead(SnapshotPath);
+        return await ckYamlSerializer.DeserializeCompiledModelRootAsync(stream, SnapshotPath, operationResult);
+    }
+}
+
 public static class SystemIdentitySnapshotCkModelExtensions
 {
     /// <summary>Registers the System.Identity snapshot in the embedded catalog of the test host.</summary>
     public static IServiceCollection AddSystemIdentitySnapshotCkModel(this IServiceCollection services)
     {
         services.AddTransient<ICkEmbeddedModel, SystemIdentitySnapshotCkModel>();
+        return services;
+    }
+
+    /// <summary>Registers the System.Identity 2.30.0 snapshot in the embedded catalog of the test host.</summary>
+    public static IServiceCollection AddSystemIdentity230SnapshotCkModel(this IServiceCollection services)
+    {
+        services.AddTransient<ICkEmbeddedModel, SystemIdentity230SnapshotCkModel>();
         return services;
     }
 }

@@ -3,7 +3,6 @@ using Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Collectio
 using Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Fixtures;
 using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.ConstructionKit.Contracts.DataTransferObjects;
-using Meshmakers.Octo.ConstructionKit.Contracts.Serialization;
 using Meshmakers.Octo.ConstructionKit.Contracts.Services;
 using Meshmakers.Octo.Runtime.Contracts;
 using Meshmakers.Octo.Runtime.Contracts.Repositories.Query;
@@ -27,18 +26,16 @@ public class IdentityMajorUpgradeFlowTests(IdentitySeedBlueprintFixture fixture)
     public async Task TenantOnSystemIdentity230_UpgradesToTheEmbedded300_KeepingItsData()
     {
         var ct = TestContext.Current.CancellationToken;
-        var path = Path.Combine(AppContext.BaseDirectory, "testData", "ck-models", "ck-system.identity-2.30.0.yaml");
         var tenantId = await fixture.CreateTenantAsync("idup");
         try
         {
             var tenant = await fixture.GetSystemContext().FindTenantContextAsync(tenantId);
-            var yaml = fixture.GetService<ICkYamlSerializer>();
+            // System.Identity is service-managed: a caller import of it is refused (CK_SERVICE_MANAGED_MODEL), so the
+            // starting state comes through the service path, from the snapshot the fixture registers as an embedded model
+            // (testData/ck-models/ck-system.identity-2.30.0.yaml, see SystemIdentity230SnapshotCkModel).
             var op = new OperationResult();
-            await using (var fs = File.OpenRead(path))
-            {
-                var root = await yaml.DeserializeCompiledModelRootAsync(fs, path, op);
-                await tenant.ImportCkModelAsync(root);
-            }
+            await tenant.ImportCkModelAsync(new CkModelId(SystemIdentity230SnapshotCkModel.ModelFullName), op);
+            op.HasErrors.Should().BeFalse(string.Join("; ", op.Messages.Select(m => m.MessageText)));
 
             (await tenant.IsCkModelExistingAsync(new CkModelId("System.Identity-2.30.0"))).Should().BeTrue();
 
