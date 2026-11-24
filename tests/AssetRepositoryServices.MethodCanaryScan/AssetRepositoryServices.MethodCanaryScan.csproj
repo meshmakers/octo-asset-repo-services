@@ -14,12 +14,12 @@
 
     <ItemGroup>
         <PackageReference Include="FakeItEasy" Version="9.0.1" />
-        <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.9.0" />
-        <PackageReference Include="xunit.runner.visualstudio" Version="4.0.0">
+        <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.12.0" />
+        <PackageReference Include="xunit.runner.visualstudio" Version="4.0.1">
             <PrivateAssets>all</PrivateAssets>
             <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
         </PackageReference>
-        <PackageReference Include="xunit.v3.mtp-off" Version="4.0.0" />
+        <PackageReference Include="xunit.v3.mtp-off" Version="4.0.3" />
         <!-- The scan is a client of the running stack: it needs the method SDK (handler host) and the CK engine (to read the
              compiled scan model), not the service project. -->
         <PackageReference Include="Meshmakers.Octo.Services.Infrastructure" Version="$(OctoCoreLibVersion)" />

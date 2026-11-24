@@ -91,7 +91,7 @@ internal static class CrateVersionMatrixInfrastructure
                 .WithNetwork(_network)
                 .WithNetworkAliases(S3Alias)
                 .WithPortBinding(S3Port, true)
-                .WithResourceMapping(Encoding.UTF8.GetBytes(identities), "/etc/seaweedfs-s3.json")
+                .WithResourceMapping(Encoding.UTF8.GetBytes(identities), FilePath.Of("/etc/seaweedfs-s3.json"))
                 .WithCommand("mini", "-dir=/data", $"-bucket={Bucket}", "-s3.config=/etc/seaweedfs-s3.json",
                     "-webdav=false", "-admin.ui=false", "-s3.port.iceberg=0", "-s3.port.lance=0")
                 // The S3 port answers 403 to an unsigned request: that is the readiness signal.

@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- AB#9608 Chore: NuGet dependencies updated within the .NET 10 line (FluentAssertions 8.11.0, Microsoft.NET.Test.Sdk 18.12.0, NLog.Web.AspNetCore 6.3.0, Testcontainers.MongoDb 4.17.0, coverlet.collector 10.1.1, xunit.runner.visualstudio 4.0.1, xunit.v3.mtp-off 4.0.3); the SeaweedFS test container maps its S3 identity file with the non-deprecated `WithResourceMapping` overload. No runtime behaviour change.
 - AB#9578 New: the `BlueprintApplied` and `BlueprintUpdated` events on the distribution event hub carry the CK model
   dependencies of the blueprint (`CkModelDependencies`, as the blueprint engine reports them), so the Communication
   Controller and the AI service enable the capabilities a blueprint needs for its tenant without `EnableCommunication` /
