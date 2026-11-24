@@ -41,6 +41,7 @@ public sealed class RtEntityGenericAssociationType : ObjectGraphType<RtEntityGen
             .Argument<ListGraphType<SortDtoType>>(Statics.SortOrderArg, "Sort order for items")
             .Argument<ListGraphType<FieldFilterDtoType>>(Statics.FieldFilterArg,
                 "Filters items based on field compare")
+            .AddMetadata(Statics.NestedNavigation, RuntimeQueryEntryPoint.NestedGenericTargets)
             .Resolve(ResolveGenericRtAssociationTargetsQuery);
 
         Connection<RtAssociationDtoType>("definitions")
@@ -51,6 +52,7 @@ public sealed class RtEntityGenericAssociationType : ObjectGraphType<RtEntityGen
                 "A construction kit type id to filter the associations by target type.")
             .Argument<OctoObjectIdType>(Statics.RelatedRtId,
                 "A construction kit object id to filter the associations by target runtime entity.")
+            .AddMetadata(Statics.NestedNavigation, RuntimeQueryEntryPoint.NestedGenericDefinitions)
             .Resolve(ResolveGenericRtAssociationsQuery);
     }
 

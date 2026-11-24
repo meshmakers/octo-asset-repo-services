@@ -8,8 +8,9 @@ applies_to: **/RtEntityByInterfaceTypes.cs, **/RuntimeQueryGuard*.cs, **/Runtime
 ## Unbounded runtime-entity query guard
 
 `RuntimeQueryGuardSchemaVisitor` (registered with `AddSchemaVisitor` in `RuntimeEngineBuilderExtensions`) wraps only the
-resolvers of `runtime.runtimeEntities`, `runtime.<CkType>` (metadata `CkId`), `RtQuery.rows` and `RtTransientQuery.rows`;
-`RuntimeQueryGuard.Check` runs before the resolver. Unbounded = `items`/`edges`/`nodes` selected and no `first`, `first` above
+resolvers of `runtime.runtimeEntities`, `runtime.<CkType>` (metadata `CkId`), `RtQuery.rows` and `RtTransientQuery.rows`,
+and of every navigation connection inside an entity (metadata `NestedNavigation`: typed navigation fields, `associations`,
+`associations { targets definitions }`; to-one navigations pass); `RuntimeQueryGuard.Check` runs before the resolver. Unbounded = `items`/`edges`/`nodes` selected and no `first`, `first` above
 `RuntimeQueryGuard:MaxPageSize` (default 1000), or a key lookup with more keys than that and no `first` within the limit (`RuntimeQueryGuard.Classify`);
 totalCount-only, aggregation queries and key lookups within the limit are bounded (a key lookup within the limit also with
 `first` above the limit). The `ck_type` label of `runtimeEntities` is the argument only for a CK type of the tenant, else `unknown`. `RuntimeQueryGuard:Mode` `Off` / `Warn`

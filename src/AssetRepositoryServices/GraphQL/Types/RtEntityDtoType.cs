@@ -12,6 +12,7 @@ using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Types.Scalars;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Utils;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
 using Meshmakers.Octo.ConstructionKit.Contracts;
+using Meshmakers.Octo.ConstructionKit.Contracts.DataTransferObjects;
 using Meshmakers.Octo.ConstructionKit.Contracts.DependencyGraph;
 using Meshmakers.Octo.ConstructionKit.Contracts.Services;
 using Meshmakers.Octo.Runtime.Contracts.Repositories.Query;
@@ -113,7 +114,8 @@ internal sealed class RtEntityDtoType : ObjectGraphType<RtEntityDto>
 
             this.AssociationField(graphTypesCache, ckTypeAssociationGraph.Key,
                     allowedTypes, _ckTypeGraph.CkTypeId.ToRtCkId(), queryBaseType,
-                    ckTypeAssociationGraph.First().CkRoleId.ToRtCkId(), GraphDirections.Outbound)
+                    ckTypeAssociationGraph.First().CkRoleId.ToRtCkId(), GraphDirections.Outbound,
+                    IsToOne(ckTypeAssociationGraph))
                 .Argument<NonNullGraphType<ListGraphType<NonNullGraphType<StringGraphType>>>>(Statics.CkTypeIdsArg, "Filter by multiple CK type IDs (can include base types to include all derived types).")
                 .Argument<OctoObjectIdType>(Statics.RtIdArg, "Returns the entity with the given rtId.")
                 .Argument<ListGraphType<OctoObjectIdType>>(Statics.RtIdsArg, "Returns entities with the given rtIds.")
@@ -145,7 +147,8 @@ internal sealed class RtEntityDtoType : ObjectGraphType<RtEntityDto>
 
             this.AssociationField(graphTypesCache, ckTypeAssociationGraph.Key,
                     allowedTypes, _ckTypeGraph.CkTypeId.ToRtCkId(), queryBaseType,
-                    ckTypeAssociationGraph.First().CkRoleId.ToRtCkId(), GraphDirections.Inbound)
+                    ckTypeAssociationGraph.First().CkRoleId.ToRtCkId(), GraphDirections.Inbound,
+                    IsToOne(ckTypeAssociationGraph))
                 .Argument<NonNullGraphType<ListGraphType<NonNullGraphType<StringGraphType>>>>(Statics.CkTypeIdsArg, "Filter by multiple CK type IDs (can include base types to include all derived types).")
                 .Argument<OctoObjectIdType>(Statics.RtIdArg, "Returns the entity with the given rtId.")
                 .Argument<ListGraphType<OctoObjectIdType>>(Statics.RtIdsArg, "Returns entities with the given rtIds.")
@@ -246,6 +249,13 @@ internal sealed class RtEntityDtoType : ObjectGraphType<RtEntityDto>
             AddResolvedInterface(interfaceType);
         }
     }
+
+    /// <summary>
+    ///     A navigation is to-one only when every association behind its name returns at most one entity
+    ///     (multiplicity One or ZeroOrOne); one to-many association makes the whole field to-many.
+    /// </summary>
+    internal static bool IsToOne(IEnumerable<CkTypeAssociationGraph> associations) =>
+        associations.All(a => a.Multiplicity is MultiplicitiesDto.One or MultiplicitiesDto.ZeroOrOne);
 
     private void AddUnassignedOptionalMembers(IInterfaceGraphType interfaceType)
     {
@@ -471,6 +481,7 @@ internal sealed class RtEntityDtoType : ObjectGraphType<RtEntityDto>
             .Argument<ListGraphType<SortDtoType>>(Statics.SortOrderArg, "Sort order for items")
             .Argument<ListGraphType<FieldFilterDtoType>>(Statics.FieldFilterArg,
                 "Filters items based on field compare")
+            .AddMetadata(Statics.NestedNavigation, RuntimeQueryEntryPoint.NestedGenericAssociations)
             .Resolve(ResolveGenericRtAssociationsQuery);
     }
 

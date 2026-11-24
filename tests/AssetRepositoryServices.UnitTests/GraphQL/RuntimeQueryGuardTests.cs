@@ -247,6 +247,20 @@ public sealed class RuntimeQueryGuardTests : IDisposable
     }
 
     [Fact]
+    public void Enforce_ANegativeFirstAboveTheLimitIsRefused()
+    {
+        // The connection resolver pages with the absolute value of first: -5000 loads 5000 entities.
+        _options.Mode = RuntimeQueryGuardMode.Enforce;
+
+        var act = () => _guard.Check(Context(RuntimeQueryEntryPoint.TypedEntities, first: -5000),
+            RuntimeQueryEntryPoint.TypedEntities);
+
+        act.Should().Throw<UnboundedRuntimeQueryException>().Which.Extensions!["parameters"].Should()
+            .BeAssignableTo<IDictionary<string, object?>>().Which.Should()
+            .Contain("reason", nameof(RuntimeQueryBoundReason.FirstAboveLimit)).And.Contain("requestedFirst", 5000);
+    }
+
+    [Fact]
     public void Enforce_KeyLookupWithinTheLimitRuns()
     {
         _options.Mode = RuntimeQueryGuardMode.Enforce;

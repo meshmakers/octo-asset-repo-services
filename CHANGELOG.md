@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- AB#8908 New: the unbounded-query guard (AB#8898) also checks the navigation connections inside an entity - typed
+  navigation fields (`children`, …), the generic `associations(…)` of a typed entity and `associations { targets definitions }`
+  of a generic entity. A to-many navigation that selects items without `first`, with `first` above `MaxPageSize`, or with
+  more keys than `MaxPageSize` is logged and counted (`Warn`, once per request and field path, however many parents resolve
+  it) or refused with `ASSET1007` (`Enforce`); the message and `parameters.fieldPath` name the field path. To-one
+  navigations (multiplicity `One` / `ZeroOrOne`, e.g. `parent`) are exempt in every mode; whatever is not provably to-one
+  (`includeIndirect: true`, unknown role, `direction: ANY`) counts as to-many. `rtId: null` / `rtIds: []` on a navigation
+  are no key lookup (the navigation resolver would load every target). A negative `first` counts with its absolute value,
+  which the connection resolvers page with (also for the top-level entry points: `first: -5000` was classified as within
+  the limit). `Off` keeps today's behaviour. No CK model and no
+  configuration change; docs `docs/runtime-query-guard.md`.
 - AB#9608 Chore: NuGet dependencies updated within the .NET 10 line (FluentAssertions 8.11.0, Microsoft.NET.Test.Sdk 18.12.0, NLog.Web.AspNetCore 6.3.0, Testcontainers.MongoDb 4.17.0, coverlet.collector 10.1.1, xunit.runner.visualstudio 4.0.1, xunit.v3.mtp-off 4.0.3); the SeaweedFS test container maps its S3 identity file with the non-deprecated `WithResourceMapping` overload. No runtime behaviour change.
 - AB#9578 New: the `BlueprintApplied` and `BlueprintUpdated` events on the distribution event hub carry the CK model
   dependencies of the blueprint (`CkModelDependencies`, as the blueprint engine reports them), so the Communication

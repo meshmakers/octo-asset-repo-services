@@ -152,7 +152,7 @@ internal static class Helpers
         this ComplexGraphType<TSourceType> complexGraphType,
         IGraphTypesCache graphTypesCache, string name, IReadOnlyList<RtCkId<CkTypeId>> allowedTypes,
         RtCkId<CkTypeId> originCkId, RtCkId<CkTypeId> queryBaseType,
-        RtCkId<CkAssociationRoleId> roleId, GraphDirections graphDirection)
+        RtCkId<CkAssociationRoleId> roleId, GraphDirections graphDirection, bool isToOne)
     {
         DynamicConnectionType connectionType;
 
@@ -193,6 +193,10 @@ internal static class Helpers
         connectionBuilder.FieldType.Metadata[Statics.GraphDirection] = graphDirection;
         connectionBuilder.FieldType.Metadata[Statics.AllowedTypes] = allowedTypes;
         connectionBuilder.FieldType.Metadata[Statics.QueryBaseType] = queryBaseType;
+
+        // The unbounded-query guard checks every navigation; only a to-one navigation is exempt.
+        connectionBuilder.FieldType.Metadata[Statics.NestedNavigation] = RuntimeQueryEntryPoint.NestedTypedNavigation;
+        connectionBuilder.FieldType.Metadata[Statics.NavigationToOne] = isToOne;
 
         complexGraphType.AddField(connectionBuilder.FieldType);
         return connectionBuilder;

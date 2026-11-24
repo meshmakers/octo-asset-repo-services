@@ -69,6 +69,19 @@ internal static class Statics
     internal const string QueryBaseType = "QueryBaseType";
 
     /// <summary>
+    ///     Metadata key on every navigation connection inside an entity (typed navigation fields, generic
+    ///     <c>associations</c>, <c>associations.targets</c>, <c>associations.definitions</c>). The value is the
+    ///     <c>RuntimeQueryEntryPoint</c> the unbounded-query guard checks the field as.
+    /// </summary>
+    internal const string NestedNavigation = "NestedNavigation";
+
+    /// <summary>
+    ///     Metadata key on a typed navigation field, <c>true</c> only when every association behind the field
+    ///     has the multiplicity One or ZeroOrOne (to-one). A field without it counts as to-many.
+    /// </summary>
+    internal const string NavigationToOne = "NavigationToOne";
+
+    /// <summary>
     ///     AB#5670: metadata key on every generated CK method mutation field. The value is a <c>CkMethodCallInfo</c>
     ///     (concrete CK type, method id, qualified method id, kind). The gateway rules (one method call per request,
     ///     AB#7020; the resolver, AB#7026) find a method call by this key, never by the field name.

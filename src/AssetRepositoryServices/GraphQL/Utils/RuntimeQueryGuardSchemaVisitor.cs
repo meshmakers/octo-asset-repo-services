@@ -15,7 +15,9 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Utils;
 /// <remarks>
 ///     <c>runtime.byInterface</c> is bounded by its required <c>take</c> (at most 1000, AB#6932) and is not wrapped.
 ///     Aggregation connections (<c>RtQuery.aggregations</c>, <c>RtTransientQuery.aggregations</c>) are not wrapped:
-///     aggregation queries are never unbounded. Navigation connections inside an entity are not covered by AB#8898.
+///     aggregation queries are never unbounded. The navigation connections inside an entity are wrapped
+///     too (fields tagged with <see cref="Statics.NestedNavigation" />): typed navigation fields, the generic
+///     <c>associations</c> connection and <c>associations { targets definitions }</c>; to-one navigations pass.
 /// </remarks>
 internal sealed class RuntimeQueryGuardSchemaVisitor(RuntimeQueryGuard guard) : BaseSchemaNodeVisitor
 {
@@ -46,6 +48,14 @@ internal sealed class RuntimeQueryGuardSchemaVisitor(RuntimeQueryGuard guard) : 
     /// <summary>The entry point a field is, or null when the guard does not watch it.</summary>
     internal static RuntimeQueryEntryPoint? GetEntryPoint(FieldType field, IGraphType type)
     {
+        // Navigation connections inside an entity carry their entry point as metadata, on whatever type
+        // (typed entity, generic association) and under whatever root (query, mutation, subscription) they appear.
+        if (field.Metadata.TryGetValue(Statics.NestedNavigation, out var nested) &&
+            nested is RuntimeQueryEntryPoint nestedEntryPoint)
+        {
+            return nestedEntryPoint;
+        }
+
         if (string.Equals(type.Name, RuntimeTypeName, StringComparison.Ordinal))
         {
             if (string.Equals(field.Name, RuntimeEntitiesFieldName, StringComparison.OrdinalIgnoreCase))
