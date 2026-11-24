@@ -14,6 +14,10 @@
   the limit). `Off` keeps today's behaviour. No CK model and no
   configuration change; docs `docs/runtime-query-guard.md`.
 - AB#9608 Chore: NuGet dependencies updated within the .NET 10 line (FluentAssertions 8.11.0, Microsoft.NET.Test.Sdk 18.12.0, NLog.Web.AspNetCore 6.3.0, Testcontainers.MongoDb 4.17.0, coverlet.collector 10.1.1, xunit.runner.visualstudio 4.0.1, xunit.v3.mtp-off 4.0.3); the SeaweedFS test container maps its S3 identity file with the non-deprecated `WithResourceMapping` overload. No runtime behaviour change.
+- AB#9325 Test: the System.Identity major-upgrade flow test sets up its tenant on System.Identity 2.30.0 through the
+  service path (`ImportCkModelAsync(CkModelId)` from a 2.30.0 snapshot in the embedded catalog of the test host)
+  instead of the caller import, which the engine will refuse for every `System`/`System.*` model
+  (`CK_SERVICE_MANAGED_MODEL`). Test code only; it passes with the current and the refusing engine.
 - AB#9578 New: the `BlueprintApplied` and `BlueprintUpdated` events on the distribution event hub carry the CK model
   dependencies of the blueprint (`CkModelDependencies`, as the blueprint engine reports them), so the Communication
   Controller and the AI service enable the capabilities a blueprint needs for its tenant without `EnableCommunication` /

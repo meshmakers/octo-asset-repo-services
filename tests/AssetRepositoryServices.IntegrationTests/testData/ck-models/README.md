@@ -29,6 +29,8 @@ dotnet <engine>/bin/DebugL/net10.0/publish/octo-ckc.dll -c compile \
 ## `ck-system.identity-2.30.0.yaml`
 
 The compiler output of the last System.Identity 2.x release (octo-identity-services `origin/main` before AB#8053, same procedure as
-above with the 2.30.0 sources). It is **not** an embedded model of the test host; `Tenant/IdentityMajorUpgradeFlowTests` imports it
-explicitly into a tenant and then upgrades that tenant to the embedded 3.0.0 snapshot (existing tenants must upgrade cleanly). Do not
-refresh it: it documents the old major.
+above with the 2.30.0 sources). `IdentitySeedBlueprintFixture` registers it as a second embedded model
+(`Fixtures/SystemIdentity230SnapshotCkModel`); `Tenant/IdentityMajorUpgradeFlowTests` installs it into a tenant through the service
+path (`ImportCkModelAsync(CkModelId)`) and then upgrades that tenant to the embedded 3.0.0 snapshot (existing tenants must upgrade
+cleanly). A caller import (`ImportCkModelAsync(CkCompiledModelRoot)`) would not do: the engine refuses every `System` / `System.*`
+model there with `CK_SERVICE_MANAGED_MODEL`. Do not refresh it: it documents the old major.

@@ -6,13 +6,15 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Fixtu
 /// <summary>
 ///     Credential guard regression tests, blueprint seed: the blueprint flow fixture (real blueprint service and MongoDB,
 ///     local file system blueprint catalog on <c>TestBlueprints/</c>, no catalog writes) with the real System.Identity model
-///     in the embedded CK catalog and a log capture.
+///     in the embedded CK catalog (3.0.0, and 2.30.0 for the upgrade flow) and a log capture.
 /// </summary>
 public class IdentitySeedBlueprintFixture : BlueprintUpdateFlowFixture
 {
     public IdentitySeedBlueprintFixture()
     {
         Services.AddSystemIdentitySnapshotCkModel();
+        // The upgrade flow test starts from a tenant on System.Identity 2.30.0, installed through the service path.
+        Services.AddSystemIdentity230SnapshotCkModel();
         Services.AddLogging(b => b.AddProvider(new ListLoggerProvider(Logs)));
     }
 
