@@ -28,6 +28,12 @@ input SystemAutoIncrementInput {
   end: Int
   format: String
   currentValue: Int
+  startValue: Int
+  periodKind: SystemAutoIncrementPeriodKinds
+  fiscalYearStartMonth: Int
+  referenceTimeZone: String
+  periods: [SystemAutoIncrementPeriodInput]
+  release: SystemNumberRangeReleaseInput
   rtBlueprintSource: String
   rtBlueprintLocked: Boolean
   rtBlueprintAppliedAt: DateTime
