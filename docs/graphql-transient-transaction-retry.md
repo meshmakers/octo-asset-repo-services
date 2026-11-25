@@ -28,6 +28,11 @@ The asset repository does that for GraphQL requests (`TenantDocumentExecutor`,
   `MaxDelay` (default 1 s) - about 4.3 s of waiting at worst, half of it on average. A conflicting transaction fails
   at once, so a burst of parallel creations on one counter needs several retries until every request had its turn.
   The last attempt's errors are the response.
+- **Time budget.** No further attempt starts once `GraphQl:TransientTransactionRetry:MaxElapsed` (default 10 s) has
+  passed since the first attempt started. A counter conflict fails within milliseconds; a transaction the server
+  aborted because it ran past `transactionLifetimeLimitSeconds` also carries `TransientTransactionError`, and running
+  such a large mutation again would only repeat its load. It is logged at `Warning` level and surfaces as before.
+  Zero or less allows no retry.
 - Every retry is logged at `Information` level (attempt, delay); a request that needed retries logs the number of
   attempts at the end.
 
@@ -53,7 +58,9 @@ the first error, as without the retry.
 ```json
 {
   "GraphQl": {
-    "TransientTransactionRetry": { "MaxAttempts": 10, "BaseDelay": "00:00:00.020", "MaxDelay": "00:00:01" }
+    "TransientTransactionRetry": {
+      "MaxAttempts": 10, "BaseDelay": "00:00:00.020", "MaxDelay": "00:00:01", "MaxElapsed": "00:00:10"
+    }
   }
 }
 ```
@@ -64,7 +71,7 @@ Environment variables: `OCTO_GraphQl__TransientTransactionRetry__MaxAttempts` an
 
 - `tests/AssetRepositoryServices.UnitTests/GraphQL/RequestHandling/TransientTransactionRetryTests.cs`: injected errors -
   retried with the label (resolver and commit phase), not retried without it, never for `UnknownTransactionCommitResult`,
-  bounded, not for non-runtime mutations, requests without a transaction or with a method call; listeners and
+  bounded by attempts and by the time budget (an attempt that outlasts it is not retried), not for non-runtime mutations, requests without a transaction or with a method call; listeners and
   validation rules start from the original options on every attempt.
 - `tests/AssetRepositoryServices.IntegrationTests/GraphQL/Mutations/TransientTransactionRetryGraphQlTests.cs` (MongoDB
   replica set via Testcontainers): 10 parallel creations of an auto-numbered type in separate requests all succeed with

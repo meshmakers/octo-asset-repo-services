@@ -26,6 +26,14 @@ public class TransientTransactionRetryOptions
 
     /// <summary>Upper bound of any single delay (default 1 s).</summary>
     public TimeSpan MaxDelay { get; set; } = TimeSpan.FromSeconds(1);
+
+    /// <summary>
+    ///     Time budget of the retry (default 10 s): no further attempt starts once this much time has passed since the
+    ///     first attempt started. A conflict on a counter fails within milliseconds; a transaction the server aborted
+    ///     because it ran too long (<c>transactionLifetimeLimitSeconds</c>, whose error also carries
+    ///     <c>TransientTransactionError</c>) is not run again. Zero or less: no retry.
+    /// </summary>
+    public TimeSpan MaxElapsed { get; set; } = TimeSpan.FromSeconds(10);
 }
 
 /// <summary>

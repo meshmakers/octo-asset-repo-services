@@ -104,6 +104,54 @@ public class TransientTransactionRetryTests
         inner.Attempts.Should().Be(10);
     }
 
+    [Fact]
+    public async Task AttemptThatOutlastsTheTimeBudget_IsNotRetried()
+    {
+        // A transaction the server aborted because it ran too long also carries TransientTransactionError.
+        var clock = new ManualClock();
+        var failure = TransientResult();
+        var inner = new ScriptedExecuter(RuntimeMutation, failure, new ExecutionResult())
+        {
+            DuringAttempt = _ => clock.Advance(TimeSpan.FromSeconds(61))
+        };
+
+        var result = await NewExecutor(inner, new TransientTransactionRetryOptions(), clock: clock)
+            .ExecuteAsync(NewOptions());
+
+        result.Should().BeSameAs(failure);
+        inner.Attempts.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task RetriesStop_WhenTheTimeBudgetIsUsedUp()
+    {
+        var clock = new ManualClock();
+        var results = Enumerable.Range(0, 10).Select(_ => TransientResult()).ToArray();
+        var inner = new ScriptedExecuter(RuntimeMutation, results)
+        {
+            DuringAttempt = _ => clock.Advance(TimeSpan.FromMilliseconds(400))
+        };
+
+        var result = await NewExecutor(inner,
+                new TransientTransactionRetryOptions { MaxElapsed = TimeSpan.FromSeconds(1) }, clock: clock)
+            .ExecuteAsync(NewOptions());
+
+        inner.Attempts.Should().Be(3, "after the third attempt 1.2 s have passed");
+        result.Should().BeSameAs(results[2]);
+    }
+
+    [Fact]
+    public async Task DefaultTimeBudget_IsTenSeconds()
+    {
+        new TransientTransactionRetryOptions().MaxElapsed.Should().Be(TimeSpan.FromSeconds(10));
+
+        var inner = new ScriptedExecuter(RuntimeMutation, TransientResult(), new ExecutionResult());
+        await NewExecutor(inner, new TransientTransactionRetryOptions { MaxElapsed = TimeSpan.Zero })
+            .ExecuteAsync(NewOptions());
+
+        inner.Attempts.Should().Be(1, "a budget of zero allows no retry");
+    }
+
     [Theory]
     [InlineData("mutation { streamData { a } }")]
     [InlineData("mutation { blueprints { a } }")]
@@ -204,7 +252,7 @@ public class TransientTransactionRetryTests
             Labelled(TransientTransactionRetry.TransientTransactionErrorLabel))));
 
     private static TenantDocumentExecutor NewExecutor(IDocumentExecuter inner,
-        TransientTransactionRetryOptions? options = null, List<TimeSpan>? delays = null)
+        TransientTransactionRetryOptions? options = null, List<TimeSpan>? delays = null, TimeProvider? clock = null)
     {
         var schemaContext = A.Fake<ISchemaContext>();
         A.CallTo(() => schemaContext.GetOrCreateAsync(A<string>._)).Returns(Task.FromResult<ISchema>(new Schema()));
@@ -213,7 +261,19 @@ public class TransientTransactionRetryTests
             {
                 delays?.Add(delay);
                 return Task.CompletedTask;
-            });
+            }, clock ?? new ManualClock());
+    }
+
+    /// <summary>A clock that moves only when the test advances it.</summary>
+    private sealed class ManualClock : TimeProvider
+    {
+        private long _ticks;
+
+        public override long TimestampFrequency => TimeSpan.TicksPerSecond;
+
+        public override long GetTimestamp() => _ticks;
+
+        public void Advance(TimeSpan by) => _ticks += by.Ticks;
     }
 
     private static ExecutionOptions NewOptions() => new()

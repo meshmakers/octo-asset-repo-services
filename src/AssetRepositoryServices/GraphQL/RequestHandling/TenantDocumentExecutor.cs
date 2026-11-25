@@ -13,7 +13,8 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.RequestHandlin
 ///     Executes a GraphQL request against the schema of its tenant. A mutation whose transaction failed with the
 ///     MongoDB label <c>TransientTransactionError</c> is executed again as a whole - new transaction, every resolver
 ///     again from the request's variables - up to <see cref="TransientTransactionRetryOptions.MaxAttempts" /> times
-///     with a short jittered backoff. Which requests qualify: <see cref="TransientTransactionRetry" />.
+///     with a short jittered backoff, and only while <see cref="TransientTransactionRetryOptions.MaxElapsed" /> has not
+///     passed since the first attempt started. Which requests qualify: <see cref="TransientTransactionRetry" />.
 /// </summary>
 internal class TenantDocumentExecutor : IDocumentExecuter<OctoSchema>
 {
@@ -22,22 +23,24 @@ internal class TenantDocumentExecutor : IDocumentExecuter<OctoSchema>
     private readonly IOptions<TransientTransactionRetryOptions> _retryOptions;
     private readonly ILogger<TenantDocumentExecutor> _logger;
     private readonly Func<TimeSpan, CancellationToken, Task> _delay;
+    private readonly TimeProvider _timeProvider;
 
     public TenantDocumentExecutor(ISchemaContext schemaContext, IDocumentExecuter documentExecutor,
         IOptions<TransientTransactionRetryOptions>? retryOptions = null, ILogger<TenantDocumentExecutor>? logger = null)
-        : this(schemaContext, documentExecutor, retryOptions, logger, Task.Delay)
+        : this(schemaContext, documentExecutor, retryOptions, logger, Task.Delay, TimeProvider.System)
     {
     }
 
     internal TenantDocumentExecutor(ISchemaContext schemaContext, IDocumentExecuter documentExecutor,
         IOptions<TransientTransactionRetryOptions>? retryOptions, ILogger<TenantDocumentExecutor>? logger,
-        Func<TimeSpan, CancellationToken, Task> delay)
+        Func<TimeSpan, CancellationToken, Task> delay, TimeProvider timeProvider)
     {
         _schemaContext = schemaContext ?? throw new ArgumentNullException(nameof(schemaContext));
         _documentExecutor = documentExecutor ?? throw new ArgumentNullException(nameof(documentExecutor));
         _retryOptions = retryOptions ?? Options.Create(new TransientTransactionRetryOptions());
         _logger = logger ?? NullLogger<TenantDocumentExecutor>.Instance;
         _delay = delay;
+        _timeProvider = timeProvider;
     }
 
     public async Task<ExecutionResult> ExecuteAsync(ExecutionOptions options)
@@ -56,14 +59,27 @@ internal class TenantDocumentExecutor : IDocumentExecuter<OctoSchema>
         // these on every ExecuteAsync; a retry starts from the options as they came in, so nothing runs twice.
         var snapshot = new OptionsSnapshot(options);
         var maxAttempts = Math.Max(1, _retryOptions.Value.MaxAttempts);
+        var maxElapsed = _retryOptions.Value.MaxElapsed;
+        var started = _timeProvider.GetTimestamp();
 
         for (var attempt = 1; ; attempt++)
         {
             TransientTransactionRetry.ResetAttempt(options.UserContext);
             var result = await _documentExecutor.ExecuteAsync(options);
 
-            if (attempt >= maxAttempts || options.CancellationToken.IsCancellationRequested ||
-                !TransientTransactionRetry.ShouldRetry(options.UserContext, result))
+            var retry = attempt < maxAttempts && !options.CancellationToken.IsCancellationRequested &&
+                        TransientTransactionRetry.ShouldRetry(options.UserContext, result);
+            var elapsed = _timeProvider.GetElapsedTime(started);
+            if (retry && elapsed >= maxElapsed)
+            {
+                // A long transaction the server aborted is not run again; nor is a burst that outlasts the budget.
+                _logger.LogWarning(
+                    "GraphQL mutation attempt {Attempt} failed with a transient transaction error after {ElapsedMs} ms; not retried, the time budget of {MaxElapsedMs} ms is used up",
+                    attempt, (int)elapsed.TotalMilliseconds, (int)maxElapsed.TotalMilliseconds);
+                retry = false;
+            }
+
+            if (!retry)
             {
                 if (attempt > 1)
                 {

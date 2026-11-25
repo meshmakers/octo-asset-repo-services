@@ -5,7 +5,9 @@
 - AB#9788 Fix: a GraphQL mutation whose MongoDB transaction failed with `TransientTransactionError` (e.g. parallel
   creations of an auto-numbered type colliding on the counter, AB#9753) is executed again as a whole - new transaction,
   every resolver again from the variables - up to `GraphQl:TransientTransactionRetry:MaxAttempts` times (default 10) with
-  a jittered backoff (20 ms doubling, at most 1 s). Only mutations whose top-level fields are all `runtime` and that
+  a jittered backoff (20 ms doubling, at most 1 s), and only within a time budget
+  (`GraphQl:TransientTransactionRetry:MaxElapsed`, default 10 s), so a long transaction the server aborted is not run
+  again. Only mutations whose top-level fields are all `runtime` and that
   dispatch no CK method call are retried; `UnknownTransactionCommitResult` is never re-executed; errors without the label
   surface as before. Side effects and limits: `docs/graphql-transient-transaction-retry.md`. No CK model change.
 
