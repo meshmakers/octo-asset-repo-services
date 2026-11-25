@@ -3,13 +3,15 @@ using System.Diagnostics.Metrics;
 using System.Net;
 using System.Text;
 using System.Text.Encodings.Web;
-using Asp.Versioning;
+using System.Text.Json.Nodes;
 using FluentAssertions;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.Configuration;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.StreamData.Controllers;
 using Meshmakers.Octo.Services.Infrastructure.Authorization;
 using Meshmakers.Octo.Services.Infrastructure.Configuration.DependencyInjection;
+using Meshmakers.Octo.Services.Observability;
 using Meshmakers.Octo.Services.RestDeprecation;
+using Meshmakers.Octo.Services.Swagger.Configuration;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
@@ -27,11 +29,11 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Strea
 ///     <c>StreamDataWave4</c> on every response (also a refusal: the headers depend on the selected endpoint, not on the
 ///     status code), never a <c>Sunset</c> header, are counted per endpoint template and client id, and exactly these
 ///     endpoints carry the attribute. The endpoints that stay REST carry none. The host is the real
-///     <see cref="StreamDataController" /> behind a real MVC pipeline with the service's policies and the deprecation
-///     registration that <c>AddObservability()</c> installs; only the authentication handler is a stand-in that
-///     authenticates nobody, so every call is refused with <c>401</c> before an action runs and no database is needed.
-///     The OpenAPI flag (<c>deprecated: true</c>) is set by the transformer of octo-common-services from exactly this
-///     metadata and is tested there; the endpoint list below is the snapshot of what OpenAPI marks deprecated.
+///     <see cref="StreamDataController" /> behind a real MVC pipeline with the service's policies and the registrations
+///     Program.cs uses (<c>AddObservability()</c> for the deprecation headers and the counter,
+///     <c>AddOctoApiVersioningAndDocumentation()</c> for the OpenAPI document); only the authentication handler is a
+///     stand-in that authenticates nobody, so every call is refused with <c>401</c> before an action runs and no database
+///     is needed. The OpenAPI document of this host is the Swagger snapshot of the deprecated operations.
 /// </summary>
 public sealed class StreamDataRestDeprecationTests : IAsyncDisposable
 {
@@ -200,6 +202,43 @@ public sealed class StreamDataRestDeprecationTests : IAsyncDisposable
                 "POST archives/{rollupRtId}/backfill-from-source");
     }
 
+    /// <summary>
+    ///     The Swagger snapshot: the service's OpenAPI document marks exactly the 16 operations <c>deprecated</c> with the
+    ///     notice for a wave without a sunset date, and no other operation of the stream-data controller.
+    /// </summary>
+    [Fact]
+    public async Task TheOpenApiDocument_MarksExactlyTheFacadeOperationsDeprecated_WithoutASunsetDate()
+    {
+        var host = await StartAsync(Since);
+        using var client = host.GetTestClient();
+
+        var json = await client.GetStringAsync("/openapi/v1.json", TestContext.Current.CancellationToken);
+
+        const string prefix = "/{tenantId}/v1/streamdata/";
+        var operations = JsonNode.Parse(json)!["paths"]!.AsObject()
+            .Where(p => p.Key.StartsWith(prefix, StringComparison.Ordinal))
+            .SelectMany(p => p.Value!.AsObject().Select(o => (Name: $"{o.Key.ToUpperInvariant()} {p.Key[prefix.Length..]}",
+                Operation: o.Value!)))
+            .ToList();
+        operations.Should().HaveCount(26, "16 deprecated and 10 that stay REST");
+
+        var deprecated = operations.Where(o => o.Operation["deprecated"]?.GetValue<bool>() == true).ToList();
+        deprecated.Select(o => o.Name).Should().BeEquivalentTo(
+            "POST archives/{archiveRtId}/activate", "POST archives/{archiveRtId}/disable",
+            "POST archives/{archiveRtId}/enable", "POST archives/{archiveRtId}/retry", "DELETE archives/{archiveRtId}",
+            "POST archives/{rollupRtId}/freeze", "POST archives/{rollupRtId}/unfreeze",
+            "POST archives/{rollupRtId}/rewind", "POST archives/{archiveRtId}/computed-columns",
+            "POST archives/{archiveRtId}/columns", "DELETE archives/{archiveRtId}/computed-columns/{name}",
+            "PUT archives/{archiveRtId}/computed-columns/{name}",
+            "POST archives/{archiveRtId}/computed-columns/{name}/retry",
+            "POST archives/{archiveRtId}/computed-columns/{name}/repair", "POST archives/{rollupRtId}/recompute",
+            "POST archives/{rollupRtId}/backfill-from-source");
+        deprecated.Should().OnlyContain(o =>
+            o.Operation["description"]!.GetValue<string>().EndsWith($"Deprecated, use {StreamDataRestDeprecation.MethodsLink}.",
+                StringComparison.Ordinal) &&
+            !o.Operation["description"]!.GetValue<string>().Contains("Sunset", StringComparison.Ordinal));
+    }
+
     private async Task<WebApplication> StartAsync(string? since)
     {
         var builder = WebApplication.CreateBuilder();
@@ -209,24 +248,26 @@ public sealed class StreamDataRestDeprecationTests : IAsyncDisposable
         // this test.
         builder.Configuration[$"RestDeprecation:Waves:{Wave}:Since"] = since ?? string.Empty;
         builder.Configuration[$"RestDeprecation:Waves:{Wave}:Sunset"] = string.Empty;
-        builder.Services.AddOctoRestDeprecation();
+        // The registration Program.cs uses: AddObservability() installs the deprecation headers and the counter (its startup
+        // filter puts the middleware first in the pipeline, so the order of the service's other middleware does not matter).
+        builder.AddObservability();
         builder.Services.AddAuthentication(NobodyHandler.SchemeName)
             .AddScheme<AuthenticationSchemeOptions, NobodyHandler>(NobodyHandler.SchemeName, null);
         builder.Services.AddAuthorization(o => o.AddAssetRepositoryPolicies());
         builder.Services.AddOctoTenantRoleAuthorization();
         builder.Services.AddOctoTenantIdRouteConstraint();
         builder.Services.AddControllers().AddApplicationPart(typeof(StreamDataController).Assembly);
-        builder.Services.AddApiVersioning(o =>
-        {
-            o.AssumeDefaultVersionWhenUnspecified = true;
-            o.DefaultApiVersion = new ApiVersion(1);
-        }).AddMvc();
+        // The OpenAPI registration the service uses (API versioning, the Octo transformers incl. the deprecation flag).
+        builder.Services
+            .AddOctoApiVersioningAndDocumentation(o => o.AuthorityUrl = "https://identity.example.test/")
+            .AddVersion();
 
         var app = builder.Build();
         app.UseRouting();
         app.UseAuthentication();
         app.UseAuthorization();
         app.MapControllers();
+        app.MapOpenApi();
         await app.StartAsync(TestContext.Current.CancellationToken);
         _hosts.Add(app);
         return app;

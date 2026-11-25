@@ -139,9 +139,10 @@ Time-series data support (`StreamData/`):
     `POST rollups/repair`, `GET rollups/repair/{requestId}` (tenant-wide diagnostics with a queued repair request). The
     deprecated `streamData` GraphQL mutations keep their `@deprecated` reason naming the method; they get no HTTP headers.
     A new facade endpoint gets the attribute and goes into the endpoint list of the test. Test:
-    `IntegrationTests/StreamData/StreamDataRestDeprecationTests` (headers with and without the wave date, no `Sunset`, the
-    stays-REST endpoints without headers, the counter labels, and the snapshot of exactly the 16 marked endpoints that OpenAPI
-    shows deprecated).
+    `IntegrationTests/StreamData/StreamDataRestDeprecationTests`, a TestServer with the real controllers, policies and the
+    registrations of the service (`AddObservability()`, `AddOctoApiVersioningAndDocumentation()`): headers with and without the
+    wave date, no `Sunset`, the stays-REST endpoints without headers, the counter labels, the endpoint metadata, and the
+    OpenAPI document (`/openapi/v1.json`) marking exactly the 16 operations `deprecated` with "Deprecated, use <link>.".
   - **The fallback guard.** Every archive call that does not run through its CK method runs behind
     `StreamData/Methods/ArchiveMethodFallbackGuard` (`IArchiveMethodFallbackGuard`, registered with the facade, with the switch on
     and off; a host without it fails the call instead of running it unchecked). That is: the eight lifecycle and rollup
