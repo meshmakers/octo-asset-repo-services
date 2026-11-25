@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- AB#9750 Fix: a nested association connection that selects `totalCount` alone (`children { totalCount }`, the generic
+  `associations(…) { totalCount }` of a typed entity and `associations { targets { totalCount } }` of a generic entity)
+  asks the repository for its count-only form (`take: 0`) instead of passing `first` on: no target document is loaded,
+  and `first: 0`, a larger `first` and an omitted `first` give the same total. Any other selection pages as before.
+  Before, `children { totalCount }` without `first` loaded every target document of every parent. Indirect navigations
+  (`includeIndirect: true`) are unchanged. Needs the octo-construction-kit-engine-mongodb package of the same change
+  (with an older package the count is still right, but its count-only form loads the targets). Code:
+  `ResolveConnectionContextExtensions.GetAssociationTake`, `ConnectionUtils.ToCountOnlyOctoConnection`. Tests:
+  `NestedAssociationTakeTests` (unit), `NestedAssociationTotalCountOnlyTests` (GraphQL). CK compatibility: no CK model,
+  API or schema change.
 - AB#8908 New: the unbounded-query guard (AB#8898) also checks the navigation connections inside an entity - typed
   navigation fields (`children`, …), the generic `associations(…)` of a typed entity and `associations { targets definitions }`
   of a generic entity. A to-many navigation that selects items without `first`, with `first` above `MaxPageSize`, or with

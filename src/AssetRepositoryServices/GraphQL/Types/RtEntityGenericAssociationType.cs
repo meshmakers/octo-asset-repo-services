@@ -148,9 +148,11 @@ public sealed class RtEntityGenericAssociationType : ObjectGraphType<RtEntityGen
         }
         else
         {
+            // totalCount alone asks for the count-only form (take 0), which loads no target.
+            var take = ctx.GetAssociationTake();
             // Cache key covers all query parameters, see AB#4532
             var cacheKey =
-                $"GenericAssocTargetsDirect_{ctx.Source.RtEntityDto.CkTypeId}_{targetCkId}_{roleId}_{direction}_{offset}_{ctx.First}_{queryOptions.GetHashCode()}";
+                $"GenericAssocTargetsDirect_{ctx.Source.RtEntityDto.CkTypeId}_{targetCkId}_{roleId}_{direction}_{offset}_{take}_{queryOptions.GetHashCode()}";
 
             var loader = dataLoaderAccessor.Context.GetOrAddBatchLoader<RtEntityId, IResultSet<RtEntity>>(
                 cacheKey, async rtEntityIds =>
@@ -158,13 +160,16 @@ public sealed class RtEntityGenericAssociationType : ObjectGraphType<RtEntityGen
                         sessionAccessor.Session, rtEntityIds.Select(x => x.RtId), ctx.Source.RtEntityDto.CkTypeId,
                         new RtCkId<CkAssociationRoleId>(roleId),
                         targetCkId, direction,
-                        null, queryOptions, offset, ctx.First));
+                        null, queryOptions, offset, take));
 
             var dataLoaderResult = loader.LoadAsync(ctx.Source.RtEntityDto.ToRtEntityId());
 
-            return dataLoaderResult.Then(resultSet => ConnectionUtils.ToOctoConnection(
-                resultSet.Items.Select(RtEntityDtoType.CreateRtEntityDto), ctx,
-                resultSet.TotalCount > 0 ? offset.GetValueOrDefault(0) : 0, (int)resultSet.TotalCount));
+            return dataLoaderResult.Then(resultSet => take == 0
+                ? ConnectionUtils.ToCountOnlyOctoConnection<RtEntityDto, RtEntityGenericAssociation>(ctx,
+                    resultSet.TotalCount)
+                : ConnectionUtils.ToOctoConnection(
+                    resultSet.Items.Select(RtEntityDtoType.CreateRtEntityDto), ctx,
+                    resultSet.TotalCount > 0 ? offset.GetValueOrDefault(0) : 0, (int)resultSet.TotalCount));
         }
     }
 }

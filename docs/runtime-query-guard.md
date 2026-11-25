@@ -80,9 +80,11 @@ The metric is the same counter with the same labels; `ck_type` is the navigation
 base type of the association, for generic ones the `ckId` argument when it is a type of the tenant, otherwise `unknown`;
 for `definitions` the type of the parent entity).
 
-Counting the targets of a navigation: `children(first: 0) { totalCount }` takes the engine's count-only path. A
-`totalCount`-only selection without `first` is not refused, but the engine still reads every target document to count
-them (known limitation).
+Counting the targets of a navigation: a direct navigation connection that selects `totalCount` alone (typed navigation
+fields, `associations(…)` of a typed entity, `associations { targets }` of a generic entity) asks the engine for its
+count-only form (`take: 0`, `ResolveConnectionContextExtensions.GetAssociationTake`), which loads no target document -
+with or without `first`, so `children { totalCount }` and `children(first: 0) { totalCount }` cost the same. Such a
+selection is bounded and never refused. Indirect navigations (`includeIndirect: true`) pass `first` on as before.
 
 ## Classification
 

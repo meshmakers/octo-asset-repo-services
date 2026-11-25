@@ -10,6 +10,17 @@ internal static class ConnectionUtils
 {
     private const string Prefix = "arrayconnection";
 
+    /// <summary>
+    ///     The connection of a selection of <c>totalCount</c> alone: no edges, only the total. The
+    ///     slice check is off - the edge range the paging arguments describe is deliberately not loaded.
+    /// </summary>
+    public static OctoConnection<TSource> ToCountOnlyOctoConnection<TSource, TParent>(
+        IResolveConnectionContext<TParent> context, long totalCount)
+    {
+        return ToOctoConnection(new List<TSource>(), context, 0, (int)Math.Min(totalCount, int.MaxValue),
+            strictCheck: false);
+    }
+
     public static OctoConnection<TSource> ToOctoConnection<TSource, TParent>(
         IEnumerable<TSource> items,
         IResolveConnectionContext<TParent> context,
