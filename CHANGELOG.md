@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- AB#9371 New: `POST {tenantId}/v1/blueprints/validate` validates a blueprint draft (zip of the blueprint folder or a
+  single `blueprint.yaml`) without installing it, with the engine's shared `IBlueprintDraftValidator` (same checks as
+  `octo-bpm validate` and the install path, CK dependency ranges against the CK model catalogs). Always 200 with the
+  result; findings with stable codes 149-167, errors first, bounded to 200 (`totalFindings`, `truncated`); an
+  unreadable zip is finding 167. Same read-only policy and size limit as `models/ValidateCk`. Used by MCP
+  `validate_blueprint`. Blueprint install now runs the same validator first (engine AB#9371).
+
 - AB#8502 Fix: `POST {tenantId}/v1/Models/ValidateCk` (MCP `validate_ck_model`) reports every refusal under a number of
   the engine message catalog: an unreadable draft is 147 (`CkModelDraftUnreadable`, parameter `detail`), a dependency
   that cannot be resolved is 146 (`CkModelDependencyNotResolvable`, `detail`, and `modelId` once the model id is

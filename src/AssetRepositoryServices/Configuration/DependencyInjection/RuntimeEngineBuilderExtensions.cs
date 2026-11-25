@@ -526,6 +526,8 @@ public static class RuntimeEngineBuilderExtensions
         builder.Services.AddTransient<ICkModelLibraryStatusService, CkModelLibraryStatusService>();
         // AB#8492: validate a CK model draft without importing it (Models/ValidateCk, MCP validate_ck_model)
         builder.Services.AddTransient<Meshmakers.Octo.Backend.AssetRepositoryServices.Services.CkModelValidation.ICkModelDraftValidator, Meshmakers.Octo.Backend.AssetRepositoryServices.Services.CkModelValidation.CkModelDraftValidator>();
+        // AB#9371: validate a blueprint draft without installing it (blueprints/validate, MCP validate_blueprint)
+        builder.Services.AddTransient<Meshmakers.Octo.Backend.AssetRepositoryServices.Services.BlueprintValidation.IBlueprintDraftValidationService, Meshmakers.Octo.Backend.AssetRepositoryServices.Services.BlueprintValidation.BlueprintDraftValidationService>();
         // AB#6871: the tenant upgrade guard of blueprint apply and update (the engine's BlueprintService asks it).
         builder.Services.AddTransient<IBlueprintCkUpgradeGuard, BlueprintCkUpgradeGuard>();
         builder.Services.AddTransient<ITenantObservabilityOptIn, TenantObservabilityOptIn>();
