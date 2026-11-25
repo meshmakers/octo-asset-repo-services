@@ -328,6 +328,10 @@ public static class RuntimeEngineBuilderExtensions
                 bool.TryParse(configurationRoot?["GraphQl:EnforceMutationScope"], out var enforce) && enforce;
         });
 
+        // Whole-request retry of runtime mutations whose transaction failed with TransientTransactionError.
+        builder.Services.AddOptions<TransientTransactionRetryOptions>().Configure<IServiceProvider>((o, sp) =>
+            sp.GetService<IConfiguration>()?.GetSection(TransientTransactionRetryOptions.SectionName).Bind(o));
+
         // AB#8559: stream-data reads need a stream-data role, staged Off/Warn/Enforce (default Warn). Bound from the
         // StreamDataReadAuthorization section when the host has a configuration (integration-test collections may not).
         builder.Services.AddOptions<StreamDataReadAuthorizationOptions>().Configure<IServiceProvider>((o, sp) =>
