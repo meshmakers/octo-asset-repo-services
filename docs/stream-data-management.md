@@ -38,7 +38,7 @@ Time-series data support (`StreamData/`):
     then `ICkMethodDispatcher` on the in-process path. The handler runs outside the request's Mongo session
     (request-session tripwire) and the pipeline writes exactly one Method audit event per call. The controller only resolves the
     tenant and keeps the one read-only pre-check its contract needs (no stream data: `400` with the message it always had);
-    it holds no lifecycle rule. Routes, bodies and status codes are unchanged; REST is not deprecated and has no Sunset header.
+    it holds no lifecycle rule. Routes, bodies and status codes are unchanged; the endpoints are deprecated (wave `StreamDataWave4`, see "REST deprecation" below), without a Sunset header.
     Mapping (`LifecycleFacadeOptions`, `CkMethodFacadeResults.ToActionResult`):
 
     | REST | Method | Success | Refusal |
@@ -70,7 +70,7 @@ Time-series data support (`StreamData/`):
     caller tenant, declared role `StreamDataAdmin` and data permission on the archive; `ICkMethodDispatcher` on the in-process
     path, outside the request's Mongo session; exactly one Method audit event per call). They run under the host's stopping
     token, as the direct call did: a client that disconnects does not cancel a queued change. Routes, query
-    parameters and status codes are unchanged; REST is not deprecated and has no Sunset header. Parity table
+    parameters and status codes are unchanged; the endpoints are deprecated (wave `StreamDataWave4`, below), without a Sunset header. Parity table
     (`StreamDataController.InvokeColumnMethodAsync` / `InvokeColumnJobMethodAsync`, mapping `LifecycleFacadeOptions`):
 
     | REST | Method | Parameters | Success | Differences |
@@ -126,6 +126,22 @@ Time-series data support (`StreamData/`):
     that is not readable any more answers `500` problem details naming the operation. With the switch off, or in a tenant whose
     System.StreamData is older than 1.30.0, the endpoints keep their direct call, behind the fallback guard (below). Tests:
     `IntegrationTests/StreamData/RecomputeMethodFacadeTests`, `UnitTests/StreamData/Methods/RecomputeAsyncHandlerTests`.
+  - **REST deprecation (wave `StreamDataWave4`).** The 16 facade endpoints above (eight lifecycle and rollup control
+    endpoints, six column and computed-column endpoints, `recompute`, `backfill-from-source`) carry
+    `[OctoRestDeprecated(Wave = StreamDataRestDeprecation.Wave4, Link = StreamDataRestDeprecation.MethodsLink)]`
+    (`StreamData/Controllers/StreamDataRestDeprecation.cs`; mechanism: the REST deprecation doc of octo-common-services). Behaviour
+    is unchanged. Every response gets `Link: <…/streamData/archives/reference>; rel="deprecation"`, OpenAPI marks the
+    operation `deprecated`, and the call is counted in `octo.rest.deprecated.calls`; the `Deprecation` header follows only
+    once `RestDeprecation:Waves:StreamDataWave4:Since` is set (`OCTO_RestDeprecation__Waves__StreamDataWave4__Since`, Helm
+    `restDeprecation.waves.StreamDataWave4.since`, set at rollout). No `Sunset` is configured: the sunset date is to be
+    announced. **Stay REST, no attribute:** `POST enable` / `disable` (tenant capability, no type can carry them), `insert` /
+    `insertTimeRange` (data plane), the reads `rollups`, `coverage`, `recompute-jobs`, and `rollups/validate`,
+    `POST rollups/repair`, `GET rollups/repair/{requestId}` (tenant-wide diagnostics with a queued repair request). The
+    deprecated `streamData` GraphQL mutations keep their `@deprecated` reason naming the method; they get no HTTP headers.
+    A new facade endpoint gets the attribute and goes into the endpoint list of the test. Test:
+    `IntegrationTests/StreamData/StreamDataRestDeprecationTests` (headers with and without the wave date, no `Sunset`, the
+    stays-REST endpoints without headers, the counter labels, and the snapshot of exactly the 16 marked endpoints that OpenAPI
+    shows deprecated).
   - **The fallback guard.** Every archive call that does not run through its CK method runs behind
     `StreamData/Methods/ArchiveMethodFallbackGuard` (`IArchiveMethodFallbackGuard`, registered with the facade, with the switch on
     and off; a host without it fails the call instead of running it unchecked). That is: the eight lifecycle and rollup
