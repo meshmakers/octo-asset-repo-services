@@ -5,7 +5,7 @@ using Meshmakers.Octo.ConstructionKit.Contracts.DataTransferObjects;
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.Services;
 
 /// <summary>
-///     AB#9370: maps a compiled catalog CK model to one bounded page of its types (with attributes and associations)
+///     Maps a compiled catalog CK model to one bounded page of its types (with attributes and associations)
 ///     and the association roles and enums that page uses. Pure function, nothing is written anywhere.
 /// </summary>
 internal static class CkCatalogModelTypesMapper

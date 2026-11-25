@@ -250,7 +250,7 @@ public class CkModelCatalogController : ControllerBase
 
     // GET system/v1/ckmodelcatalog/{catalogName}/{modelId}/types
     /// <summary>
-    ///     AB#9370: reads the types (with attributes and associations), association roles and enums of a catalog CK
+    ///     Reads the types (with attributes and associations), association roles and enums of a catalog CK
     ///     model version without importing it into a tenant. Read-only, paged and bounded (take is capped at
     ///     <see cref="CkCatalogModelTypesMapper.MaxTake" />). Same authorization as <see cref="GetModel" />.
     /// </summary>
@@ -334,7 +334,7 @@ public class CkModelCatalogController : ControllerBase
         }
     }
 
-    /// <summary>An <c>application/problem+json</c> answer with the stable <c>code</c> extension (AB#9370).</summary>
+    /// <summary>An <c>application/problem+json</c> answer with the stable <c>code</c> extension.</summary>
     private static ObjectResult CatalogProblem(int status, string title, string detail, string code)
     {
         var problem = new ProblemDetails { Title = title, Status = status, Detail = detail };

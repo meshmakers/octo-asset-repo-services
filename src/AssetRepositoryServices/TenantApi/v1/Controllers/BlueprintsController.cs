@@ -42,7 +42,7 @@ public class BlueprintsController : ControllerBase
     /// <param name="blueprintInstallations">Tenant blueprint installations service</param>
     /// <param name="authorizationService">Authorization service (checks the policy a forced breaking update needs)</param>
     /// <param name="logger">Logger</param>
-    /// <param name="draftValidation">Blueprint draft validation (AB#9371)</param>
+    /// <param name="draftValidation">Blueprint draft validation</param>
     public BlueprintsController(
         ITenantBlueprintHistory blueprintHistory,
         IBlueprintService blueprintService,
@@ -61,7 +61,7 @@ public class BlueprintsController : ControllerBase
 
     // POST {tenantId}/v1/blueprints/validate
     /// <summary>
-    ///     Validates a blueprint draft <b>without installing anything</b> (AB#9371).
+    ///     Validates a blueprint draft <b>without installing anything</b>.
     ///     <para>
     ///         Accepts a zip of the blueprint folder (the folder with <c>blueprint.yaml</c>, e.g. the output of
     ///         <c>octo-bpm pack</c>) or a single <c>blueprint.yaml</c>. Runs the shared blueprint draft validator - the

@@ -1,7 +1,7 @@
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.DataTransferObjects.Blueprints;
 
 /// <summary>
-///     Result of <c>POST {tenantId}/v1/blueprints/validate</c> (AB#9371): a blueprint draft validated with the shared
+///     Result of <c>POST {tenantId}/v1/blueprints/validate</c>: a blueprint draft validated with the shared
 ///     blueprint draft validator (the same checks as <c>octo-bpm validate</c> plus the CK model dependency ranges against
 ///     the CK model catalogs). Nothing is written.
 /// </summary>
@@ -26,7 +26,7 @@ public class BlueprintDraftValidationResponseDto
     public List<BlueprintDraftFindingDto> Findings { get; set; } = [];
 }
 
-/// <summary>One finding of the blueprint draft validation (AB#9371).</summary>
+/// <summary>One finding of the blueprint draft validation.</summary>
 public class BlueprintDraftFindingDto
 {
     /// <summary>Stable message number of the construction kit message catalog (149-167); tools branch on it.</summary>

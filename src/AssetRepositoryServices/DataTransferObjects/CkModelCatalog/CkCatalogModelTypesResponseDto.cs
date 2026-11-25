@@ -1,7 +1,7 @@
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.DataTransferObjects.CkModelCatalog;
 
 /// <summary>
-///     AB#9370: the content of a catalog CK model version - its types with attributes and associations, the
+///     The content of a catalog CK model version - its types with attributes and associations, the
 ///     association roles and enums they use - read from the catalog without importing the model into a tenant.
 ///     One page of the types (sorted by type id) matching the optional filter.
 /// </summary>

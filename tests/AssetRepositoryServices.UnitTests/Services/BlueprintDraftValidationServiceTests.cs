@@ -13,7 +13,7 @@ using Xunit;
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.UnitTests.Services;
 
 /// <summary>
-///     AB#9371: <c>POST {tenantId}/v1/blueprints/validate</c> - the upload (zip or blueprint.yaml) goes to the engine's
+///     <c>POST {tenantId}/v1/blueprints/validate</c> - the upload (zip or blueprint.yaml) goes to the engine's
 ///     shared draft validator with the CK catalog check on; findings keep their codes, errors first, bounded.
 /// </summary>
 public class BlueprintDraftValidationServiceTests

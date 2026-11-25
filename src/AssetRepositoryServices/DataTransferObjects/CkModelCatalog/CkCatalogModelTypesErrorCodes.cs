@@ -1,7 +1,7 @@
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.DataTransferObjects.CkModelCatalog;
 
 /// <summary>
-///     AB#9370: stable codes of GET system/v1/ckmodelcatalog/{catalogName}/{modelId}/types, carried in
+///     Stable codes of GET system/v1/ckmodelcatalog/{catalogName}/{modelId}/types, carried in
 ///     the <c>code</c> extension of the application/problem+json answer, so callers branch on the code and never on the message.
 /// </summary>
 public static class CkCatalogModelTypesErrorCodes

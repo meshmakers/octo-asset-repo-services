@@ -6,7 +6,7 @@ using Meshmakers.Octo.ConstructionKit.Engine.BlueprintCatalogs;
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.Services.BlueprintValidation;
 
 /// <summary>
-///     Validates an uploaded blueprint draft for <c>POST {tenantId}/v1/blueprints/validate</c> (AB#9371).
+///     Validates an uploaded blueprint draft for <c>POST {tenantId}/v1/blueprints/validate</c>.
 /// </summary>
 public interface IBlueprintDraftValidationService
 {

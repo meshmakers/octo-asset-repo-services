@@ -21,7 +21,7 @@ using Xunit;
 namespace AssetRepositoryServices.UnitTests.SystemApi;
 
 /// <summary>
-///     AB#9370: GET system/v1/ckmodelcatalog/{catalogName}/{modelId}/types reads a catalog model's content without
+///     GET system/v1/ckmodelcatalog/{catalogName}/{modelId}/types reads a catalog model's content without
 ///     importing it - bounded page, stable error codes, and exactly the authorization of GET {catalogName}/{modelId}.
 /// </summary>
 public class CkModelCatalogModelTypesTests
