@@ -2,9 +2,11 @@ using System.ComponentModel.DataAnnotations;
 using Asp.Versioning;
 using Duende.IdentityModel;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.DataTransferObjects.CkModelCatalog;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.Services;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects.ApiErrors;
 using Meshmakers.Octo.ConstructionKit.Contracts;
+using Meshmakers.Octo.ConstructionKit.Contracts.DataTransferObjects;
 using Meshmakers.Octo.ConstructionKit.Contracts.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -244,6 +246,100 @@ public class CkModelCatalogController : ControllerBase
         {
             return StatusCode(StatusCodes.Status500InternalServerError, new InternalServerErrorDto(ex.Message));
         }
+    }
+
+    // GET system/v1/ckmodelcatalog/{catalogName}/{modelId}/types
+    /// <summary>
+    ///     AB#9370: reads the types (with attributes and associations), association roles and enums of a catalog CK
+    ///     model version without importing it into a tenant. Read-only, paged and bounded (take is capped at
+    ///     <see cref="CkCatalogModelTypesMapper.MaxTake" />). Same authorization as <see cref="GetModel" />.
+    /// </summary>
+    /// <param name="catalogName">Name of the catalog</param>
+    /// <param name="modelId">CK model ID with version (e.g., "Basic-2.7.0")</param>
+    /// <param name="filter">Optional text a type's id, description or attribute names must contain (case-insensitive)</param>
+    /// <param name="skip">Types to skip</param>
+    /// <param name="take">Page size, capped at 50 (default 20)</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>One page of the model's types; problem+json 404 with code CkCatalogNotFound or CkCatalogModelNotFound; 400 InvalidCkModelId</returns>
+    [HttpGet("{catalogName}/{modelId}/types")]
+    [Authorize(AssetRepositoryServiceConstants.SystemAssetApiReadOnlyPolicy)]
+    [ProducesResponseType(typeof(CkCatalogModelTypesResponseDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(InternalServerErrorDto), StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> GetModelTypes(
+        [Required] string catalogName,
+        [Required] string modelId,
+        [FromQuery] string? filter = null,
+        [FromQuery] int skip = 0,
+        [FromQuery] int take = CkCatalogModelTypesMapper.DefaultTake,
+        CancellationToken cancellationToken = default)
+    {
+        // A full id with version is required: CkModelId("Basic") silently means Basic-1.0.0, which would read a model
+        // the caller never asked for.
+        CkModelId? ckModelId = null;
+        try
+        {
+            if (modelId.IndexOf('-') > 0 && !modelId.EndsWith('-'))
+            {
+                ckModelId = new CkModelId(modelId);
+                _ = ckModelId.Version.ToString();
+            }
+        }
+        catch (Exception ex) when (ex is ArgumentException or FormatException or InvalidCastException)
+        {
+            ckModelId = null;
+        }
+
+        if (ckModelId == null)
+        {
+            return CatalogProblem(StatusCodes.Status400BadRequest, "Invalid CK model id",
+                $"'{modelId}' is not a CK model id with version (e.g. Basic-2.7.0).",
+                CkCatalogModelTypesErrorCodes.InvalidCkModelId);
+        }
+
+        try
+        {
+            var catalog = _catalogService.GetCatalogList()
+                .FirstOrDefault(c => string.Equals(c.Item1, catalogName, StringComparison.OrdinalIgnoreCase));
+            if (catalog == null)
+            {
+                return CatalogProblem(StatusCodes.Status404NotFound, "CK model catalog not found",
+                    $"CK model catalog '{catalogName}' not found.", CkCatalogModelTypesErrorCodes.CkCatalogNotFound);
+            }
+
+            CkCompiledModelRoot? model;
+            try
+            {
+                model = await _catalogService.GetAsync(catalog.Item1, ckModelId, new OperationResult(),
+                    cancellationToken: cancellationToken);
+            }
+            catch (ModelCatalogException)
+            {
+                model = null;
+            }
+
+            if (model == null)
+            {
+                return CatalogProblem(StatusCodes.Status404NotFound, "CK model not found in catalog",
+                    $"CK model '{ckModelId.FullName}' not found in catalog '{catalog.Item1}'.",
+                    CkCatalogModelTypesErrorCodes.CkCatalogModelNotFound);
+            }
+
+            return Ok(CkCatalogModelTypesMapper.Map(catalog.Item1, model, filter, skip, take));
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(StatusCodes.Status500InternalServerError, new InternalServerErrorDto(ex.Message));
+        }
+    }
+
+    /// <summary>An <c>application/problem+json</c> answer with the stable <c>code</c> extension (AB#9370).</summary>
+    private static ObjectResult CatalogProblem(int status, string title, string detail, string code)
+    {
+        var problem = new ProblemDetails { Title = title, Status = status, Detail = detail };
+        problem.Extensions["code"] = code;
+        return new ObjectResult(problem) { StatusCode = status, ContentTypes = { "application/problem+json" } };
     }
 
     // POST system/v1/ckmodelcatalog/refresh

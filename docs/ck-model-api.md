@@ -134,6 +134,7 @@ System-scoped REST endpoints for browsing and managing Construction Kit model ca
 | `GET` | `system/v1/ckmodelcatalog/{catalogName}` | ReadOnly | List models from specific catalog |
 | `HEAD` | `system/v1/ckmodelcatalog/{modelId}` | ReadOnly | Check if model exists |
 | `GET` | `system/v1/ckmodelcatalog/{catalogName}/{modelId}` | ReadOnly | Get model details |
+| `GET` | `system/v1/ckmodelcatalog/{catalogName}/{modelId}/types?filter=&skip=&take=` | ReadOnly | Types (attributes, associations), association roles and enums of a catalog model version, without importing it (AB#9370). Paged: types sorted by id, `take` default 20, capped at 50; `filter` matches type id, description or attribute names; descriptions cut at 300 characters; attributes from a dependency carry no `valueType`; ids are named as in a tenant (`Basic/Equipment`, `System/ParentChild`). Refusals are `application/problem+json` with `code` `InvalidCkModelId` (400, the id needs a version), `CkCatalogNotFound` or `CkCatalogModelNotFound` (404). |
 | `POST` | `system/v1/ckmodelcatalog/refresh` | DataModelManagement | Refresh all catalog caches |
 | `POST` | `system/v1/ckmodelcatalog/{catalogName}/refresh` | DataModelManagement | Refresh specific catalog cache |
 
