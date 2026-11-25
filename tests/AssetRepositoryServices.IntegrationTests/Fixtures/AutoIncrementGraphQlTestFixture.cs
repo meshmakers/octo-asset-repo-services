@@ -1,18 +1,17 @@
-using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.RequestHandling;
 using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.ConstructionKit.Contracts.DataTransferObjects;
 using Meshmakers.Octo.ConstructionKit.Contracts.Services;
 using Meshmakers.Octo.ConstructionKit.Models.System.Generated.System.v2;
 using Meshmakers.Octo.Runtime.Contracts;
 using MongoDB.Bson;
-using Microsoft.Extensions.DependencyInjection;
 using MongoDB.Driver;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Fixtures;
 
 /// <summary>
 ///     GraphQL host with an auto-numbered type. The generated model <c>AutoIncrementGql</c> has one collection
-///     root <c>Ticket</c> (Title, Number from the counter <see cref="CounterName" />); the counter starts at
+///     root <c>Ticket</c> (Title, Number from the counter <see cref="CounterName" />, an optional linked binary
+///     Attachment whose bytes go to GridFS); the counter starts at
 ///     <see cref="CounterStart" /> (the first number handed out is <c>CounterStart + 1</c>).
 /// </summary>
 // ReSharper disable once ClassNeverInstantiated.Global
@@ -22,31 +21,9 @@ public class AutoIncrementGraphQlTestFixture : GraphQlTestFixture
     public const string CounterName = "AutoIncrementGqlTicketNumber";
     public const int CounterStart = 1000;
 
-    /// <summary>
-    ///     Retry bound of this host. Above the default: the test runs 10 parallel creations on one counter, and under
-    ///     Docker load one request can lose to the same holder several times, so the default of 10 attempts would
-    ///     leave no margin for the last request. The time budget is raised with it (<see cref="RetryMaxElapsed" />).
-    /// </summary>
-    public const int RetryMaxAttempts = 30;
-
-    /// <summary>
-    ///     Time budget of this host: 30 attempts with the default backoff wait about 12 s on average, more than the
-    ///     default budget of 10 s, so the bound test would stop at the budget before the attempt bound.
-    /// </summary>
-    public static readonly TimeSpan RetryMaxElapsed = TimeSpan.FromMinutes(2);
-
     private const string ModelName = "AutoIncrementGql";
 
     private IMongoDatabase? _database;
-
-    public AutoIncrementGraphQlTestFixture()
-    {
-        Services.PostConfigure<TransientTransactionRetryOptions>(o =>
-        {
-            o.MaxAttempts = RetryMaxAttempts;
-            o.MaxElapsed = RetryMaxElapsed;
-        });
-    }
 
     protected override async Task InitializeServicesAsync()
     {
@@ -112,7 +89,11 @@ public class AutoIncrementGraphQlTestFixture : GraphQlTestFixture
             Attributes =
             [
                 new CkAttributeDto { AttributeId = new CkAttributeId("Title-1"), ValueType = AttributeValueTypesDto.String },
-                new CkAttributeDto { AttributeId = new CkAttributeId("Number-1"), ValueType = AttributeValueTypesDto.Int }
+                new CkAttributeDto { AttributeId = new CkAttributeId("Number-1"), ValueType = AttributeValueTypesDto.Int },
+                new CkAttributeDto
+                {
+                    AttributeId = new CkAttributeId("Attachment-1"), ValueType = AttributeValueTypesDto.BinaryLinked
+                }
             ],
             Types =
             [
@@ -131,6 +112,11 @@ public class AutoIncrementGraphQlTestFixture : GraphQlTestFixture
                         {
                             CkAttributeId = new CkId<CkAttributeId>(id, new CkAttributeId("Number-1")),
                             AttributeName = "Number", IsOptional = true, AutoIncrementReference = CounterName
+                        },
+                        new CkTypeAttributeDto
+                        {
+                            CkAttributeId = new CkId<CkAttributeId>(id, new CkAttributeId("Attachment-1")),
+                            AttributeName = "Attachment", IsOptional = true
                         }
                     ]
                 }

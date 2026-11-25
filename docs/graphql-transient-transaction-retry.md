@@ -69,15 +69,20 @@ Environment variables: `OCTO_GraphQl__TransientTransactionRetry__MaxAttempts` an
 
 ## Tests
 
-- `tests/AssetRepositoryServices.UnitTests/GraphQL/RequestHandling/TransientTransactionRetryTests.cs`: injected errors -
-  retried with the label (resolver and commit phase), not retried without it, never for `UnknownTransactionCommitResult`,
-  bounded by attempts and by the time budget (an attempt that outlasts it is not retried), not for non-runtime mutations, requests without a transaction or with a method call; listeners and
-  validation rules start from the original options on every attempt.
+The retry policy is tested without a database; the integration tests check only the wiring.
+
+- `tests/AssetRepositoryServices.UnitTests/GraphQL/RequestHandling/TransientTransactionRetryTests.cs` (scripted executor,
+  a manual clock instead of the system clock): retried with the label (resolver and commit phase), not retried without
+  it, never for `UnknownTransactionCommitResult`, bounded by attempts and by the time budget (an attempt that outlasts
+  it is not retried; with the product defaults a burst of conflicts is retried up to the attempt bound inside the
+  budget), delays below the doubling ceiling and the maximum, no retry of a cancelled request, of non-runtime
+  mutations, of requests without a transaction or with a method call; listeners and validation rules start from the
+  original options on every attempt.
 - `tests/AssetRepositoryServices.IntegrationTests/GraphQL/Mutations/TransientTransactionRetryGraphQlTests.cs` (MongoDB
-  replica set via Testcontainers): 10 parallel creations of an auto-numbered type in separate requests all succeed with
-  distinct, gap-free numbers; an injected transient error is retried once and the entity and its number exist once;
-  an error without the label is not retried; the bound holds; a retried create with a binary attribute leaves its
-  uploaded bytes in GridFS once.
+  replica set via Testcontainers, product retry options): an injected transient error is retried, and the entity, its
+  number and the GridFS bytes of its linked binary exist once. The test with 10 parallel creations of an auto-numbered
+  type in separate requests (all succeed with distinct, gap-free numbers) depends on the machine's timing and carries
+  `Category=Stress` and `Category=LoadSensitive`: it runs in the performance pipeline, not in the regular suite.
 - `tests/AssetRepositoryServices.IntegrationTests/GraphQL/CkV2/MethodCallTransientRetryTests.cs`: a mutation that
   dispatched a CK method call through the real resolver and gateway is not retried on a transient error; the handler
   is dispatched once.

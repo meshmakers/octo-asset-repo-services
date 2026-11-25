@@ -152,6 +152,62 @@ public class TransientTransactionRetryTests
         inner.Attempts.Should().Be(1, "a budget of zero allows no retry");
     }
 
+    [Fact]
+    public async Task ProductDefaults_RetryABurstOfConflictsUpToTheAttemptBound_InsideTheTimeBudget()
+    {
+        // Nine conflicts of 10 ms each, then success: the backoff ceilings of the default options add up to at most
+        // 4.26 s (20 ms doubling, capped at 1 s), so the 10 s budget never cuts off retries the attempt bound allows.
+        var clock = new ManualClock();
+        var results = Enumerable.Range(0, 9).Select(_ => TransientResult())
+            .Append(new ExecutionResult { Executed = true }).ToArray();
+        var inner = new ScriptedExecuter(RuntimeMutation, results)
+        {
+            DuringAttempt = _ => clock.Advance(TimeSpan.FromMilliseconds(10))
+        };
+
+        var result = await NewExecutor(inner, new TransientTransactionRetryOptions(), clock: clock)
+            .ExecuteAsync(NewOptions());
+
+        result.Should().BeSameAs(results[^1]);
+        inner.Attempts.Should().Be(10);
+        clock.GetElapsedTime(0).Should().BeLessThan(TimeSpan.FromSeconds(5));
+    }
+
+    [Fact]
+    public async Task DelaysBetweenAttempts_StayBelowTheDoublingCeilingAndTheMaximum()
+    {
+        var options = new TransientTransactionRetryOptions
+        {
+            MaxAttempts = 6, BaseDelay = TimeSpan.FromMilliseconds(20), MaxDelay = TimeSpan.FromMilliseconds(50)
+        };
+        var inner = new ScriptedExecuter(RuntimeMutation, Enumerable.Range(0, 6).Select(_ => TransientResult()).ToArray());
+        var delays = new List<TimeSpan>();
+
+        await NewExecutor(inner, options, delays).ExecuteAsync(NewOptions());
+
+        delays.Should().HaveCount(5);
+        double[] ceilings = [20, 40, 50, 50, 50];
+        for (var i = 0; i < delays.Count; i++)
+        {
+            delays[i].Should().BeGreaterThanOrEqualTo(TimeSpan.Zero)
+                .And.BeLessThanOrEqualTo(TimeSpan.FromMilliseconds(ceilings[i]), "retry {0}", i + 1);
+        }
+    }
+
+    [Fact]
+    public async Task CancelledRequest_IsNotRetried()
+    {
+        var failure = TransientResult();
+        var inner = new ScriptedExecuter(RuntimeMutation, failure, new ExecutionResult());
+        var options = NewOptions();
+        options.CancellationToken = new CancellationToken(canceled: true);
+
+        var result = await NewExecutor(inner).ExecuteAsync(options);
+
+        result.Should().BeSameAs(failure);
+        inner.Attempts.Should().Be(1);
+    }
+
     [Theory]
     [InlineData("mutation { streamData { a } }")]
     [InlineData("mutation { blueprints { a } }")]
@@ -260,6 +316,8 @@ public class TransientTransactionRetryTests
             null, (delay, _) =>
             {
                 delays?.Add(delay);
+                // The clock moves with the backoff, as the real delay would.
+                (clock as ManualClock)?.Advance(delay);
                 return Task.CompletedTask;
             }, clock ?? new ManualClock());
     }

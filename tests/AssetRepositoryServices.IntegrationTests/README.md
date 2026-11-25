@@ -51,6 +51,7 @@ own category. Today:
 | Test | Own category | Why it is load-sensitive | What proves the rule without a clock |
 |---|---|---|---|
 | `GraphQL/ByInterface/ByInterfacePerformanceTests` | `Performance` | median / p95 ceilings in milliseconds | - (a budget is a timing by nature) |
+| `GraphQL/Mutations/TransientTransactionRetryGraphQlTests.ParallelCreations_InSeparateRequests_AllSucceedWithDistinctGapFreeNumbers` | `Stress` | whether 10 parallel requests collide on the counter, and how often, depends on the machine's timing | the retry policy: `GraphQL/RequestHandling/TransientTransactionRetryTests` (unit tests, manual clock); the wiring: `InjectedTransientError_IsRetried_AndTheEntityItsNumberAndItsBytesExistOnce` (this suite) |
 | `StreamData/RollupRecomputeStatementBudgetTests.ARecomputeOfALargeRange_StaysInsideTheStatementBudget` | `StatementBudget` | every recompute statement must finish inside a one-second CrateDB budget; a slice takes ~135 ms on a quiet machine and more than a second under load | the row bound per statement: `StreamData/RollupRecomputeRowBoundTests` (this suite, real CrateDB: a 300-row recompute with a slice target of 20 runs its staging-to-live copy as at least eight statements, counted in `sys.jobs_log`, and the result equals the source) and `CrateDbArchiveRecomputeExecutorTests` (octo-construction-kit-engine-mongodb, no database) |
 
 `AStatementOverItsBudget_SurfacesAsStatementTimeout_AndACancelledTokenAsCancellation` keeps only the trait

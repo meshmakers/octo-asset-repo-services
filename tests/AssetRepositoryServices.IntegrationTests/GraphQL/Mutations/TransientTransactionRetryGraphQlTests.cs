@@ -2,16 +2,16 @@ using System.Text.Json;
 using FluentAssertions;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Collections;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Fixtures;
-using MongoDB.Driver;
 using Xunit;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.GraphQL.Mutations;
 
 /// <summary>
-///     Against a real MongoDB replica set: a GraphQL mutation whose transaction fails with
-///     <c>TransientTransactionError</c> is executed again as a whole (new transaction, handler again). Parallel creations
-///     of an auto-numbered type in separate requests collide on the counter (one <c>$inc</c> per counter inside
-///     the request transaction, a parallel writer aborts it) and must all succeed with distinct, gap-free numbers.
+///     Wiring of the transient transaction retry against a real MongoDB replica set: a GraphQL mutation whose
+///     transaction fails with <c>TransientTransactionError</c> is executed again as a whole (new transaction, handler
+///     again) and its effects exist once. The retry policy itself (bound, time budget, backoff, which errors and
+///     requests qualify) is covered by the unit tests <c>TransientTransactionRetryTests</c>; the host runs with the
+///     product's retry options.
 /// </summary>
 [Collection(AutoIncrementGraphQlCollection.Name)]
 public class TransientTransactionRetryGraphQlTests(AutoIncrementGraphQlTestFixture fixture)
@@ -22,43 +22,21 @@ public class TransientTransactionRetryGraphQlTests(AutoIncrementGraphQlTestFixtu
         }
         """;
 
-    private const string ProductCreateMutation = """
-        mutation ($entities: [AssetRepositoryIntegrationTestProductInput!]!) {
-          runtime { assetRepositoryIntegrationTestProducts { create(entities: $entities) { rtId } } }
-        }
-        """;
-
-    private const int ParallelRequests = 10;
-
+    /// <summary>
+    ///     The first attempt writes the ticket, takes a number and uploads the bytes of its attachment to GridFS, then
+    ///     fails with an injected transient error. The second attempt commits. The ticket and its number exist once,
+    ///     the number of the rolled-back attempt is reused, and the upload of the rolled-back attempt is deleted again
+    ///     (rollback action of the session), so the bytes exist once.
+    /// </summary>
     [Fact]
-    public async Task ParallelCreations_InSeparateRequests_AllSucceedWithDistinctGapFreeNumbers()
-    {
-        var prefix = $"parallel-{Guid.NewGuid():N}-";
-
-        var results = await Task.WhenAll(Enumerable.Range(0, ParallelRequests)
-            .Select(i => Task.Run(() => fixture.ExecuteGraphQlAsync(CreateMutation, Variables(prefix + i)))));
-
-        foreach (var result in results)
-        {
-            result.Errors.Should().BeNullOrEmpty("{0}, MongoDB labels: {1}", fixture.SerializeGraphQl(result),
-                string.Join(",", (result.Errors ?? []).Select(e => e.InnerException).OfType<MongoException>()
-                    .SelectMany(e => e.ErrorLabels)));
-        }
-
-        var numbers = (await fixture.NumbersAsync(prefix)).Order().ToList();
-        numbers.Should().HaveCount(ParallelRequests);
-        numbers.Should().OnlyHaveUniqueItems();
-        (numbers[^1] - numbers[0]).Should().Be(ParallelRequests - 1, "the numbers of rolled-back attempts are reused");
-    }
-
-    [Fact]
-    public async Task InjectedTransientError_IsRetriedOnce_AndTheEntityAndItsNumberExistOnce()
+    public async Task InjectedTransientError_IsRetried_AndTheEntityItsNumberAndItsBytesExistOnce()
     {
         var before = await NextNumberProbeAsync();
+        var filesBefore = await fixture.CountGridFsFilesAsync();
         var title = $"injected-{Guid.NewGuid():N}";
         var injector = new TransientErrorInjectingListener(_ => TransientErrorInjectingListener.TransientException());
 
-        var result = await fixture.ExecuteGraphQlAsync(CreateMutation, Variables(title),
+        var result = await fixture.ExecuteGraphQlAsync(CreateMutation, Variables(title, attachment: [1, 2, 3]),
             configure: options => options.Listeners.Add(injector));
 
         result.Errors.Should().BeNullOrEmpty(fixture.SerializeGraphQl(result));
@@ -67,57 +45,36 @@ public class TransientTransactionRetryGraphQlTests(AutoIncrementGraphQlTestFixtu
         var numbers = await fixture.NumbersAsync(title);
         numbers.Should().ContainSingle("the first attempt was rolled back")
             .Which.Should().Be(before + 1, "the number of the rolled-back attempt is reused");
-    }
-
-    [Fact]
-    public async Task InjectedErrorWithoutTheLabel_IsNotRetried_AndSurfaces()
-    {
-        var title = $"not-transient-{Guid.NewGuid():N}";
-        var injector = new TransientErrorInjectingListener(_ => new MongoException("not transient"));
-
-        var result = await fixture.ExecuteGraphQlAsync(CreateMutation, Variables(title),
-            configure: options => options.Listeners.Add(injector));
-
-        injector.Attempts.Should().Be(1);
-        result.Errors.Should().ContainSingle().Which.Message.Should().Be("injected");
-        (await fixture.NumbersAsync(title)).Should().BeEmpty("the transaction was aborted");
-    }
-
-    [Fact]
-    public async Task TransientErrorOnEveryAttempt_StopsAtTheBound_AndSurfaces()
-    {
-        var title = $"always-{Guid.NewGuid():N}";
-        var injector = new TransientErrorInjectingListener(_ => TransientErrorInjectingListener.TransientException(),
-            failAttempts: int.MaxValue);
-
-        var result = await fixture.ExecuteGraphQlAsync(CreateMutation, Variables(title),
-            configure: options => options.Listeners.Add(injector));
-
-        injector.Attempts.Should().Be(AutoIncrementGraphQlTestFixture.RetryMaxAttempts);
-        result.Errors.Should().ContainSingle().Which.Message.Should().Be("injected");
-        (await fixture.NumbersAsync(title)).Should().BeEmpty();
+        (await fixture.CountGridFsFilesAsync()).Should().Be(filesBefore + 1,
+            "the upload of the rolled-back attempt is deleted, the committed attempt keeps its own");
     }
 
     /// <summary>
-    ///     A side effect outside the transaction happens once: the bytes of a binary attribute are uploaded to GridFS
-    ///     by every attempt, and the rolled-back attempt deletes its upload again (rollback action of the session).
+    ///     Parallel creations of an auto-numbered type in separate requests collide on the counter (one <c>$inc</c>
+    ///     per counter inside the request transaction, a parallel writer aborts it) and must all succeed with
+    ///     distinct, gap-free numbers. Contention depends on the machine's timing, so the test runs in the
+    ///     performance pipeline, not in the regular suite.
     /// </summary>
     [Fact]
-    public async Task InjectedTransientError_InACreateWithABinary_LeavesTheUploadedBytesOnce()
+    [Trait("Category", "Stress")]
+    [Trait("Category", "LoadSensitive")]
+    public async Task ParallelCreations_InSeparateRequests_AllSucceedWithDistinctGapFreeNumbers()
     {
-        var name = $"binary-{Guid.NewGuid():N}";
-        var filesBefore = await fixture.CountGridFsFilesAsync();
-        var injector = new TransientErrorInjectingListener(_ => TransientErrorInjectingListener.TransientException());
+        const int parallelRequests = 10;
+        var prefix = $"parallel-{Guid.NewGuid():N}-";
 
-        var result = await fixture.ExecuteGraphQlAsync(ProductCreateMutation, JsonSerializer.Serialize(new
+        var results = await Task.WhenAll(Enumerable.Range(0, parallelRequests)
+            .Select(i => Task.Run(() => fixture.ExecuteGraphQlAsync(CreateMutation, Variables(prefix + i)))));
+
+        foreach (var result in results)
         {
-            entities = new[] { new { productName = name, productCode = name, productImage = new byte[] { 1, 2, 3 } } }
-        }), configure: options => options.Listeners.Add(injector));
+            result.Errors.Should().BeNullOrEmpty(fixture.SerializeGraphQl(result));
+        }
 
-        result.Errors.Should().BeNullOrEmpty(fixture.SerializeGraphQl(result));
-        injector.Attempts.Should().Be(2);
-        (await fixture.CountGridFsFilesAsync()).Should().Be(filesBefore + 1,
-            "the upload of the rolled-back attempt is deleted, the committed attempt keeps its own");
+        var numbers = (await fixture.NumbersAsync(prefix)).Order().ToList();
+        numbers.Should().HaveCount(parallelRequests);
+        numbers.Should().OnlyHaveUniqueItems();
+        (numbers[^1] - numbers[0]).Should().Be(parallelRequests - 1, "the numbers of rolled-back attempts are reused");
     }
 
     /// <summary>Creates one probe ticket and returns its number: the counter's current value.</summary>
@@ -129,15 +86,20 @@ public class TransientTransactionRetryGraphQlTests(AutoIncrementGraphQlTestFixtu
         return (await fixture.NumbersAsync(title)).Single();
     }
 
-    private static string Variables(string title) => JsonSerializer.Serialize(new
+    private static string Variables(string title, byte[]? attachment = null)
     {
-        entities = new[]
+        var attributes = new List<object> { new { attributeName = "title", value = (object)title } };
+        if (attachment != null)
         {
-            new
-            {
-                ckTypeId = AutoIncrementGraphQlTestFixture.TicketCkTypeId,
-                attributes = new object[] { new { attributeName = "title", value = title } }
-            }
+            attributes.Add(new { attributeName = "attachment", value = (object)attachment });
         }
-    });
+
+        return JsonSerializer.Serialize(new
+        {
+            entities = new[]
+            {
+                new { ckTypeId = AutoIncrementGraphQlTestFixture.TicketCkTypeId, attributes }
+            }
+        });
+    }
 }
