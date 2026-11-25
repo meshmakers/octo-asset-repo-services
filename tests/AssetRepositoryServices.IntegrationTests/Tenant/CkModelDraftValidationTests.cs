@@ -231,8 +231,11 @@ public class CkModelDraftValidationTests(BlueprintUpdateFlowFixture fixture)
 
             result.IsValid.Should().BeFalse();
             result.SourceKind.Should().Be(CkModelValidationResponseDto.SourceKindCompiled);
-            var refusal = result.Errors.Should().Contain(e => e.MessageNumber == 8492).Subject;
-            refusal.Parameters["reason"].Should().Be("dependency-resolution");
+            // CkModelDependencyNotResolvable from the engine catalog, no work item number, no reason parameter.
+            var refusal = result.Errors.Should().Contain(e => e.MessageNumber == 146).Subject;
+            refusal.Parameters.Should().NotContainKey("reason");
+            refusal.Parameters["modelId"].Should().Be("DraftNeedsMissing-1.0.0");
+            refusal.Parameters["detail"].Should().NotBeNullOrEmpty();
             refusal.Message.Should().Contain("NotInstalledAnywhere");
         });
     }
@@ -261,9 +264,9 @@ public class CkModelDraftValidationTests(BlueprintUpdateFlowFixture fixture)
                 .Subject;
             unknown.File.Should().BeNull();
             unknown.Message.Should().Contain("NotInstalledAnywhere");
-            result.Errors.Where(e => e.MessageNumber == CkModelDraftValidator.UnreadableDraftNumber)
+            result.Errors.Where(e => e.MessageNumber == CkModelDraftValidator.DependencyNotResolvableNumber)
                 .Should().NotBeEmpty()
-                .And.OnlyContain(e => e.Parameters["reason"] == CkModelDraftValidator.ReasonDependencyResolution);
+                .And.OnlyContain(e => e.MessageNumber == 146 && !e.Parameters.ContainsKey("reason"));
         });
     }
 
@@ -278,7 +281,8 @@ public class CkModelDraftValidationTests(BlueprintUpdateFlowFixture fixture)
             AssertNoServerPath(result);
 
             result.IsValid.Should().BeFalse();
-            result.Errors.Should().ContainSingle().Which.Parameters["reason"].Should().Be("unreadable-draft");
+            result.Errors.Should().ContainSingle()
+                .Which.Should().Match<CkModelValidationMessageDto>(e => e.MessageNumber == 147 && !e.Parameters.ContainsKey("reason"));
         });
     }
 
@@ -293,7 +297,8 @@ public class CkModelDraftValidationTests(BlueprintUpdateFlowFixture fixture)
             AssertNoServerPath(result);
 
             result.IsValid.Should().BeFalse();
-            result.Errors.Should().ContainSingle().Which.Parameters["reason"].Should().Be("unreadable-draft");
+            result.Errors.Should().ContainSingle()
+                .Which.Should().Match<CkModelValidationMessageDto>(e => e.MessageNumber == 147 && !e.Parameters.ContainsKey("reason"));
             result.SourceKind.Should().BeNull();
         });
     }

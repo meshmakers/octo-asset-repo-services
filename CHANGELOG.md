@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- AB#8502 Fix: `POST {tenantId}/v1/Models/ValidateCk` (MCP `validate_ck_model`) reports every refusal under a number of
+  the engine message catalog: an unreadable draft is 147 (`CkModelDraftUnreadable`, parameter `detail`), a dependency
+  that cannot be resolved is 146 (`CkModelDependencyNotResolvable`, `detail`, and `modelId` once the model id is
+  known), a system reference mismatch 145 (`CkModelSystemReferenceMismatch`). The number 8492 and its `reason`
+  parameter are gone. Needs octo-construction-kit-engine-mongodb with AB#8502. Docs `docs/ck-model-api.md`.
 - AB#9370 New: `GET system/v1/ckmodelcatalog/{catalogName}/{modelId}/types` reads the types (attributes,
   associations), association roles and enums of a catalog CK model version without importing it into a tenant - the
   builder agent checks public kits before it models its own. Read-only, same authorization as

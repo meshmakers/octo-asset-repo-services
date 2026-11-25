@@ -46,9 +46,11 @@ Code: `Services/CkModelValidation/CkModelDraftValidator` (registered transient i
   pre-write checks, read-only) and, without errors, `EvaluateFileImportBlockersAsync` (the guard of `ImportCk`).
 - **Nothing is written**: no cache stream, no import command, no tenant write; the temp folder is deleted.
 - **A bad draft is a finding, not a failed call**: compiler errors, YAML syntax errors, an unreadable file, a missing dependency are
-  errors in the list. Numbers: the engine's message catalog; 8492 with `parameters.reason` `unreadable-draft` (asset repository),
-  `system-reference-mismatch` / `dependency-resolution` (engine). An unknown dependency of a **source** draft is message 1 (no `file`:
-  the compiler names the draft folder itself) plus 8492 with `dependency-resolution` (asset repository, `IsDependencyResolutionFailure`).
+  errors in the list. Every number is from the engine's message catalog (`MessageCodes.json`), none outside it: 147
+  `CkModelDraftUnreadable` (`parameters.detail`, asset repository), 145 `CkModelSystemReferenceMismatch` (`modelId`,
+  `referencedModelId`, `installedModelId`) and 146 `CkModelDependencyNotResolvable` (`modelId`, `detail`) from the engine, besides
+  91 and 126. An unknown dependency of a **source** draft is message 1 (no `file`: the compiler names the draft folder itself) plus
+  146 with `detail` only (asset repository, `IsDependencyResolutionFailure`; the model id is not known before the compile).
 - **Zip safety**: entries with `..` or an absolute path are refused, at most 2,000 entries and 50 MB unpacked.
 - **File and element**: `file` is relative to the `ConstructionKit/` folder, `null` for the folder itself (a server path and the temp folder
   name `octo-ck-validate-<guid>` never leave the service, under any spelling such as `/private/var` on macOS; temp paths are also
