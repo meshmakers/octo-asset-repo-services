@@ -28,8 +28,8 @@ The asset repository does that for GraphQL requests (`TenantDocumentExecutor`,
   `MaxDelay` (default 1 s) - about 4.3 s of waiting at worst, half of it on average. A conflicting transaction fails
   at once, so a burst of parallel creations on one counter needs several retries until every request had its turn.
   The last attempt's errors are the response.
-- **Time budget.** No further attempt starts once `GraphQl:TransientTransactionRetry:MaxElapsed` (default 10 s) has
-  passed since the first attempt started. A counter conflict fails within milliseconds; a transaction the server
+- **Time budget.** No retry is scheduled once `GraphQl:TransientTransactionRetry:MaxElapsed` (default 10 s) has
+  passed since the first attempt started (a retry scheduled just before may start up to `MaxDelay` later). A counter conflict fails within milliseconds; a transaction the server
   aborted because it ran past `transactionLifetimeLimitSeconds` also carries `TransientTransactionError`, and running
   such a large mutation again would only repeat its load. It is logged at `Warning` level and surfaces as before.
   Zero or less allows no retry.

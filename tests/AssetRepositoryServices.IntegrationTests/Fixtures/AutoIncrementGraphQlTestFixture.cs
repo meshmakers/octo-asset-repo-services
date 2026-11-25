@@ -25,9 +25,15 @@ public class AutoIncrementGraphQlTestFixture : GraphQlTestFixture
     /// <summary>
     ///     Retry bound of this host. Above the default: the test runs 10 parallel creations on one counter, and under
     ///     Docker load one request can lose to the same holder several times, so the default of 10 attempts would
-    ///     leave no margin for the last request.
+    ///     leave no margin for the last request. The time budget is raised with it (<see cref="RetryMaxElapsed" />).
     /// </summary>
     public const int RetryMaxAttempts = 30;
+
+    /// <summary>
+    ///     Time budget of this host: 30 attempts with the default backoff wait about 12 s on average, more than the
+    ///     default budget of 10 s, so the bound test would stop at the budget before the attempt bound.
+    /// </summary>
+    public static readonly TimeSpan RetryMaxElapsed = TimeSpan.FromMinutes(2);
 
     private const string ModelName = "AutoIncrementGql";
 
@@ -35,7 +41,11 @@ public class AutoIncrementGraphQlTestFixture : GraphQlTestFixture
 
     public AutoIncrementGraphQlTestFixture()
     {
-        Services.PostConfigure<TransientTransactionRetryOptions>(o => o.MaxAttempts = RetryMaxAttempts);
+        Services.PostConfigure<TransientTransactionRetryOptions>(o =>
+        {
+            o.MaxAttempts = RetryMaxAttempts;
+            o.MaxElapsed = RetryMaxElapsed;
+        });
     }
 
     protected override async Task InitializeServicesAsync()

@@ -28,8 +28,8 @@ public class TransientTransactionRetryOptions
     public TimeSpan MaxDelay { get; set; } = TimeSpan.FromSeconds(1);
 
     /// <summary>
-    ///     Time budget of the retry (default 10 s): no further attempt starts once this much time has passed since the
-    ///     first attempt started. A conflict on a counter fails within milliseconds; a transaction the server aborted
+    ///     Time budget of the retry (default 10 s): no retry is scheduled once this much time has passed since the
+    ///     first attempt started (a retry scheduled just before starts after its backoff delay). A conflict on a counter fails within milliseconds; a transaction the server aborted
     ///     because it ran too long (<c>transactionLifetimeLimitSeconds</c>, whose error also carries
     ///     <c>TransientTransactionError</c>) is not run again. Zero or less: no retry.
     /// </summary>
