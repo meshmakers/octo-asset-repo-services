@@ -40,7 +40,7 @@ the first error, as without the retry.
 | Side effect | Behaviour on a retry |
 |---|---|
 | Runtime entity writes (create, update, delete, associations, auto-increment `$inc`) | Inside the transaction: rolled back with the failed attempt, written once by the committed attempt. |
-| Engine notifications and staged binaries (`RegisterTransactionCallbacks`: after-commit actions, GridFS cleanup) | After-commit actions run only for the committed attempt; the failed attempt runs its rollback actions (staged GridFS bytes are deleted). |
+| Engine notifications and staged binaries (`RegisterTransactionCallbacks`: after-commit actions, GridFS cleanup) | After-commit actions run only for the committed attempt. An attempt that failed before its commit runs its rollback actions (its staged GridFS bytes are deleted). An attempt whose commit failed keeps its staged bytes, because the session never runs rollback actions after a commit attempt; they are orphans, and `GridFsOrphanSweeper` removes them after its grace period. |
 | Rt entity subscriptions | Fed by MongoDB change streams: only committed changes are seen. |
 | File system sibling-name locks | Released in `OctoSessionListener` after each attempt's commit or abort. |
 | DataLoader caches, GraphQL listeners and validation rules | Built per attempt; the options are restored to their state before the first attempt, so no listener runs twice. |
@@ -69,4 +69,8 @@ Environment variables: `OCTO_GraphQl__TransientTransactionRetry__MaxAttempts` an
 - `tests/AssetRepositoryServices.IntegrationTests/GraphQL/Mutations/TransientTransactionRetryGraphQlTests.cs` (MongoDB
   replica set via Testcontainers): 10 parallel creations of an auto-numbered type in separate requests all succeed with
   distinct, gap-free numbers; an injected transient error is retried once and the entity and its number exist once;
-  an error without the label is not retried; the bound holds.
+  an error without the label is not retried; the bound holds; a retried create with a binary attribute leaves its
+  uploaded bytes in GridFS once.
+- `tests/AssetRepositoryServices.IntegrationTests/GraphQL/CkV2/MethodCallTransientRetryTests.cs`: a mutation that
+  dispatched a CK method call through the real resolver and gateway is not retried on a transient error; the handler
+  is dispatched once.

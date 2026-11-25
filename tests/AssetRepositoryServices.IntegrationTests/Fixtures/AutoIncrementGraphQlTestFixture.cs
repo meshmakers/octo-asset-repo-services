@@ -1,9 +1,11 @@
+using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.RequestHandling;
 using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.ConstructionKit.Contracts.DataTransferObjects;
 using Meshmakers.Octo.ConstructionKit.Contracts.Services;
 using Meshmakers.Octo.ConstructionKit.Models.System.Generated.System.v2;
 using Meshmakers.Octo.Runtime.Contracts;
 using MongoDB.Bson;
+using Microsoft.Extensions.DependencyInjection;
 using MongoDB.Driver;
 
 namespace Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Fixtures;
@@ -19,9 +21,22 @@ public class AutoIncrementGraphQlTestFixture : GraphQlTestFixture
     public const string TicketCkTypeId = "AutoIncrementGql/Ticket";
     public const string CounterName = "AutoIncrementGqlTicketNumber";
     public const int CounterStart = 1000;
+
+    /// <summary>
+    ///     Retry bound of this host. Above the default: the test runs 10 parallel creations on one counter, and under
+    ///     Docker load one request can lose to the same holder several times, so the default of 10 attempts would
+    ///     leave no margin for the last request.
+    /// </summary>
+    public const int RetryMaxAttempts = 30;
+
     private const string ModelName = "AutoIncrementGql";
 
     private IMongoDatabase? _database;
+
+    public AutoIncrementGraphQlTestFixture()
+    {
+        Services.PostConfigure<TransientTransactionRetryOptions>(o => o.MaxAttempts = RetryMaxAttempts);
+    }
 
     protected override async Task InitializeServicesAsync()
     {
@@ -56,6 +71,10 @@ public class AutoIncrementGraphQlTestFixture : GraphQlTestFixture
         var documents = await Tickets.Find(filter).ToListAsync();
         return documents.Select(d => d["attributes"]["number"].ToInt64()).ToList();
     }
+
+    /// <summary>Number of GridFS files in the system tenant database.</summary>
+    public Task<long> CountGridFsFilesAsync() =>
+        _database!.GetCollection<BsonDocument>("fs.files").CountDocumentsAsync(FilterDefinition<BsonDocument>.Empty);
 
     private async Task<CkModelId> GetInstalledSystemIdAsync()
     {

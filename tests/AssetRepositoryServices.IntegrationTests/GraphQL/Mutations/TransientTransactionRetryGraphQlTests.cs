@@ -1,9 +1,5 @@
 using System.Text.Json;
 using FluentAssertions;
-using GraphQL;
-using GraphQL.Execution;
-using GraphQL.Validation;
-using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.RequestHandling;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Collections;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.IntegrationTests.Fixtures;
 using MongoDB.Driver;
@@ -23,6 +19,12 @@ public class TransientTransactionRetryGraphQlTests(AutoIncrementGraphQlTestFixtu
     private const string CreateMutation = """
         mutation ($entities: [RtEntityInput!]!) {
           runtime { runtimeEntities { create(entities: $entities) { rtId } } }
+        }
+        """;
+
+    private const string ProductCreateMutation = """
+        mutation ($entities: [AssetRepositoryIntegrationTestProductInput!]!) {
+          runtime { assetRepositoryIntegrationTestProducts { create(entities: $entities) { rtId } } }
         }
         """;
 
@@ -54,7 +56,7 @@ public class TransientTransactionRetryGraphQlTests(AutoIncrementGraphQlTestFixtu
     {
         var before = await NextNumberProbeAsync();
         var title = $"injected-{Guid.NewGuid():N}";
-        var injector = new ErrorInjectingListener(_ => TransientException());
+        var injector = new TransientErrorInjectingListener(_ => TransientErrorInjectingListener.TransientException());
 
         var result = await fixture.ExecuteGraphQlAsync(CreateMutation, Variables(title),
             configure: options => options.Listeners.Add(injector));
@@ -71,7 +73,7 @@ public class TransientTransactionRetryGraphQlTests(AutoIncrementGraphQlTestFixtu
     public async Task InjectedErrorWithoutTheLabel_IsNotRetried_AndSurfaces()
     {
         var title = $"not-transient-{Guid.NewGuid():N}";
-        var injector = new ErrorInjectingListener(_ => new MongoException("not transient"));
+        var injector = new TransientErrorInjectingListener(_ => new MongoException("not transient"));
 
         var result = await fixture.ExecuteGraphQlAsync(CreateMutation, Variables(title),
             configure: options => options.Listeners.Add(injector));
@@ -85,14 +87,37 @@ public class TransientTransactionRetryGraphQlTests(AutoIncrementGraphQlTestFixtu
     public async Task TransientErrorOnEveryAttempt_StopsAtTheBound_AndSurfaces()
     {
         var title = $"always-{Guid.NewGuid():N}";
-        var injector = new ErrorInjectingListener(_ => TransientException(), failAttempts: int.MaxValue);
+        var injector = new TransientErrorInjectingListener(_ => TransientErrorInjectingListener.TransientException(),
+            failAttempts: int.MaxValue);
 
         var result = await fixture.ExecuteGraphQlAsync(CreateMutation, Variables(title),
             configure: options => options.Listeners.Add(injector));
 
-        injector.Attempts.Should().Be(new TransientTransactionRetryOptions().MaxAttempts);
+        injector.Attempts.Should().Be(AutoIncrementGraphQlTestFixture.RetryMaxAttempts);
         result.Errors.Should().ContainSingle().Which.Message.Should().Be("injected");
         (await fixture.NumbersAsync(title)).Should().BeEmpty();
+    }
+
+    /// <summary>
+    ///     A side effect outside the transaction happens once: the bytes of a binary attribute are uploaded to GridFS
+    ///     by every attempt, and the rolled-back attempt deletes its upload again (rollback action of the session).
+    /// </summary>
+    [Fact]
+    public async Task InjectedTransientError_InACreateWithABinary_LeavesTheUploadedBytesOnce()
+    {
+        var name = $"binary-{Guid.NewGuid():N}";
+        var filesBefore = await fixture.CountGridFsFilesAsync();
+        var injector = new TransientErrorInjectingListener(_ => TransientErrorInjectingListener.TransientException());
+
+        var result = await fixture.ExecuteGraphQlAsync(ProductCreateMutation, JsonSerializer.Serialize(new
+        {
+            entities = new[] { new { productName = name, productCode = name, productImage = new byte[] { 1, 2, 3 } } }
+        }), configure: options => options.Listeners.Add(injector));
+
+        result.Errors.Should().BeNullOrEmpty(fixture.SerializeGraphQl(result));
+        injector.Attempts.Should().Be(2);
+        (await fixture.CountGridFsFilesAsync()).Should().Be(filesBefore + 1,
+            "the upload of the rolled-back attempt is deleted, the committed attempt keeps its own");
     }
 
     /// <summary>Creates one probe ticket and returns its number: the counter's current value.</summary>
@@ -102,13 +127,6 @@ public class TransientTransactionRetryGraphQlTests(AutoIncrementGraphQlTestFixtu
         var result = await fixture.ExecuteGraphQlAsync(CreateMutation, Variables(title));
         result.Errors.Should().BeNullOrEmpty(fixture.SerializeGraphQl(result));
         return (await fixture.NumbersAsync(title)).Single();
-    }
-
-    private static MongoException TransientException()
-    {
-        var exception = new MongoException("injected write conflict");
-        exception.AddErrorLabel(TransientTransactionRetry.TransientTransactionErrorLabel);
-        return exception;
     }
 
     private static string Variables(string title) => JsonSerializer.Serialize(new
@@ -122,37 +140,4 @@ public class TransientTransactionRetryGraphQlTests(AutoIncrementGraphQlTestFixtu
             }
         }
     });
-
-    /// <summary>
-    ///     Added to the options before execution, so it runs before <see cref="OctoSessionListener" />: its
-    ///     <c>AfterExecutionAsync</c> adds an error to the first <paramref name="failAttempts" /> attempts after the
-    ///     resolvers wrote, and <see cref="OctoSessionListener" /> then aborts the transaction.
-    /// </summary>
-    private sealed class ErrorInjectingListener(Func<int, Exception> error, int failAttempts = 1)
-        : IDocumentExecutionListener
-    {
-        public int Attempts { get; private set; }
-
-        public List<int> OctoSessionListenersPerAttempt { get; } = [];
-
-        public Task AfterValidationAsync(IExecutionContext context, IValidationResult validationResult) =>
-            Task.CompletedTask;
-
-        public Task BeforeExecutionAsync(IExecutionContext context)
-        {
-            Attempts++;
-            OctoSessionListenersPerAttempt.Add(context.Listeners.OfType<OctoSessionListener>().Count());
-            return Task.CompletedTask;
-        }
-
-        public Task AfterExecutionAsync(IExecutionContext context)
-        {
-            if (Attempts <= failAttempts)
-            {
-                context.Errors.Add(new ExecutionError("injected", error(Attempts)));
-            }
-
-            return Task.CompletedTask;
-        }
-    }
 }
