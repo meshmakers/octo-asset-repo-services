@@ -11,6 +11,7 @@ input SystemTenantConfigurationInput {
   rtBlueprintSource: String
   rtBlueprintLocked: Boolean
   rtBlueprintAppliedAt: DateTime
+  rtSyncOrigin: SystemSyncOriginInput
   relatesTo: [RtAssociationInput]
   relatesFrom: [RtAssociationInput]
   labeledLinkedFrom: [RtAssociationInput]
@@ -28,9 +29,16 @@ input SystemAutoIncrementInput {
   end: Int
   format: String
   currentValue: Int
+  startValue: Int
+  periodKind: SystemAutoIncrementPeriodKinds
+  fiscalYearStartMonth: Int
+  referenceTimeZone: String
+  periods: [SystemAutoIncrementPeriodInput]
+  release: SystemNumberRangeReleaseInput
   rtBlueprintSource: String
   rtBlueprintLocked: Boolean
   rtBlueprintAppliedAt: DateTime
+  rtSyncOrigin: SystemSyncOriginInput
   relatesTo: [RtAssociationInput]
   relatesFrom: [RtAssociationInput]
   labeledLinkedFrom: [RtAssociationInput]
@@ -58,6 +66,7 @@ input SystemBlueprintHistoryInput {
   rtBlueprintSource: String
   rtBlueprintLocked: Boolean
   rtBlueprintAppliedAt: DateTime
+  rtSyncOrigin: SystemSyncOriginInput
   relatesTo: [RtAssociationInput]
   relatesFrom: [RtAssociationInput]
   labeledLinkedFrom: [RtAssociationInput]
@@ -80,6 +89,7 @@ input SystemSimpleRtQueryInput {
   rtBlueprintSource: String
   rtBlueprintLocked: Boolean
   rtBlueprintAppliedAt: DateTime
+  rtSyncOrigin: SystemSyncOriginInput
   name: String
   description: String
   queryCkTypeId: String
@@ -102,6 +112,7 @@ input AssetRepositoryIntegrationTestPlainThingInput {
   rtBlueprintSource: String
   rtBlueprintLocked: Boolean
   rtBlueprintAppliedAt: DateTime
+  rtSyncOrigin: SystemSyncOriginInput
   relatesTo: [RtAssociationInput]
   relatesFrom: [RtAssociationInput]
   labeledLinkedFrom: [RtAssociationInput]
@@ -130,6 +141,7 @@ input AssetRepositoryIntegrationTestCustomerInput {
   rtBlueprintSource: String
   rtBlueprintLocked: Boolean
   rtBlueprintAppliedAt: DateTime
+  rtSyncOrigin: SystemSyncOriginInput
   relatesTo: [RtAssociationInput]
   owns: [RtAssociationInput]
   ownsVehicles: [RtAssociationInput]
@@ -159,6 +171,7 @@ input AssetRepositoryIntegrationTestProductInput {
   rtBlueprintSource: String
   rtBlueprintLocked: Boolean
   rtBlueprintAppliedAt: DateTime
+  rtSyncOrigin: SystemSyncOriginInput
   relatesTo: [RtAssociationInput]
   relatesFrom: [RtAssociationInput]
   labeledLinkedFrom: [RtAssociationInput]

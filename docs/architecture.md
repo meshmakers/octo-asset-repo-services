@@ -23,7 +23,11 @@ The service dynamically generates GraphQL schemas per tenant:
   was removed — it also wrote an untyped `HttpContext.Items["d"]` that nothing read.
 - **TenantUserContextBuilder** (`GraphQL/RequestHandling/TenantUserContextBuilder.cs`) - Builds tenant context from HTTP request
 - **GraphQLUserContext** (`GraphQL/Utils/GraphQLUserContext.cs`) - Per-request context containing tenant info
-- **TenantDocumentExecutor** (`GraphQL/RequestHandling/TenantDocumentExecutor.cs`) - Executes GraphQL queries in tenant context
+- **TenantDocumentExecutor** (`GraphQL/RequestHandling/TenantDocumentExecutor.cs`) - Executes GraphQL queries in tenant context;
+  runs a runtime mutation again as a whole when its transaction failed with `TransientTransactionError` (bounded,
+  jittered, side effects and limits in [graphql-transient-transaction-retry.md](graphql-transient-transaction-retry.md))
+- **OctoSessionListener** (`GraphQL/RequestHandling/OctoSessionListener.cs`) - One session per request, one transaction per
+  mutation request (commit without errors, abort otherwise); marks the attempt for the retry above
 
 ### 5. Configuration and DI
 - **Program.cs** - Application startup with NLog, observability, authentication (JWT + OIDC)

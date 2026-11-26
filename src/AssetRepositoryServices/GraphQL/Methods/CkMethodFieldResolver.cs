@@ -2,6 +2,7 @@ using System.Security.Claims;
 using Microsoft.Extensions.Logging;
 using GraphQL;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Caches;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.RequestHandling;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Utils;
 using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.ConstructionKit.Contracts.DataTransferObjects;
@@ -63,6 +64,10 @@ internal static class CkMethodFieldResolver
             var targetAccess = isInstance
                 ? CkMethodTargetAccessChecker.ForInstance(repository, securityContext, evaluator, info.CkTypeId, rtId)
                 : CkMethodTargetAccessChecker.ForStatic(repository, securityContext, evaluator, info.CkTypeId);
+
+            // A method handler may call other systems and runs outside the request transaction - a request that
+            // dispatched a method is never executed a second time by the transient transaction retry.
+            TransientTransactionRetry.MarkNotRetryable(context.UserContext);
 
             var response = await gateway.InvokeAsync(call, targetAccess, context.CancellationToken)
                 .ConfigureAwait(false);

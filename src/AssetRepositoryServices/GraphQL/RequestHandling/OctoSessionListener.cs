@@ -45,6 +45,10 @@ internal class OctoSessionListener : IDocumentExecutionListener
         if (context.Operation?.Operation == OperationType.Mutation)
         {
             _accessor.Session.StartTransaction();
+
+            // This listener owns the transaction; TenantDocumentExecutor retries the request as a whole when
+            // the transaction fails with TransientTransactionError and the mutation qualifies.
+            TransientTransactionRetry.MarkTransactionStarted(context.UserContext, context.Operation);
         }
 
         return Task.CompletedTask;
