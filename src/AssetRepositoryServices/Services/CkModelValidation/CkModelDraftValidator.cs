@@ -63,8 +63,20 @@ public sealed class CkModelDraftValidator(
     /// <summary>Most bytes a source zip may unpack to.</summary>
     public const long MaxUnpackedBytes = 50L * 1024 * 1024;
 
-    /// <summary>Message number of a draft that cannot be read at all (not a zip, unsafe entry, too large, no model).</summary>
-    public const int UnreadableDraftNumber = 8492;
+    /// <summary>
+    ///     Message number of a draft that cannot be read at all (not a zip, unsafe entry, too large, no model):
+    ///     CkModelDraftUnreadable of the construction kit engine message catalog.
+    /// </summary>
+    public const int UnreadableDraftNumber = 147;
+
+    /// <summary>
+    ///     Message number of a draft whose dependencies cannot be resolved: CkModelDependencyNotResolvable of the
+    ///     construction kit engine message catalog, the same number the engine's tenant validation uses.
+    /// </summary>
+    public const int DependencyNotResolvableNumber = 146;
+
+    /// <summary>The parameter that carries the text of an unreadable-draft or dependency refusal.</summary>
+    public const string DetailParameter = "detail";
 
     /// <inheritdoc />
     public async Task<CkModelValidationResponseDto> ValidateAsync(string tenantId, Stream upload, string fileName,
@@ -234,7 +246,7 @@ public sealed class CkModelDraftValidator(
             if (!operationResult.HasErrors && !operationResult.HasFatalErrors)
             {
                 operationResult.AddMessage(new OperationMessage(MessageLevel.Error, null, UnreadableDraftNumber,
-                    e.Message, new Dictionary<string, string> { ["reason"] = ReasonUnreadableDraft }));
+                    e.Message, new Dictionary<string, string> { [DetailParameter] = e.Message }));
             }
         }
         catch (Exception e) when (e is not OperationCanceledException)
@@ -242,12 +254,12 @@ public sealed class CkModelDraftValidator(
             // A draft that the compiler cannot even parse (YAML syntax, wrong shape) is a finding, not a server error.
             // An unknown dependency is reported by the resolver as message 1 and then thrown: that is a dependency
             // finding, not an unreadable draft.
-            var reason = IsDependencyResolutionFailure(e, operationResult)
-                ? ReasonDependencyResolution
-                : ReasonUnreadableDraft;
-            operationResult.AddMessage(new OperationMessage(MessageLevel.Error, null, UnreadableDraftNumber,
-                StripRoot(e.Message, sourceRoot),
-                new Dictionary<string, string> { ["reason"] = reason }));
+            var number = IsDependencyResolutionFailure(e, operationResult)
+                ? DependencyNotResolvableNumber
+                : UnreadableDraftNumber;
+            var text = StripRoot(e.Message, sourceRoot);
+            operationResult.AddMessage(new OperationMessage(MessageLevel.Error, null, number, text,
+                new Dictionary<string, string> { [DetailParameter] = text }));
         }
 
         AddMessages(response, operationResult, sourceRoot);
@@ -464,12 +476,6 @@ public sealed class CkModelDraftValidator(
         };
     }
 
-    /// <summary>The <c>reason</c> parameter of a draft that cannot be read.</summary>
-    public const string ReasonUnreadableDraft = "unreadable-draft";
-
-    /// <summary>The <c>reason</c> parameter of a draft whose dependencies cannot be resolved (same value as the engine's).</summary>
-    public const string ReasonDependencyResolution = "dependency-resolution";
-
     /// <summary>Number of UnknownCkModel in the construction kit engine message catalog.</summary>
     public const int UnknownCkModelNumber = 1;
 
@@ -477,7 +483,7 @@ public sealed class CkModelDraftValidator(
         new()
         {
             MessageNumber = UnreadableDraftNumber, Level = nameof(MessageLevel.Error), Message = text,
-            Parameters = new Dictionary<string, string> { ["reason"] = ReasonUnreadableDraft }
+            Parameters = new Dictionary<string, string> { [DetailParameter] = text }
         };
 
     private void TryDelete(string path)

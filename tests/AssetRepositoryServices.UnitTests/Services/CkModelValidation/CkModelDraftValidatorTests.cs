@@ -28,6 +28,16 @@ public class CkModelDraftValidatorTests
     }
 
     [Fact]
+    public void RefusalNumbers_AreTheEngineCatalogNumbers()
+    {
+        // CkModelDraftUnreadable and CkModelDependencyNotResolvable of the engine's MessageCodes.json - a tool
+        // branches on these numbers, so they never change and never fall back to a work item id.
+        CkModelDraftValidator.UnreadableDraftNumber.Should().Be(147);
+        CkModelDraftValidator.DependencyNotResolvableNumber.Should().Be(146);
+        CkModelDraftValidator.DetailParameter.Should().Be("detail");
+    }
+
+    [Fact]
     public void RelativeFile_NeverReturnsAServerPath()
     {
         var root = Path.Combine(Path.GetTempPath(), "octo-ck-validate-x");
