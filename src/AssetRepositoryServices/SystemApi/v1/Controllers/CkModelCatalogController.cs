@@ -260,12 +260,13 @@ public class CkModelCatalogController : ControllerBase
     /// <param name="skip">Types to skip</param>
     /// <param name="take">Page size, capped at 50 (default 20)</param>
     /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>One page of the model's types; problem+json 404 with code CkCatalogNotFound or CkCatalogModelNotFound; 400 InvalidCkModelId</returns>
+    /// <returns>One page of the model's types; problem+json 404 with code CkCatalogNotFound or CkCatalogModelNotFound; 400 InvalidCkModelId; 503 CkCatalogUnavailable when the catalog cannot be read</returns>
     [HttpGet("{catalogName}/{modelId}/types")]
     [Authorize(AssetRepositoryServiceConstants.SystemAssetApiReadOnlyPolicy)]
     [ProducesResponseType(typeof(CkCatalogModelTypesResponseDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status503ServiceUnavailable)]
     [ProducesResponseType(typeof(InternalServerErrorDto), StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> GetModelTypes(
         [Required] string catalogName,
@@ -314,9 +315,17 @@ public class CkModelCatalogController : ControllerBase
                 model = await _catalogService.GetAsync(catalog.Item1, ckModelId, new OperationResult(),
                     cancellationToken: cancellationToken);
             }
-            catch (ModelCatalogException)
+            catch (ModelCatalogException ex) when (ex.IsModelNotFound)
             {
                 model = null;
+            }
+            catch (ModelCatalogException ex)
+            {
+                // The catalog could not be read (unreachable, rate limit, timeout, broken index): that is no answer to
+                // "does the model exist", so it must not look like "not found" to a caller that reuses public kits.
+                return CatalogProblem(StatusCodes.Status503ServiceUnavailable, "CK model catalog unavailable",
+                    $"CK model catalog '{catalog.Item1}' could not be read: {ex.Message}",
+                    CkCatalogModelTypesErrorCodes.CkCatalogUnavailable);
             }
 
             if (model == null)

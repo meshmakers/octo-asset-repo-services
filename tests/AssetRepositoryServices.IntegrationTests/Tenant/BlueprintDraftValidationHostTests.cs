@@ -18,10 +18,12 @@ public class BlueprintDraftValidationHostTests(BlueprintUpdateFlowFixture fixtur
     private const string Manifest = """
         blueprintId: HostValidation-1.0.0
         description: Draft validated through the host registration
+        ckModelDependencies:
+          - System-[2.0,3.0)
         """;
 
     [Fact]
-    public async Task TheHostResolvesTheDraftValidation_AndAZipDraftIsJudged()
+    public async Task TheHostResolvesTheDraftValidation_AndChecksTheCkRangesOfAZipDraft()
     {
         var sut = fixture.GetService<IBlueprintDraftValidationService>();
 
@@ -38,6 +40,8 @@ public class BlueprintDraftValidationHostTests(BlueprintUpdateFlowFixture fixtur
 
         result.TotalFindings.Should().Be(result.Findings.Count);
         result.Findings.Should().NotContain(f => f.Code == 167, "a readable zip is never 'unreadable'");
+        result.Findings.Should().NotContain(f => f.Code == 165,
+            "the host checks the CK dependency ranges against its catalogs (165 = not checked)");
     }
 
     [Fact]

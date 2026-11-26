@@ -243,6 +243,34 @@ public class CkModelCatalogModelTypesTests
             .Should().Be(CkCatalogModelTypesErrorCodes.CkCatalogModelNotFound);
     }
 
+    [Fact]
+    public async Task GetModelTypes_ModelNotInTheCatalog_Returns404WithCode()
+    {
+        A.CallTo(() => _catalogService.GetAsync(Catalog, A<CkModelId>.Ignored, A<OperationResult>.Ignored,
+                A<CancellationToken?>.Ignored))
+            .Throws(ModelCatalogException.ModelNotFound(new CkModelId("Basic-9.9.9"), Catalog));
+
+        var result = await _controller.GetModelTypes(Catalog, "Basic-9.9.9",
+            cancellationToken: TestContext.Current.CancellationToken);
+
+        CodeOf(result, 404)
+            .Should().Be(CkCatalogModelTypesErrorCodes.CkCatalogModelNotFound);
+    }
+
+    [Fact]
+    public async Task GetModelTypes_CatalogThatCannotBeRead_Returns503_NotNotFound()
+    {
+        A.CallTo(() => _catalogService.GetAsync(Catalog, A<CkModelId>.Ignored, A<OperationResult>.Ignored,
+                A<CancellationToken?>.Ignored))
+            .Throws(CatalogReadFailure("GitHub rate limit exhausted, resets at 08:00Z."));
+
+        var result = await _controller.GetModelTypes(Catalog, "Basic-2.7.0",
+            cancellationToken: TestContext.Current.CancellationToken);
+
+        CodeOf(result, 503)
+            .Should().Be(CkCatalogModelTypesErrorCodes.CkCatalogUnavailable);
+    }
+
     [Theory]
     [InlineData("Basic")]
     [InlineData("Basic-")]
@@ -254,6 +282,14 @@ public class CkModelCatalogModelTypesTests
         CodeOf(result, 400)
             .Should().Be(CkCatalogModelTypesErrorCodes.InvalidCkModelId);
     }
+
+    /// <summary>
+    ///     A catalog read failure that is not "model not found" (IsModelNotFound false). The engine creates those only
+    ///     through internal factories (unreachable, rate limit, timeout), so the test uses the private constructor.
+    /// </summary>
+    private static ModelCatalogException CatalogReadFailure(string message) =>
+        (ModelCatalogException)Activator.CreateInstance(typeof(ModelCatalogException),
+            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic, null, [message], null)!;
 
     private static object? CodeOf(IActionResult result, int status)
     {

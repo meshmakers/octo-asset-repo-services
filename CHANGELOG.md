@@ -18,7 +18,8 @@
   associations), association roles and enums of a catalog CK model version without importing it into a tenant - the
   builder agent checks public kits before it models its own. Read-only, same authorization as
   `GET system/v1/ckmodelcatalog/{catalogName}/{modelId}` (`SystemAssetApiReadOnlyPolicy`); one bounded page (take ≤ 50,
-  descriptions ≤ 300 characters); stable problem codes `InvalidCkModelId`, `CkCatalogNotFound`, `CkCatalogModelNotFound`.
+  descriptions ≤ 300 characters); stable problem codes `InvalidCkModelId`, `CkCatalogNotFound`, `CkCatalogModelNotFound`,
+  `CkCatalogUnavailable` (503: the catalog cannot be read; never reported as "not found").
   Docs `docs/ck-model-api.md`.
 - AB#9788 Fix: a GraphQL mutation whose MongoDB transaction failed with `TransientTransactionError` (e.g. parallel
   creations of an auto-numbered type colliding on the counter, AB#9753) is executed again as a whole - new transaction,
