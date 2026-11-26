@@ -63,6 +63,29 @@ Code: `Services/CkModelValidation/CkModelDraftValidator` (registered transient i
   attribute with file and element, missing dependency of a compiled model and of a source draft, broken YAML, unreadable file, zip slip;
   every case asserts that the serialized response contains no temp folder name or temp path).
 
+## Validate a blueprint draft without installing it: `blueprints/validate`
+
+`POST {tenantId}/v1/blueprints/validate` (multipart member `file`, policy `TenantAssetApiReadOnlyPolicy`, request limit 20 MB, the
+same as `Models/ValidateCk`) answers **200** with `BlueprintDraftValidationResponseDto` for every draft, valid or not (`isValid`,
+`blueprintId`, `totalFindings`, `truncated`, `findings` = `BlueprintDraftFindingDto`: `code`, `level`, `file`, `modelId`, `message`,
+`parameters`); 400 only without a file (or an empty one). Backs the MCP tool `validate_blueprint` (SDK
+`IAssetServicesClient.ValidateBlueprintAsync`). Code: `Services/BlueprintValidation/BlueprintDraftValidationService` (registered
+transient in `RuntimeEngineBuilderExtensions`); a host without the registration answers 500 "not configured" and writes nothing.
+
+- **One validator.** The service runs the engine's `IBlueprintDraftValidator`, the same one `octo-bpm validate|pack|publish` and the
+  install path (`ApplyBlueprintAsync`) use, with the CK model dependency-range check against all CK model catalogs the asset
+  repository reads. Rules and codes: octo-construction-kit-engine `docs/blueprints.md`, "Validating a blueprint draft".
+- **Upload**: a name ending in `.yaml`/`.yml` (any case) is read as the single `blueprint.yaml`; everything else is read as a zip of the
+  blueprint folder (the shallowest `blueprint.yaml` marks the root). The zip is read in memory, never extracted to disk; the engine's
+  file source refuses entries with `..` or an absolute path and limits the number of files and the unpacked size.
+- **Nothing is written**: no install, no catalog write, no tenant write.
+- **A bad draft is a finding, not a failed call**: codes 149-167 of the construction kit message catalog; an unreadable zip is 167.
+- **Bounded**: at most 200 findings (`BlueprintDraftValidationResponseDto.MaxFindings`); `totalFindings` counts all, `truncated` says
+  that some were left out.
+- Tests: `UnitTests/Services/BlueprintDraftValidationServiceTests`, `UnitTests/TenantApi/BlueprintsControllerValidateTests` (result
+  passed through, 400 without a file, 500 without the service, read-only policy, size limit),
+  `IntegrationTests/Tenant/BlueprintDraftValidationHostTests` (the host resolves the service; a garbage upload is 167).
+
 ## Import a source draft: `Models/ImportCk` compiles a zipped `ConstructionKit/` folder
 
 `POST {tenantId}/v1/Models/ImportCk` accepts a compiled model (json, yaml or a zip of one) **or** a zip of the source `ConstructionKit/`

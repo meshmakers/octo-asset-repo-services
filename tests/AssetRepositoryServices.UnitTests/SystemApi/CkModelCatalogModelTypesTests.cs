@@ -207,6 +207,18 @@ public class CkModelCatalogModelTypesTests
     }
 
     [Fact]
+    public void Mapper_FilterSeesTheFullDescription_NotTheCutCopy()
+    {
+        var model = BasicModel();
+        model.Types![0].Description = new string('x', 5000) + " maintenance";
+
+        var dto = CkCatalogModelTypesMapper.Map(Catalog, model, "maintenance", 0, 0);
+
+        dto.Types.Should().ContainSingle();
+        dto.Types[0].Description!.Length.Should().Be(CkCatalogModelTypesMapper.MaxDescriptionLength);
+    }
+
+    [Fact]
     public async Task GetModelTypes_UnknownCatalog_Returns404WithCode()
     {
         var result = await _controller.GetModelTypes("NoSuchCatalog", "Basic-2.7.0",

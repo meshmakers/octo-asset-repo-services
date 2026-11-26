@@ -45,14 +45,15 @@ internal static class CkCatalogModelTypesMapper
             .GroupBy(e => e.EnumId.SemanticVersionedFullName, StringComparer.Ordinal)
             .ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
 
+        // The filter sees the full description of the model, not the copy cut for the answer.
         var allTypes = (model.Types ?? [])
-            .Select(t => MapType(model.ModelId, t, attributes, modelName))
-            .OrderBy(t => t.TypeId, StringComparer.Ordinal)
+            .Select(t => (Source: t, Dto: MapType(model.ModelId, t, attributes, modelName)))
+            .OrderBy(t => t.Dto.TypeId, StringComparer.Ordinal)
             .ToList();
 
         var matching = string.IsNullOrWhiteSpace(filter)
-            ? allTypes
-            : allTypes.Where(t => Matches(t, filter.Trim())).ToList();
+            ? allTypes.Select(t => t.Dto).ToList()
+            : allTypes.Where(t => Matches(t.Dto, t.Source.Description, filter.Trim())).Select(t => t.Dto).ToList();
 
         var page = matching.Skip(skip).Take(take).ToList();
 
@@ -93,9 +94,9 @@ internal static class CkCatalogModelTypesMapper
         };
     }
 
-    private static bool Matches(CkCatalogTypeDto type, string filter) =>
+    private static bool Matches(CkCatalogTypeDto type, string? fullDescription, string filter) =>
         type.TypeId.Contains(filter, StringComparison.OrdinalIgnoreCase)
-        || (type.Description?.Contains(filter, StringComparison.OrdinalIgnoreCase) ?? false)
+        || (fullDescription?.Contains(filter, StringComparison.OrdinalIgnoreCase) ?? false)
         || type.Attributes.Any(a => a.Name.Contains(filter, StringComparison.OrdinalIgnoreCase));
 
     private static CkCatalogTypeDto MapType(CkModelId modelId, CkCompiledTypeDto type,
