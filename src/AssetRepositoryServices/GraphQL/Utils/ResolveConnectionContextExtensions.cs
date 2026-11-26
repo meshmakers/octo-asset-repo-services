@@ -83,6 +83,18 @@ internal static class ResolveConnectionContextExtensions
     }
 
     /// <summary>
+    ///     The page size a nested association connection asks the repository for: 0 - the repository's
+    ///     count-only form, which loads no target document - when the selection is <c>totalCount</c> alone
+    ///     (<see cref="IsTotalCountOnlySelected" />), whatever <c>first</c> says; otherwise <c>first</c>. So
+    ///     <c>first: 0</c>, a larger <c>first</c> and an omitted <c>first</c> behave the same for a count-only
+    ///     selection. Answer such a result with <see cref="ConnectionUtils.ToCountOnlyOctoConnection{TSource, TParent}" />.
+    /// </summary>
+    internal static int? GetAssociationTake(this IResolveConnectionContext context)
+    {
+        return context.IsTotalCountOnlySelected() ? 0 : context.First;
+    }
+
+    /// <summary>
     ///     True when a connection field needs the total number of matching entities (AB#8896): it selects
     ///     <c>totalCount</c> or <c>pageInfo</c> (whose <c>hasNextPage</c> is computed from the total), or it pages from
     ///     the end with <c>last</c>/<c>before</c> (the edge range is computed from the total). Aliases and fragments

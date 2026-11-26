@@ -427,7 +427,9 @@ internal sealed class RtEntityDtoType : ObjectGraphType<RtEntityDto>
 
             // Create a unique cache key for this batch loader based on all query parameters
             // This ensures different filter combinations use separate batch loaders
-            var cacheKey = $"Assoc_{originCkId}_{queryTargetCkId}_{roleId}_{graphDirection}_{offset}_{ctx.First}_{queryOptions.GetHashCode()}_{string.Join(",", keysList?.Select(k => k.ToString()) ?? [])}";
+            // totalCount alone asks for the count-only form (take 0), which loads no target.
+            var take = ctx.GetAssociationTake();
+            var cacheKey = $"Assoc_{originCkId}_{queryTargetCkId}_{roleId}_{graphDirection}_{offset}_{take}_{queryOptions.GetHashCode()}_{string.Join(",", keysList?.Select(k => k.ToString()) ?? [])}";
 
             // Use DataLoader to batch association queries for multiple entities
             var loader = dataLoaderAccessor.Context.GetOrAddBatchLoader<RtEntityId, IResultSet<RtEntity>>(
@@ -443,15 +445,18 @@ internal sealed class RtEntityDtoType : ObjectGraphType<RtEntityDto>
                         keysList,
                         queryOptions,
                         offset,
-                        ctx.First));
+                        take));
 
             var dataLoaderResult = loader.LoadAsync(ctx.Source.ToRtEntityId());
 
-            return dataLoaderResult.Then(resultSet => ConnectionUtils.ToOctoConnection(
-                resultSet.Items.Select(CreateRtEntityDto),
-                ctx,
-                resultSet.TotalCount > 0 ? offset.GetValueOrDefault(0) : 0,
-                (int)resultSet.TotalCount));
+            return dataLoaderResult.Then(resultSet => take == 0
+                ? ConnectionUtils.ToCountOnlyOctoConnection<RtEntityDto, RtEntityDto>(ctx,
+                    resultSet.TotalCount)
+                : ConnectionUtils.ToOctoConnection(
+                    resultSet.Items.Select(CreateRtEntityDto),
+                    ctx,
+                    resultSet.TotalCount > 0 ? offset.GetValueOrDefault(0) : 0,
+                    (int)resultSet.TotalCount));
         }
         catch (Exception e)
         {
@@ -550,7 +555,9 @@ internal sealed class RtEntityDtoType : ObjectGraphType<RtEntityDto>
             else
             {
                 // Create a unique cache key for direct associations
-                var cacheKey = $"GenericAssocDirect_{originCkId}_{targetCkId}_{roleId}_{direction}_{offset}_{arg.First}_{queryOptions.GetHashCode()}";
+                // totalCount alone asks for the count-only form (take 0), which loads no target.
+                var take = arg.GetAssociationTake();
+                var cacheKey = $"GenericAssocDirect_{originCkId}_{targetCkId}_{roleId}_{direction}_{offset}_{take}_{queryOptions.GetHashCode()}";
 
                 var loader = dataLoaderAccessor.Context.GetOrAddBatchLoader<RtEntityId, IResultSet<RtEntity>>(
                     cacheKey,
@@ -565,15 +572,18 @@ internal sealed class RtEntityDtoType : ObjectGraphType<RtEntityDto>
                             null,
                             queryOptions,
                             offset,
-                            arg.First));
+                            take));
 
                 var dataLoaderResult = loader.LoadAsync(arg.Source.ToRtEntityId());
 
-                return dataLoaderResult.Then(resultSet => ConnectionUtils.ToOctoConnection(
-                    resultSet.Items.Select(CreateRtEntityDto),
-                    arg,
-                    resultSet.TotalCount > 0 ? offset.GetValueOrDefault(0) : 0,
-                    (int)resultSet.TotalCount));
+                return dataLoaderResult.Then(resultSet => take == 0
+                    ? ConnectionUtils.ToCountOnlyOctoConnection<RtEntityDto, RtEntityDto>(arg,
+                        resultSet.TotalCount)
+                    : ConnectionUtils.ToOctoConnection(
+                        resultSet.Items.Select(CreateRtEntityDto),
+                        arg,
+                        resultSet.TotalCount > 0 ? offset.GetValueOrDefault(0) : 0,
+                        (int)resultSet.TotalCount));
             }
         }
         catch (Exception e)
