@@ -4,13 +4,16 @@
 
 - AB#9750 Fix: a nested association connection that selects `totalCount` alone (`children { totalCount }`, the generic
   `associations(…) { totalCount }` of a typed entity and `associations { targets { totalCount } }` of a generic entity)
-  asks the repository for its count-only form (`take: 0`) instead of passing `first` on: no target document is loaded,
-  and `first: 0`, a larger `first` and an omitted `first` give the same total. Any other selection pages as before.
+  asks the repository for its count-only form (`take: 0`) instead of passing `first` on: no target document reaches the
+  asset repository (with a security or field filter the engine still probes each target by `_id` on the server, see
+  `docs/runtime-query-guard.md`), and `first: 0`, a larger `first` and an omitted `first` give the same total. Any other selection pages as before.
   Before, `children { totalCount }` without `first` loaded every target document of every parent. Indirect navigations
   (`includeIndirect: true`) are unchanged. Needs the octo-construction-kit-engine-mongodb package of the same change
   (with an older package the count is still right, but its count-only form loads the targets). Code:
   `ResolveConnectionContextExtensions.GetAssociationTake`, `ConnectionUtils.ToCountOnlyOctoConnection`. Tests:
-  `NestedAssociationTakeTests` (unit), `NestedAssociationTotalCountOnlyTests` (GraphQL). CK compatibility: no CK model,
+  `NestedAssociationTakeTests` (unit), `NestedAssociationTotalCountOnlyTests` (GraphQL),
+  `NestedAssociationTakeReachesRepositoryTests` (GraphQL: the `take` each resolver passes to the repository, recorded
+  through a wrapped tenant repository - 0 for `totalCount` alone, `first` with items). CK compatibility: no CK model,
   API or schema change.
 - AB#9788 Fix: a GraphQL mutation whose MongoDB transaction failed with `TransientTransactionError` (e.g. parallel
   creations of an auto-numbered type colliding on the counter, AB#9753) is executed again as a whole - new transaction,

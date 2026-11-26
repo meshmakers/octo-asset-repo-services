@@ -82,9 +82,14 @@ for `definitions` the type of the parent entity).
 
 Counting the targets of a navigation: a direct navigation connection that selects `totalCount` alone (typed navigation
 fields, `associations(…)` of a typed entity, `associations { targets }` of a generic entity) asks the engine for its
-count-only form (`take: 0`, `ResolveConnectionContextExtensions.GetAssociationTake`), which loads no target document -
-with or without `first`, so `children { totalCount }` and `children(first: 0) { totalCount }` cost the same. Such a
-selection is bounded and never refused. Indirect navigations (`includeIndirect: true`) pass `first` on as before.
+count-only form (`take: 0`, `ResolveConnectionContextExtensions.GetAssociationTake`), which returns no target document
+to the asset repository - with or without `first`, so `children { totalCount }` and `children(first: 0) { totalCount }`
+cost the same. On the server the count differs by filter: without a security, id or field filter on the targets, a
+dense origin (more edges than the engine's threshold) is counted on the edge index alone; with such a filter (a
+restricted data permission or a `fieldFilter`) every edge runs an `_id` probe of its target in the count pipeline, which
+reads the target on the server and keeps only its `_id` (no dense shortcut), so a large filtered association costs one
+target read per edge. With a geospatial filter the engine counts on its item path for one item. Such a selection is
+bounded and never refused. Indirect navigations (`includeIndirect: true`) pass `first` on as before.
 
 ## Classification
 
