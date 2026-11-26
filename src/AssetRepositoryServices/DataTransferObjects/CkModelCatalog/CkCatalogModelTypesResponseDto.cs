@@ -47,7 +47,7 @@ public class CkCatalogTypeDto
     /// <summary>Type id, e.g. "Basic/Equipment".</summary>
     public string TypeId { get; set; } = string.Empty;
 
-    /// <summary>Type it derives from (full id with model), if any.</summary>
+    /// <summary>Type it derives from in the runtime form "Model/Element", e.g. "System/Entity", if any.</summary>
     public string? DerivedFrom { get; set; }
 
     /// <summary>True for an abstract type (no instances).</summary>
@@ -72,7 +72,7 @@ public class CkCatalogTypeAttributeDto
     /// <summary>Attribute name on the type.</summary>
     public string Name { get; set; } = string.Empty;
 
-    /// <summary>Full attribute id, e.g. "Basic-2.7.0/Name".</summary>
+    /// <summary>Attribute id in the runtime form "Model/Element" (model without version), e.g. "Basic/Name".</summary>
     public string AttributeId { get; set; } = string.Empty;
 
     /// <summary>Value type (e.g. String, Int, Enum, Record), null when the attribute comes from another model.</summary>
