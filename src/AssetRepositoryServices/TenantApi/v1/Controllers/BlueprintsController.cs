@@ -4,6 +4,7 @@ using Duende.IdentityModel;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.DataTransferObjects.Blueprints;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.Utils;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.Services;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.Services.BlueprintValidation;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.UpgradeGuard;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects.ApiErrors;
 using Meshmakers.Octo.ConstructionKit.Contracts.BlueprintCatalogs;
@@ -31,6 +32,7 @@ public class BlueprintsController : ControllerBase
     private readonly ITenantBlueprintInstallations _blueprintInstallations;
     private readonly IAuthorizationService _authorizationService;
     private readonly ILogger<BlueprintsController> _logger;
+    private readonly IBlueprintDraftValidationService? _draftValidation;
 
     /// <summary>
     ///     Constructor
@@ -40,18 +42,78 @@ public class BlueprintsController : ControllerBase
     /// <param name="blueprintInstallations">Tenant blueprint installations service</param>
     /// <param name="authorizationService">Authorization service (checks the policy a forced breaking update needs)</param>
     /// <param name="logger">Logger</param>
+    /// <param name="draftValidation">Blueprint draft validation</param>
     public BlueprintsController(
         ITenantBlueprintHistory blueprintHistory,
         IBlueprintService blueprintService,
         ITenantBlueprintInstallations blueprintInstallations,
         IAuthorizationService authorizationService,
-        ILogger<BlueprintsController> logger)
+        ILogger<BlueprintsController> logger,
+        IBlueprintDraftValidationService? draftValidation = null)
     {
+        _draftValidation = draftValidation;
         _blueprintHistory = blueprintHistory;
         _blueprintService = blueprintService;
         _blueprintInstallations = blueprintInstallations;
         _authorizationService = authorizationService;
         _logger = logger;
+    }
+
+    // POST {tenantId}/v1/blueprints/validate
+    /// <summary>
+    ///     Validates a blueprint draft <b>without installing anything</b>.
+    ///     <para>
+    ///         Accepts a zip of the blueprint folder (the folder with <c>blueprint.yaml</c>, e.g. the output of
+    ///         <c>octo-bpm pack</c>) or a single <c>blueprint.yaml</c>. Runs the shared blueprint draft validator - the
+    ///         same checks as <c>octo-bpm validate</c> and the install path: manifest, seed data, Secret seed lint and the
+    ///         CK model dependency ranges against the CK model catalogs. Nothing is written.
+    ///     </para>
+    ///     <para>
+    ///         Always <c>200</c> with the result for a draft, valid or not; findings carry stable codes (149-167) and are
+    ///         bounded (<c>totalFindings</c> counts all). <c>400</c> only without a file. Same policy and size limit as
+    ///         <c>models/ValidateCk</c>.
+    ///     </para>
+    /// </summary>
+    /// <param name="file">The blueprint draft (zip or blueprint.yaml)</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>The validation result</returns>
+    [HttpPost("validate")]
+    [Authorize(AssetRepositoryServiceConstants.TenantAssetApiReadOnlyPolicy)]
+    [RequestSizeLimit(ModelsController.MaxValidateCkBytes)]
+    [ProducesResponseType(typeof(BlueprintDraftValidationResponseDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(OperationFailedErrorDto), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(InternalServerErrorDto), StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> Validate(IFormFile? file, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var tenantId = HttpContext.GetTenantId();
+            if (string.IsNullOrEmpty(tenantId))
+            {
+                return BadRequest(new OperationFailedErrorDto("TenantId is required"));
+            }
+
+            if (file == null || file.Length == 0)
+            {
+                return BadRequest(new OperationFailedErrorDto("A blueprint file (zip or blueprint.yaml) is required."));
+            }
+
+            if (_draftValidation == null)
+            {
+                return StatusCode(StatusCodes.Status500InternalServerError,
+                    new InternalServerErrorDto("Blueprint draft validation is not configured."));
+            }
+
+            await using var upload = file.OpenReadStream();
+            var result = await _draftValidation.ValidateAsync(upload, file.FileName, cancellationToken);
+            return Ok(result);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogError(ex, "Blueprint draft validation failed");
+            return StatusCode(StatusCodes.Status500InternalServerError, new InternalServerErrorDto(ex.Message));
+        }
     }
 
     // POST {tenantId}/v1/blueprints/apply

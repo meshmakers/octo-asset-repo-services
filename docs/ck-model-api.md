@@ -46,9 +46,11 @@ Code: `Services/CkModelValidation/CkModelDraftValidator` (registered transient i
   pre-write checks, read-only) and, without errors, `EvaluateFileImportBlockersAsync` (the guard of `ImportCk`).
 - **Nothing is written**: no cache stream, no import command, no tenant write; the temp folder is deleted.
 - **A bad draft is a finding, not a failed call**: compiler errors, YAML syntax errors, an unreadable file, a missing dependency are
-  errors in the list. Numbers: the engine's message catalog; 8492 with `parameters.reason` `unreadable-draft` (asset repository),
-  `system-reference-mismatch` / `dependency-resolution` (engine). An unknown dependency of a **source** draft is message 1 (no `file`:
-  the compiler names the draft folder itself) plus 8492 with `dependency-resolution` (asset repository, `IsDependencyResolutionFailure`).
+  errors in the list. Every number is from the engine's message catalog (`MessageCodes.json`), none outside it: 147
+  `CkModelDraftUnreadable` (`parameters.detail`, asset repository), 145 `CkModelSystemReferenceMismatch` (`modelId`,
+  `referencedModelId`, `installedModelId`) and 146 `CkModelDependencyNotResolvable` (`modelId`, `detail`) from the engine, besides
+  91 and 126. An unknown dependency of a **source** draft is message 1 (no `file`: the compiler names the draft folder itself) plus
+  146 with `detail` only (asset repository, `IsDependencyResolutionFailure`; the model id is not known before the compile).
 - **Zip safety**: entries with `..` or an absolute path are refused, at most 2,000 entries and 50 MB unpacked.
 - **File and element**: `file` is relative to the `ConstructionKit/` folder, `null` for the folder itself (a server path and the temp folder
   name `octo-ck-validate-<guid>` never leave the service, under any spelling such as `/private/var` on macOS; temp paths are also
@@ -60,6 +62,29 @@ Code: `Services/CkModelValidation/CkModelDraftValidator` (registered transient i
   `IntegrationTests/Tenant/CkModelDraftValidationTests` (real compiler, catalogs, tenant and MongoDB: valid source folder not imported, unknown
   attribute with file and element, missing dependency of a compiled model and of a source draft, broken YAML, unreadable file, zip slip;
   every case asserts that the serialized response contains no temp folder name or temp path).
+
+## Validate a blueprint draft without installing it: `blueprints/validate`
+
+`POST {tenantId}/v1/blueprints/validate` (multipart member `file`, policy `TenantAssetApiReadOnlyPolicy`, request limit 20 MB, the
+same as `Models/ValidateCk`) answers **200** with `BlueprintDraftValidationResponseDto` for every draft, valid or not (`isValid`,
+`blueprintId`, `totalFindings`, `truncated`, `findings` = `BlueprintDraftFindingDto`: `code`, `level`, `file`, `modelId`, `message`,
+`parameters`); 400 only without a file (or an empty one). Backs the MCP tool `validate_blueprint` (SDK
+`IAssetServicesClient.ValidateBlueprintAsync`). Code: `Services/BlueprintValidation/BlueprintDraftValidationService` (registered
+transient in `RuntimeEngineBuilderExtensions`); a host without the registration answers 500 "not configured" and writes nothing.
+
+- **One validator.** The service runs the engine's `IBlueprintDraftValidator`, the same one `octo-bpm validate|pack|publish` and the
+  install path (`ApplyBlueprintAsync`) use, with the CK model dependency-range check against all CK model catalogs the asset
+  repository reads. Rules and codes: octo-construction-kit-engine `docs/blueprints.md`, "Validating a blueprint draft".
+- **Upload**: a name ending in `.yaml`/`.yml` (any case) is read as the single `blueprint.yaml`; everything else is read as a zip of the
+  blueprint folder (the shallowest `blueprint.yaml` marks the root). The zip is read in memory, never extracted to disk; the engine's
+  file source refuses entries with `..` or an absolute path and limits the number of files and the unpacked size.
+- **Nothing is written**: no install, no catalog write, no tenant write.
+- **A bad draft is a finding, not a failed call**: codes 149-167 of the construction kit message catalog; an unreadable zip is 167.
+- **Bounded**: at most 200 findings (`BlueprintDraftValidationResponseDto.MaxFindings`); `totalFindings` counts all, `truncated` says
+  that some were left out.
+- Tests: `UnitTests/Services/BlueprintDraftValidationServiceTests`, `UnitTests/TenantApi/BlueprintsControllerValidateTests` (result
+  passed through, 400 without a file, 500 without the service, read-only policy, size limit),
+  `IntegrationTests/Tenant/BlueprintDraftValidationHostTests` (the host resolves the service; a garbage upload is 167).
 
 ## Import a source draft: `Models/ImportCk` compiles a zipped `ConstructionKit/` folder
 
@@ -134,6 +159,7 @@ System-scoped REST endpoints for browsing and managing Construction Kit model ca
 | `GET` | `system/v1/ckmodelcatalog/{catalogName}` | ReadOnly | List models from specific catalog |
 | `HEAD` | `system/v1/ckmodelcatalog/{modelId}` | ReadOnly | Check if model exists |
 | `GET` | `system/v1/ckmodelcatalog/{catalogName}/{modelId}` | ReadOnly | Get model details |
+| `GET` | `system/v1/ckmodelcatalog/{catalogName}/{modelId}/types?filter=&skip=&take=` | ReadOnly | Types (attributes, associations), association roles and enums of a catalog model version, without importing it. Paged: types sorted by id, `take` default 20, capped at 50; `filter` matches type id, description or attribute names; descriptions cut at 300 characters; attributes from a dependency carry no `valueType`; ids are named as in a tenant (`Basic/Equipment`, `System/ParentChild`). Refusals are `application/problem+json` with `code` `InvalidCkModelId` (400, the id needs a version), `CkCatalogNotFound` or `CkCatalogModelNotFound` (404); `CkCatalogUnavailable` (503) when the catalog cannot be read (unreachable, rate limit, timeout) - no answer about the model, retry later. |
 | `POST` | `system/v1/ckmodelcatalog/refresh` | DataModelManagement | Refresh all catalog caches |
 | `POST` | `system/v1/ckmodelcatalog/{catalogName}/refresh` | DataModelManagement | Refresh specific catalog cache |
 
