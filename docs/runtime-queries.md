@@ -1,6 +1,6 @@
 ---
 description: Unbounded runtime-entity query guard, the server-side query time limit and the runtime.byInterface query: where each is wired, limits, error codes and tests.
-applies_to: **/RtEntityByInterfaceTypes.cs, **/RuntimeQueryGuard*.cs, **/RuntimeModelQuery.cs, **/RtTransientQuery.cs, **/InterfaceQuery*.cs, tests/**/ByInterface*.cs, **/RuntimeQueryTimeout*.cs, **/RuntimeQueryTimeLimit*.cs, **/Blueprints*.cs, **/RuntimeEngineBuilderExtensions.cs
+applies_to: **/RtEntityByInterfaceTypes.cs, **/RuntimeQueryGuard*.cs, **/RuntimeModelQuery.cs, **/RtTransientQuery.cs, **/InterfaceQuery*.cs, **/QueryArgumentException.cs, tests/**/ByInterface*.cs, **/RuntimeQueryTimeout*.cs, **/RuntimeQueryTimeLimit*.cs, **/Blueprints*.cs, **/RuntimeEngineBuilderExtensions.cs
 ---
 
 # Runtime query guard and query by interface
@@ -48,6 +48,14 @@ type, by id, by type with navigation and by CK interface to MongoDB with `maxTim
   uninstall path.
 - Not covered yet: association and deep-graph queries (navigation connections, `associations`, deep graph).
 
+## Generic query: `runtime.runtimeEntities`
+
+`ckId` is required: the engine queries the entities of one CK type. A query without `ckId` (or with `ckId: null`) is
+refused before the attribute guards and any database read with `INVALID_ARGUMENT`, `extensions.argument` = `ckId`
+(`QueryArgumentException`); a query the unbounded query guard refuses first (no `first`, `Enforce`) gets `ASSET1007`.
+The argument stays nullable in the schema so that clients passing a nullable variable keep validating. Test:
+`GenericRuntimeEntitiesArgumentTests`.
+
 ## Query by interface: `runtime.byInterface`
 
 A thin GraphQL layer over the ONE engine method `ITenantRepository.GetRtEntitiesByInterfaceAsync` (see
@@ -78,7 +86,7 @@ the design spike (option A); budget, v1 scope and the refusal cases are describe
   `extensions.reason` (a token of `InterfaceQueryReasons`) and `extensions.parameters` (dictionary of strings), passed
   through unchanged: no per-reason code, no mapping table, the message text is not a contract. A malformed argument
   (`ckInterfaceId` no runtime CK id, negative `skip`/`take`) is `INVALID_ARGUMENT` with `extensions.argument`
-  (`InterfaceQueryArgumentException`).
+  (`QueryArgumentException`).
 - **Transactions**: queries run in a session without transaction in the GraphQL pipeline (`OctoSessionListener` only
   starts one for mutations). Inside a transaction session (pipeline nodes, in-process callers) the engine queries the
   collections sequentially; the result is identical (test `QueryInATransactionSession_ReturnsTheSameResultAsWithout`).

@@ -50,6 +50,7 @@ are never returned by this service - neither the plaintext, legacy clear text no
   `attributePath` / `operation` extensions (`HandleException` and the global `UnhandledExceptionDelegate`).
   `SecretEncryptionNotConfiguredException` maps to `SecretEncryptionNotConfigured`.
 - `availableArchivePaths` omits secrets; archives cannot contain secret columns.
+- A missing or unknown CK type passes `SecretQueryGuard` unchanged; the resolver or the repository reports it.
 
 ## Secrets overview
 

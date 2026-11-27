@@ -137,7 +137,7 @@ internal sealed class RuntimeModelQuery : ObjectGraphType
             }
             catch (Exception e) when (e is ArgumentException or FormatException)
             {
-                throw new InterfaceQueryArgumentException(Statics.CkInterfaceIdArg,
+                throw new QueryArgumentException(Statics.CkInterfaceIdArg,
                     $"'{ckInterfaceIdText}' is not a runtime CK interface id (expected 'Model/Interface-Version').");
             }
 
@@ -145,12 +145,12 @@ internal sealed class RuntimeModelQuery : ObjectGraphType
             var skip = arg.GetArgument<int?>(Statics.SkipArg) ?? 0;
             if (take < 0)
             {
-                throw new InterfaceQueryArgumentException(Statics.TakeArg, "take must not be negative.");
+                throw new QueryArgumentException(Statics.TakeArg, "take must not be negative.");
             }
 
             if (skip < 0)
             {
-                throw new InterfaceQueryArgumentException(Statics.SkipArg, "skip must not be negative.");
+                throw new QueryArgumentException(Statics.SkipArg, "skip must not be negative.");
             }
 
             var queryOptions = arg.GetQueryOptions();
@@ -361,7 +361,9 @@ internal sealed class RuntimeModelQuery : ObjectGraphType
             var sessionAccessor = arg.GetSessionAccessor();
 
             var graphQlUserContext = (GraphQlUserContext)arg.UserContext;
-            var ckTypeId = arg.GetArgument<RtCkId<CkTypeId>>(Statics.CkId);
+            var ckTypeId = arg.GetArgument<RtCkId<CkTypeId>?>(Statics.CkId)
+                           ?? throw new QueryArgumentException(Statics.CkIdArg,
+                               $"The argument '{Statics.CkIdArg}' is required.");
 
             var offset = arg.GetOffset();
             var queryOptions = arg.GetQueryOptions();

@@ -257,7 +257,7 @@ internal static class ResolveConnectionContextExtensions
             // AB#6932: before the PersistenceException branch (the exception derives from it).
             context.Errors.Add(CreateInterfaceQueryError(interfaceQueryException));
         }
-        else if (exception is InterfaceQueryArgumentException argumentException)
+        else if (exception is QueryArgumentException argumentException)
         {
             context.Errors.Add(new ExecutionError(argumentException.Message, argumentException)
             {

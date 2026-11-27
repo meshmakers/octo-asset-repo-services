@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- AB#9861 Fix: `runtime.runtimeEntities` without `ckId` (or with `ckId: null`) is refused before any database read
+  with `INVALID_ARGUMENT` and `extensions.argument` = `ckId`, instead of `ASSET1002` with an `ArgumentNullException`
+  from the secret attribute guard. A query without type is not supported; the argument stays nullable in the schema.
+  The guard itself passes a missing type on like an unknown one instead of throwing. An unbounded query (no `first`)
+  in `Enforce` mode still gets the unbounded query guard's `ASSET1007` first. Docs `docs/runtime-queries.md`, `docs/secret-attributes.md`.
 - AB#6054 Test: an agent token (scope `octo_agent`) of the route's own tenant gets `403 AgentTokenNotAccepted` on GraphQL
   queries and mutations and on REST in every mode of the tenant gate, also on a REST action whose scope policy
   (`TenantAssetApiReadOnlyPolicy`) refuses it first (`TenantGatePipelineTests`, with the production policies and result
