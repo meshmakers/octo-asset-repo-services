@@ -9,6 +9,7 @@ using Meshmakers.Octo.ConstructionKit.Models.StreamData.Generated.System.StreamD
 using Meshmakers.Octo.Services.Contracts.DistributionEventHub.Methods;
 using Meshmakers.Octo.Services.Methods.Facades;
 using Meshmakers.Octo.Services.Methods.Operations;
+using Meshmakers.Octo.Services.RestDeprecation;
 using Microsoft.Extensions.Options;
 using Microsoft.Net.Http.Headers;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects.ApiErrors;
@@ -38,6 +39,11 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.StreamData.Controllers
 ///     methods; otherwise <c>403</c> with the code <c>StreamDataAdminRequired</c>. Tenant-wide enable / disable need
 ///     <c>TenantManagement</c>. Row writes (<c>insert</c>, <c>insertTimeRange</c>) keep the scope for automated points
 ///     and need <c>StreamDataAdmin</c> for manual points (AB#8590); reads need the read scope.
+///     <para>
+///         The 16 endpoints that are facades of the Archive methods carry
+///         <see cref="OctoRestDeprecatedAttribute" /> of wave <see cref="StreamDataRestDeprecation.Wave4" />
+///         (<see cref="StreamDataRestDeprecation" />); behaviour is unchanged, only the deprecation headers are added.
+///     </para>
 /// </remarks>
 
 [Microsoft.AspNetCore.Authorization.Authorize(AuthenticationSchemes = OidcConstants.AuthenticationSchemes.AuthorizationHeaderBearer)]
@@ -101,6 +107,7 @@ public class StreamDataController : ControllerBase
     /// </summary>
     [HttpPost("archives/{archiveRtId}/activate")]
     [Microsoft.AspNetCore.Authorization.Authorize(AssetRepositoryServiceConstants.StreamDataAdministrationPolicy)]
+    [OctoRestDeprecated(Wave = StreamDataRestDeprecation.Wave4, Link = StreamDataRestDeprecation.MethodsLink)]
     public Task<IActionResult> ActivateArchive([Required] string tenantId, [Required] string archiveRtId)
         => InvokeArchiveMethodAsync(tenantId, archiveRtId, "ActivateArchive",
             (lifecycle, id) => lifecycle.ActivateAsync(id),
@@ -162,6 +169,7 @@ public class StreamDataController : ControllerBase
     /// </summary>
     [HttpPost("archives/{archiveRtId}/disable")]
     [Microsoft.AspNetCore.Authorization.Authorize(AssetRepositoryServiceConstants.StreamDataAdministrationPolicy)]
+    [OctoRestDeprecated(Wave = StreamDataRestDeprecation.Wave4, Link = StreamDataRestDeprecation.MethodsLink)]
     public Task<IActionResult> DisableArchive([Required] string tenantId, [Required] string archiveRtId)
         => InvokeArchiveMethodAsync(tenantId, archiveRtId, "DisableArchive",
             (lifecycle, id) => lifecycle.DisableAsync(id),
@@ -173,6 +181,7 @@ public class StreamDataController : ControllerBase
     /// </summary>
     [HttpPost("archives/{archiveRtId}/enable")]
     [Microsoft.AspNetCore.Authorization.Authorize(AssetRepositoryServiceConstants.StreamDataAdministrationPolicy)]
+    [OctoRestDeprecated(Wave = StreamDataRestDeprecation.Wave4, Link = StreamDataRestDeprecation.MethodsLink)]
     public Task<IActionResult> EnableArchive([Required] string tenantId, [Required] string archiveRtId)
         => InvokeArchiveMethodAsync(tenantId, archiveRtId, "EnableArchive",
             (lifecycle, id) => lifecycle.EnableAsync(id),
@@ -183,6 +192,7 @@ public class StreamDataController : ControllerBase
     /// </summary>
     [HttpPost("archives/{archiveRtId}/retry")]
     [Microsoft.AspNetCore.Authorization.Authorize(AssetRepositoryServiceConstants.StreamDataAdministrationPolicy)]
+    [OctoRestDeprecated(Wave = StreamDataRestDeprecation.Wave4, Link = StreamDataRestDeprecation.MethodsLink)]
     public Task<IActionResult> RetryArchiveActivation([Required] string tenantId, [Required] string archiveRtId)
         => InvokeArchiveMethodAsync(tenantId, archiveRtId, "RetryArchiveActivation",
             (lifecycle, id) => lifecycle.RetryActivationAsync(id),
@@ -194,6 +204,7 @@ public class StreamDataController : ControllerBase
     /// </summary>
     [HttpDelete("archives/{archiveRtId}")]
     [Microsoft.AspNetCore.Authorization.Authorize(AssetRepositoryServiceConstants.StreamDataAdministrationPolicy)]
+    [OctoRestDeprecated(Wave = StreamDataRestDeprecation.Wave4, Link = StreamDataRestDeprecation.MethodsLink)]
     public Task<IActionResult> DeleteArchive([Required] string tenantId, [Required] string archiveRtId)
         => InvokeArchiveMethodAsync(tenantId, archiveRtId, "DeleteArchive",
             (lifecycle, id) => lifecycle.DeleteAsync(id),
@@ -205,6 +216,7 @@ public class StreamDataController : ControllerBase
     /// </summary>
     [HttpPost("archives/{rollupRtId}/freeze")]
     [Microsoft.AspNetCore.Authorization.Authorize(AssetRepositoryServiceConstants.StreamDataAdministrationPolicy)]
+    [OctoRestDeprecated(Wave = StreamDataRestDeprecation.Wave4, Link = StreamDataRestDeprecation.MethodsLink)]
     public Task<IActionResult> FreezeRollupArchive(
         [Required] string tenantId, [Required] string rollupRtId, [Required] DateTime until)
         => InvokeRollupAsync(tenantId, rollupRtId, "FreezeRollup",
@@ -216,6 +228,7 @@ public class StreamDataController : ControllerBase
     /// </summary>
     [HttpPost("archives/{rollupRtId}/unfreeze")]
     [Microsoft.AspNetCore.Authorization.Authorize(AssetRepositoryServiceConstants.StreamDataAdministrationPolicy)]
+    [OctoRestDeprecated(Wave = StreamDataRestDeprecation.Wave4, Link = StreamDataRestDeprecation.MethodsLink)]
     public Task<IActionResult> UnfreezeRollupArchive(
         [Required] string tenantId, [Required] string rollupRtId, bool acceptGaps = false)
         => InvokeRollupAsync(tenantId, rollupRtId, "UnfreezeRollup",
@@ -230,6 +243,7 @@ public class StreamDataController : ControllerBase
     /// </summary>
     [HttpPost("archives/{rollupRtId}/rewind")]
     [Microsoft.AspNetCore.Authorization.Authorize(AssetRepositoryServiceConstants.StreamDataAdministrationPolicy)]
+    [OctoRestDeprecated(Wave = StreamDataRestDeprecation.Wave4, Link = StreamDataRestDeprecation.MethodsLink)]
     public Task<IActionResult> RewindRollupWatermark(
         [Required] string tenantId, [Required] string rollupRtId, [Required] DateTime toBucketEnd)
         => InvokeRollupAsync(tenantId, rollupRtId, "RewindRollup",
@@ -246,6 +260,7 @@ public class StreamDataController : ControllerBase
     /// </summary>
     [HttpPost("archives/{archiveRtId}/computed-columns")]
     [Microsoft.AspNetCore.Authorization.Authorize(AssetRepositoryServiceConstants.StreamDataAdministrationPolicy)]
+    [OctoRestDeprecated(Wave = StreamDataRestDeprecation.Wave4, Link = StreamDataRestDeprecation.MethodsLink)]
     public Task<IActionResult> AddComputedColumn(
         [Required] string tenantId, [Required] string archiveRtId,
         [Required] string name, [Required] string formula, [Required] FormulaResultType resultType,
@@ -269,6 +284,7 @@ public class StreamDataController : ControllerBase
     /// </summary>
     [HttpPost("archives/{archiveRtId}/columns")]
     [Microsoft.AspNetCore.Authorization.Authorize(AssetRepositoryServiceConstants.StreamDataAdministrationPolicy)]
+    [OctoRestDeprecated(Wave = StreamDataRestDeprecation.Wave4, Link = StreamDataRestDeprecation.MethodsLink)]
     public Task<IActionResult> AddArchiveColumn(
         [Required] string tenantId, [Required] string archiveRtId, [Required] string path, bool indexed = false)
         => InvokeColumnMethodAsync(tenantId, archiveRtId, "AddArchiveColumn",
@@ -282,6 +298,7 @@ public class StreamDataController : ControllerBase
     /// </summary>
     [HttpDelete("archives/{archiveRtId}/computed-columns/{name}")]
     [Microsoft.AspNetCore.Authorization.Authorize(AssetRepositoryServiceConstants.StreamDataAdministrationPolicy)]
+    [OctoRestDeprecated(Wave = StreamDataRestDeprecation.Wave4, Link = StreamDataRestDeprecation.MethodsLink)]
     public Task<IActionResult> RemoveComputedColumn(
         [Required] string tenantId, [Required] string archiveRtId, [Required] string name)
         => InvokeColumnMethodAsync(tenantId, archiveRtId, "RemoveComputedColumn",
@@ -298,6 +315,7 @@ public class StreamDataController : ControllerBase
     /// </summary>
     [HttpPut("archives/{archiveRtId}/computed-columns/{name}")]
     [Microsoft.AspNetCore.Authorization.Authorize(AssetRepositoryServiceConstants.StreamDataAdministrationPolicy)]
+    [OctoRestDeprecated(Wave = StreamDataRestDeprecation.Wave4, Link = StreamDataRestDeprecation.MethodsLink)]
     public Task<IActionResult> UpdateComputedColumnFormula(
         [Required] string tenantId, [Required] string archiveRtId, [Required] string name,
         [Required] string formula)
@@ -316,6 +334,7 @@ public class StreamDataController : ControllerBase
     /// </summary>
     [HttpPost("archives/{archiveRtId}/computed-columns/{name}/retry")]
     [Microsoft.AspNetCore.Authorization.Authorize(AssetRepositoryServiceConstants.StreamDataAdministrationPolicy)]
+    [OctoRestDeprecated(Wave = StreamDataRestDeprecation.Wave4, Link = StreamDataRestDeprecation.MethodsLink)]
     public Task<ActionResult<RecomputeJobInfoRestDto>> RetryComputedColumnBackfill(
         [Required] string tenantId, [Required] string archiveRtId, [Required] string name)
         => InvokeColumnJobMethodAsync(tenantId, archiveRtId, "RetryComputedColumnBackfill",
@@ -333,6 +352,7 @@ public class StreamDataController : ControllerBase
     /// </summary>
     [HttpPost("archives/{archiveRtId}/computed-columns/{name}/repair")]
     [Microsoft.AspNetCore.Authorization.Authorize(AssetRepositoryServiceConstants.StreamDataAdministrationPolicy)]
+    [OctoRestDeprecated(Wave = StreamDataRestDeprecation.Wave4, Link = StreamDataRestDeprecation.MethodsLink)]
     public Task<ActionResult<RecomputeJobInfoRestDto>> RepairComputedColumn(
         [Required] string tenantId, [Required] string archiveRtId, [Required] string name,
         DateTime? from, DateTime? to)
@@ -353,6 +373,7 @@ public class StreamDataController : ControllerBase
     /// </summary>
     [HttpPost("archives/{rollupRtId}/recompute")]
     [Microsoft.AspNetCore.Authorization.Authorize(AssetRepositoryServiceConstants.StreamDataAdministrationPolicy)]
+    [OctoRestDeprecated(Wave = StreamDataRestDeprecation.Wave4, Link = StreamDataRestDeprecation.MethodsLink)]
     public async Task<ActionResult<RecomputeJobInfoRestDto>> RecomputeArchive(
         [Required] string tenantId, [Required] string rollupRtId,
         [Required] DateTime from, [Required] DateTime to, string? rtIdScope)
@@ -423,6 +444,7 @@ public class StreamDataController : ControllerBase
     /// </summary>
     [HttpPost("archives/{rollupRtId}/backfill-from-source")]
     [Microsoft.AspNetCore.Authorization.Authorize(AssetRepositoryServiceConstants.StreamDataAdministrationPolicy)]
+    [OctoRestDeprecated(Wave = StreamDataRestDeprecation.Wave4, Link = StreamDataRestDeprecation.MethodsLink)]
     public async Task<ActionResult<RecomputeJobInfoRestDto>> BackfillRollupFromSource(
         [Required] string tenantId, [Required] string rollupRtId)
     {
