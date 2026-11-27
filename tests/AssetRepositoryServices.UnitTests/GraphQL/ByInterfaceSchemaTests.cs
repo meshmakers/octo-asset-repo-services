@@ -27,8 +27,10 @@ public class ByInterfaceSchemaTests
 
         var query = new RuntimeModelQuery(NullLogger<RuntimeModelQuery>.Instance, cache);
 
-        // AB#8444 adds runtime.operations on every tenant (an addition); the former fields are unchanged
-        query.Fields.Select(f => f.Name).Should().Equal("RuntimeEntities", "RuntimeQuery", "TransientQuery", "operations");
+        // AB#8444 adds runtime.operations and AB#9763 runtime.numberRangeGapReport on every tenant (additions); the
+        // former fields are unchanged
+        query.Fields.Select(f => f.Name).Should().Equal("RuntimeEntities", "RuntimeQuery", "TransientQuery", "operations",
+            "numberRangeGapReport");
         query.HasField(Statics.ByInterfaceField).Should().BeFalse();
     }
 

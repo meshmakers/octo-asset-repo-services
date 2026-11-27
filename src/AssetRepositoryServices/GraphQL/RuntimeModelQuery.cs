@@ -61,6 +61,9 @@ internal sealed class RuntimeModelQuery : ObjectGraphType
         // The audit trail of a released document, for callers who may read the document.
         DocumentAuditTrailQueryField.Add(this, graphTypesCache);
 
+        // The gap report of a number range per fiscal year, from the documents the caller may read.
+        NumberRangeGapReportQueryField.Add(this);
+
         foreach (var rtEntityDtoType in graphTypesCache.GetTypes())
         {
             this.Connection<object?, IGraphType, RtEntityDto>(graphTypesCache, rtEntityDtoType, rtEntityDtoType.Name)

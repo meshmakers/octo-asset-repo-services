@@ -1,9 +1,9 @@
 ---
-description: Unbounded runtime-entity query guard, the server-side query time limit, the runtime.byInterface query and the audit trail of a document (runtime.documentAuditTrail): where each is wired, limits, error codes and tests.
-applies_to: **/RtEntityByInterfaceTypes.cs, **/DocumentAuditTrail*.cs, **/RuntimeQueryGuard*.cs, **/RuntimeModelQuery.cs, **/RtTransientQuery.cs, **/InterfaceQuery*.cs, tests/**/ByInterface*.cs, **/RuntimeQueryTimeout*.cs, **/RuntimeQueryTimeLimit*.cs, **/Blueprints*.cs, **/RuntimeEngineBuilderExtensions.cs
+description: Unbounded runtime-entity query guard, the server-side query time limit, the runtime.byInterface query the audit trail of a document (runtime.documentAuditTrail) and the gap report of a number range (runtime.numberRangeGapReport): where each is wired, limits, error codes and tests.
+applies_to: **/RtEntityByInterfaceTypes.cs, **/DocumentAuditTrail*.cs, **/NumberRangeGapReport*.cs, **/RuntimeQueryGuard*.cs, **/RuntimeModelQuery.cs, **/RtTransientQuery.cs, **/InterfaceQuery*.cs, tests/**/ByInterface*.cs, **/RuntimeQueryTimeout*.cs, **/RuntimeQueryTimeLimit*.cs, **/Blueprints*.cs, **/RuntimeEngineBuilderExtensions.cs
 ---
 
-# Runtime query guard, query by interface and document audit trail
+# Runtime query guard, query by interface, document audit trail and number range gap report
 
 ## Unbounded runtime-entity query guard
 
@@ -132,3 +132,33 @@ time order. The field is absent when the tenant's System model has no `DocumentA
 - **Tests**: integration `GraphQL/DocumentAuditTrailQueryTests` (fixture `MethodDataPermissionGraphQlTestFixture`: the
   document is an `AccessTestAccount` behind a read policy; a reader gets every entry in time order, a caller without the
   read grant gets exactly the answer of a missing document).
+
+## Gap report of a number range: `runtime.numberRangeGapReport`
+
+`NumberRangeGapReportQueryField` adds
+`runtime.numberRangeGapReport(numberRange: String!, fiscalYear: Int): NumberRangeGapReport`: for one number range
+(`System/AutoIncrement`, by its well-known name, the `autoIncrementReference` of the document type's number attribute)
+and one fiscal year, the numbers from the range's start value to the fiscal year's current value that no released
+document carries (`missing`, ascending intervals with the formatted numbers), those more than one document carries
+(`duplicates`, with every document's `rtId` and `ckTypeId`), and documents whose number lies outside the interval or
+does not have the range's format (`irregular`, at most 1000, `irregularCount`). `fiscalYear` is required for a range
+with fiscal-year periods and must be omitted for one without; a wrong combination is a GraphQL error.
+
+- **Computation**: the engine (`ITenantRepository.GetNumberRangeGapReportAsync`, engine-mongodb
+  `docs/number-range-gap-report.md`): one aggregation per numbered type through the index on the number attribute,
+  which the document model declares on its document type (never on a shared base type); drafts carry no number and are
+  not read.
+- **Who sees what**: the resolver passes the request's session (`OctoSessionListener`: the caller's security context),
+  so the range and the documents are read with the caller's data-permission read filter, never as the system. A
+  caller who may not read the range gets null, as for a range that does not exist. A document the caller may not read
+  is not counted: its number shows as missing, and no hidden document is named.
+- **Writes**: none.
+- **Pipelines**: the mesh adapter has no asset repository endpoint and no node that sends the adapter's token to this
+  GraphQL API (see `DeployPipelineNode` in octo-mesh-adapter); `MakeHttpRequest@1` can post the query to
+  `/tenants/{tenantId}/graphql` only with a bearer token it is given (header from an `ApiConfiguration` entry). A
+  pipeline node that runs in the adapter can reach the same report through the engine method above with the
+  pipeline's own session.
+- **Tests**: integration `GraphQL/NumberRangeGapReportQueryTests` (fixture `MethodDataPermissionGraphQlTestFixture`:
+  `NumberRangeTestInvoice` of the test model, number from `NumberRangeTestInvoiceNumber`, index on `Number`, behind the
+  read policy of the fixture): a reader gets a clean report and then the duplicate with both documents; a caller without
+  the read grant gets every number as missing and no document; an unknown range answers null.

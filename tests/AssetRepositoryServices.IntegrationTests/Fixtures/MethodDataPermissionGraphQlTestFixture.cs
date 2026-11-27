@@ -27,9 +27,12 @@ public class MethodDataPermissionGraphQlTestFixture : MethodGatewayGraphQlTestFi
     /// <summary>Write on the caller's own accounts only.</summary>
     public const string WriteOwnRole = "AcctWriteOwn";
 
+    /// <summary>The numbered document of the gap report tests, behind the same policies as the account.</summary>
+    public const string NumberedCkTypeId = "AssetRepositoryIntegrationTest/NumberRangeTestInvoice";
+
     public MethodDataPermissionGraphQlTestFixture()
     {
-        var types = new HashSet<string> { CkTypeId };
+        var types = new HashSet<string> { CkTypeId, NumberedCkTypeId };
         var table = new RtDataPolicyTable(
         [
             Rule("acct-write-all", RtDataAction.Write, ownedOnly: false, WriteAllRole),

@@ -1,0 +1,19 @@
+$schema: https://schemas.meshmakers.cloud/construction-kit-elements.schema.json
+types:
+- typeId: NumberRangeTestInvoice
+  derivedFromCkTypeId: ${System}/Entity
+  description: "Numbered document of the gap report tests: a data policy protects it like AccessTestAccount"
+  # The document model declares the index on the number attribute the gap report reads through.
+  indexes:
+    - indexType: "Ascending"
+      fields:
+        - attributePaths:
+            - Number
+  attributes:
+    - id: ${System}/Name
+      name: Name
+      isOptional: true
+    - id: ${this}/NumberRangeTestNumber
+      name: Number
+      isOptional: true
+      autoIncrementReference: "NumberRangeTestInvoiceNumber"

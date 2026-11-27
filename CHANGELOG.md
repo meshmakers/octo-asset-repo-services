@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- AB#9763 New: `runtime.numberRangeGapReport(numberRange, fiscalYear)` - the gap report of a number range per fiscal
+  year: missing numbers (intervals), duplicate numbers with every document id, and irregular numbers. Read-only, with
+  the caller's data-permission read filter (a document the caller may not read counts as missing; a range the caller
+  may not read answers null), through the index on the number attribute the document model declares. Needs the
+  engine-mongodb packages of the same change. The test CK model gains `NumberRangeTestInvoice` with that index. Code:
+  `NumberRangeGapReportQueryField`. Tests: `NumberRangeGapReportQueryTests` (two users). Docs: `docs/runtime-queries.md`.
 - AB#9762 New: `runtime.documentAuditTrail(rtId)` returns the audit trail of a released document
   (`System/DocumentAuditEntry`: release, storno and refused changes) in time order, through the index
   `(DocumentRtId, Timestamp)`. Only a caller who may read the document gets it (the engine's data-permission check on
