@@ -153,11 +153,11 @@ with fiscal-year periods and must be omitted for one without; a wrong combinatio
   caller who may not read the range gets null, as for a range that does not exist. A document the caller may not read
   is not counted: its number shows as missing, and no hidden document is named.
 - **Writes**: none.
-- **Pipelines**: the mesh adapter has no asset repository endpoint and no node that sends the adapter's token to this
-  GraphQL API (see `DeployPipelineNode` in octo-mesh-adapter); `MakeHttpRequest@1` can post the query to
-  `/tenants/{tenantId}/graphql` only with a bearer token it is given (header from an `ApiConfiguration` entry). A
-  pipeline node that runs in the adapter can reach the same report through the engine method above with the
-  pipeline's own session.
+- **Pipelines**: a pipeline reads the same report with the mesh adapter node `GetNumberRangeGapReport@1`
+  (octo-mesh-adapter `docs/nodes-extract.md`), which calls the engine method above with the session of its identity;
+  it does not go through this GraphQL API (the adapter has no asset repository endpoint and sends no token to it).
+  The node's identity decides which documents count: without a verified principal a pipeline runs as its service
+  account or as the system session, which sees every document of the range.
 - **Tests**: integration `GraphQL/NumberRangeGapReportQueryTests` (fixture `MethodDataPermissionGraphQlTestFixture`:
   `NumberRangeTestInvoice` of the test model, number from `NumberRangeTestInvoiceNumber`, index on `Number`, behind the
   read policy of the fixture): a reader gets a clean report and then the duplicate with both documents; a caller without
