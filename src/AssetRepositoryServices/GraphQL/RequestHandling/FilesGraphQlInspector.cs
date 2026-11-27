@@ -154,6 +154,20 @@ internal static class FilesGraphQlInspector
         return SelectionTouchesFiles(context, field.SelectionSet, returnType, visitedFragments);
     }
 
+    /// <summary>
+    ///     Argument/field names that carry a ck type id (<c>Statics.CkIdArg</c>/<c>CkIdsArg</c> of the generic
+    ///     <c>runtimeEntities</c> connection, and the <c>ckTypeId</c> field of every generic input/id type -
+    ///     <c>RtEntityDtoGenericInputType</c>, <c>RtEntityIdType</c>, association targets). Only a value reached
+    ///     through one of these keys is tested for the System.Files marker (CodeRabbit finding on PR #61):
+    ///     scanning every string argument/filter value for the substring would also match ordinary search text
+    ///     or free-form data that happens to contain it, refusing non-Files traffic of a foreign token it must
+    ///     not touch. Recursion into lists and objects is unconditional either way, to reach a nested ckTypeId.
+    /// </summary>
+    private static readonly HashSet<string> CkIdKeyNames = new(StringComparer.OrdinalIgnoreCase)
+    {
+        Statics.CkIdArg, Statics.CkIdsArg, "ckTypeId"
+    };
+
     private static bool ArgumentsTouchFiles(IExecutionContext context, GraphQLArguments? arguments)
     {
         if (arguments == null)
@@ -163,7 +177,8 @@ internal static class FilesGraphQlInspector
 
         foreach (var argument in arguments)
         {
-            if (ValueTouchesFiles(context, argument.Value))
+            var underIdKey = CkIdKeyNames.Contains(argument.Name.StringValue);
+            if (ValueTouchesFiles(context, argument.Value, underIdKey))
             {
                 return true;
             }
@@ -172,7 +187,7 @@ internal static class FilesGraphQlInspector
         return false;
     }
 
-    private static bool ValueTouchesFiles(IExecutionContext context, GraphQLValue? value)
+    private static bool ValueTouchesFiles(IExecutionContext context, GraphQLValue? value, bool underIdKey)
     {
         switch (value)
         {
@@ -185,30 +200,29 @@ internal static class FilesGraphQlInspector
                 {
                     if (candidate.Name == name)
                     {
-                        return ObjectTouchesFiles(candidate.Value);
+                        return ObjectTouchesFiles(candidate.Value, underIdKey);
                     }
                 }
 
                 return false;
             }
             case GraphQLListValue list:
-                return list.Values != null && list.Values.Any(v => ValueTouchesFiles(context, v));
+                return list.Values != null && list.Values.Any(v => ValueTouchesFiles(context, v, underIdKey));
             case GraphQLObjectValue obj:
-                return obj.Fields != null && obj.Fields.Any(f => ValueTouchesFiles(context, f.Value));
+                return obj.Fields != null && obj.Fields.Any(f =>
+                    ValueTouchesFiles(context, f.Value, CkIdKeyNames.Contains(f.Name.StringValue)));
             case GraphQLStringValue str:
-                return ContainsModelMarker(str.Value.ToString());
+                return underIdKey && ContainsModelMarker(str.Value.ToString());
             case GraphQLEnumValue en:
-                return ContainsModelMarker(en.Name.StringValue);
+                return underIdKey && ContainsModelMarker(en.Name.StringValue);
             default:
                 return false;
         }
     }
 
-    private static bool ObjectTouchesFiles(object? value) => ObjectTouchesFiles(value, 0);
-
     private const int MaxDepth = 8;
 
-    private static bool ObjectTouchesFiles(object? value, int depth)
+    private static bool ObjectTouchesFiles(object? value, bool underIdKey, int depth = 0)
     {
         if (depth > MaxDepth)
         {
@@ -221,13 +235,15 @@ internal static class FilesGraphQlInspector
             case null:
                 return false;
             case string s:
-                return ContainsModelMarker(s);
+                return underIdKey && ContainsModelMarker(s);
             case RtCkId<CkTypeId> typeId:
-                return FileSystemService.IsFileSystemType(typeId) || ContainsModelMarker(typeId.ToString());
+                // Already a resolved ck type id, not raw text the caller controls arbitrarily - always exact.
+                return FileSystemService.IsFileSystemType(typeId);
             case IDictionary dictionary:
                 foreach (DictionaryEntry entry in dictionary)
                 {
-                    if (ObjectTouchesFiles(entry.Key, depth + 1) || ObjectTouchesFiles(entry.Value, depth + 1))
+                    var childUnderIdKey = entry.Key is string keyName && CkIdKeyNames.Contains(keyName);
+                    if (ObjectTouchesFiles(entry.Value, childUnderIdKey, depth + 1))
                     {
                         return true;
                     }
@@ -237,7 +253,7 @@ internal static class FilesGraphQlInspector
             case IEnumerable enumerable:
                 foreach (var item in enumerable)
                 {
-                    if (ObjectTouchesFiles(item, depth + 1))
+                    if (ObjectTouchesFiles(item, underIdKey, depth + 1))
                     {
                         return true;
                     }
@@ -252,13 +268,8 @@ internal static class FilesGraphQlInspector
             return false;
         }
 
-        // Coerced input objects (RtEntityIdDto, RtEntityDto, ...) and scalars: the textual form and every
-        // readable property (ckTypeId, attributes, associations, ...).
-        if (ContainsModelMarker(value.ToString()))
-        {
-            return true;
-        }
-
+        // A coerced input object (RtEntityIdDto, RtEntityDto, ...) reached without a ckTypeId/ckId key wrapping
+        // it directly: still walk its properties by name, so a ckTypeId *property* one level down is found.
         foreach (var property in type.GetProperties(BindingFlags.Public | BindingFlags.Instance))
         {
             if (property.GetIndexParameters().Length != 0 || !property.CanRead)
@@ -276,7 +287,8 @@ internal static class FilesGraphQlInspector
                 continue;
             }
 
-            if (ObjectTouchesFiles(propertyValue, depth + 1))
+            var childUnderIdKey = CkIdKeyNames.Contains(property.Name);
+            if (ObjectTouchesFiles(propertyValue, childUnderIdKey, depth + 1))
             {
                 return true;
             }
