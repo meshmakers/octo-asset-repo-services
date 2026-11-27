@@ -36,7 +36,7 @@ internal static partial class SecretQueryGuard
     ///     Validates all attribute paths of the query options of a query on <paramref name="ckTypeId" />.
     /// </summary>
     internal static void EnsureQueryable(ICkCacheService ckCacheService, string tenantId,
-        RtCkId<CkTypeId> ckTypeId, RtEntityQueryOptions queryOptions)
+        RtCkId<CkTypeId>? ckTypeId, RtEntityQueryOptions queryOptions)
     {
         if (!TryGetSecretAwareType(ckCacheService, tenantId, ckTypeId, out var ckTypeGraph))
         {
@@ -228,9 +228,16 @@ internal static partial class SecretQueryGuard
     }
 
     private static bool TryGetSecretAwareType(ICkCacheService ckCacheService, string tenantId,
-        RtCkId<CkTypeId> ckTypeId, [System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out CkTypeGraph? ckTypeGraph)
+        [System.Diagnostics.CodeAnalysis.NotNullWhen(true)] RtCkId<CkTypeId>? ckTypeId,
+        [System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out CkTypeGraph? ckTypeGraph)
     {
-        // An unknown type is reported by the repository; the guard never turns it into a different error.
+        // A missing or unknown type is reported elsewhere; the guard never turns it into a different error.
+        if (ckTypeId is null)
+        {
+            ckTypeGraph = null;
+            return false;
+        }
+
         return ckCacheService.TryGetRtCkType(tenantId, ckTypeId, out ckTypeGraph);
     }
 }
