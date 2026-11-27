@@ -115,6 +115,55 @@ public class TenantGatePipelineTests
         host.Probe.Executions.Should().Be(0);
     }
 
+    // ---- agent tokens (AB#6054) --------------------------------------------------------------------
+
+    /// <summary>
+    ///     AB#6054, the lane-stack finding behind it: a token with scope <c>octo_agent</c> only read tenant data through
+    ///     GraphQL queries, which require no scope. Deny by default: an agent token of the route's own tenant gets
+    ///     <c>403 AgentTokenNotAccepted</c> on GraphQL (query and mutation) and REST, in every mode of the tenant gate,
+    ///     and nothing runs.
+    /// </summary>
+    [Theory]
+    [InlineData("Enforce", "octo_agent")]
+    [InlineData("LogOnly", "octo_agent")]
+    [InlineData("Enforce", "octo_agent octo_api")]
+    public async Task AgentTokenOfTheRouteTenant_GraphQlQueryMutationAndRest_Are403AgentTokenNotAccepted(string mode,
+        string scope)
+    {
+        await using var host = await GateHost.StartAsync(new Dictionary<string, string?>
+        {
+            ["TenantAuthorization:UserTokenEnforcement"] = mode,
+            ["TenantAuthorization:ServiceTokenEnforcement"] = mode
+        });
+
+        var query = await host.PostGraphQlAsync(TenantB, TenantB, scope, serviceToken: true);
+        var mutation = await host.PostGraphQlAsync(TenantB, TenantB, scope, serviceToken: true,
+            body: "{\"query\":\"mutation { probe }\"}");
+        var rest = await host.GetRestAsync(TenantB, TenantB, scope, serviceToken: true);
+
+        foreach (var response in new[] { query, mutation, rest })
+        {
+            response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+            using var json = JsonDocument.Parse(
+                await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
+            json.RootElement.GetProperty("code").GetString().Should().Be("AgentTokenNotAccepted");
+        }
+
+        host.Probe.Executions.Should().Be(0, "an agent token must not reach a resolver or an action");
+    }
+
+    [Fact]
+    public async Task PlatformClientTokenOfTheRouteTenant_IsNotAffected()
+    {
+        await using var host = await GateHost.StartAsync(Enforce());
+
+        (await host.PostGraphQlAsync(TenantB, TenantB, "octo_api", serviceToken: true)).StatusCode.Should()
+            .Be(HttpStatusCode.OK);
+        (await host.GetRestAsync(TenantB, TenantB, "octo_api", serviceToken: true)).StatusCode.Should()
+            .Be(HttpStatusCode.OK);
+        host.Probe.Executions.Should().Be(2);
+    }
+
     // ---- the mode is what flips it ---------------------------------------------------------------
 
     /// <summary>
@@ -194,13 +243,25 @@ public class TenantGatePipelineTests
     {
         public const string SchemeName = "TestBearer";
         public const string TenantHeader = "X-Test-Tenant";
+        public const string ScopeHeader = "X-Test-Scope";
+        public const string ServiceTokenHeader = "X-Test-Service-Token";
 
         protected override Task<AuthenticateResult> HandleAuthenticateAsync()
         {
-            var claims = new List<Claim> { new("sub", "user-1"), new("client_id", "test-client") };
+            var claims = new List<Claim> { new("client_id", "test-client") };
+            if (!Request.Headers.ContainsKey(ServiceTokenHeader))
+            {
+                claims.Add(new Claim("sub", "user-1"));
+            }
+
             if (Request.Headers.TryGetValue(TenantHeader, out var tenant) && tenant.Count > 0)
             {
                 claims.Add(new Claim("tenant_id", tenant.ToString()));
+            }
+
+            if (Request.Headers.TryGetValue(ScopeHeader, out var scope) && scope.Count > 0)
+            {
+                claims.Add(new Claim("scope", scope.ToString()));
             }
 
             var identity = new ClaimsIdentity(claims, "Bearer");
@@ -264,25 +325,40 @@ public class TenantGatePipelineTests
             return new GateHost(app, probe);
         }
 
-        public Task<HttpResponseMessage> PostGraphQlAsync(string routeTenant, string? tokenTenant)
+        public Task<HttpResponseMessage> PostGraphQlAsync(string routeTenant, string? tokenTenant, string? scope = null,
+            bool serviceToken = false, string body = "{\"query\":\"{ probe }\"}")
         {
-            var request = Request(HttpMethod.Post, string.Format(GraphQlRoute, routeTenant), tokenTenant);
-            request.Content = new StringContent("{\"query\":\"{ probe }\"}", Encoding.UTF8, "application/json");
+            var request = Request(HttpMethod.Post, string.Format(GraphQlRoute, routeTenant), tokenTenant, scope,
+                serviceToken);
+            request.Content = new StringContent(body, Encoding.UTF8, "application/json");
             return _client.SendAsync(request);
         }
 
-        public Task<HttpResponseMessage> GetRestAsync(string routeTenant, string? tokenTenant)
+        public Task<HttpResponseMessage> GetRestAsync(string routeTenant, string? tokenTenant, string? scope = null,
+            bool serviceToken = false)
         {
-            return _client.SendAsync(Request(HttpMethod.Get, string.Format(RestRoute, routeTenant), tokenTenant));
+            return _client.SendAsync(Request(HttpMethod.Get, string.Format(RestRoute, routeTenant), tokenTenant, scope,
+                serviceToken));
         }
 
-        private static HttpRequestMessage Request(HttpMethod method, string path, string? tokenTenant)
+        private static HttpRequestMessage Request(HttpMethod method, string path, string? tokenTenant, string? scope,
+            bool serviceToken)
         {
             var request = new HttpRequestMessage(method, path);
             request.Headers.TryAddWithoutValidation("Authorization", "Bearer not-a-real-token");
             if (tokenTenant != null)
             {
                 request.Headers.TryAddWithoutValidation(TestBearerHandler.TenantHeader, tokenTenant);
+            }
+
+            if (scope != null)
+            {
+                request.Headers.TryAddWithoutValidation(TestBearerHandler.ScopeHeader, scope);
+            }
+
+            if (serviceToken)
+            {
+                request.Headers.TryAddWithoutValidation(TestBearerHandler.ServiceTokenHeader, "1");
             }
 
             return request;

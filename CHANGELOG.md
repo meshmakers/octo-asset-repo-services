@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- AB#6054 Test: an agent token (scope `octo_agent`) of the route's own tenant gets `403 AgentTokenNotAccepted` on GraphQL
+  queries, mutations and REST in every mode of the tenant gate (`TenantGatePipelineTests`); the refusal comes from the
+  octo-common-services package of AB#6054, which this service takes on its next build.
 - AB#9750 Fix: a nested association connection that selects `totalCount` alone (`children { totalCount }`, the generic
   `associations(…) { totalCount }` of a typed entity and `associations { targets { totalCount } }` of a generic entity)
   asks the repository for its count-only form (`take: 0`) instead of passing `first` on: no target document reaches the
