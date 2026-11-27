@@ -4,6 +4,7 @@ using GraphQL.Builders;
 using Meshmakers.Common.Shared;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.BlueprintLock;
 using Meshmakers.Octo.Backend.AssetRepositoryServices.GraphQL.RequestHandling;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.ReleasedDocuments;
 using Meshmakers.Octo.Communication.Contracts.DataTransferObjects;
 using Meshmakers.Octo.ConstructionKit.Contracts;
 using Meshmakers.Octo.ConstructionKit.Contracts.Services;
@@ -153,6 +154,12 @@ internal static class ResolveConnectionContextExtensions
             // AB#8559: the stable code of the stream-data read role requirement (Enforce mode).
             context.Errors.Add(new ExecutionError(streamDataReadRoleRequired.Message, streamDataReadRoleRequired)
                 { Code = AssetRepositoryServiceConstants.StreamDataReadRoleRequiredCode });
+        }
+        else if (ReleasedDocumentError.TryCreateGraphQlError(exception, out var releasedDocumentError))
+        {
+            // Before the PersistenceException branch: the engine's released-document refusals derive from it but answer
+            // their own stable code (RELEASED_DOCUMENT_LOCKED, STORNO_REFUSED, DOCUMENT_AUDIT_ENTRY_APPEND_ONLY).
+            context.Errors.Add(releasedDocumentError);
         }
         else if (TryCreateSecretNotQueryableError(exception, out var secretError))
         {

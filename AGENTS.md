@@ -41,7 +41,7 @@ kit models, and time-series stream data stored in MongoDB.
 | `**/SystemApi/**`, `**/TenantApi/**`, `**/Consumers/**`, `**/Diagnostics/**`, `**/DefaultConfigurationCreatorService.cs`, `**/ScratchTenantMarkerStore.cs` | `docs/api-controllers.md` |
 | `**/Program.cs`, `**/Configuration/**`, `src/**/GraphQL/**`, `Directory.Build.props` | `docs/architecture.md` |
 | `**/Controllers/BlueprintsController.cs`, `**/DataTransferObjects/Blueprints/**`, `**/BlueprintUpdateBlankingFlowTests.cs`, `**/BlueprintsMutation.cs` | `docs/blueprint-update-blanking.md` |
-| `**/BlueprintLock/**`, `**/CkModelValidation/**`, `**/CkModelCatalog/**`, `**/CkModelCatalogController.cs`, `**/BlueprintsController.cs`, `**/ModelsController.cs` | `docs/ck-model-api.md` |
+| `**/BlueprintLock/**`, `**/ReleasedDocuments/**`, `**/CkModelValidation/**`, `**/CkModelCatalog/**`, `**/CkModelCatalogController.cs`, `**/BlueprintsController.cs`, `**/ModelsController.cs` | `docs/ck-model-api.md` |
 | `**/UpgradeGuard/**`, `**/*CkUpgrade*.cs`, `**/Services/Ck*.cs`, `**/CkModelLibraryStatus*.cs`, `**/CkModelCatalogController.cs`, `**/BlueprintsMutation.cs` | `docs/ck-model-import.md` |
 | `**/Types/Meta/**`, `**/Types/Rt*.cs`, `**/Mapping/**`, `**/OctoBuilder.cs`, `**/RecordMember*.cs`, `**/HiddenAttribute*.cs`, `**/*WriteGuard*.cs`, `**/AccessQuery*.cs` | `docs/ck-v2.md` |
 | `**/GraphQL/Methods/**`, `**/*ParentTenant*.cs`, `**/OneMethodCallPerRequestRule.cs`, `**/CkV2/*MethodMutation*Tests.cs`, `**/CkV2/AsyncMethod*Tests.cs` | `docs/method-gateway.md` |

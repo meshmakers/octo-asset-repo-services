@@ -1,0 +1,8 @@
+$schema: https://schemas.meshmakers.cloud/construction-kit-elements.schema.json
+attributes:
+  - id: ReleasedDocumentTestStatus
+    valueType: String
+    description: "State of a ReleasedDocumentTestInvoice: Draft or Released (released-document lock tests)"
+  - id: ReleasedDocumentTestNumber
+    valueType: String
+    description: "Number of a ReleasedDocumentTestInvoice, from the range ReleasedDocumentTestInvoiceNumber"

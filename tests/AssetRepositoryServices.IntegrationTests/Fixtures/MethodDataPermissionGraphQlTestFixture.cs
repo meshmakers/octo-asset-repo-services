@@ -30,15 +30,21 @@ public class MethodDataPermissionGraphQlTestFixture : MethodGatewayGraphQlTestFi
     /// <summary>The numbered document of the gap report tests, behind the same policies as the account.</summary>
     public const string NumberedCkTypeId = "AssetRepositoryIntegrationTest/NumberRangeTestInvoice";
 
+    /// <summary>The numbered document of the released-document lock tests, behind the same policies as the account.</summary>
+    public const string ReleasedCkTypeId = "AssetRepositoryIntegrationTest/ReleasedDocumentTestInvoice";
+
     public MethodDataPermissionGraphQlTestFixture()
     {
-        var types = new HashSet<string> { CkTypeId, NumberedCkTypeId };
+        var types = new HashSet<string> { CkTypeId, NumberedCkTypeId, ReleasedCkTypeId };
         var table = new RtDataPolicyTable(
         [
             Rule("acct-write-all", RtDataAction.Write, ownedOnly: false, WriteAllRole),
             Rule("acct-read-all", RtDataAction.Read, ownedOnly: false, ReadAllRole),
             Rule("acct-read-own", RtDataAction.Read, ownedOnly: true, ReadOwnRole),
-            Rule("acct-write-own", RtDataAction.Write, ownedOnly: true, WriteOwnRole)
+            Rule("acct-write-own", RtDataAction.Write, ownedOnly: true, WriteOwnRole),
+            // The released-document lock tests delete drafts and try to delete released documents.
+            new RtDataPolicyRule("released-delete-all", new HashSet<string> { ReleasedCkTypeId }, [RtDataAction.Delete],
+                OwnedOnly: false, AuditOnly: false, new HashSet<string> { WriteAllRole })
         ]);
         Services.AddSingleton<IDataPermissionResolver>(new FixedDataPermissionResolver(table));
 
