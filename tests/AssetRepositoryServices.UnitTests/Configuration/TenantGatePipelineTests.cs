@@ -8,6 +8,9 @@ using FluentAssertions;
 using GraphQL;
 using GraphQL.Server;
 using GraphQL.Types;
+using Meshmakers.Octo.Backend.AssetRepositoryServices;
+using Meshmakers.Octo.Backend.AssetRepositoryServices.Configuration;
+using Meshmakers.Octo.Services.Infrastructure.Authorization;
 using Meshmakers.Octo.Services.Infrastructure.Configuration;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Builder;
@@ -42,6 +45,7 @@ public class TenantGatePipelineTests
 
     private const string GraphQlRoute = "/tenants/{0}/graphQl";
     private const string RestRoute = "/{0}/v1/probe";
+    private const string ScopedRestRoute = "/{0}/v1/probe/scoped";
 
     // ---- GraphQL ---------------------------------------------------------------------------------
 
@@ -115,13 +119,12 @@ public class TenantGatePipelineTests
         host.Probe.Executions.Should().Be(0);
     }
 
-    // ---- agent tokens (AB#6054) --------------------------------------------------------------------
+    // ---- agent tokens -------------------------------------------------------------------------------
 
     /// <summary>
-    ///     AB#6054, the lane-stack finding behind it: a token with scope <c>octo_agent</c> only read tenant data through
-    ///     GraphQL queries, which require no scope. Deny by default: an agent token of the route's own tenant gets
-    ///     <c>403 AgentTokenNotAccepted</c> on GraphQL (query and mutation) and REST, in every mode of the tenant gate,
-    ///     and nothing runs.
+    ///     A token with scope <c>octo_agent</c> could read tenant data through GraphQL queries, which require no scope.
+    ///     Deny by default: an agent token of the route's own tenant gets <c>403 AgentTokenNotAccepted</c> on GraphQL
+    ///     (query and mutation) and REST, in every mode of the tenant gate, and nothing runs.
     /// </summary>
     [Theory]
     [InlineData("Enforce", "octo_agent")]
@@ -140,8 +143,9 @@ public class TenantGatePipelineTests
         var mutation = await host.PostGraphQlAsync(TenantB, TenantB, scope, serviceToken: true,
             body: "{\"query\":\"mutation { probe }\"}");
         var rest = await host.GetRestAsync(TenantB, TenantB, scope, serviceToken: true);
+        var scopedRest = await host.GetRestAsync(TenantB, TenantB, scope, serviceToken: true, scoped: true);
 
-        foreach (var response in new[] { query, mutation, rest })
+        foreach (var response in new[] { query, mutation, rest, scopedRest })
         {
             response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
             using var json = JsonDocument.Parse(
@@ -150,6 +154,24 @@ public class TenantGatePipelineTests
         }
 
         host.Probe.Executions.Should().Be(0, "an agent token must not reach a resolver or an action");
+    }
+
+    /// <summary>
+    ///     A REST action with the production scope policy <c>TenantAssetApiReadOnlyPolicy</c> (octo_api or
+    ///     octo_api_readonly): <c>UseAuthorization()</c> refuses an agent token before the tenant gate runs, and the result
+    ///     handler of <c>AddOctoTenantRoleAuthorization()</c> still answers with the agent code, not an empty 403.
+    /// </summary>
+    [Fact]
+    public async Task AgentToken_OnARestActionWithTheProductionScopePolicy_Is403AgentTokenNotAccepted()
+    {
+        await using var host = await GateHost.StartAsync(Enforce());
+
+        var response = await host.GetRestAsync(TenantB, TenantB, "octo_agent", serviceToken: true, scoped: true);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
+        json.RootElement.GetProperty("code").GetString().Should().Be(AgentTokens.NotAcceptedErrorCode);
+        host.Probe.Executions.Should().Be(0);
     }
 
     [Fact]
@@ -161,7 +183,11 @@ public class TenantGatePipelineTests
             .Be(HttpStatusCode.OK);
         (await host.GetRestAsync(TenantB, TenantB, "octo_api", serviceToken: true)).StatusCode.Should()
             .Be(HttpStatusCode.OK);
-        host.Probe.Executions.Should().Be(2);
+        (await host.GetRestAsync(TenantB, TenantB, "octo_api", serviceToken: true, scoped: true)).StatusCode.Should()
+            .Be(HttpStatusCode.OK);
+        (await host.PostGraphQlAsync(TenantB, TenantB, "octo_api", serviceToken: true,
+            body: "{\"query\":\"mutation { probe }\"}")).StatusCode.Should().Be(HttpStatusCode.OK);
+        host.Probe.Executions.Should().Be(4);
     }
 
     // ---- the mode is what flips it ---------------------------------------------------------------
@@ -217,11 +243,25 @@ public class TenantGatePipelineTests
         }
     }
 
+    private sealed class ProbeMutation : ObjectGraphType
+    {
+        public ProbeMutation(ProbeCounter probe)
+        {
+            Name = "Mutation";
+            Field<StringGraphType>("probe").Resolve(_ =>
+            {
+                probe.Hit();
+                return "ok";
+            });
+        }
+    }
+
     private sealed class ProbeSchema : Schema
     {
-        public ProbeSchema(IServiceProvider provider, ProbeQuery query) : base(provider)
+        public ProbeSchema(IServiceProvider provider, ProbeQuery query, ProbeMutation mutation) : base(provider)
         {
             Query = query;
+            Mutation = mutation;
         }
     }
 
@@ -300,6 +340,7 @@ public class TenantGatePipelineTests
             var probe = new ProbeCounter();
             builder.Services.AddSingleton(probe);
             builder.Services.AddSingleton<ProbeQuery>();
+            builder.Services.AddSingleton<ProbeMutation>();
             builder.Services.AddGraphQL(b => b.AddSchema<ProbeSchema>().AddSystemTextJson());
             builder.Services.AddControllers()
                 .ConfigureApplicationPartManager(m =>
@@ -309,7 +350,9 @@ public class TenantGatePipelineTests
                 });
             builder.Services.AddAuthentication(TestBearerHandler.SchemeName)
                 .AddScheme<AuthenticationSchemeOptions, TestBearerHandler>(TestBearerHandler.SchemeName, null);
-            builder.Services.AddAuthorization();
+            // The production policies and result handler (RuntimeEngineBuilderExtensions).
+            builder.Services.AddAuthorization(o => o.AddAssetRepositoryPolicies());
+            builder.Services.AddOctoTenantRoleAuthorization();
 
             var app = builder.Build();
 
@@ -335,10 +378,10 @@ public class TenantGatePipelineTests
         }
 
         public Task<HttpResponseMessage> GetRestAsync(string routeTenant, string? tokenTenant, string? scope = null,
-            bool serviceToken = false)
+            bool serviceToken = false, bool scoped = false)
         {
-            return _client.SendAsync(Request(HttpMethod.Get, string.Format(RestRoute, routeTenant), tokenTenant, scope,
-                serviceToken));
+            return _client.SendAsync(Request(HttpMethod.Get,
+                string.Format(scoped ? ScopedRestRoute : RestRoute, routeTenant), tokenTenant, scope, serviceToken));
         }
 
         private static HttpRequestMessage Request(HttpMethod method, string path, string? tokenTenant, string? scope,
@@ -383,6 +426,15 @@ public sealed class ProbeController(TenantGatePipelineTests.ProbeCounter probe) 
 {
     [HttpGet]
     public IActionResult Get()
+    {
+        probe.Hit();
+        return Ok(new { ok = true });
+    }
+
+    /// <summary>An action with the scope policy of the real tenant REST reads.</summary>
+    [HttpGet("scoped")]
+    [Microsoft.AspNetCore.Authorization.Authorize(AssetRepositoryServiceConstants.TenantAssetApiReadOnlyPolicy)]
+    public IActionResult GetScoped()
     {
         probe.Hit();
         return Ok(new { ok = true });
