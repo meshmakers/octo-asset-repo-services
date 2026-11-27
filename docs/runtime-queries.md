@@ -1,9 +1,9 @@
 ---
-description: Unbounded runtime-entity query guard, the server-side query time limit and the runtime.byInterface query: where each is wired, limits, error codes and tests.
-applies_to: **/RtEntityByInterfaceTypes.cs, **/RuntimeQueryGuard*.cs, **/RuntimeModelQuery.cs, **/RtTransientQuery.cs, **/InterfaceQuery*.cs, tests/**/ByInterface*.cs, **/RuntimeQueryTimeout*.cs, **/RuntimeQueryTimeLimit*.cs, **/Blueprints*.cs, **/RuntimeEngineBuilderExtensions.cs
+description: Unbounded runtime-entity query guard, the server-side query time limit, the runtime.byInterface query and the audit trail of a document (runtime.documentAuditTrail): where each is wired, limits, error codes and tests.
+applies_to: **/RtEntityByInterfaceTypes.cs, **/DocumentAuditTrail*.cs, **/RuntimeQueryGuard*.cs, **/RuntimeModelQuery.cs, **/RtTransientQuery.cs, **/InterfaceQuery*.cs, tests/**/ByInterface*.cs, **/RuntimeQueryTimeout*.cs, **/RuntimeQueryTimeLimit*.cs, **/Blueprints*.cs, **/RuntimeEngineBuilderExtensions.cs
 ---
 
-# Runtime query guard and query by interface
+# Runtime query guard, query by interface and document audit trail
 
 ## Unbounded runtime-entity query guard
 
@@ -112,3 +112,23 @@ the design spike (option A); budget, v1 scope and the refusal cases are describe
   additions.
 - **Studio codegen**: the field and the two new types change `schema.graphql`; Studio needs a refresh
   (`npm run codegen` in octo-frontend-refinery-studio) only if it wants to use `byInterface`, nothing breaks without it.
+
+## Audit trail of a document: `runtime.documentAuditTrail`
+
+`DocumentAuditTrailQueryField` adds `runtime.documentAuditTrail(rtId: OctoObjectId!): [SystemDocumentAuditEntry!]!`, the
+entries the engine writes about one released document (`System/DocumentAuditEntry`: `Release`, `Storno`, `Denied`), in
+time order. The field is absent when the tenant's System model has no `DocumentAuditEntry` type.
+
+- **Read**: one engine query of the audit entry type with a field filter on `DocumentRtId`, sorted by `Timestamp`
+  (the index `(DocumentRtId, Timestamp)` of the type), in a session of the tenant's own (not the caller's), so the
+  caller's data policies on the audit entry type do not decide.
+- **Who sees it**: before anything is returned the resolver asks the engine's data-permission check
+  (`IRtDataPermissionEvaluator.EvaluateAsync(document, Read)`, the rules of the generic queries) for the document the
+  entries name (`DocumentCkTypeId`). Only `Allowed` returns the entries. `NotVisible` - also a document that does not
+  exist - and an entry without a document type answer the same empty list as a document without entries, so the answer
+  tells nothing about a document the caller may not read.
+- **Writes**: none. The engine creates the entries itself and refuses every insert, update and delete of one through
+  the API (message 173).
+- **Tests**: integration `GraphQL/DocumentAuditTrailQueryTests` (fixture `MethodDataPermissionGraphQlTestFixture`: the
+  document is an `AccessTestAccount` behind a read policy; a reader gets every entry in time order, a caller without the
+  read grant gets exactly the answer of a missing document).

@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- AB#9762 New: `runtime.documentAuditTrail(rtId)` returns the audit trail of a released document
+  (`System/DocumentAuditEntry`: release, storno and refused changes) in time order, through the index
+  `(DocumentRtId, Timestamp)`. Only a caller who may read the document gets it (the engine's data-permission check on
+  the document); for a document the caller may not read, or that does not exist, the answer is the same empty list.
+  Read-only; the engine refuses every API write of an entry. The field is absent on a tenant whose System model has no
+  audit entry type. Needs the engine packages of the same change. Code: `DocumentAuditTrailQueryField`. Tests:
+  `DocumentAuditTrailQueryTests` (two users). Docs: `docs/runtime-queries.md`.
 - AB#6054 Test: an agent token (scope `octo_agent`) of the route's own tenant gets `403 AgentTokenNotAccepted` on GraphQL
   queries and mutations and on REST in every mode of the tenant gate, also on a REST action whose scope policy
   (`TenantAssetApiReadOnlyPolicy`) refuses it first (`TenantGatePipelineTests`, with the production policies and result
