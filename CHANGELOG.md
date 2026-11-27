@@ -45,6 +45,17 @@
   again. Only mutations whose top-level fields are all `runtime` and that
   dispatch no CK method call are retried; `UnknownTransactionCommitResult` is never re-executed; errors without the label
   surface as before. Side effects and limits: `docs/graphql-transient-transaction-retry.md`. No CK model change.
+
+- AB#9058 New: the 16 stream-data archive REST endpoints that are facades of the Archive methods are deprecated in the wave
+  `StreamDataWave4`: `POST archives/{id}/activate`, `/disable`, `/enable`, `/retry`, `DELETE archives/{id}`,
+  `POST archives/{id}/freeze`, `/unfreeze`, `/rewind`, `/recompute`, `/backfill-from-source`, the six column and
+  computed-column endpoints. Every response carries `Link: <docs …/streamData/archives/reference>; rel="deprecation"`, OpenAPI
+  marks them `deprecated` and calls are counted in `octo.rest.deprecated.calls`; the `Deprecation` header is sent only once
+  `RestDeprecation:Waves:StreamDataWave4:Since` is configured (Helm `restDeprecation.waves.StreamDataWave4.since`, set at
+  rollout). No `Sunset` header (to be announced). Routes, bodies and status codes are unchanged. `enable` / `disable`,
+  `insert` / `insertTimeRange`, the reads and the rollup consistency check and repair queue stay REST and are not marked.
+  Docs `docs/stream-data-management.md`.
+
 - AB#8908 New: the unbounded-query guard (AB#8898) also checks the navigation connections inside an entity - typed
   navigation fields (`children`, …), the generic `associations(…)` of a typed entity and `associations { targets definitions }`
   of a generic entity. A to-many navigation that selects items without `first`, with `first` above `MaxPageSize`, or with
