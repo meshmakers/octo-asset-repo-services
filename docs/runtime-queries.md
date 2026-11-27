@@ -52,8 +52,9 @@ type, by id, by type with navigation and by CK interface to MongoDB with `maxTim
 
 `ckId` is required: the engine queries the entities of one CK type. A query without `ckId` (or with `ckId: null`) is
 refused before the attribute guards and any database read with `INVALID_ARGUMENT`, `extensions.argument` = `ckId`
-(`QueryArgumentException`). The argument stays nullable in the schema so that clients passing a nullable variable keep
-validating. Test: `GenericRuntimeEntitiesArgumentTests`.
+(`QueryArgumentException`); a query the unbounded query guard refuses first (no `first`, `Enforce`) gets `ASSET1007`.
+The argument stays nullable in the schema so that clients passing a nullable variable keep validating. Test:
+`GenericRuntimeEntitiesArgumentTests`.
 
 ## Query by interface: `runtime.byInterface`
 
