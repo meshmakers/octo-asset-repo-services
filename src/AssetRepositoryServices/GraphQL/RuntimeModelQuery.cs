@@ -58,6 +58,12 @@ internal sealed class RuntimeModelQuery : ObjectGraphType
         // AB#8444 (F3.6): the operations of asynchronous CK methods; on every tenant, so a client can always poll a handle.
         CkMethodOperationQueryField.Add(this);
 
+        // The audit trail of a released document, for callers who may read the document.
+        DocumentAuditTrailQueryField.Add(this, graphTypesCache);
+
+        // The gap report of a number range per fiscal year, from the documents the caller may read.
+        NumberRangeGapReportQueryField.Add(this);
+
         foreach (var rtEntityDtoType in graphTypesCache.GetTypes())
         {
             this.Connection<object?, IGraphType, RtEntityDto>(graphTypesCache, rtEntityDtoType, rtEntityDtoType.Name)

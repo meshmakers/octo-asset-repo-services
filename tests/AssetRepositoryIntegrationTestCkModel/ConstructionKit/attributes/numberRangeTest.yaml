@@ -1,0 +1,5 @@
+$schema: https://schemas.meshmakers.cloud/construction-kit-elements.schema.json
+attributes:
+  - id: NumberRangeTestNumber
+    valueType: String
+    description: "Number of a NumberRangeTestInvoice, from the range NumberRangeTestInvoiceNumber (gap report tests)"

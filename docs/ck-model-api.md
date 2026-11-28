@@ -1,6 +1,6 @@
 ---
-description: Blueprint-locked entity errors, ValidateCk, export entry points, the removed files migration, and the CK model and blueprint catalog REST APIs.
-applies_to: **/BlueprintLock/**, **/CkModelValidation/**, **/CkModelCatalog/**, **/CkModelCatalogController.cs, **/BlueprintsController.cs, **/ModelsController.cs
+description: Blueprint-locked entity errors, released-document errors, ValidateCk, export entry points, the removed files migration, and the CK model and blueprint catalog REST APIs.
+applies_to: **/BlueprintLock/**, **/ReleasedDocuments/**, **/CkModelValidation/**, **/CkModelCatalog/**, **/CkModelCatalogController.cs, **/BlueprintsController.cs, **/ModelsController.cs
 ---
 
 # CK model and blueprint APIs
@@ -30,6 +30,30 @@ attributes) of an opted-in type with an error `OperationMessage` of number **638
   the policy table is supplied through the `IDataPermissionResolver` seam by `BlueprintLockGraphQlTestFixture` because the
   System.Identity CK model is not part of the test tenant) and `tests/.../UnitTests/BlueprintLock/`.
 - User documentation: octo-documentation, `dataAccess/runtime/errorHandling` (#blueprint-locked-entities).
+
+## Released documents: stable error contract
+
+The engine locks a released document (a document whose state attribute holds one of the `ReleasedValues` of its number
+range) against every write and every caller, system sessions included; it also enforces the storno rules and the
+append-only audit trail (engine design note `docs/concept-number-ranges-and-released-documents.md`). This service
+implements no lock of its own: it maps the engine's exceptions to the error contract (`ReleasedDocuments/`).
+
+| Engine exception | Code (`extensions.code`) | Message numbers | Extensions |
+|---|---|---|---|
+| `ReleasedDocumentLockedException` | `RELEASED_DOCUMENT_LOCKED` | 168 | `messageNumber`, the first document's `rtId`, `ckTypeId`, `operation` (`update`, `replace`, `insert`, `delete`, `association`) and `numberRange`; `items` with `rtId`, `ckTypeId`, `operation`, `changes` (attribute names, never values), `state` and `numberRange` per refused document |
+| `StornoRefusedException` | `STORNO_REFUSED` | 169 to 172 | `messageNumber` of the first refusal; `items` with `messageNumber`, `location` (`{ckTypeId}@{rtId}`) and `message` |
+| `DocumentAuditEntryAppendOnlyException` | `DOCUMENT_AUDIT_ENTRY_APPEND_ONLY` | 173 | as `STORNO_REFUSED` |
+
+- GraphQL: `HandleException` maps them (also wrapped) before the generic `PersistenceException` branch (`ASSET1001`). The
+  whole mutation is rejected; a batch with one released document writes nothing. Clients read the code, never the text.
+- REST: no REST endpoint writes runtime entities synchronously, so there is no REST mapping. REST writes go through the
+  asynchronous `Models/ImportRt` job (bot service): a write to a released document fails the job with
+  `RELEASED_DOCUMENT_LOCKED` / message 168. The job's `errorMessage` is the engine message, which starts with
+  `RELEASED_DOCUMENT_LOCKED: ` and names every refused document with message 168. An import of a document the tenant
+  does not hold yet is allowed and keeps the number of the file (design note D10).
+- Pipelines (mesh adapter, `ApplyChanges@1` and `@2`) fail the execution with the same code.
+- Tests: `tests/.../GraphQL/ReleasedDocumentLockGraphQlTests.cs` (the real engine lock behind the real mutations, test
+  type `ReleasedDocumentTestInvoice` with the range `ReleasedDocumentTestInvoiceNumber`).
 
 ## Validate a CK model draft without importing it: `Models/ValidateCk`
 

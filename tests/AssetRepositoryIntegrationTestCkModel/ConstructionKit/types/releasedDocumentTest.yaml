@@ -1,0 +1,16 @@
+$schema: https://schemas.meshmakers.cloud/construction-kit-elements.schema.json
+types:
+- typeId: ReleasedDocumentTestInvoice
+  derivedFromCkTypeId: ${System}/Entity
+  description: "Numbered document of the released-document lock tests: the range ReleasedDocumentTestInvoiceNumber releases it at Status = Released"
+  attributes:
+    - id: ${System}/Name
+      name: Name
+      isOptional: true
+    - id: ${this}/ReleasedDocumentTestStatus
+      name: Status
+      isOptional: true
+    - id: ${this}/ReleasedDocumentTestNumber
+      name: Number
+      isOptional: true
+      autoIncrementReference: "ReleasedDocumentTestInvoiceNumber"

@@ -2,6 +2,28 @@
 
 ## Unreleased
 
+- AB#9760 New: the engine's released-document refusals answer their stable code on GraphQL instead of the generic data
+  store error `ASSET1001`: `RELEASED_DOCUMENT_LOCKED` (message 168; `extensions.messageNumber`, `rtId`, `ckTypeId`,
+  `operation`, `numberRange` and `items` with every refused document and the names of what it would change),
+  `STORNO_REFUSED` (169 to 172) and `DOCUMENT_AUDIT_ENTRY_APPEND_ONLY` (173), both with `messageNumber` and `items`.
+  The whole mutation is rejected and nothing is written. REST writes go through the asynchronous `Models/ImportRt` job;
+  a write to a released document fails the job, whose error message starts with the same code and names message 168.
+  Needs the engine packages of the same change. Code: `ReleasedDocuments/ReleasedDocumentError`. Tests:
+  `ReleasedDocumentLockGraphQlTests` (typed update and generic delete of a released document, the same calls on a
+  draft, delete of an audit entry), `ReleasedDocumentErrorTests` (storno codes, wrapped refusal); the test CK model gains `ReleasedDocumentTestInvoice`. Docs: `docs/ck-model-api.md`.
+- AB#9763 New: `runtime.numberRangeGapReport(numberRange, fiscalYear)` - the gap report of a number range per fiscal
+  year: missing numbers (intervals), duplicate numbers with every document id, and irregular numbers. Read-only, with
+  the caller's data-permission read filter (a document the caller may not read counts as missing; a range the caller
+  may not read answers null), through the index on the number attribute the document model declares. Needs the
+  engine-mongodb packages of the same change. The test CK model gains `NumberRangeTestInvoice` with that index. Code:
+  `NumberRangeGapReportQueryField`. Tests: `NumberRangeGapReportQueryTests` (two users). Docs: `docs/runtime-queries.md`.
+- AB#9762 New: `runtime.documentAuditTrail(rtId)` returns the audit trail of a released document
+  (`System/DocumentAuditEntry`: release, storno and refused changes) in time order, through the index
+  `(DocumentRtId, Timestamp)`. Only a caller who may read the document gets it (the engine's data-permission check on
+  the document); for a document the caller may not read, or that does not exist, the answer is the same empty list.
+  Read-only; the engine refuses every API write of an entry. The field is absent on a tenant whose System model has no
+  audit entry type. Needs the engine packages of the same change. Code: `DocumentAuditTrailQueryField`. Tests:
+  `DocumentAuditTrailQueryTests` (two users). Docs: `docs/runtime-queries.md`.
 - AB#6054 Test: an agent token (scope `octo_agent`) of the route's own tenant gets `403 AgentTokenNotAccepted` on GraphQL
   queries and mutations and on REST in every mode of the tenant gate, also on a REST action whose scope policy
   (`TenantAssetApiReadOnlyPolicy`) refuses it first (`TenantGatePipelineTests`, with the production policies and result

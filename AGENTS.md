@@ -41,14 +41,14 @@ kit models, and time-series stream data stored in MongoDB.
 | `**/SystemApi/**`, `**/TenantApi/**`, `**/Consumers/**`, `**/Diagnostics/**`, `**/DefaultConfigurationCreatorService.cs`, `**/ScratchTenantMarkerStore.cs` | `docs/api-controllers.md` |
 | `**/Program.cs`, `**/Configuration/**`, `src/**/GraphQL/**`, `Directory.Build.props` | `docs/architecture.md` |
 | `**/Controllers/BlueprintsController.cs`, `**/DataTransferObjects/Blueprints/**`, `**/BlueprintUpdateBlankingFlowTests.cs`, `**/BlueprintsMutation.cs` | `docs/blueprint-update-blanking.md` |
-| `**/BlueprintLock/**`, `**/CkModelValidation/**`, `**/CkModelCatalog/**`, `**/CkModelCatalogController.cs`, `**/BlueprintsController.cs`, `**/ModelsController.cs` | `docs/ck-model-api.md` |
+| `**/BlueprintLock/**`, `**/ReleasedDocuments/**`, `**/CkModelValidation/**`, `**/CkModelCatalog/**`, `**/CkModelCatalogController.cs`, `**/BlueprintsController.cs`, `**/ModelsController.cs` | `docs/ck-model-api.md` |
 | `**/UpgradeGuard/**`, `**/*CkUpgrade*.cs`, `**/Services/Ck*.cs`, `**/CkModelLibraryStatus*.cs`, `**/CkModelCatalogController.cs`, `**/BlueprintsMutation.cs` | `docs/ck-model-import.md` |
 | `**/Types/Meta/**`, `**/Types/Rt*.cs`, `**/Mapping/**`, `**/OctoBuilder.cs`, `**/RecordMember*.cs`, `**/HiddenAttribute*.cs`, `**/*WriteGuard*.cs`, `**/AccessQuery*.cs` | `docs/ck-v2.md` |
 | `**/GraphQL/Methods/**`, `**/*ParentTenant*.cs`, `**/OneMethodCallPerRequestRule.cs`, `**/CkV2/*MethodMutation*Tests.cs`, `**/CkV2/AsyncMethod*Tests.cs` | `docs/method-gateway.md` |
 | `**/Services/Methods/**`, `**/GraphQL/MethodHandlers/**`, `**/MethodHandlersQuery*.cs`, `**/*MethodIdempotency*Tests.cs` | `docs/method-idempotency-audit.md` |
 | `**/GatewayOwnedMethod*.cs`, `**/GenericCreate*.cs`, `**/OctoSessionAmbient*.cs`, `**/CkMethodTargetAccess*.cs`, `tests/*MethodCanaryScan/**`, `**/Adversarial/**` | `docs/method-in-process.md` |
 | `**/Files/**`, `**/Controllers/File*.cs`, `**/Controllers/LargeBinaries*.cs`, `**/FilesAccessMetrics.cs` | `docs/platform-file-system.md` |
-| `**/RtEntityByInterfaceTypes.cs`, `**/RuntimeQueryGuard*.cs`, `**/RuntimeModelQuery.cs`, `**/RtTransientQuery.cs`, `**/InterfaceQuery*.cs`, `tests/**/ByInterface*.cs`, `**/RuntimeQueryTimeout*.cs`, `**/RuntimeQueryTimeLimit*.cs`, `**/Blueprints*.cs`, `**/RuntimeEngineBuilderExtensions.cs` | `docs/runtime-queries.md` |
+| `**/RtEntityByInterfaceTypes.cs`, `**/DocumentAuditTrail*.cs`, `**/NumberRangeGapReport*.cs`, `**/RuntimeQueryGuard*.cs`, `**/RuntimeModelQuery.cs`, `**/RtTransientQuery.cs`, `**/InterfaceQuery*.cs`, `tests/**/ByInterface*.cs`, `**/RuntimeQueryTimeout*.cs`, `**/RuntimeQueryTimeLimit*.cs`, `**/Blueprints*.cs`, `**/RuntimeEngineBuilderExtensions.cs` | `docs/runtime-queries.md` |
 | `**/Secrets/**`, `**/GraphQL/SecretsQuery.cs`, `**/GraphQL/RtMutationBase.cs`, `**/OctoSecretStateDtoType.cs`, `**/Utils/Secret*.cs` | `docs/secret-attributes.md` |
 | `**/StreamData/Controllers/**`, `**/ConfigureStreamDataConfiguration.cs`, `tests/**/StreamData/**` | `docs/stream-data-management.md` |
 | `**/GraphQL/StreamData*.cs`, `**/Types/StreamData*.cs`, `**/StreamData/Methods/**`, `**/PersistedQueryLookup.cs`, `**/DataPermissionStreamGuard.cs` | `docs/streamdata-graphql.md` |
