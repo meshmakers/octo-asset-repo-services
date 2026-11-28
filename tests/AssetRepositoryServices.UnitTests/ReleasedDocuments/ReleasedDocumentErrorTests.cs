@@ -52,6 +52,17 @@ public class ReleasedDocumentErrorTests
     }
 
     [Fact]
+    public void SuppliedNumberRefusal_AnswersReleasedDocumentLocked_WithMessage174()
+    {
+        var locked = new ReleasedDocumentLockedException(Errors(174), []);
+
+        ReleasedDocumentError.TryCreateGraphQlError(locked, out var error).Should().BeTrue();
+
+        error!.Code.Should().Be("RELEASED_DOCUMENT_LOCKED");
+        error.Extensions![ReleasedDocumentError.MessageNumberKey].Should().Be(174);
+    }
+
+    [Fact]
     public void AnotherException_IsNotMapped()
     {
         ReleasedDocumentError.TryCreateGraphQlError(new InvalidOperationException("other"), out var error)

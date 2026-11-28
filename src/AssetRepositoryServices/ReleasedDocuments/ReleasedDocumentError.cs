@@ -11,7 +11,8 @@ namespace Meshmakers.Octo.Backend.AssetRepositoryServices.ReleasedDocuments;
 ///     <c>docs/concept-number-ranges-and-released-documents.md</c> of the engine). The engine alone decides; this class only
 ///     maps its exceptions to the stable error contract, with the engine's code as <c>extensions.code</c>:
 ///     <list type="bullet">
-///         <item><c>RELEASED_DOCUMENT_LOCKED</c> (message 168): a write would change or delete a released document.</item>
+///         <item><c>RELEASED_DOCUMENT_LOCKED</c> (message 168): a write would change or delete a released document; message
+///         174: a caller supplies the number on a range that numbers on release.</item>
 ///         <item><c>STORNO_REFUSED</c> (messages 169 to 172): a storno the storno rules refuse.</item>
 ///         <item><c>DOCUMENT_AUDIT_ENTRY_APPEND_ONLY</c> (message 173): a write to an entry of the audit trail.</item>
 ///     </list>
@@ -71,9 +72,15 @@ internal static class ReleasedDocumentError
             })
             .ToList();
 
+        // The number of the engine's first error message: 168 for a write to a released document, 174 for a number
+        // the caller supplies on a range that numbers on release.
+        var messageNumber = exception.OperationResult.Messages
+            .Where(m => m.MessageLevel is MessageLevel.Error or MessageLevel.FatalError)
+            .Select(m => (int?)m.MessageNumber)
+            .FirstOrDefault() ?? ReleasedDocumentLockedException.MessageNumber;
         var extensions = new Dictionary<string, object?>
         {
-            [MessageNumberKey] = ReleasedDocumentLockedException.MessageNumber,
+            [MessageNumberKey] = messageNumber,
             [ItemsKey] = items
         };
         if (items.Count > 0)
